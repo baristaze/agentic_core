@@ -66,6 +66,7 @@ def refusal() -> Refusal:
                 unit=AmountUnit.COST,
                 amount=1,
                 committed=1,
+                held=0,
                 exposure=1,
                 action=BreachAction.RAISE,
                 needed=2,
@@ -76,7 +77,7 @@ def refusal() -> Refusal:
 
 
 TRIPS: dict[Limit, Callable[[], Trip | None]] = {
-    Limit.BUDGET: lambda: Trip(limit=Limit.BUDGET, park=budget_park(refusal())),
+    Limit.BUDGET: lambda: Trip(limit=Limit.BUDGET, park=budget_park(refusal(), NOW)),
     Limit.DEADLINE: lambda: check(LoopTally(), deadline_in=timedelta(0)),
     Limit.STEP_GUARD: lambda: check(LoopTally(model_calls=3)),
     Limit.ERROR_STREAK: lambda: check(LoopTally(tool_errors=2)),

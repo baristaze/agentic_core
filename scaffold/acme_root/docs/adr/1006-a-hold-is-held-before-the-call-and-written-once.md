@@ -49,11 +49,16 @@ billed, with the usage reported or retrieved later; or unknown, which
 counts the whole hold. A spend past the hold is counted in full and
 logged as an error.
 
-**A refused loop parks on the budget, and wakes by itself.** The park
-names the breach that binds longest and tries again when the last of the
-breached windows resets. A park with a retry time lands, with the
-session's write, a `WAKE_SESSION` work item that waits in the queue until
-then. A raised budget lands a `WAKE_SESSIONS` item that wakes every
+**A refused loop parks on the budget, and wakes by itself.** Each breach
+clears one of three ways. Room that open holds take frees when they
+settle, so where what the window spent leaves room for the call, the park
+tries again soon, never after the reset. A window's reset clears a call
+the line's amount holds at all. A call whose worst case alone passes the
+amount, a window that never resets, or a missing price waits on a
+person's raise or price: no retry time. The park tries again when the last
+of its breaches can have cleared, and names the breach that binds
+longest. A park with a retry time lands, with the session's write, a
+`WAKE_SESSION` work item that waits in the queue until then. A raised budget lands a `WAKE_SESSIONS` item that wakes every
 session of the org parked on a budget. Each wake writes the engine's
 `unlock` control, and the run that takes the session up asks its gates
 again.

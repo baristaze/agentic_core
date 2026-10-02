@@ -29,6 +29,7 @@ class Breach(Platform):
     unit: AmountUnit
     amount: int  # the line's amount in this unit
     committed: int  # what the window spent and holds already
+    held: int  # of that, what calls not yet settled hold
     exposure: int | None  # the call's worst case in this unit; None when its cost is unknown
     action: BreachAction
     needed: int | None  # the amount that clears it, for a raise

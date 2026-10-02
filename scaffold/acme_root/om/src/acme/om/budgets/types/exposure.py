@@ -5,14 +5,16 @@ The prompt's size is the provider's count or a proven upper bound, never a
 local estimate, and the type has no third way to say it. The output bound is
 the most the request lets the model write. Thinking billed outside that
 bound is a figure of its own, and every tool the provider runs itself names
-the most calls the request lets it make, so its fees have a bound too."""
+the most calls the request lets it make and the most input one call may add, so its fees
+and the input it brings have a bound too."""
 
 from enum import StrEnum
 from typing import Self
 
 from pydantic import Field, model_validator
 
-from acme.om.base import FrozenMapping, Platform
+from acme.om.base import Platform
+from acme.om.budgets.types.budget import MAX_KEY
 
 
 class PromptCount(StrEnum):
@@ -35,18 +37,37 @@ class PromptSize(Platform):
     counted_by: PromptCount
 
 
+class ProviderTool(Platform):
+    """A tool the provider runs itself, as a request enables it: the most
+    calls it may make, and the most input tokens one call may add, such as
+    a search's results, which the provider bills as input on top of its fee."""
+
+    name: str = Field(min_length=1, max_length=MAX_KEY)
+    calls: int = Field(ge=0)
+    input_per_call: int = Field(ge=0)
+
+
 class CallShape(Platform):
     prompt: PromptSize
     cache: CacheWrite = CacheWrite.NONE  # the prompt cache the request writes
     output_bound: int = Field(ge=1)  # the most output tokens the request allows
     thinking_outside: int = Field(default=0, ge=0)  # thinking billed beyond the output bound
-    provider_tools: FrozenMapping = Field(default_factory=dict, validate_default=True)
-    """Each tool the provider runs itself, by name, and the most calls the
-    request lets it make: `{"web_search": 5}`."""
+    provider_tools: tuple[ProviderTool, ...] = ()
 
     @model_validator(mode="after")
-    def _each_tool_has_a_bound(self) -> Self:
-        for name, calls in self.provider_tools.items():
-            if not isinstance(calls, int) or isinstance(calls, bool) or calls < 0:
-                raise ValueError(f"provider tool {name} names no bound on its calls")
+    def _one_bound_a_tool(self) -> Self:
+        names = [tool.name for tool in self.provider_tools]
+        if len(set(names)) != len(names):
+            raise ValueError("a provider tool has one bound in a call")
         return self
+
+    @property
+    def tool_input(self) -> int:
+        """The most input tokens the provider's own tools may add."""
+        return sum(tool.calls * tool.input_per_call for tool in self.provider_tools)
+
+    @property
+    def input_bound(self) -> int:
+        """The most input tokens the call may be billed: the prompt and what
+        the provider's tools may add to it."""
+        return self.prompt.tokens + self.tool_input

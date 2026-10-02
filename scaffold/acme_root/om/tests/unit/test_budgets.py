@@ -21,6 +21,7 @@ from acme.om.budgets.impl.pricing import LIST_PRICES, PricingTableImpl
 from acme.om.budgets.pricing import ModelPrice, PriceTable, PriceTier, Rates
 from acme.om.budgets.rules import (
     EPOCH,
+    HOLD_RETRY,
     OWN_AMOUNT_UNLOCK,
     PRICE_UNLOCK,
     budget_park,
@@ -39,7 +40,13 @@ from acme.om.budgets.types.budget import (
     BudgetWindow,
     WindowKind,
 )
-from acme.om.budgets.types.exposure import CacheWrite, CallShape, PromptCount, PromptSize
+from acme.om.budgets.types.exposure import (
+    CacheWrite,
+    CallShape,
+    PromptCount,
+    PromptSize,
+    ProviderTool,
+)
 from acme.om.budgets.types.hold import (
     Billed,
     BillUnknown,
@@ -160,14 +167,19 @@ def shape(
     *,
     cache: CacheWrite = CacheWrite.NONE,
     thinking: int = 0,
-    tools: dict[str, int] | None = None,
+    tools: dict[str, tuple[int, int]] | None = None,
 ) -> CallShape:
+    """A call's shape; `tools` names each provider tool's most calls and the
+    most input one call may add."""
     return CallShape(
         prompt=PromptSize(tokens=prompt, counted_by=PromptCount.PROVIDER),
         cache=cache,
         output_bound=output,
         thinking_outside=thinking,
-        provider_tools=tools or {},
+        provider_tools=tuple(
+            ProviderTool(name=name, calls=calls, input_per_call=each)
+            for name, (calls, each) in (tools or {}).items()
+        ),
     )
 
 
@@ -186,22 +198,30 @@ def shape(
         # Thinking at its own rate, inside the output bound and outside it.
         ("thinker", shape(1_000, 2_000, thinking=8_000), 1_250 + 24_000 + 96_000),
         # The provider's own tool: its fee times the most calls it may make.
-        ("searcher", shape(10_000, 1_000, tools={"web_search": 5}), 45_000 + 50_000),
+        ("searcher", shape(10_000, 1_000, tools={"web_search": (5, 0)}), 45_000 + 50_000),
+        # And the input its calls may add, at the input rate: 10k + 5 x 2k.
+        ("searcher", shape(10_000, 1_000, tools={"web_search": (5, 2_000)}), 125_000),
         ("free", shape(10_000, 1_000), 0),
     ],
 )
 def test_the_hold_covers_the_worst_case(model: str, call: CallShape, cost: int) -> None:
     exposure = call_exposure(call, PRICES[model])
     assert exposure.cost_micros == cost
-    assert exposure.tokens == call.prompt.tokens + call.output_bound + call.thinking_outside
+    assert exposure.tokens == call.input_bound + call.output_bound + call.thinking_outside
 
 
 def billed_at(
-    price: ModelPrice, cache: CacheWrite, prompt: tuple[int, int, int], output: int, thinking: int
+    price: ModelPrice,
+    cache: CacheWrite,
+    prompt: tuple[int, int, int],
+    output: int,
+    thinking: int,
+    searches: int = 0,
 ) -> int:
-    """What a usage costs at the rates that apply to it: the prompt split into
+    """What a usage costs at the rates that apply to it: the input split into
     plain, cache read, and cache write tokens, the writes at the rate of the
-    cache the request wrote."""
+    cache the request wrote, the tier chosen on the whole input, and the fee
+    of each search the provider ran."""
     plain, read, written = prompt
     tiers = [t for t in price.tiers if sum(prompt) > t.above]
     rates = tiers[-1].rates if tiers else price.rates
@@ -213,7 +233,8 @@ def billed_at(
         + output * rates.output
         + thinking * (rates.output if rates.thinking is None else rates.thinking)
     )
-    return -(-per_token // MILLION)
+    fees = searches * int(price.tool_fees.get("web_search", 0))
+    return -(-per_token // MILLION) + fees
 
 
 @pytest.mark.parametrize(
@@ -222,25 +243,33 @@ def billed_at(
     + [(row.provider, row.model) for row in LIST_PRICES.rows],
 )
 def test_no_usage_the_shape_allows_costs_more_than_its_hold(provider: str, model: str) -> None:
-    """Whatever mix of plain, cached, and written prompt tokens the provider
-    reports, and whatever output and thinking up to their bounds, the usage
-    costs no more than the hold: over the rows above and every row of the
-    list table."""
+    """Whatever mix of plain, cached, and written input tokens the provider
+    reports, whatever output and thinking up to their bounds, and, where the
+    model's provider runs a search, up to three searches each adding up to
+    5k input tokens, which can carry the call past a tier, the usage costs no
+    more than the hold: over the rows above and every row of the list table."""
     price = PRICES[model] if provider == "table" else PricingTableImpl().price_of(provider, model)
     assert price is not None
-    for size, cache in product((1_000, 199_999, 200_001, 300_000), CacheWrite):
-        call = shape(size, 4_000, cache=cache, thinking=2_000)
+    calls, each = (3, 5_000) if "web_search" in price.tool_fees else (0, 0)
+    tools = {"web_search": (calls, each)} if calls else None
+    sizes = (1_000, 199_999, 200_001, 260_000, 268_000, 300_000)
+    for size, cache in product(sizes, CacheWrite):
+        call = shape(size, 4_000, cache=cache, thinking=2_000, tools=tools)
         hold = call_exposure(call, price).cost_micros
         if hold is None:
             continue  # no rate for that cache: the gate refuses it where cost binds
-        splits = [(size, 0, 0), (0, size, 0)]
-        if cache is not CacheWrite.NONE:
-            splits += [(0, 0, size), (size // 2, 0, size - size // 2)]
+        # The searches run: none, some with part of their input, or all with all of it.
+        runs = {(0, 0), (1, each // 2), (calls, each), (calls, calls * each)} if calls else {(0, 0)}
         # The output bound written as text or as thinking, and thinking beyond it.
         turns = [(0, 0), (4_000, 0), (4_000, 2_000), (0, 6_000)]
-        for prompt, (output, thinking) in product(splits, turns):
-            billed = billed_at(price, cache, prompt, output, thinking)
-            assert billed <= hold, (model, size, cache, prompt)
+        for (searches, added), (output, thinking) in product(runs, turns):
+            total = size + added
+            splits = [(total, 0, 0), (0, total, 0)]
+            if cache is not CacheWrite.NONE:
+                splits += [(0, 0, total), (total // 2, 0, total - total // 2)]
+            for prompt in splits:
+                billed = billed_at(price, cache, prompt, output, thinking, searches)
+                assert billed <= hold, (model, size, cache, prompt, searches)
 
 
 ADAPTER_MODELS = [
@@ -280,8 +309,22 @@ def test_the_list_table_prices_every_model_the_adapters_name_and_no_other() -> N
         (
             "openai",
             "gpt-6-astra",
-            shape(270_000, 1_000, tools={"web_search": 3}),
+            shape(270_000, 1_000, tools={"web_search": (3, 0)}),
             2_700_000 + 50_000 + 30_000,
+        ),
+        # Three searches that may add 10k each carry it past: the long rates.
+        (
+            "openai",
+            "gpt-6-astra",
+            shape(270_000, 1_000, tools={"web_search": (3, 10_000)}),
+            6_000_000 + 75_000 + 30_000,
+        ),
+        # 20k prompt and five searches of up to 10k at 4, 8k out at 20.
+        (
+            "anthropic",
+            "claude-opus-5-5",
+            shape(20_000, 8_000, tools={"web_search": (5, 10_000)}),
+            280_000 + 160_000 + 50_000,
         ),
         # The provider keeps no longer cache: its write has no rate.
         ("openai", "gpt-6-luna", shape(1_000, 1_000, cache=CacheWrite.LONG), None),
@@ -295,7 +338,7 @@ def test_the_hold_over_the_list_table(
 
 def test_with_no_price_the_cost_is_unknown_and_the_tokens_still_count() -> None:
     assert call_exposure(shape(10_000, 1_000), None) == Spend(cost_micros=None, tokens=11_000)
-    unpriced_tool = shape(10_000, 1_000, tools={"code_run": 1})
+    unpriced_tool = shape(10_000, 1_000, tools={"code_run": (1, 0)})
     assert call_exposure(unpriced_tool, PRICES["searcher"]).cost_micros is None
 
 
@@ -305,7 +348,19 @@ def test_a_prompt_size_is_the_providers_count_or_a_proven_bound_and_a_tool_has_a
         PromptSize.model_validate({"tokens": 5, "counted_by": "estimate"})
     unbounded = {"prompt": {"tokens": 10, "counted_by": "provider"}, "output_bound": 10}
     with pytest.raises(ValidationError):
-        CallShape.model_validate({**unbounded, "provider_tools": {"web_search": None}})
+        CallShape.model_validate(
+            {**unbounded, "provider_tools": [{"name": "web_search", "calls": 5}]}
+        )
+    with pytest.raises(ValidationError, match="one bound"):
+        CallShape.model_validate(
+            {
+                **unbounded,
+                "provider_tools": [
+                    {"name": "web_search", "calls": 1, "input_per_call": 1},
+                    {"name": "web_search", "calls": 2, "input_per_call": 1},
+                ],
+            }
+        )
 
 
 def test_a_jobs_worst_case_is_its_rate_times_its_deadline() -> None:
@@ -516,17 +571,26 @@ async def test_a_hold_settles_once_and_a_spend_past_it_is_counted_and_alarmed(
 
 
 def breach(
-    budget_id: UUID | None, resets_at: datetime | None, action: BreachAction = BreachAction.RAISE
+    budget_id: UUID | None,
+    resets_at: datetime | None,
+    action: BreachAction = BreachAction.RAISE,
+    *,
+    amount: int = 1_000,
+    spent: int = 900,
+    held: int = 0,
+    exposure: int = 500,
 ) -> Breach:
+    priced = action is not BreachAction.PRICE
     return Breach(
         budget_id=budget_id,
         scope=None if budget_id is None else BudgetScope(kind=BudgetScopeKind.SESSION, key="s"),
         unit=AmountUnit.COST,
-        amount=1,
-        committed=1,
-        exposure=None if action is BreachAction.PRICE else 1,
+        amount=amount,
+        committed=spent + held,
+        held=held,
+        exposure=exposure if priced else None,
         action=action,
-        needed=None if action is BreachAction.PRICE else 2,
+        needed=spent + held + exposure if priced else None,
         resets_at=resets_at,
     )
 
@@ -535,15 +599,44 @@ def test_a_budget_parks_until_its_last_window_resets_or_a_person_raises_it() -> 
     day, month = new_id(), new_id()
     tomorrow, next_month = AT + timedelta(days=1), AT + timedelta(days=24)
     both = Refusal(breaches=(breach(month, next_month), breach(day, tomorrow)))
-    park = budget_park(both)
+    park = budget_park(both, AT)
     assert (park.reason, park.unlock, park.retry_at) == (ParkReason.BUDGET, str(month), next_month)
     life = new_id()
-    forever = budget_park(Refusal(breaches=(breach(day, tomorrow), breach(life, None))))
+    forever = budget_park(Refusal(breaches=(breach(day, tomorrow), breach(life, None))), AT)
     assert (forever.unlock, forever.retry_at) == (str(life), None)
-    own = budget_park(Refusal(breaches=(breach(None, None),)))
+    own = budget_park(Refusal(breaches=(breach(None, None),)), AT)
     assert (own.unlock, own.retry_at) == (OWN_AMOUNT_UNLOCK, None)
-    unpriced = budget_park(Refusal(breaches=(breach(day, tomorrow, BreachAction.PRICE),)))
+    unpriced = budget_park(Refusal(breaches=(breach(day, tomorrow, BreachAction.PRICE),)), AT)
     assert (unpriced.unlock, unpriced.retry_at) == (PRICE_UNLOCK, None)
+
+
+def test_a_call_no_window_can_hold_waits_on_a_person() -> None:
+    """A worst case past the line's amount is refused by every fresh window
+    too: only a raise clears it, so the park sets no time to try again."""
+    day = new_id()
+    tomorrow = AT + timedelta(days=1)
+    alone = breach(day, tomorrow, amount=500, spent=0, exposure=800)
+    park = budget_park(Refusal(breaches=(alone,)), AT)
+    assert (park.unlock, park.retry_at) == (str(day), None)
+    with_reset = Refusal(breaches=(alone, breach(new_id(), tomorrow)))
+    assert budget_park(with_reset, AT).retry_at is None
+
+
+def test_a_call_open_holds_refuse_tries_again_soon_and_never_after_the_reset() -> None:
+    """A month's line of 1,000 with 600 held by a call not yet settled
+    refuses a call of 500, though what the month spent leaves room: its
+    settlement frees the room, so the park tries again soon, never at the
+    month's end. A window that resets sooner bounds it."""
+    month = new_id()
+    next_month = datetime(2026, 11, 1, tzinfo=UTC)
+    held = breach(month, next_month, spent=0, held=600, exposure=500)
+    assert budget_park(Refusal(breaches=(held,)), AT).retry_at == AT + HOLD_RETRY
+    in_a_second = AT + timedelta(seconds=1)
+    resetting = breach(month, in_a_second, spent=0, held=600, exposure=500)
+    assert budget_park(Refusal(breaches=(resetting,)), AT).retry_at == in_a_second
+    # What the month spent leaves no room, whatever the holds: the reset.
+    spent = breach(month, next_month, spent=600, held=100, exposure=500)
+    assert budget_park(Refusal(breaches=(spent,)), AT).retry_at == next_month
 
 
 # The budgets manager.

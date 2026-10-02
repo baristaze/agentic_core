@@ -3,7 +3,7 @@ breaches of a hold, how a hold settles, and the park a refusal asks for.
 Values in, values out; no clock, no storage. Both ledger impls ask
 `breaches` under their lock before they write."""
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -35,6 +35,10 @@ PRICE_UNLOCK = "price"
 
 OWN_AMOUNT_UNLOCK = "own_amount"
 """A budget park's unlock when the call passes the request's own amount."""
+
+HOLD_RETRY = timedelta(seconds=30)
+"""How soon a loop refused only by open holds asks again: a call's hold
+settles when the call ends, and a settlement frees the room it held."""
 
 TallyKey = tuple[UUID, datetime]
 """A line's tally: its budget and the start of its window."""
@@ -104,11 +108,11 @@ def _ceil(tokens: int, rate: int, per: int = PER_MILLION) -> int:
     return -(-tokens * rate // per)
 
 
-def _highest(price: ModelPrice, prompt_tokens: int) -> Rates:
-    """The highest of each rate that can apply to a prompt of this size: the
-    base rates and every tier the prompt passes. A tier raises the output
+def _highest(price: ModelPrice, input_tokens: int) -> Rates:
+    """The highest of each rate that can apply to a call of this much input:
+    the base rates and every tier it passes. A tier raises the output
     rate too, so each rate is taken at its highest across them."""
-    applying = [price.rates, *(t.rates for t in price.tiers if prompt_tokens > t.above)]
+    applying = [price.rates, *(t.rates for t in price.tiers if input_tokens > t.above)]
     long_writes = [r.cache_write_long for r in applying]
     return Rates(
         input=max(r.input for r in applying),
@@ -123,21 +127,24 @@ def _highest(price: ModelPrice, prompt_tokens: int) -> Rates:
 
 
 def call_exposure(shape: CallShape, price: ModelPrice | None) -> Spend:
-    """A model call's worst case: every prompt token at the highest input rate
+    """A model call's worst case: every input token at the highest input rate
     that can apply (the write of the cache the request writes, the tier the
-    prompt can pass), the whole output bound at the highest rate a token
+    input can pass), the whole output bound at the highest rate a token
     inside it can be billed at (text, or thinking the bound holds), thinking
     billed outside that bound at the highest thinking rate, and each provider
-    tool's fee times the most calls it may make. Its tokens are the
-    prompt, the output bound, and the thinking beyond it. With no price, a
-    long cache the price names no write for, or a provider tool it names no
-    fee for, the cost is unknown."""
-    tokens = shape.prompt.tokens + shape.output_bound + shape.thinking_outside
+    tool's fee times the most calls it may make. The input is the prompt and
+    the most the provider's tools may add, which both providers bill as input
+    and which can carry a call past a tier. Its tokens are the input, the
+    output bound, and the thinking beyond it. With no price, a long cache
+    the price names no write for, or a provider tool it names no fee for,
+    the cost is unknown."""
+    inputs = shape.input_bound
+    tokens = inputs + shape.output_bound + shape.thinking_outside
     if price is None:
         return Spend(cost_micros=None, tokens=tokens)
-    if any(name not in price.tool_fees for name in shape.provider_tools):
+    if any(tool.name not in price.tool_fees for tool in shape.provider_tools):
         return Spend(cost_micros=None, tokens=tokens)
-    rates = _highest(price, shape.prompt.tokens)
+    rates = _highest(price, inputs)
     match shape.cache:
         case CacheWrite.NONE:
             input_rate = rates.input
@@ -149,10 +156,10 @@ def call_exposure(shape: CallShape, price: ModelPrice | None) -> Spend:
             input_rate = max(rates.input, rates.cache_write_long)
     thinking_rate = rates.output if rates.thinking is None else rates.thinking
     cost = (
-        _ceil(shape.prompt.tokens, input_rate)
+        _ceil(inputs, input_rate)
         + _ceil(shape.output_bound, max(rates.output, thinking_rate))
         + _ceil(shape.thinking_outside, thinking_rate)
-        + sum(int(price.tool_fees[name]) * int(n) for name, n in shape.provider_tools.items())
+        + sum(int(price.tool_fees[tool.name]) * tool.calls for tool in shape.provider_tools)
     )
     return Spend(cost_micros=cost, tokens=tokens)
 
@@ -197,6 +204,7 @@ def breaches(hold: Hold, tallies: Mapping[TallyKey, Tally]) -> tuple[Breach, ...
                         unit=unit,
                         amount=amount,
                         committed=committed_of(tally, unit),
+                        held=held_of(tally, unit),
                         exposure=hold.exposure.of(unit),
                         action=action,
                         needed=needed,
@@ -218,6 +226,7 @@ def breaches(hold: Hold, tallies: Mapping[TallyKey, Tally]) -> tuple[Breach, ...
                         unit=unit,
                         amount=amount,
                         committed=0,
+                        held=0,
                         exposure=hold.exposure.of(unit),
                         action=action,
                         needed=needed,
@@ -242,6 +251,11 @@ def committed_of(tally: Tally, unit: AmountUnit) -> int:
     if unit is AmountUnit.COST:
         return tally.spent_cost_micros + tally.held_cost_micros
     return tally.spent_tokens + tally.held_tokens
+
+
+def held_of(tally: Tally, unit: AmountUnit) -> int:
+    """What calls not yet settled hold in a window, in one unit."""
+    return tally.held_cost_micros if unit is AmountUnit.COST else tally.held_tokens
 
 
 def refusal_of(hold: Hold, tallies: Mapping[TallyKey, Tally]) -> Refusal | None:
@@ -334,30 +348,39 @@ def raises(before: Amount, after: Amount) -> bool:
 # The park a refusal asks for.
 
 
-def budget_park(refusal: Refusal) -> Park:
-    """A guard parks: the loop waits until the budgets are raised or their
-    windows reset. It names the breach that binds longest, a window that
-    never resets before any other, and tries again by itself when the last
-    of the windows resets; a breach no reset clears leaves no retry time,
-    since only a person's raise or price clears it."""
-    binding = sorted(refusal.breaches, key=_binds_until)
-    longest = binding[-1]
+def budget_park(refusal: Refusal, now: datetime, hold_retry: timedelta = HOLD_RETRY) -> Park:
+    """A guard parks: the loop waits until what refused it can have cleared.
+    Each breach clears in one of three ways: soon, when the calls that hold
+    room in its window settle, if what the window spent leaves room for the
+    call; when its window resets, if the line's amount holds the call at all;
+    or only by a person, who raises the amount or prices the model, when the
+    call's worst case alone passes the amount, a window never resets, or no
+    price bounds the call. The park tries again by itself when the last of
+    its breaches can have cleared, and never when one waits on a person. It
+    names the breach that binds longest."""
+    clears = [(_clears_at(breach, now, hold_retry), breach) for breach in refusal.breaches]
+    _, longest = max(clears, key=lambda pair: (pair[0] is None, pair[0] or EPOCH))
     if longest.action is BreachAction.PRICE:
         unlock = PRICE_UNLOCK
     elif longest.budget_id is None:
         unlock = OWN_AMOUNT_UNLOCK
     else:
         unlock = str(longest.budget_id)
-    return Park(reason=ParkReason.BUDGET, unlock=unlock, retry_at=_retry_at(binding))
+    times = [at for at, _ in clears]
+    retry_at = None if None in times else max(at for at in times if at is not None)
+    return Park(reason=ParkReason.BUDGET, unlock=unlock, retry_at=retry_at)
 
 
-def _binds_until(breach: Breach) -> tuple[int, datetime]:
-    """Order of how long a breach binds: one only a person clears last."""
-    clears_by_itself = breach.action is BreachAction.RAISE and breach.resets_at is not None
-    return (0, breach.resets_at or EPOCH) if clears_by_itself else (1, EPOCH)
-
-
-def _retry_at(binding: Sequence[Breach]) -> datetime | None:
-    if any(b.action is not BreachAction.RAISE or b.resets_at is None for b in binding):
+def _clears_at(breach: Breach, now: datetime, hold_retry: timedelta) -> datetime | None:
+    """The earliest a breach can clear without a person, or None when only
+    a person clears it."""
+    if breach.action is not BreachAction.RAISE or breach.budget_id is None:
         return None
-    return max(b.resets_at for b in binding if b.resets_at is not None)
+    exposure = breach.exposure or 0
+    if exposure > breach.amount:
+        return None  # a fresh window refuses it again
+    if breach.committed - breach.held + exposure <= breach.amount:
+        # Open holds take the room; their settlements free it.
+        soon = now + hold_retry
+        return soon if breach.resets_at is None else min(soon, breach.resets_at)
+    return breach.resets_at

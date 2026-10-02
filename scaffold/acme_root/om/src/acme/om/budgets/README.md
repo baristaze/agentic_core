@@ -18,7 +18,8 @@ thing [Acme is made of](../../../../README.md).
 - **Hold**: a call's worst case, reserved on every budget of its scopes
   before the call. The worst case is the prompt at the highest rate that
   can apply, the whole output bound, thinking billed beyond it, and the
-  fees of the provider's own tools. A job's is its rate until its
+  fees of the provider's own tools with the input they may add, which can
+  carry a call past a long-context threshold. A job's is its rate until its
   deadline.
 - **Refusal**: the answer when a call does not fit. It lists every
   budget it breaches, each with the one action that clears it and when

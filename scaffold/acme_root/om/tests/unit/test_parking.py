@@ -17,15 +17,21 @@ from acme.infra.impl.local import InfraLocalImpl
 from acme.om.agent_sessions.limits import step_guard_park
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
 from acme.om.base import new_id, utcnow
-from acme.om.budgets.rules import budget_park
+from acme.om.budgets.rules import HOLD_RETRY, budget_park, window_bounds
 from acme.om.budgets.types.amount import Amount, AmountUnit, Spend
 from acme.om.budgets.types.breach import Breach, BreachAction, Refusal
-from acme.om.budgets.types.budget import BudgetScope, BudgetScopeKind
-from acme.om.budgets.types.hold import HoldRequest
+from acme.om.budgets.types.budget import BudgetScope, BudgetScopeKind, WindowKind
+from acme.om.budgets.types.hold import Billed, Hold, HoldRequest
 from acme.om.context import Role, TenantContext
 from acme.om.exceptions import StaleWriter
 from acme.om.root import Managers, build_managers
-from acme.om.steps.types.header import ControlCommand, ControlHeader, Park, ParkedHeader, ParkReason
+from acme.om.steps.types.header import (
+    ControlCommand,
+    ControlHeader,
+    Park,
+    ParkedHeader,
+    ParkReason,
+)
 from acme.om.steps.types.step import Actor, StepType
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
@@ -102,7 +108,7 @@ async def test_a_park_resumes_by_itself_once_its_retry_time_comes(engine: Engine
     session, epoch, loop = await running(engine, ctx)
     # A refusal whose window resets now: the retry time has come.
     reset = utcnow() - timedelta(seconds=1)
-    park = budget_park(refusal_resetting_at(reset))
+    park = budget_park(refusal_resetting_at(reset), utcnow())
     await engine.managers.agent_sessions.park(ctx, session.id, epoch, loop, park)
     (item,) = engine.queued(WorkKind.WAKE_SESSION)
     assert item.available_at <= utcnow(), "its time has come"
@@ -156,6 +162,7 @@ def refusal_resetting_at(reset: datetime) -> Refusal:
                 unit=AmountUnit.COST,
                 amount=1,
                 committed=1,
+                held=0,
                 exposure=1,
                 action=BreachAction.RAISE,
                 needed=2,
@@ -165,10 +172,11 @@ def refusal_resetting_at(reset: datetime) -> Refusal:
     )
 
 
-async def test_a_refused_call_parks_on_its_budget_and_a_raise_wakes_it(engine: Engine) -> None:
-    """The gate refuses, the loop parks on the budget until its window
-    resets, and a person's raise wakes every session parked on a budget, and
-    none parked for anything else."""
+async def test_a_call_no_window_holds_parks_for_a_raise_which_wakes_it(engine: Engine) -> None:
+    """The gate refuses a call whose worst case alone passes the line, so no
+    reset clears it: the loop parks with no time to try again. A person's
+    raise wakes every session parked on a budget, and none parked for
+    anything else."""
     admin = context(Role.ADMIN)
     managers = engine.managers
     tenant = BudgetScope(kind=BudgetScopeKind.TENANT, key=str(admin.org_id))
@@ -187,12 +195,13 @@ async def test_a_refused_call_parks_on_its_budget_and_a_raise_wakes_it(engine: E
         refusal = await managers.budget_gate.authorize(admin, asked)
         assert isinstance(refusal, Refusal)
         parked = await managers.agent_sessions.park(
-            admin, session.id, epoch, loop, budget_park(refusal)
+            admin, session.id, epoch, loop, budget_park(refusal, utcnow())
         )
         assert parked.park is not None
         assert (parked.park.reason, parked.park.unlock) == (ParkReason.BUDGET, str(line.id))
-        assert parked.park.retry_at == refusal.breaches[0].resets_at
+        assert parked.park.retry_at is None, "a fresh window refuses it too"
         on_budget.append(session.id)
+    assert engine.queued(WorkKind.WAKE_SESSION) == []
     waiting, epoch, loop = await running(engine, admin)
     await managers.agent_sessions.park(admin, waiting.id, epoch, loop, step_guard_park())
 
@@ -208,3 +217,45 @@ async def test_a_refused_call_parks_on_its_budget_and_a_raise_wakes_it(engine: E
     assert still.status is SessionStatus.PARKED
     # The woken run asks the gate again, and now it fits.
     assert not isinstance(await managers.budget_gate.authorize(admin, asked), Refusal)
+
+
+async def test_a_call_open_holds_refuse_wakes_soon_and_fits_once_they_settle(
+    engine: Engine,
+) -> None:
+    """A month's line of 1,000 with 600 held by another session's call
+    refuses a call of 500. What the month spent leaves room, so the park
+    tries again soon, not at the month's end; the other call settles at 100,
+    and the woken loop's gate holds its call."""
+    admin = context(Role.ADMIN)
+    managers = engine.managers
+    tenant = BudgetScope(kind=BudgetScopeKind.TENANT, key=str(admin.org_id))
+    line = await managers.budgets.create_budget(
+        admin, make_budget(tenant.kind, tenant.key, window=WindowKind.MONTH, cost_micros=1_000)
+    )
+
+    def asked(cost: int) -> HoldRequest:
+        exposure = Spend(cost_micros=cost, tokens=10)
+        return HoldRequest(
+            spender_id=admin.user_id, scopes=(tenant,), exposure=exposure, purpose="main"
+        )
+
+    other = await managers.budget_gate.authorize(admin, asked(600))
+    assert isinstance(other, Hold)
+    session, epoch, loop = await running(engine, admin)
+    refusal = await managers.budget_gate.authorize(admin, asked(500))
+    assert isinstance(refusal, Refusal)
+    now = utcnow()
+    park = budget_park(refusal, now)
+    _, month_end = window_bounds(line.window, now)
+    assert park.retry_at == now + HOLD_RETRY
+    assert month_end is not None and now + HOLD_RETRY < month_end
+    await managers.agent_sessions.park(admin, session.id, epoch, loop, park)
+    (wake,) = engine.queued(WorkKind.WAKE_SESSION)
+    assert wake.available_at == park.retry_at
+
+    await managers.budget_gate.settle(
+        admin, other.id, Billed(usage=Spend(cost_micros=100, tokens=10))
+    )
+    woken = await managers.agent_sessions.wake_session(admin, session.id, park)
+    assert woken.status is SessionStatus.PENDING
+    assert isinstance(await managers.budget_gate.authorize(admin, asked(500)), Hold)
