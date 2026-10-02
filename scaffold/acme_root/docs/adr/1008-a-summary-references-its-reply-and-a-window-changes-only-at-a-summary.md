@@ -41,7 +41,10 @@ input no request has delivered, nor the latest exchange, whose tool
 results the next request is the first to read. It runs at most once
 before a request, and once more when the provider refuses that request
 as too long; a second refusal, or a window with nothing left to fold,
-ends the loop rather than compact again.
+ends the loop rather than compact again. A summary that fails is recorded
+and answers the control that asked for it; the window is then read as it
+is while it fits its model, and the summarizer is not asked again near
+the limit before the next summary.
 
 ## Consequences
 

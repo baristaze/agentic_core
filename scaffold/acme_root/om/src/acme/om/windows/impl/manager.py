@@ -90,12 +90,23 @@ class WindowsManagerImpl(WindowsManagerInterface):
             )
             return await self._hashed(ctx, session_id, draft)
         draft = self._main(steps, kind, fill, fill_set.version, plan)
-        due = rules.needs_compaction(draft.window, fill, self._policy)
-        if due or rules.compact_requested(steps, rules.latest_summary(steps)):
-            # Once per render: a compaction folds at least one exchange, and
-            # the next render compacts again if the window is still near its
-            # limit, so no render loops on its own window.
-            compacted = await self._compact(ctx, session_id, epoch, loop_id, steps, fill_set)
+        fits = rules.fits(draft.window, fill)
+        # Near its limit, a window compacts once, unless an attempt since the
+        # latest summary failed and the window still fits: then it is read
+        # uncompacted, and no summarizer is asked again until it no longer
+        # fits or a principal asks. Each render compacts at most once, and a
+        # compaction folds at least one exchange, so no render loops.
+        near = rules.needs_compaction(draft.window, fill, self._policy)
+        retried = rules.compaction_failed(steps) and fits
+        if (near and not retried) or rules.compact_requested(steps):
+            try:
+                compacted = await self._compact(ctx, session_id, epoch, loop_id, steps, fill_set)
+            except CompactionFailed:
+                # The attempt is recorded, and answers the control. A window
+                # that still fits is read as it is; one that does not ends here.
+                if not fits:
+                    raise
+                compacted = None
             if compacted is not None:
                 draft = self._main(compacted, kind, fill, fill_set.version, plan)
         return await self._hashed(ctx, session_id, draft)
@@ -272,10 +283,10 @@ class WindowsManagerImpl(WindowsManagerInterface):
         try:
             reply = await reply_of(self._providers.get(summarizer.provider).stream(call))
         except ModelCallFailed as failed:
-            # Released only when the provider refused before it processed the
-            # call: a status and nothing streamed. Anything else is billed.
-            refused = failed.status is not None and failed.partial is None
-            await self._gate.settle(ctx, hold, None, billed=not refused)
+            # Nothing streamed back: the call was never sent, or the provider
+            # refused it before processing it, so the hold is released. A
+            # stream that broke after it began is billed.
+            await self._gate.settle(ctx, hold, None, billed=failed.partial is not None)
             if failed.partial is not None:
                 await self._steps.append_steps(
                     ctx, session_id, epoch, [_response(request, failed.partial)]

@@ -41,10 +41,14 @@ class WindowsManagerInterface(ABC):
         compacts first, once, when it nears its limit (a switch to a smaller
         window included) or a `compact` control waits; the compaction's steps
         are appended under `epoch` in the loop `loop_id`, and a run that lost
-        its claim is `StaleWriter`. A main request over a tool call still
-        open is `PreconditionFailed`. A side role reads a consistent suffix
-        sized to its own fill and never compacts. `plan` is the agent's
-        current plan, which renders last."""
+        its claim is `StaleWriter`. A compaction whose summary failed is
+        recorded and answers the control; the window is then read
+        uncompacted while it fits its model, and the summarizer is not asked
+        again near the limit before the next summary. A window that fits no
+        more and cannot be compacted is `CompactionFailed`. A main request
+        over a tool call still open is `PreconditionFailed`. A side role
+        reads a consistent suffix sized to its own fill and never compacts.
+        `plan` is the agent's current plan, which renders last."""
         ...
 
     @abstractmethod

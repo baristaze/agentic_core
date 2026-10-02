@@ -11,9 +11,19 @@ from contracts.histories import MAIN_FILL, History
 
 from acme.integrations.model_providers.calls import Message, ModelCall, ToolSpec
 from acme.integrations.model_providers.types import ProviderName, Usage
+from acme.om.base import new_id
 from acme.om.models.types.fill import Fill
-from acme.om.steps.types.content import TextBlock, ToolResultBlock
-from acme.om.steps.types.step import Actor, Origin, Step
+from acme.om.steps.types.content import (
+    Attachment,
+    Children,
+    Content,
+    DocumentBlock,
+    ImageBlock,
+    TextBlock,
+    ToolResultBlock,
+)
+from acme.om.steps.types.header import InputHeader
+from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.windows import rules
 from acme.om.windows.types.kind import KindPrompts
 from acme.om.windows.types.policy import CompactionPolicy
@@ -325,3 +335,46 @@ def test_a_bulky_result_read_before_the_summary_renders_as_a_stub_with_its_handl
         if isinstance(block, ToolResultBlock) and block.tool_use_id == read_use.id
     ]
     assert shown[0].parts == bulky.as_tool_response().parts, "whole until a summary follows"
+
+
+def test_a_file_an_input_carries_renders_as_data_labelled_with_its_origin() -> None:
+    history = History()
+    report = Attachment(
+        id=new_id(), name="drop-report.pdf", media_type="application/pdf", size=9, hash="k:1"
+    )
+    plot = Attachment(id=new_id(), name="grip.png", media_type="image/png", size=9, hash="k:2")
+    asked = history.add(
+        type=StepType.MESSAGE,
+        actor=Actor.PERSON,
+        origin=Origin.PORTAL,
+        header=InputHeader(),
+        content=Content(
+            blocks=(TextBlock(text="See the plot."), ImageBlock(attachment_id=plot.id))
+        ),
+        children=Children(attachments=(plot,)),
+    )
+    event = history.add(
+        type=StepType.EVENT,
+        actor=Actor.EXTERNAL,
+        origin=Origin.INTEGRATION,
+        header=InputHeader(),
+        content=Content(
+            blocks=(TextBlock(text="A report."), DocumentBlock(attachment_id=report.id))
+        ),
+        children=Children(attachments=(report,)),
+    )
+    draft = render(history.steps)
+    (turn,) = draft.call.messages
+    said, plot_label, image, quoted, report_label, document = turn.blocks
+    assert said == TextBlock(text="See the plot.") and image == ImageBlock(attachment_id=plot.id)
+    assert isinstance(plot_label, TextBlock) and plot_label.text == (
+        f'<data origin="file" of="message" seq="{asked.seq}" step="{asked.id}" '
+        'media_type="image/png">\ngrip.png\n</data>'
+    )
+    assert isinstance(quoted, TextBlock) and quoted.text.startswith('<data origin="event"')
+    assert isinstance(report_label, TextBlock) and report_label.text.startswith(
+        f'<data origin="file" of="event" seq="{event.seq}" step="{event.id}"'
+    )
+    assert document == DocumentBlock(attachment_id=report.id)
+    assert 'origin="file"' in draft.call.system[-1].text, "the notice names a file as data"
+    assert draft.attachments == (plot, report)

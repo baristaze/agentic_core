@@ -61,7 +61,10 @@ reads, sized for the model that reads it.
   gate before it starts, and a run that lost its claim writes nothing.
 - **Compaction never loops.** A request compacts at most once before it
   is sent, and once more if the provider refuses it as too long; a
-  second refusal ends the loop.
+  second refusal ends the loop. A summary the summarizer refuses or cuts
+  short is recorded, and the window is read as it is while it fits; the
+  summarizer is not asked again before the next summary unless the window
+  fits no more or a person asks.
 - **An artifact is written once,** and belongs to one org and one
   session: another org, or another session, finds none.
 

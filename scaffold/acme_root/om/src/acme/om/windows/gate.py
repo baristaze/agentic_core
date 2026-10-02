@@ -27,7 +27,8 @@ class CallGateInterface(ABC):
         self, ctx: TenantContext, hold_id: UUID, usage: Usage | None, *, billed: bool
     ) -> None:
         """Closes the hold once: released when `billed` is False, which the
-        caller says only when the provider refused before it processed the
-        call; otherwise counted at `usage`, or at the whole hold when the
-        usage is unknown."""
+        caller says only when the call failed before the provider streamed
+        anything back: it was never sent, or the provider refused it before
+        processing it. Otherwise counted at `usage`, or at the whole hold when
+        the usage is unknown."""
         ...

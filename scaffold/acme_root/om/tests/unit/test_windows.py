@@ -422,9 +422,9 @@ async def test_a_side_role_overflow_is_not_compacted(engine: Engine) -> None:
 
 
 async def test_a_cut_summary_is_recorded_and_writes_no_summary(engine: Engine) -> None:
-    session = await a_session(engine, a_long_history())
+    session = await a_session(engine, a_long_history(turns=6))
     engine.summarizer.add(a_summary(stop_reason=StopReason.OUTPUT_LIMIT, truncated=True))
-    with pytest.raises(CompactionFailed):
+    with pytest.raises(CompactionFailed, match="not a whole summary"):
         await engine.windows.render_request(
             engine.ctx, session.id, session.epoch, session.loop_id, KIND
         )
@@ -447,6 +447,88 @@ async def test_a_summarizer_that_fails_before_it_streams_releases_its_hold(
     assert [(usage, billed) for _, usage, billed in engine.gate.settled] == [(None, False)]
     steps = await history_of(engine, session)
     assert steps[-1].type is StepType.MODEL_REQUEST, "persisted before the call, unanswered"
+
+
+def a_refusal() -> ModelReply:
+    return a_summary(text="I can't fold this record.", stop_reason=StopReason.REFUSAL)
+
+
+async def render_main(engine: Engine, session: Session) -> rules.RenderedRequest:
+    return await engine.windows.render_request(
+        engine.ctx, session.id, session.epoch, session.loop_id, KIND
+    )
+
+
+async def test_a_refused_summary_is_recorded_and_the_window_is_read_as_it_is(
+    engine: Engine,
+) -> None:
+    session = await a_session(engine, a_long_history(turns=3, size=1_450))
+    engine.summarizer.add(a_refusal(), a_summary())
+    first = await render_main(engine, session)
+    policy = CompactionPolicy()
+    assert rules.needs_compaction(first.window, NARROW, policy), "near its limit"
+    assert rules.fits(first.window, NARROW), "and still within its model's"
+    assert first.window.summary_id is None
+    steps = await history_of(engine, session)
+    refused = steps[-1]
+    assert isinstance(refused.header, ModelResponseHeader) and refused.as_text()
+    assert of_type(steps, StepType.SUMMARY) == []
+    again = await render_main(engine, session)
+    assert again.call == first.call and again.prompt_hash == first.prompt_hash
+    assert len(engine.summarizer.calls) == 1, "a failed attempt is not repeated, nor billed"
+    assert [billed for _, _, billed in engine.gate.settled] == [True]
+
+
+async def test_a_failed_attempt_answers_the_compact_control_that_asked_for_it(
+    engine: Engine,
+) -> None:
+    session = await a_session(engine, a_long_history(turns=2, size=100))
+    control = History(session.id).control(ControlCommand.COMPACT)
+    await engine.steps.append_inputs(engine.ctx, session.id, [control])
+    engine.summarizer.add(a_refusal(), a_summary())
+    first = await render_main(engine, session)
+    assert first.window.summary_id is None
+    await render_main(engine, session)
+    assert len(engine.summarizer.calls) == 1, "the control was answered"
+    asked_again = History(session.id).control(ControlCommand.COMPACT)
+    await engine.steps.append_inputs(engine.ctx, session.id, [asked_again])
+    compacted = await render_main(engine, session)
+    assert compacted.window.summary_id is not None and len(engine.summarizer.calls) == 2
+
+
+async def test_an_overflow_compacts_after_a_failed_attempt(engine: Engine) -> None:
+    session = await a_session(engine, a_long_history(turns=3, size=1_450))
+    engine.summarizer.add(a_refusal())
+    refused = await render_main(engine, session)
+    assert refused.window.summary_id is None
+    await record(engine, session, refused)
+    engine.summarizer.add(a_summary())
+    retry = await engine.windows.render_after_overflow(
+        engine.ctx, session.id, session.epoch, session.loop_id, KIND, refused
+    )
+    assert retry.overflow_retry and retry.window.summary_id is not None
+
+
+async def test_a_summarizer_call_that_never_left_the_process_releases_its_hold(
+    engine: Engine,
+) -> None:
+    session = await a_session(engine, a_long_history())
+    engine.summarizer.add(ScriptedFailure(kind=ErrorKind.CREDENTIAL, message="no key"))
+    with pytest.raises(ModelCallFailed):
+        await render_main(engine, session)
+    assert [(usage, billed) for _, usage, billed in engine.gate.settled] == [(None, False)]
+
+
+async def test_a_summary_whose_stream_broke_is_billed_and_recorded_cut(engine: Engine) -> None:
+    session = await a_session(engine, a_long_history())
+    arrived = a_summary(text="The grip", stop_reason=None, truncated=True)
+    engine.summarizer.add(ScriptedFailure(kind=ErrorKind.TRANSIENT, partial=arrived))
+    with pytest.raises(ModelCallFailed):
+        await render_main(engine, session)
+    assert [(usage, billed) for _, usage, billed in engine.gate.settled] == [(None, True)]
+    cut = (await history_of(engine, session))[-1]
+    assert isinstance(cut.header, ModelResponseHeader) and cut.header.truncated
+    assert cut.as_text() == "The grip"
 
 
 async def test_a_refused_gate_calls_no_model_and_writes_nothing(engine: Engine) -> None:
