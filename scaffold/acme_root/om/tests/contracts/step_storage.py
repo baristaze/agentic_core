@@ -112,7 +112,15 @@ def make_request(
         actor=Actor.ENGINE,
         origin=Origin.ENGINE,
         refs=carried,
-        header=ModelRequestHeader(role="main", spender=spender or a_person(), speaker=speaker),
+        header=ModelRequestHeader(
+            role="main",
+            spender=spender or a_person(),
+            speaker=speaker,
+            fill="anthropic/claude-sonnet-5-5",
+            fill_set_version=1,
+            left_edge=1,
+            prompt_hash="k:prompt",
+        ),
     )
 
 

@@ -41,9 +41,12 @@ TABLE_ROLES: dict[str, DatabaseRole] = {
     "budget_holds": DatabaseRole.ACTIVITY,
     "budget_settlements": DatabaseRole.ACTIVITY,
     "fill_sets": DatabaseRole.CORE,
+    "artifacts": DatabaseRole.ACTIVITY,
 }
 
-APPEND_ONLY_TABLES: frozenset[str] = frozenset({"steps", "budget_holds", "budget_settlements"})
+APPEND_ONLY_TABLES: frozenset[str] = frozenset(
+    {"steps", "budget_holds", "budget_settlements", "artifacts"}
+)
 """Tables whose rows are written once: the serving logins hold SELECT and
 INSERT on them and never UPDATE or DELETE. The migration that creates one
 takes the two back from the role's default privileges, and the login command

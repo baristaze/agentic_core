@@ -35,6 +35,7 @@ from contracts import (
     privacy_storage,
     step_storage,
     tenancy_storage,
+    window_storage,
     work_storage,
 )
 
@@ -124,6 +125,7 @@ CROSS_TENANT_CASES: dict[str, frozenset[str]] = {
     "PrivacyStorageInterface": privacy_storage.CROSS_TENANT_CASES,
     "StepStorageInterface": step_storage.CROSS_TENANT_CASES,
     "TenancyStorageInterface": tenancy_storage.CROSS_TENANT_CASES,
+    "WindowStorageInterface": window_storage.CROSS_TENANT_CASES,
     "WorkStorageInterface": work_storage.CROSS_TENANT_CASES,
 }
 """Which contract suite carries the cross-tenant cases of each storage

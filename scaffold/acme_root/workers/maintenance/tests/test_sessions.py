@@ -82,7 +82,15 @@ async def parked(container: WorkerContainer, ctx: TenantContext, park: Park) -> 
         actor=Actor.ENGINE,
         origin=Origin.ENGINE,
         refs=(message_id,),
-        header=ModelRequestHeader(role="main", spender=person, speaker=person),
+        header=ModelRequestHeader(
+            role="main",
+            spender=person,
+            speaker=person,
+            fill="anthropic/claude-sonnet-5-5",
+            fill_set_version=1,
+            left_edge=1,
+            prompt_hash="k:prompt",
+        ),
     )
     await steps.append_steps(ctx, session.id, epoch, [request_step])
     return await sessions.park(ctx, session.id, epoch, message_id, park)

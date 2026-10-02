@@ -368,3 +368,21 @@ class UnresolvedRole(ModelsException, ValidationFailed):
     session's eligibility admits."""
 
     code = "unresolved_model_role"
+
+
+class WindowsException(PlatformException): ...
+
+
+class ContextOverflow(WindowsException):
+    """A prompt the provider refused as too long once more after the one
+    compaction its request takes, or one with nothing left to fold. The loop
+    ends `errored`, with the evidence, rather than compact again."""
+
+    code = "context_overflow"
+
+
+class CompactionFailed(WindowsException):
+    """The summarizer's reply was cut, refused, or held no text. Its response
+    is recorded, no summary is written, and the window stays as it was."""
+
+    code = "compaction_failed"
