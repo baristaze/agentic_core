@@ -94,4 +94,4 @@ each Shape path, the Check line, and every identifier a lens quotes to
 the section it cites. That a lens stays inside its rule, stricter and
 never contrary, is held by review, not by a program.
 
-[g-lenses]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/lenses/README.md
+[g-lenses]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/lenses/README.md
