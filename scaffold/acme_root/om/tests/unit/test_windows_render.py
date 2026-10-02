@@ -274,21 +274,24 @@ def test_beyond_its_bound_the_pinned_zone_cites_each_message_it_came_from() -> N
         assert f'seq="{item.seq}" step="{item.step_id}" excerpt="true"' in block
 
 
-def test_only_a_principal_through_a_surface_or_a_parent_instructs() -> None:
+def test_only_a_principal_or_a_parent_instructs_and_only_their_messages_are_pinned() -> None:
     history = History()
     cases = {
         (Actor.PERSON, Origin.PORTAL): True,
         (Actor.PROGRAM, Origin.API): True,
         (Actor.PROGRAM, Origin.AUTOMATION): True,
         (Actor.AGENT, Origin.PARENT): True,
-        (Actor.PERSON, Origin.INTEGRATION): False,
         (Actor.EXTERNAL, Origin.API): False,
         (Actor.MODEL, Origin.ENGINE): False,
         (Actor.AGENT, Origin.API): False,
     }
     for (actor, origin), instructs in cases.items():
-        assert rules.is_instruction(history.message("go", actor, origin)) is instructs
+        said = history.message("go", actor, origin)
+        assert rules.is_instruction(said) is instructs
+        assert rules.pins(said) is instructs
     assert not rules.is_instruction(history.event("go"))
+    notice = history.changed("a person moved the arm")
+    assert rules.is_instruction(notice) and not rules.pins(notice), "a notice is never pinned"
 
 
 def test_an_input_a_cut_response_carried_is_delivered_again() -> None:
@@ -347,7 +350,7 @@ def test_a_file_an_input_carries_renders_as_data_labelled_with_its_origin() -> N
         type=StepType.MESSAGE,
         actor=Actor.PERSON,
         origin=Origin.PORTAL,
-        header=InputHeader(),
+        header=InputHeader(principal=history.person),
         content=Content(
             blocks=(TextBlock(text="See the plot."), ImageBlock(attachment_id=plot.id))
         ),
@@ -357,7 +360,7 @@ def test_a_file_an_input_carries_renders_as_data_labelled_with_its_origin() -> N
         type=StepType.EVENT,
         actor=Actor.EXTERNAL,
         origin=Origin.INTEGRATION,
-        header=InputHeader(),
+        header=InputHeader(principal=history.person),
         content=Content(
             blocks=(TextBlock(text="A report."), DocumentBlock(attachment_id=report.id))
         ),

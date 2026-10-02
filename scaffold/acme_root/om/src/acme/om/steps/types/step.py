@@ -9,9 +9,10 @@ shape, which stays readable, and its content, which is sealed at rest.
 
 A step is checked against its type when it is built, so a step that breaks
 its type's shape is refused there and never stored: the header its type
-fixes, the blocks its type may hold, `responds_to` on a response alone, and
-an attachment's placeholder for every block that names one, and the head
-and tail of a result kept as an artifact."""
+fixes, the blocks its type may hold, `responds_to` on a response alone, an
+attachment's placeholder for every block that names one, the agent named
+in the header of every step an agent produced, a tool request always
+among them, and the head and tail of a result kept as an artifact."""
 
 from collections.abc import Mapping
 from enum import StrEnum
@@ -32,7 +33,12 @@ from acme.om.steps.types.content import (
     ToolUseBlock,
     in_turn_order,
 )
-from acme.om.steps.types.header import InputHeader, StepHeader, ToolResponseHeader
+from acme.om.steps.types.header import (
+    InputHeader,
+    StepHeader,
+    ToolRequestHeader,
+    ToolResponseHeader,
+)
 
 
 class StepFamily(StrEnum):
@@ -258,6 +264,12 @@ def shape_refusal(step: Step) -> str | None:
         return "it references the response that asked for it"
     if step.id in step.refs or step.responds_to == step.id:
         return "it references itself"
+    header = step.header
+    agent = header.agent if isinstance(header, InputHeader | ToolRequestHeader) else None
+    if (step.actor is Actor.AGENT) != (agent is not None):
+        return "an agent's step names the agent in its header, and no other step names one"
+    if isinstance(header, ToolRequestHeader) and header.agent.session_id != step.session_id:
+        return "a tool request is the act of its own session's agent"
     if not step.content.is_plain():
         if step.children != Children():
             return f"its content is {step.content.state.value}, and its children with it"

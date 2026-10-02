@@ -4,6 +4,10 @@ from acme.infra.impl.local import InfraLocalImpl
 from acme.integrations.impl.configured import absent_integrations
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
+from acme.om.agents import AgentsManagerInterface
+from acme.om.agents.storage import AgentStorageInterface
+from acme.om.attribution import AttributionManagerInterface
+from acme.om.attribution.storage import AttributionStorageInterface
 from acme.om.budgets import BudgetGateInterface, BudgetsManagerInterface
 from acme.om.budgets.pricing import PricingInterface
 from acme.om.budgets.storage import BudgetStorageInterface, LedgerStorageInterface
@@ -54,6 +58,8 @@ async def test_memory_root_serves_every_storage() -> None:
     assert isinstance(root.get_orchestrations_storage(), OrchestrationsStorageInterface)
     assert isinstance(root.get_step_storage(), StepStorageInterface)
     assert isinstance(root.get_agent_session_storage(), AgentSessionStorageInterface)
+    assert isinstance(root.get_agent_storage(), AgentStorageInterface)
+    assert isinstance(root.get_attribution_storage(), AttributionStorageInterface)
     assert isinstance(root.get_privacy_storage(), PrivacyStorageInterface)
     assert isinstance(root.get_budget_storage(), BudgetStorageInterface)
     assert isinstance(root.get_ledger_storage(), LedgerStorageInterface)
@@ -124,6 +130,8 @@ def test_business_root_has_a_field_per_manager(tmp_path: Path) -> None:
     assert isinstance(managers.orchestrations, OrchestrationsManagerInterface)
     assert isinstance(managers.steps, StepsManagerInterface)
     assert isinstance(managers.agent_sessions, AgentSessionsManagerInterface)
+    assert isinstance(managers.attribution, AttributionManagerInterface)
+    assert isinstance(managers.agents, AgentsManagerInterface)
     assert isinstance(managers.privacy, PrivacyManagerInterface)
     assert isinstance(managers.budgets, BudgetsManagerInterface)
     assert isinstance(managers.budget_gate, BudgetGateInterface)

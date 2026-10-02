@@ -23,6 +23,15 @@ class AgentSessionStorageMemoryImpl(MemoryStorageBase, AgentSessionStorageInterf
     async def read_session(self, org_id: UUID, session_id: UUID) -> AgentSession | None:
         return self._get(self._sessions, org_id, session_id)
 
+    async def read_children(
+        self, org_id: UUID, parent_id: UUID, after: UUID | None, limit: int
+    ) -> list[AgentSession]:
+        return [
+            s
+            for s in self._rows(self._sessions, org_id)
+            if s.parent_id == parent_id and (after is None or s.id > after)
+        ][:limit]
+
     async def read_sessions(
         self, org_id: UUID, status: SessionStatus | None, after: UUID | None, limit: int
     ) -> list[AgentSession]:
@@ -63,6 +72,11 @@ class AgentSessionStorageMemoryImpl(MemoryStorageBase, AgentSessionStorageInterf
             for org_id, s in self._rows_across_tenants(self._sessions)
             if s.deleted_at is not None and s.deleted_at < deleted_before
         ][:limit]
+
+    async def tree_holds_others(self, org_id: UUID, root_id: UUID, session_id: UUID) -> bool:
+        return any(
+            s.root_id == root_id and s.id != session_id for s in self._rows(self._sessions, org_id)
+        )
 
     async def purge_session(self, org_id: UUID, session_id: UUID) -> bool:
         async with self._lock:

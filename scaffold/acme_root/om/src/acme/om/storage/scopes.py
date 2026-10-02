@@ -105,6 +105,8 @@ TABLE_SCOPES: dict[str, TableScope] = {
     "event_cursors": TableScope(ScopeKind.ORG),
     "orchestrations": TableScope(ScopeKind.ORG),
     "agent_sessions": TableScope(ScopeKind.ORG),
+    "agent_trees": TableScope(ScopeKind.ORG),
+    "session_authorities": TableScope(ScopeKind.ORG),
     "steps": TableScope(ScopeKind.ORG),
     "step_cursors": TableScope(ScopeKind.ORG),
     "session_privacy": TableScope(ScopeKind.ORG),

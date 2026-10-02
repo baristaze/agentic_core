@@ -7,6 +7,7 @@ that announces a change. That write may be late or lost, so it reads the
 steps from where it last stopped and is always rebuildable from them."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from uuid import UUID
 
 from acme.om.agent_sessions.types.agent_session import (
@@ -17,21 +18,48 @@ from acme.om.agent_sessions.types.agent_session import (
 from acme.om.context import TenantContext
 from acme.om.steps.types.header import Park, ParkReason
 
+SessionPurged = Callable[[UUID, UUID, UUID | None], Awaitable[None]]
+"""What other namespaces hold of a session, purged before its row: given its
+tenant, its id, and its tree's id when no other session of the tree is
+left, and None otherwise. The root binds it to attribution's and the agents'
+purges, which run under the purge login in that tenant."""
+
 
 class AgentSessionsManagerInterface(ABC):
     @abstractmethod
     async def create_session(self, ctx: TenantContext, session: AgentSession) -> AgentSession:
         """The create: the session lands idle, with no history yet, and is
-        announced. A session with a parent joins its parent's tree, and a
-        parent the tenant does not hold is `ValidationFailed`. The root, the
-        status, and the provenance are the manager's. An id written already
-        answers the session as stored."""
+        announced. A session with a parent joins its parent's tree, and one
+        handed over roots a tree of its own; a session to come from that the
+        tenant does not hold is `ValidationFailed`. What a session takes from
+        where it came is the manager's, read from that session's history as
+        it stands (`agent_sessions.rules.lineage`): its mark, and for a child
+        the cut of its tools, so no maker grants a child more than its parent
+        holds. The root, the depth, the status, and the provenance are the
+        manager's too. An id written already answers the session as
+        stored."""
         ...
 
     @abstractmethod
     async def get_session(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
         """A session of the tenant; one another tenant holds, or one marked
         deleted, is `NotFound`, as one that never existed is."""
+        ...
+
+    @abstractmethod
+    async def get_session_at_head(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
+        """The session with its speaker and its mark folded up to the head of
+        its history: the cache, then the steps after it. Nothing is written,
+        and the status and the version stay the cache's. What attribution
+        answers is read from it."""
+        ...
+
+    @abstractmethod
+    async def get_children(
+        self, ctx: TenantContext, parent_id: UUID, after: UUID | None, limit: int
+    ) -> AgentSessionPage:
+        """One page of the sessions `parent_id` spawned, by id, strictly
+        after `after`; `limit` is clamped."""
         ...
 
     @abstractmethod
@@ -122,8 +150,9 @@ class AgentSessionsManagerInterface(ABC):
         tenant and no principal: the sessions marked deleted longer ago than
         the retention, a batch at most a call. Each is claimed first, by a compare-and-set that makes
         its delete final, so an unmark that lands first keeps the session.
-        Then its history goes, a batch of steps at most a call, and its row
-        once the history is gone, both under the purge login. A session
+        Then its history goes, a batch of steps at most a call, and once the
+        history is gone, its authority, its tree when it is the tree's last
+        session, and its row, all under the purge login. A session
         marked within its retention, or never marked, is never taken: no
         purge runs on demand. Returns how many sessions it took up, so a
         whole batch says there may be more."""

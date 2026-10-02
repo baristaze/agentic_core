@@ -8,6 +8,7 @@ from acme.integrations.model_providers import ModelProvidersInterface, reply_of
 from acme.integrations.model_providers.calls import ModelReply
 from acme.integrations.model_providers.failures import ModelCallFailed
 from acme.integrations.model_providers.types import StopReason
+from acme.om.attribution import AttributionManagerInterface
 from acme.om.base import Platform, derived_id, new_id, utcnow
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import (
@@ -52,6 +53,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
         storage: WindowStorageInterface,
         steps: StepsManagerInterface,
         models: ModelsManagerInterface,
+        attribution: AttributionManagerInterface,
         providers: ModelProvidersInterface,
         buckets: BucketsInterface,
         gate: CallGateInterface,
@@ -62,6 +64,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
         self._storage = storage
         self._steps = steps
         self._models = models
+        self._attribution = attribution
         self._providers = providers
         self._buckets = buckets
         self._gate = gate
@@ -273,8 +276,14 @@ class WindowsManagerImpl(WindowsManagerInterface):
         )
         draft = rules.Draft(call, window, (), ())
         rendered = await self._hashed(ctx, session_id, draft)
-        request = rules.request_step(rendered, session_id, loop_id, new_id(), utcnow())
-        hold = await self._gate.authorize(ctx, session_id, SUMMARIZER, summarizer, call)
+        # The summarizer delivers nothing: it is paid for by the spender the
+        # latest model request named, as attribution answers for it.
+        latest = max((s.seq for s in steps if s.type is StepType.MODEL_REQUEST), default=0)
+        paid = await self._attribution.attribute_request(ctx, session_id, latest, latest)
+        request = rules.request_step(rendered, paid, session_id, loop_id, new_id(), utcnow())
+        hold = await self._gate.authorize(
+            ctx, session_id, paid.spender, SUMMARIZER, summarizer, call
+        )
         try:
             (request,) = await self._steps.append_steps(ctx, session_id, epoch, [request])
         except BaseException:

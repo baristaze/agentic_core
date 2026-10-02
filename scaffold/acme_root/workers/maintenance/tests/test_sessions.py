@@ -9,6 +9,7 @@ from uuid import UUID
 from worker_support import build_container, request, sign_in
 
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
+from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
 from acme.om.budgets.types.amount import Amount
 from acme.om.budgets.types.budget import Budget, BudgetScopeKind, WindowKind
@@ -52,9 +53,12 @@ async def parked(container: WorkerContainer, ctx: TenantContext, park: Park) -> 
             created_by=ctx.user_id,
             updated_by=ctx.user_id,
             title="a session that waits",
+            kind="delivery",
+            kind_version=1,
             root_id=new_id(),
         ),
     )
+    person = Principal(kind=PrincipalKind.PERSON, id=ctx.user_id)
     message_id = new_id()
     message = Step(
         id=message_id,
@@ -64,7 +68,7 @@ async def parked(container: WorkerContainer, ctx: TenantContext, park: Park) -> 
         type=StepType.MESSAGE,
         actor=Actor.PERSON,
         origin=Origin.PORTAL,
-        header=InputHeader(),
+        header=InputHeader(principal=person),
         content=Content(blocks=(TextBlock(text="look into it"),)),
     )
     await steps.append_inputs(ctx, session.id, [message])
@@ -80,6 +84,8 @@ async def parked(container: WorkerContainer, ctx: TenantContext, park: Park) -> 
         refs=(message_id,),
         header=ModelRequestHeader(
             role="main",
+            spender=person,
+            speaker=person,
             fill="anthropic/claude-sonnet-5-5",
             fill_set_version=1,
             left_edge=1,

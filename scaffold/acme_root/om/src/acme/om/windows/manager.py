@@ -37,7 +37,7 @@ class WindowsManagerInterface(ABC):
     ) -> RenderedRequest:
         """The next request of `role` over the session's history, rendered
         with the fill the session's fill set names for it; the caller records
-        it (`rules.request_step`) before it calls. The main role's window
+        it (`rules.request_step`, with who spoke and who pays) before it calls. The main role's window
         compacts first, once, when it nears its limit (a switch to a smaller
         window included) or a `compact` control waits; the compaction's steps
         are appended under `epoch` in the loop `loop_id`, and a run that lost

@@ -22,6 +22,9 @@ from acme.integrations.model_providers.failures import ModelCallFailed
 from acme.integrations.model_providers.registry import scripted_model_providers
 from acme.integrations.model_providers.scripted import ModelProviderScriptedImpl, ScriptedFailure
 from acme.integrations.model_providers.types import ErrorKind, ProviderName, StopReason, Usage
+from acme.om.attribution import AttributionManagerInterface
+from acme.om.attribution.types.authority import RequestAttribution
+from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
 from acme.om.context import Role, TenantContext
 from acme.om.exceptions import (
@@ -119,20 +122,29 @@ class Priced(ModelPricesInterface):
 
 
 class Gate(CallGateInterface):
-    """A gate that records each hold and how it closed, or refuses them all."""
+    """A gate that records each hold, who pays it, and how it closed, or
+    refuses them all."""
 
     def __init__(self) -> None:
         self.refusing = False
         self.holds: dict[UUID, ModelRole] = {}
+        self.spenders: list[Principal] = []
         self.settled: list[tuple[UUID, Usage | None, bool]] = []
 
     async def authorize(
-        self, ctx: TenantContext, session_id: UUID, role: ModelRole, fill: Fill, call: ModelCall
+        self,
+        ctx: TenantContext,
+        session_id: UUID,
+        spender: Principal,
+        role: ModelRole,
+        fill: Fill,
+        call: ModelCall,
     ) -> UUID:
         if self.refusing:
             raise Unavailable("the session's budget is spent")
         hold = new_id()
         self.holds[hold] = role
+        self.spenders.append(spender)
         return hold
 
     async def settle(
@@ -140,6 +152,27 @@ class Gate(CallGateInterface):
     ) -> None:
         assert hold_id in self.holds
         self.settled.append((hold_id, usage, billed))
+
+
+PAYER = Principal(kind=PrincipalKind.PERSON, id=new_id())
+
+
+class Payer(AttributionManagerInterface):
+    """Just enough attribution for a compaction: who pays, and the range it
+    was asked about. A partial double: only `attribute_request` is reached,
+    and any other method fails loudly as unimplemented."""
+
+    def __init__(self) -> None:
+        self.asked: list[tuple[int, int]] = []
+
+    async def attribute_request(
+        self, ctx: TenantContext, session_id: UUID, after_seq: int, through_seq: int
+    ) -> RequestAttribution:
+        self.asked.append((after_seq, through_seq))
+        return RequestAttribution(speaker=PAYER, spender=PAYER)
+
+
+Payer.__abstractmethods__ = frozenset()
 
 
 @dataclass
@@ -171,6 +204,7 @@ def an_engine(tmp_path: Path, table: Sequence[RoleFill] = NARROWING) -> Engine:
         storage.get_window_storage(),
         managers.steps,
         models,
+        Payer(),  # pyright: ignore[reportAbstractUsage] (a partial double)
         providers,
         infra.get_buckets(),
         gate,
@@ -242,7 +276,8 @@ def of_type(steps: Sequence[Step], step_type: StepType) -> list[Step]:
 
 
 async def record(engine: Engine, session: Session, rendered: rules.RenderedRequest) -> Step:
-    request = rules.request_step(rendered, session.id, session.loop_id, new_id(), utcnow())
+    paid = RequestAttribution(speaker=PAYER, spender=PAYER)
+    request = rules.request_step(rendered, paid, session.id, session.loop_id, new_id(), utcnow())
     (stored,) = await engine.steps.append_steps(engine.ctx, session.id, session.epoch, [request])
     return stored
 
@@ -262,6 +297,7 @@ async def test_a_window_near_its_limit_compacts_into_a_summary_that_references_i
     (summary,) = of_type(steps, StepType.SUMMARY)
     request, reply = steps[-3], steps[-2]
     assert isinstance(request.header, ModelRequestHeader) and request.header.role == SUMMARIZER
+    assert request.header.spender == PAYER and engine.gate.spenders == [PAYER], "the payer pays"
     assert request.header.fill == SUMMARY_FILL.name and request.header.prompt_hash
     assert reply.responds_to == request.id and reply.as_text() == SUMMARY
     assert isinstance(reply.header, ModelResponseHeader) and reply.header.usage is not None
@@ -740,4 +776,6 @@ async def test_a_root_with_no_gate_or_key_service_refuses_to_hash_or_spend(
         )
     call = ModelCall(model=SUMMARY_FILL.model, messages=(), max_output_tokens=1)
     with pytest.raises(Unavailable, match="budget gate"):
-        await CallGateNullImpl().authorize(ctx, history.session_id, SUMMARIZER, SUMMARY_FILL, call)
+        await CallGateNullImpl().authorize(
+            ctx, history.session_id, PAYER, SUMMARIZER, SUMMARY_FILL, call
+        )

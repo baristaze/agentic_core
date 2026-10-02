@@ -37,6 +37,9 @@ from acme.infra.observability import (
     JsonFormatter,
 )
 from acme.om.agent_sessions.types.agent_session import AgentSession
+from acme.om.agents.types.tree import AgentTree
+from acme.om.attribution.types.authority import AuthorityMode, SessionAuthority
+from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import EMPTY_UUID, new_id, utcnow
 from acme.om.budgets.rules import lines_of
 from acme.om.budgets.types.amount import Spend
@@ -383,7 +386,35 @@ def a_session() -> AgentSession:
         created_by=by,
         updated_by=by,
         title="the weekly report",
+        kind="delivery",
+        kind_version=1,
         root_id=session_id,
+    )
+
+
+def its_authority(session: AgentSession) -> SessionAuthority:
+    now = utcnow()
+    return SessionAuthority(
+        id=session.id,
+        created_at=now,
+        updated_at=now,
+        created_by=session.created_by,
+        updated_by=session.created_by,
+        mode=AuthorityMode.STEADY,
+        principal=Principal(kind=PrincipalKind.PERSON, id=session.created_by),
+    )
+
+
+def its_tree(session: AgentSession) -> AgentTree:
+    now = utcnow()
+    return AgentTree(
+        id=session.root_id,
+        created_at=now,
+        updated_at=now,
+        created_by=session.created_by,
+        updated_by=session.created_by,
+        height=1,
+        count=0,
     )
 
 
@@ -397,18 +428,18 @@ def a_message(session_id: UUID) -> Step:
         type=StepType.MESSAGE,
         actor=Actor.PERSON,
         origin=Origin.PORTAL,
-        header=InputHeader(),
+        header=InputHeader(principal=Principal(kind=PrincipalKind.PERSON, id=new_id())),
     )
 
 
 async def test_a_deleted_tenants_history_goes_and_it_is_marked_purged_only_after(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A tenant's agent sessions, their steps, and their cursor rows go with
-    its other rows. While its history cannot go, here a purge that fails,
-    the tenant is never marked purged, however many passes run. The pass
-    that deletes the last of it leaves it unmarked too; the next pass, which
-    finds nothing, marks it."""
+    """A tenant's agent sessions, their steps, their cursor rows, their
+    trees, and their authorities go with its other rows. While its history
+    cannot go, here a purge that fails, the tenant is never marked purged,
+    however many passes run. The pass that deletes the last of it leaves it
+    unmarked too; the next pass, which finds nothing, marks it."""
     container = build_container(tmp_path)
     org_id, _ = await deleted_org(container, days_ago=40)
     sessions = container.storage.get_agent_session_storage()
@@ -416,6 +447,10 @@ async def test_a_deleted_tenants_history_goes_and_it_is_marked_purged_only_after
     session = a_session()
     assert await sessions.create_session(org_id, session, ())
     await history.append_inputs(org_id, session.id, [a_message(session.id) for _ in range(2)])
+    trees = container.storage.get_agent_storage()
+    authorities = container.storage.get_attribution_storage()
+    assert await trees.create_tree(org_id, its_tree(session), ())
+    assert await authorities.create_authority(org_id, its_authority(session), ())
     loop = build_loop(container)
     tenancy = container.storage.get_tenancy_storage()
 
@@ -428,6 +463,8 @@ async def test_a_deleted_tenants_history_goes_and_it_is_marked_purged_only_after
     assert await sessions.read_sessions(org_id, None, None, 10) == []
     assert len(await history.read_steps(org_id, session.id, 0, 10)) == 2
     kept = await tenancy.read_org(org_id)
+    assert await trees.read_tree(org_id, session.root_id) is None
+    assert await authorities.read_authority(org_id, session.id) is None
     assert kept is not None and kept.purged_at is None, "its history remains"
 
     monkeypatch.undo()

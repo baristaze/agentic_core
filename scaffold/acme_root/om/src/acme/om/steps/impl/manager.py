@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 from uuid import UUID
 
+from acme.om.attribution.rules import said_by
 from acme.om.base import Platform
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import ValidationFailed
@@ -37,14 +38,16 @@ class StepsManagerImpl(StepsManagerInterface):
     ) -> tuple[Step, ...]:
         ctx.require(Permission.WRITE)
         self._bound(steps)
-        return await self._storage.append_steps(ctx.org_id, session_id, epoch, steps)
+        said = [said_by(step, ctx.user_id) for step in steps]
+        return await self._storage.append_steps(ctx.org_id, session_id, epoch, said)
 
     async def append_inputs(
         self, ctx: TenantContext, session_id: UUID, steps: Sequence[Step]
     ) -> tuple[Step, ...]:
         ctx.require(Permission.WRITE)
         self._bound(steps)
-        return await self._storage.append_inputs(ctx.org_id, session_id, steps)
+        said = [said_by(step, ctx.user_id) for step in steps]
+        return await self._storage.append_inputs(ctx.org_id, session_id, said)
 
     async def get_steps(
         self, ctx: TenantContext, session_id: UUID, after_seq: int, limit: int

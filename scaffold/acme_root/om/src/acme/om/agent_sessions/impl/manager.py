@@ -2,9 +2,10 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from acme.om.agent_sessions.manager import AgentSessionsManagerInterface
+from acme.om.agent_sessions.manager import AgentSessionsManagerInterface, SessionPurged
 from acme.om.agent_sessions.rules import (
     announces,
+    lineage,
     parked_step,
     projected,
     purge_due,
@@ -18,6 +19,7 @@ from acme.om.agent_sessions.types.agent_session import (
     AgentSessionPage,
     SessionStatus,
 )
+from acme.om.attribution.rules import fold
 from acme.om.base import EMPTY_UUID, Platform, new_id, utcnow
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import NotFound, PreconditionFailed, TenantMismatch, ValidationFailed
@@ -54,7 +56,10 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         relay: OutboxRelayInterface,
         options: AgentSessionsOptions,
         clock: Callable[[], datetime] = utcnow,
+        *,
+        purged: SessionPurged,
     ) -> None:
+        self._purged = purged
         self._storage = storage
         self._steps = steps
         self._tenancy = tenancy
@@ -64,21 +69,22 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
 
     async def create_session(self, ctx: TenantContext, session: AgentSession) -> AgentSession:
         ctx.require(Permission.WRITE)
-        root_id = session.id
-        if session.parent_id is not None:
-            parent = await self._storage.read_session(ctx.org_id, session.parent_id)
-            if parent is None or parent.deleted_at is not None:
-                raise ValidationFailed(f"no parent session {session.parent_id}")
-            root_id = parent.root_id
+        source: AgentSession | None = None
+        came_from = session.parent_id or session.handed_off_from
+        if came_from is not None:
+            found = await self._storage.read_session(ctx.org_id, came_from)
+            if found is None or found.deleted_at is not None:
+                raise ValidationFailed(f"no agent session {came_from} to come from")
+            source = await self._at_head(ctx, found)
         now = self._clock()
         created = AgentSession.model_validate(
             {
                 **session.model_dump(),
+                **lineage(source, session),
                 "created_at": now,
                 "updated_at": now,
                 "created_by": ctx.user_id,
                 "updated_by": ctx.user_id,
-                "root_id": root_id,
                 "status": SessionStatus.IDLE,
                 "park": None,
                 "status_seq": 0,
@@ -104,6 +110,18 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
     async def get_session(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
         ctx.require(Permission.READ)
         return await self._read(ctx, session_id)
+
+    async def get_session_at_head(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
+        ctx.require(Permission.READ)
+        return await self._at_head(ctx, await self._read(ctx, session_id))
+
+    async def get_children(
+        self, ctx: TenantContext, parent_id: UUID, after: UUID | None, limit: int
+    ) -> AgentSessionPage:
+        ctx.require(Permission.READ)
+        limit = max(1, min(limit, self._options.max_limit))
+        rows = await self._storage.read_children(ctx.org_id, parent_id, after, limit + 1)
+        return AgentSessionPage(items=tuple(rows[:limit]), has_more=len(rows) > limit)
 
     async def get_sessions(
         self,
@@ -272,6 +290,7 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         now = self._clock()
         before = now - self._options.retention
         found = await self._storage.read_purgeable(before, self._options.purge_sessions)
+        roots = {session.id: session.root_id for _, session in found}
         claimed: list[tuple[UUID, UUID]] = []
         for org_id, session in found:
             if not purge_due(session, before):
@@ -294,10 +313,14 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
                 except PreconditionFailed:
                     continue
             claimed.append((org_id, session.id))
-        # The history first, then the row: a failure between the two leaves a
-        # claimed row with no history, which the next pass deletes. The other
-        # order would leave steps no session names, which no pass would find.
+        # The history first, then what other namespaces hold of the session,
+        # then the row: a failure before the row leaves a claimed row, which
+        # the next pass takes up again. The other order would leave steps, an
+        # authority, or a tree no session names, which no pass would find.
         for org_id, session_id in await self._steps.purge_histories(claimed):
+            root_id = roots[session_id]
+            alone = not await self._storage.tree_holds_others(org_id, root_id, session_id)
+            await self._purged(org_id, session_id, root_id if alone else None)
             await self._storage.purge_session(org_id, session_id)
         return len(found)
 
@@ -314,6 +337,18 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         if session is None or session.deleted_at is not None:
             raise NotFound(f"agent session {session_id} not found")
         return session
+
+    async def _at_head(self, ctx: TenantContext, session: AgentSession) -> AgentSession:
+        """`session` with its speaker and mark folded over the steps after
+        its cache, page by page; nothing else changes."""
+        speaker, marked = session.speaker, session.untrusted
+        after = session.status_seq
+        while True:
+            page = await self._steps.get_steps(ctx, session.id, after, self._options.project_batch)
+            speaker, marked = fold(speaker, marked, page.items)
+            if not page.has_more or not page.items:
+                return session.model_copy(update={"speaker": speaker, "untrusted": marked})
+            after = page.items[-1].seq
 
     async def _relay_all(self, ctx: TenantContext, rows: tuple[OutboxRow, ...]) -> None:
         """The write has committed; a relay that fails is left to the sweep."""

@@ -2,6 +2,7 @@ from uuid import UUID
 
 from acme.integrations.model_providers.calls import ModelCall
 from acme.integrations.model_providers.types import Usage
+from acme.om.attribution.types.principal import Principal
 from acme.om.context import TenantContext
 from acme.om.exceptions import Unavailable
 from acme.om.models.types.fill import Fill, ModelRole
@@ -14,7 +15,13 @@ class CallGateNullImpl(CallGateInterface):
     refuses and says why."""
 
     async def authorize(
-        self, ctx: TenantContext, session_id: UUID, role: ModelRole, fill: Fill, call: ModelCall
+        self,
+        ctx: TenantContext,
+        session_id: UUID,
+        spender: Principal,
+        role: ModelRole,
+        fill: Fill,
+        call: ModelCall,
     ) -> UUID:
         raise Unavailable("no budget gate is wired, so no compaction is called")
 

@@ -20,6 +20,10 @@ from acme.integrations.model_providers.types import (
 )
 from acme.om.agent_sessions.limits import Limit, LimitKind
 from acme.om.agent_sessions.types.agent_session import SessionStatus
+from acme.om.agents.types.kind import DoneRule
+from acme.om.agents.types.result import Claim, Turn
+from acme.om.attribution.types.authority import AuthorityMode, Trust
+from acme.om.attribution.types.principal import PrincipalKind
 from acme.om.budgets.types.amount import AmountUnit
 from acme.om.budgets.types.breach import BreachAction
 from acme.om.budgets.types.budget import BudgetScopeKind, WindowKind
@@ -69,6 +73,12 @@ ENUMS = [
     ControlCommand,
     LoopOutcome,
     ParkReason,
+    PrincipalKind,
+    AuthorityMode,
+    Trust,
+    DoneRule,
+    Turn,
+    Claim,
     BudgetScopeKind,
     WindowKind,
     AmountUnit,

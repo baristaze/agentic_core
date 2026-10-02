@@ -12,6 +12,7 @@ from contracts.agent_session_storage import make_session
 from contracts.doubles import context
 from contracts.factories import make_org
 from contracts.step_storage import (
+    a_person,
     make_event,
     make_message,
     make_parked,
@@ -89,7 +90,7 @@ def parked_state(reason: ParkReason) -> Projection:
 
 def test_an_input_that_wakes_starts_a_loop_on_an_idle_session_and_no_other() -> None:
     message = make_message(SESSION)
-    quiet = a_step(StepType.EVENT, InputHeader(waking=False))
+    quiet = a_step(StepType.EVENT, InputHeader(waking=False, principal=a_person()))
     woken = after_step(IDLE, message)
     assert (woken.status, woken.pending_input) == (SessionStatus.PENDING, message.id)
     assert after_step(IDLE, quiet) == IDLE
@@ -103,10 +104,9 @@ def test_an_event_built_with_no_word_on_waking_leaves_an_idle_session_idle() -> 
     event = make_event(SESSION)
     assert isinstance(event.header, InputHeader) and event.header.waking is False
     assert after_step(IDLE, event) == IDLE
-    assert after_step(IDLE, a_step(StepType.EVENT, InputHeader())) == IDLE
-    assert after_step(IDLE, a_step(StepType.MESSAGE, InputHeader())).status is (
-        SessionStatus.PENDING
-    )
+    unsaid = InputHeader(principal=a_person())
+    assert after_step(IDLE, a_step(StepType.EVENT, unsaid)) == IDLE
+    assert after_step(IDLE, a_step(StepType.MESSAGE, unsaid)).status is (SessionStatus.PENDING)
 
 
 def fold(steps: list[Step]) -> Projection:
@@ -186,7 +186,7 @@ def test_a_control_clears_the_parks_it_names_and_no_other(
 
 def test_an_archived_session_records_events_and_a_message_unarchives_it() -> None:
     archived = Projection(SessionStatus.IDLE, None, archived=True)
-    event = a_step(StepType.EVENT, InputHeader(waking=True))
+    event = a_step(StepType.EVENT, InputHeader(waking=True, principal=a_person()))
     assert after_step(archived, event) == archived
     back = after_step(archived, make_message(SESSION))
     assert (back.status, back.archived) == (SessionStatus.PENDING, False)
@@ -385,6 +385,10 @@ async def test_a_long_history_is_folded_a_batch_at_a_time(managers: Managers) ->
     assert projected_session.status is SessionStatus.PENDING
 
 
+async def nothing_held(org_id: UUID, session_id: UUID, tree_id: UUID | None) -> None:
+    """A session that no other namespace holds anything of."""
+
+
 class Overtaken(AgentSessionStorageMemoryImpl):
     """A session storage another writer reaches first, `jumps` times: it
     moves the stored version just before each of those writes lands."""
@@ -424,6 +428,7 @@ async def test_a_projection_behind_another_writer_reads_again_and_folds_on(
         managers.tenancy,
         managers.outbox,
         AgentSessionsOptions(project_attempts=2),
+        purged=nothing_held,
     )
     ctx = context(Role.MEMBER)
     created = await sessions.create_session(ctx, make_session())
@@ -548,6 +553,7 @@ def purging(
         managers.outbox,
         AgentSessionsOptions(retention=timedelta(days=30)),
         clock=clock,
+        purged=nothing_held,
     )
 
 

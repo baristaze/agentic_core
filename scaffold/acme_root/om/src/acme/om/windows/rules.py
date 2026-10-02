@@ -27,6 +27,8 @@ from uuid import UUID
 
 from acme.infra.base import thaw_mapping
 from acme.integrations.model_providers.calls import Message, ModelCall, OutputSchema, ToolSpec
+from acme.om.attribution.rules import trust_of
+from acme.om.attribution.types.authority import RequestAttribution, Trust
 from acme.om.models.types.fill import MAIN, SUMMARIZER, Fill, ModelRole, OutputShape
 from acme.om.steps.types.content import (
     Attachment,
@@ -78,8 +80,6 @@ DELIVERABLE = frozenset({StepType.MESSAGE, StepType.EVENT, StepType.ENVIRONMENT_
 """What a model request delivers to the model: what arrived from outside the
 loop, and the notice that the world under it changed."""
 
-SURFACES = frozenset({Origin.PORTAL, Origin.CLI, Origin.API, Origin.AUTOMATION})
-"""Where a principal speaks to a session through a product."""
 
 Role = Literal["user", "assistant"]
 
@@ -88,15 +88,17 @@ Role = Literal["user", "assistant"]
 
 
 def is_instruction(step: Step) -> bool:
-    """Whether a step speaks with a principal's authority: a `message` a
-    person or a program wrote through a product surface, or the parent agent
-    to its child. An event, and a message any other actor or origin brought,
+    """Whether an input renders as an instruction, as attribution's one rule
+    of the two tiers says: a principal's message, a parent's message to its
+    child, and the engine's notice that the world changed. Everything else
     is data."""
-    if step.type is not StepType.MESSAGE:
-        return False
-    if step.origin is Origin.PARENT:
-        return step.actor is Actor.AGENT
-    return step.actor in (Actor.PERSON, Actor.PROGRAM) and step.origin in SURFACES
+    return trust_of(step) is Trust.INSTRUCTION
+
+
+def pins(step: Step) -> bool:
+    """Whether a step feeds the pinned zone: a message that instructs, which
+    a principal wrote or a parent sent its child, never a notice."""
+    return step.type is StepType.MESSAGE and is_instruction(step)
 
 
 def escape(text: str) -> str:
@@ -378,9 +380,7 @@ def pinned_zone(
     if through_seq is None:
         return PinnedZone()
     said = [
-        step
-        for step in steps
-        if step.seq <= through_seq and is_instruction(step) and step.as_text().strip()
+        step for step in steps if step.seq <= through_seq and pins(step) and step.as_text().strip()
     ]
     if not said:
         return PinnedZone()
@@ -794,10 +794,16 @@ def render_side(
 
 
 def request_step(
-    rendered: RenderedRequest, session_id: UUID, loop_id: UUID, step_id: UUID, at: datetime
+    rendered: RenderedRequest,
+    attribution: RequestAttribution,
+    session_id: UUID,
+    loop_id: UUID,
+    step_id: UUID,
+    at: datetime,
 ) -> Step:
     """The `model_request` a rendered request is recorded as: it references
-    the inputs it delivers and names its window and its prompt's hash."""
+    the inputs it delivers and names its window, its prompt's hash, and who
+    spoke and who pays as attribution answered for it."""
     window = rendered.window
     return Step(
         id=step_id,
@@ -810,6 +816,8 @@ def request_step(
         refs=rendered.delivers,
         header=ModelRequestHeader(
             role=window.role,
+            spender=attribution.spender,
+            speaker=attribution.speaker,
             fill=window.fill,
             fill_set_version=window.fill_set_version,
             left_edge=window.left_edge,

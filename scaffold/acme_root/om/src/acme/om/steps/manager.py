@@ -6,7 +6,11 @@ queries or projections over it.
 Two appends write it. A run's append names the writer epoch the run took
 when it began, and is refused once another run has begun. The inbox's
 append takes inputs and controls, which arrive whether or not a run holds
-the session, and nothing else."""
+the session, and nothing else.
+
+Both write a principal's message in the name of the context that appends
+it: its principal is that context's user, never one the caller wrote
+(`attribution.rules.said_by`)."""
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence

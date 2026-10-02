@@ -2,6 +2,10 @@
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.storage.impl.memory import AgentSessionStorageMemoryImpl
+from acme.om.agents.storage import AgentStorageInterface
+from acme.om.agents.storage.impl.memory import AgentStorageMemoryImpl
+from acme.om.attribution.storage import AttributionStorageInterface
+from acme.om.attribution.storage.impl.memory import AttributionStorageMemoryImpl
 from acme.om.budgets.storage import BudgetStorageInterface, LedgerStorageInterface
 from acme.om.budgets.storage.impl.memory import BudgetStorageMemoryImpl, LedgerStorageMemoryImpl
 from acme.om.events.storage import EventStorageInterface
@@ -43,6 +47,8 @@ class StorageMemoryImpl(StorageInterface):
         self._events = EventStorageMemoryImpl()
         self._steps = StepStorageMemoryImpl()
         self._agent_sessions = AgentSessionStorageMemoryImpl(self._outbox)
+        self._agents = AgentStorageMemoryImpl(self._outbox)
+        self._attribution = AttributionStorageMemoryImpl(self._outbox)
         self._privacy = PrivacyStorageMemoryImpl(self._outbox)
         self._budgets = BudgetStorageMemoryImpl(self._outbox)
         self._ledger = LedgerStorageMemoryImpl()
@@ -75,6 +81,12 @@ class StorageMemoryImpl(StorageInterface):
 
     def get_agent_session_storage(self) -> AgentSessionStorageInterface:
         return self._agent_sessions
+
+    def get_agent_storage(self) -> AgentStorageInterface:
+        return self._agents
+
+    def get_attribution_storage(self) -> AttributionStorageInterface:
+        return self._attribution
 
     def get_privacy_storage(self) -> PrivacyStorageInterface:
         return self._privacy

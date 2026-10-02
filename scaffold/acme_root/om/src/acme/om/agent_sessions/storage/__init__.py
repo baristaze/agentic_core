@@ -25,6 +25,14 @@ class AgentSessionStorageInterface(ABC):
     async def read_session(self, org_id: UUID, session_id: UUID) -> AgentSession | None: ...
 
     @abstractmethod
+    async def read_children(
+        self, org_id: UUID, parent_id: UUID, after: UUID | None, limit: int
+    ) -> list[AgentSession]:
+        """The sessions `parent_id` spawned, by id, strictly after `after`,
+        at most `limit` of them."""
+        ...
+
+    @abstractmethod
     async def read_sessions(
         self, org_id: UUID, status: SessionStatus | None, after: UUID | None, limit: int
     ) -> list[AgentSession]:
@@ -55,6 +63,12 @@ class AgentSessionStorageInterface(ABC):
         with its tenant, in no order: the sessions whose retention has
         ended, claimed for their purge or not yet. One read a pass for every
         tenant, so a tenant with nothing to purge costs nothing."""
+        ...
+
+    @abstractmethod
+    async def tree_holds_others(self, org_id: UUID, root_id: UUID, session_id: UUID) -> bool:
+        """Whether the tree `root_id` holds a session besides `session_id`,
+        marked deleted or not."""
         ...
 
     @abstractmethod

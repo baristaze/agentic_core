@@ -8,6 +8,8 @@ from typing import Any
 from uuid import UUID
 
 from acme.integrations.model_providers.types import Usage
+from acme.om.attribution.types.authority import AuthorityMode
+from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
 from acme.om.base import new_id
 from acme.om.models.types.fill import MAIN, SUMMARIZER
 from acme.om.steps.types.content import (
@@ -41,6 +43,8 @@ class History:
         self.session_id = session_id or new_id()
         self.steps: list[Step] = []
         self.loop_id: UUID | None = None
+        self.person = Principal(kind=PrincipalKind.PERSON, id=new_id())
+        """Who speaks, pays, and lends the calls their authority."""
 
     def add(self, **fields: Any) -> Step:
         step_id = new_id()
@@ -64,16 +68,23 @@ class History:
             type=StepType.MESSAGE,
             actor=actor,
             origin=origin,
-            header=InputHeader(),
+            header=InputHeader(
+                principal=self.person,
+                agent=self.agent if actor is Actor.AGENT else None,
+            ),
             content=Content(blocks=(TextBlock(text=text),)),
         )
+
+    @property
+    def agent(self) -> AgentRef:
+        return AgentRef(kind="investigator", version=1, session_id=self.session_id)
 
     def event(self, text: str) -> Step:
         return self.add(
             type=StepType.EVENT,
             actor=Actor.EXTERNAL,
             origin=Origin.INTEGRATION,
-            header=InputHeader(),
+            header=InputHeader(principal=self.person),
             content=Content(blocks=(TextBlock(text=text),)),
         )
 
@@ -108,6 +119,8 @@ class History:
             refs=tuple(step.id for step in delivers),
             header=ModelRequestHeader(
                 role=role,
+                spender=self.person,
+                speaker=self.person,
                 fill=fill,
                 fill_set_version=1,
                 left_edge=1,
@@ -143,10 +156,17 @@ class History:
     def call(self, response: Step, use_id: str, tool: str = "read_log") -> Step:
         return self.add(
             type=StepType.TOOL_REQUEST,
-            actor=Actor.ENGINE,
+            actor=Actor.AGENT,
             origin=Origin.ENGINE,
             refs=(response.id,),
-            header=ToolRequestHeader(tool=tool, tool_use_id=use_id, input_hash=f"k:{use_id}"),
+            header=ToolRequestHeader(
+                tool=tool,
+                tool_use_id=use_id,
+                input_hash=f"k:{use_id}",
+                principal=self.person,
+                authority=AuthorityMode.STEADY,
+                agent=self.agent,
+            ),
         )
 
     def result(self, call: Step, text: str, *, error: bool = False) -> Step:
