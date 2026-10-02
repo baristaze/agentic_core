@@ -26,6 +26,7 @@ from acme.om.steps.impl.manager import StepsOptions
 from acme.om.storage.impl.postgres import StoragePostgresImpl
 from acme.om.storage.root import StorageInterface
 from acme.om.tenancy.impl.manager import TenancyOptions
+from acme.om.tools.impl.manager import ToolsOptions
 from acme.om.work.impl.manager import WorkOptions
 from acme.workers.maintenance.settings import MaintenanceSettings
 
@@ -93,6 +94,7 @@ def worker_managers(
         attribution_options=AttributionOptions(purge_batch=batch),
         budgets_options=BudgetsOptions(purge_batch=batch),
         models_options=ModelsOptions(purge_batch=batch),
+        tools_options=ToolsOptions(purge_batch=batch),
     )
 
 

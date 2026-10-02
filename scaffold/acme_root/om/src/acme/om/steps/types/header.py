@@ -48,6 +48,18 @@ class ParkReason(StrEnum):
     PAUSE = "pause"  # a principal paused
 
 
+class ToolFailure(StrEnum):
+    """The class of a tool failure, decided where the failure happens. The
+    model reads it with advice on what to do next."""
+
+    INVALID_INPUT = "invalid_input"  # the input failed its schema; the model can correct it
+    TRANSIENT = "transient"  # worth retrying
+    TIMEOUT = "timeout"  # ran out of time
+    DENIED = "denied"  # policy or a person said no
+    INTERRUPTED = "interrupted"  # stopped mid-run, or its outcome is unknown
+    PERMANENT = "permanent"  # will not work as asked
+
+
 class LoopOutcome(StrEnum):
     """The five ways a loop ends. A park is none of them."""
 
@@ -101,9 +113,38 @@ class InputHeader(Platform):
     untrusted: bool = False
 
 
+class DecidedCall(Platform):
+    """The tool call a person's approve or deny decides: its tool and its
+    input's hash, as its request recorded them, and who decided. The control
+    step references that request. An approval holds until `expires_at`; a
+    denial holds for good and carries none."""
+
+    tool: Stored = Field(min_length=1, max_length=MAX_NAME)
+    input_hash: Stored = Field(min_length=1, max_length=MAX_NAME)
+    decided_by: UUID
+    expires_at: datetime | None = None
+
+
 class ControlHeader(Platform):
+    """`call` is the decided call of an approve or a deny, and of nothing
+    else."""
+
     kind: Literal["control"] = "control"
     command: ControlCommand
+    call: DecidedCall | None = None
+
+    @model_validator(mode="after")
+    def _a_decision_names_its_call(self) -> Self:
+        decides = self.command in (ControlCommand.APPROVE, ControlCommand.DENY)
+        if decides != (self.call is not None):
+            raise ValueError(
+                "an approve or a deny names the call it decides, and nothing else does"
+            )
+        if self.call is not None and (
+            (self.command is ControlCommand.APPROVE) != (self.call.expires_at is not None)
+        ):
+            raise ValueError("an approval expires, and a denial does not")
+        return self
 
 
 class ModelRequestHeader(Platform):
@@ -142,9 +183,10 @@ class ModelResponseHeader(Platform):
 class ToolRequestHeader(Platform):
     """One tool call, referencing the tool-use block of the response that
     asked for it (`tool_use_id`, with that response among the step's
-    `refs`) and carrying its input's hash, never its input. The agent acts
-    (`agent`); the call runs under `principal`, whom `authority` chose and
-    the adopter's transition answered for on this call."""
+    `refs`) and carrying its input's hash, never its input, and the class
+    of power its tool exercises, which decides who may approve it. The
+    agent acts (`agent`); the call runs under `principal`, whom `authority`
+    chose and the adopter's transition answered for on this call."""
 
     kind: Literal["tool_request"] = "tool_request"
     tool: Stored = Field(min_length=1, max_length=MAX_NAME)
@@ -153,6 +195,7 @@ class ToolRequestHeader(Platform):
     principal: Principal
     authority: AuthorityMode
     agent: AgentRef
+    authorization_class: Stored = Field(min_length=1, max_length=MAX_NAME)
 
 
 class ArtifactRef(Platform):
@@ -165,14 +208,19 @@ class ArtifactRef(Platform):
 
 
 class ToolResponseHeader(Platform):
-    """`interrupted` marks a call stopped before it answered, its outcome
-    unknown, so the model verifies before it retries. `artifact` is the
-    handle of a result above the size bound, whose head and tail are the
-    first two parts of the step's result."""
+    """A result, or the class of the failure the call met. `interrupted`
+    marks a call stopped before it answered, its outcome unknown, so the
+    model verifies before it retries. `artifact` is the handle of a result
+    above the size bound, whose head and tail are the first two parts of the
+    step's result."""
 
     kind: Literal["tool_response"] = "tool_response"
-    interrupted: bool = False
+    failure: ToolFailure | None = None
     artifact: ArtifactRef | None = None
+
+    @property
+    def interrupted(self) -> bool:
+        return self.failure is ToolFailure.INTERRUPTED
 
 
 class SummaryHeader(Platform):

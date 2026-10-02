@@ -6,6 +6,7 @@ from acme.infra.buckets import Buckets
 from acme.infra.cache import CacheScope
 from acme.infra.impl.local import InfraLocalImpl
 from acme.infra.queues import Queues
+from acme.infra.workspaces import EgressMode, EgressPolicy, IsolationMode, IsolationSpec
 
 
 async def test_every_capability_works_over_the_local_root(tmp_path: Path) -> None:
@@ -21,7 +22,11 @@ async def test_every_capability_works_over_the_local_root(tmp_path: Path) -> Non
     await infra.get_secrets().put(org, "s", "v")
     assert await infra.get_secrets().get(org, "s") == "v"
     assert infra.get_topics().describe() == "topics=memory"
+    spec = IsolationSpec(mode=IsolationMode.TWIN, egress=EgressPolicy(mode=EgressMode.NONE))
+    workspace = await infra.get_workspaces().prepare(org, new_id(), spec)
+    await infra.get_transport().write_file(workspace, "a.txt", b"hi", epoch=1)
+    assert await infra.get_transport().read_file(workspace, "a.txt", 10) == b"hi"
     org_key = await infra.get_keys().generate(org, new_id(), 1)
     assert len(org_key.plaintext) == 32
-    assert len(infra.describe()) == len(CacheScope) + 5
+    assert len(infra.describe()) == len(CacheScope) + 8
     await infra.close()

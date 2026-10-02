@@ -114,6 +114,17 @@ its oldest part is folded into a **summary**, a step of its own, and the
 standing instructions through every fold. A tool's result too large for
 a step is kept whole as an **artifact** in the object store.
 
+## Tools and who agrees to them
+
+A **tool** is one thing an agent can do, such as run a command or push a
+branch, with the kind of power it uses and whether doing it twice is
+harmless. An agent can do only what its kind's tools allow.
+
+A **tool policy** is an org's say over its agents' tools: which calls run
+on their own, which wait for a person, and which never run, and who may
+approve each kind. A person's yes or no to one call is a step of the
+session's history.
+
 ## What the platform writes for itself
 
 No person creates these and no screen shows them, but each belongs to
@@ -163,6 +174,8 @@ arrive twice, so the second copy gets the first one's answer.
 - Every model call passes the gate first, charged to the scopes it
   serves: its session, its tree, the person who pays, a project, a team,
   or the org. A budget, its holds, and their settlements name their org.
+- A tool policy names its org, one each, and a person's decision on a
+  call lands in the session's history like any other step.
 
 ## One page per kind
 
@@ -176,6 +189,7 @@ arrive twice, so the second copy gets the first one's answer.
 - [Budgets](src/acme/om/budgets/README.md)
 - [Models](src/acme/om/models/README.md)
 - [Windows](src/acme/om/windows/README.md)
+- [Tools](src/acme/om/tools/README.md)
 - [Events](src/acme/om/events/README.md)
 - [Outbox rows](src/acme/om/outbox/README.md)
 - [Work items](src/acme/om/work/README.md)

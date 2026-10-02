@@ -166,6 +166,7 @@ class History:
                 principal=self.person,
                 authority=AuthorityMode.STEADY,
                 agent=self.agent,
+                authorization_class="read",
             ),
         )
 

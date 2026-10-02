@@ -374,6 +374,7 @@ async def test_a_recorded_loop_names_who_acted_on_whose_authority_and_who_paid(
             principal=authority.principal,
             authority=authority.mode,
             agent=AgentRef(kind=session.kind, version=session.kind_version, session_id=sid),
+            authorization_class="integration",
         ),
     )
     result = make_tool_response(sid, loop, call.id)

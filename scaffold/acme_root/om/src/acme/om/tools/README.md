@@ -1,0 +1,66 @@
+# Tools
+
+Where an agent touches the world: what it may do, who must agree first,
+and what may be done again after a crash. This is one of the kinds of
+thing [Acme is made of](../../../../README.md).
+
+## What it holds
+
+- **Tool**: one thing an agent can do, such as run a command or push a
+  branch. It says what it is called, what it does, what input it takes,
+  and how long it may run. It names its **class**, the kind of power it
+  uses (reading, writing files, running code, reaching the network,
+  acting on a bound system, starting other agents, changing
+  configuration or credentials, or something that cannot be undone), and
+  its **effect**: whether doing it twice is harmless. A tool comes from
+  the product's own code, from a server over the Model Context Protocol,
+  or from another agent, and all three say the same things.
+- **Registry**: the tools one kind of agent has. An agent can do only
+  what its registry holds, whatever the model asks for.
+- **Policy**: who must agree to a call. It looks at the tool, its class,
+  its effect, and what the call acts on (whether a branch is protected),
+  and never at what the model says about the call. The agent's kind sets
+  the defaults, the org narrows or loosens them, and the platform's
+  ceilings hold above both: what cannot be undone, or acts outside, waits
+  for a person.
+- **Approval**: a person's yes or no to one exact call, the tool and its
+  input. It expires.
+- **Job**: work that outlives a run, such as a long build. The
+  agent waits for it without holding anything.
+
+## What can happen
+
+- **Ask.** A call that needs a person waits. Whoever the org lets approve
+  that class of call says yes or no; a no comes back to the agent with
+  the person's note, and the agent changes its plan.
+- **Run.** An allowed call runs in the session's workspace, by the
+  shortest of its own time, the engine's limit, and what is left of the
+  whole task's time. Everything it started stops when its time is up.
+- **Fail.** A failure says what kind it is (bad input, worth retrying,
+  out of time, refused, cut off, will not work), with advice the agent
+  reads. A test that fails is not a failure of the tool: it is the
+  result.
+- **Recover.** After a crash, a call that is safe to repeat runs again; one
+  that is not is never repeated: the workspace's own record says how it
+  ended, or the agent is told its outcome is unknown.
+
+## The rules
+
+- **The model's words decide nothing.** Policy reads the call's facts,
+  never its explanation.
+- **An approval is for one call.** A different input is a different call,
+  and asks again.
+- **A secret never enters a step.** A tool names the secrets it may use.
+  Each use is recorded by name, the value is kept out of everything the
+  agent sees, and the engine's own credentials never reach a tool.
+- **Isolation is never weakened.** A workspace that cannot be had as the
+  session asks is refused, never swapped for something weaker.
+- **Every policy belongs to one org.**
+
+## How another namespace composes it
+
+The agent's loop asks where each call stands, runs it, and writes the
+response it gets back into the session's [steps](../steps/README.md). A
+person's decision lands in the same history. Where a tool runs, the
+workspace and the commands in it, is the infrastructure's
+([infra](../../../../../infra/README.md)).

@@ -91,6 +91,16 @@ class InfraSettings(BaseSettings):
     keys_root_key: SecretStr | None = Field(default=None, repr=False)
     kms_key_id: str = "alias/acme-sessions"
 
+    # Where tools run (ADR 1003 for their secrets). `none` prepares no
+    # workspace and refuses every command; `host` a directory per workspace
+    # under the root, run as processes of this host, which a deployed
+    # environment refuses; `container` a container per workspace on the
+    # local Docker, from the image. The root also holds each transport's
+    # records of how commands ended, beside the workspaces.
+    workspace_backend: Literal["none", "host", "container"] = "none"
+    workspaces_root: Path = Path(".local/workspaces")
+    workspace_image: str = "python:3.14-slim"
+
     aws_region: str = "us-east-1"
 
     # Every outbound call carries a timeout, one per client, so a downstream
@@ -99,6 +109,9 @@ class InfraSettings(BaseSettings):
     aws_timeout_seconds: float = 10.0
     valkey_timeout_seconds: float = 5.0
     otel_timeout_seconds: float = 10.0
+    # A Docker command that prepares, releases, or reaches into a container
+    # workspace; the first prepare may pull the image.
+    docker_timeout_seconds: float = 120.0
 
     log_level: str = "INFO"
     log_json: bool = False

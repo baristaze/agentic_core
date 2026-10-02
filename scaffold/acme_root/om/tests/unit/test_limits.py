@@ -235,6 +235,7 @@ def tool_request(loop: UUID, input_hash: str) -> Step:
         principal=a_person(),
         authority=AuthorityMode.STEADY,
         agent=AgentRef(kind="delivery", version=1, session_id=SESSION),
+        authorization_class="read",
     )
     return a_step(loop, StepType.TOOL_REQUEST, header)
 

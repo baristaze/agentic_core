@@ -48,6 +48,7 @@ def local_settings(tmp_path: Path, **overrides: object) -> InfraSettings:
         ("buckets_backend", "local"),
         ("queues_backend", "memory"),
         ("keys_backend", "memory"),
+        ("workspace_backend", "host"),
     ],
 )
 def test_deployed_environments_refuse_local_backends(
@@ -79,6 +80,9 @@ async def test_local_environment_builds_local_impls(tmp_path: Path) -> None:
         "queues=memory",
         f"secrets=local({tmp_path / 'secrets.env'})",
         "keys=memory(random root)",
+        "workspaces=none",
+        "transport=none",
+        "broker=none",
     ]
     await infra.start()
     await infra.close()
@@ -93,6 +97,9 @@ def test_cloud_backends_are_constructed_without_connecting(tmp_path: Path) -> No
         "queues=sqs(us-east-1)",
         "secrets=aws(us-east-1)",
         "keys=kms(us-east-1)",
+        "workspaces=none",
+        "transport=none",
+        "broker=none",
     ]
     assert (
         infra.get_cache(CacheScope.NETWORK_RESPONSE).describe()
@@ -192,3 +199,22 @@ def test_the_keys_root_comes_from_settings_and_refuses_another_shape(tmp_path: P
     assert rooted.get_keys().describe() == "keys=memory(root from settings)"
     with pytest.raises(ValueError, match="32 bytes"):
         InfraConfiguredImpl(local_settings(tmp_path, keys_root_key="c2hvcnQ="))
+
+
+@pytest.mark.parametrize(
+    ("backend", "lines"),
+    [
+        ("host", ["workspaces=host({root})", "transport=local"]),
+        ("container", ["workspaces=container(python:3.14-slim)", "transport=container"]),
+    ],
+)
+def test_a_workspace_backend_builds_its_provider_and_its_transport_together(
+    tmp_path: Path, backend: str, lines: list[str]
+) -> None:
+    """The provider and the transport that runs in what it prepares are one
+    choice, and building them reaches nothing."""
+    root = tmp_path / "workspaces"
+    infra = InfraConfiguredImpl(
+        local_settings(tmp_path, workspace_backend=backend, workspaces_root=root)
+    )
+    assert infra.describe()[-3:-1] == [line.format(root=root) for line in lines]

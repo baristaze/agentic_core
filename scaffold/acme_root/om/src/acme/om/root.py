@@ -65,6 +65,8 @@ from acme.om.tenancy.impl.operator import TenancyOperatorManagerImpl, TenancyOpe
 from acme.om.tenancy.impl.org import TenancyOrgManagerImpl
 from acme.om.tenancy.impl.sign_in import TenancySignInManagerImpl
 from acme.om.tenancy.storage import TenancyStorageInterface
+from acme.om.tools import ToolsManagerInterface
+from acme.om.tools.impl.manager import ToolsManagerImpl, ToolsOptions
 from acme.om.windows import WindowsManagerInterface
 from acme.om.windows.gate import CallGateInterface
 from acme.om.windows.hashes import PromptHashInterface
@@ -98,6 +100,7 @@ class Managers:
     windows: WindowsManagerInterface
     attribution: AttributionManagerInterface
     agents: AgentsManagerInterface
+    tools: ToolsManagerInterface
 
 
 async def purge_held(
@@ -198,6 +201,7 @@ def build_managers(
     agent_kinds: tuple[AgentKind, ...] = (),
     principal_context: PrincipalContext | None = None,
     result_gate: ResultGateInterface | None = None,
+    tools_options: ToolsOptions | None = None,
 ) -> Managers:
     """`integrations` is the root of the hosted services the managers front:
     the identity provider, which the tenancy manager signs people in and
@@ -354,6 +358,19 @@ def build_managers(
         compaction_policy or CompactionPolicy(),
         WindowsOptions(),
     )
+    # Where the engine touches the world: the session's history for a
+    # person's decisions, the events for the audit of each secret a call
+    # uses, and the workspace and the transport infra chose.
+    tools = ToolsManagerImpl(
+        storage.get_tool_storage(),
+        steps,
+        tenancy,
+        events,
+        outbox,
+        infra.get_workspaces(),
+        infra.get_transport(),
+        tools_options or ToolsOptions(),
+    )
     idempotency = IdempotencyManagerImpl(
         storage.get_idempotency_storage(), idempotency_options or IdempotencyOptions()
     )
@@ -389,5 +406,6 @@ def build_managers(
         windows=windows,
         attribution=attribution,
         agents=agents,
+        tools=tools,
     )
     return managers

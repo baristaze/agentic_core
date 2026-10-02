@@ -27,6 +27,8 @@ from acme.om.steps.storage.impl.memory import StepStorageMemoryImpl
 from acme.om.storage.root import StorageInterface
 from acme.om.tenancy.storage import TenancyStorageInterface
 from acme.om.tenancy.storage.impl.memory import TenancyStorageMemoryImpl
+from acme.om.tools.storage import ToolStorageInterface
+from acme.om.tools.storage.impl.memory import ToolStorageMemoryImpl
 from acme.om.windows.storage import WindowStorageInterface
 from acme.om.windows.storage.impl.memory import WindowStorageMemoryImpl
 from acme.om.work.storage import WorkStorageInterface
@@ -54,6 +56,7 @@ class StorageMemoryImpl(StorageInterface):
         self._ledger = LedgerStorageMemoryImpl()
         self._fill_sets = FillSetStorageMemoryImpl()
         self._windows = WindowStorageMemoryImpl()
+        self._tools = ToolStorageMemoryImpl(self._outbox)
 
     def get_tenancy_storage(self) -> TenancyStorageInterface:
         return self._tenancy
@@ -102,6 +105,9 @@ class StorageMemoryImpl(StorageInterface):
 
     def get_window_storage(self) -> WindowStorageInterface:
         return self._windows
+
+    def get_tool_storage(self) -> ToolStorageInterface:
+        return self._tools
 
     async def healthcheck(self) -> bool:
         return True

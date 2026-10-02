@@ -172,6 +172,7 @@ def make_tool_request(
             principal=principal or a_person(),
             authority=AuthorityMode.STEADY,
             agent=AgentRef(kind="delivery", version=1, session_id=session_id),
+            authorization_class="read",
         ),
     )
 

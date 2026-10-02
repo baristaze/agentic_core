@@ -2,6 +2,10 @@
 carries the status and the stable code a boundary needs to present it."""
 
 from datetime import timedelta
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from acme.om.steps.types.header import ToolFailure
 
 
 class PlatformException(Exception):
@@ -386,3 +390,25 @@ class CompactionFailed(WindowsException):
     is recorded, no summary is written, and the window stays as it was."""
 
     code = "compaction_failed"
+
+
+class ToolsException(PlatformException): ...
+
+
+class ToolFailed(ToolsException, ValidationFailed):
+    """A tool call that failed, with the class the model reads, decided where
+    the failure happened. The engine answers the call with it; it never
+    leaves the engine."""
+
+    code = "tool_failed"
+
+    def __init__(self, failure: ToolFailure, detail: str) -> None:
+        super().__init__(detail)
+        self.failure = failure
+
+
+class McpDefinitionChanged(ToolsException, Conflict):
+    """A server's tool no longer matches the definition its binding pinned:
+    it is not served until the change is reviewed and the pin moved."""
+
+    code = "mcp_definition_changed"

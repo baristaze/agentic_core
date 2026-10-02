@@ -43,6 +43,8 @@ from acme.om.storage.root import StorageInterface
 from acme.om.storage.settings import RolePool
 from acme.om.tenancy.storage import TenancyStorageInterface
 from acme.om.tenancy.storage.impl.postgres import TenancyStoragePostgresImpl
+from acme.om.tools.storage import ToolStorageInterface
+from acme.om.tools.storage.impl.postgres import ToolStoragePostgresImpl
 from acme.om.windows.storage import WindowStorageInterface
 from acme.om.windows.storage.impl.postgres import WindowStoragePostgresImpl
 from acme.om.work.storage import WorkStorageInterface
@@ -187,6 +189,7 @@ class StoragePostgresImpl(StorageInterface):
         self._ledger = LedgerStoragePostgresImpl(sessions)
         self._fill_sets = FillSetStoragePostgresImpl(sessions)
         self._windows = WindowStoragePostgresImpl(sessions)
+        self._tools = ToolStoragePostgresImpl(sessions)
 
     def get_tenancy_storage(self) -> TenancyStorageInterface:
         return self._tenancy
@@ -235,6 +238,9 @@ class StoragePostgresImpl(StorageInterface):
 
     def get_window_storage(self) -> WindowStorageInterface:
         return self._windows
+
+    def get_tool_storage(self) -> ToolStorageInterface:
+        return self._tools
 
     async def healthcheck(self) -> bool:
         """A connect and a `SELECT 1` on every engine, each under the bounds its

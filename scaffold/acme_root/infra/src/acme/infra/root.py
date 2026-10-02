@@ -10,6 +10,8 @@ from acme.infra.keys import KeyServiceInterface
 from acme.infra.queues import QueuesInterface
 from acme.infra.secrets import SecretsInterface
 from acme.infra.topics import TopicsInterface
+from acme.infra.transports import CredentialBrokerInterface, TransportInterface
+from acme.infra.workspaces import WorkspaceProviderInterface
 
 
 class InfraInterface(ABC):
@@ -30,6 +32,20 @@ class InfraInterface(ABC):
 
     @abstractmethod
     def get_keys(self) -> KeyServiceInterface: ...
+
+    @abstractmethod
+    def get_workspaces(self) -> WorkspaceProviderInterface: ...
+
+    @abstractmethod
+    def get_transport(self) -> TransportInterface:
+        """The transport that runs commands in the workspaces this root's
+        provider prepares."""
+        ...
+
+    @abstractmethod
+    def get_broker(self) -> CredentialBrokerInterface:
+        """The broker the transport attaches a brokered secret through."""
+        ...
 
     @abstractmethod
     def describe(self) -> list[str]:
