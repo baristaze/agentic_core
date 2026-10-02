@@ -356,6 +356,53 @@ data "aws_iam_policy_document" "graph_data" {
     resources = ["arn:${local.partition}:sqs:${local.region}:${local.account}:${local.name_prefix}-*"]
   }
 
+  # The key the session keys are wrapped under. CreateKey names no key
+  # before it returns, so the key is made carrying the environment's tag,
+  # and every later call reaches it by that tag; its alias by its name.
+  statement {
+    sid       = "SessionKeyMadeTagged"
+    actions   = ["kms:CreateKey", "kms:TagResource"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/acme:environment"
+      values   = [var.environment]
+    }
+  }
+
+  statement {
+    sid = "SessionKey"
+    actions = [
+      "kms:CancelKeyDeletion",
+      "kms:CreateAlias",
+      "kms:DeleteAlias",
+      "kms:EnableKeyRotation",
+      "kms:GetKeyPolicy",
+      "kms:GetKeyRotationStatus",
+      "kms:ListResourceTags",
+      "kms:PutKeyPolicy",
+      "kms:ScheduleKeyDeletion",
+      "kms:TagResource",
+      "kms:UntagResource",
+      "kms:UpdateAlias",
+      "kms:UpdateKeyDescription",
+    ]
+    resources = ["arn:${local.partition}:kms:${local.region}:${local.account}:key/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/acme:environment"
+      values   = [var.environment]
+    }
+  }
+
+  statement {
+    sid       = "SessionKeyAlias"
+    actions   = ["kms:CreateAlias", "kms:DeleteAlias", "kms:UpdateAlias"]
+    resources = ["arn:${local.partition}:kms:${local.region}:${local.account}:alias/${local.name_prefix}-*"]
+  }
+
   statement {
     sid     = "BucketsAndPortalFiles"
     actions = ["s3:*"]

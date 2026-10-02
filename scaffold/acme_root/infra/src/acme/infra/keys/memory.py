@@ -25,7 +25,7 @@ def root_key(encoded: str) -> bytes:
     other shape refuses the boot."""
     try:
         decoded = base64.urlsafe_b64decode(encoded.encode())
-    except (binascii.Error, ValueError):
+    except binascii.Error, ValueError:
         decoded = b""
     if len(decoded) != DATA_KEY_BYTES:
         raise ValueError(f"the keys root key is URL-safe base64 of {DATA_KEY_BYTES} bytes")
@@ -78,9 +78,7 @@ class KeyServiceMemoryImpl(KeyServiceInterface):
         plaintext = os.urandom(DATA_KEY_BYTES)
         return DataKey(plaintext=plaintext, wrapped=self._wrap(org_id, key_id, version, plaintext))
 
-    async def unwrap(
-        self, org_id: UUID, key_id: UUID, version: int, wrapped: WrappedKey
-    ) -> bytes:
+    async def unwrap(self, org_id: UUID, key_id: UUID, version: int, wrapped: WrappedKey) -> bytes:
         blob = wrapped.blob
         head = VERSION_BYTES + NONCE_BYTES
         if len(blob) <= head:

@@ -67,9 +67,7 @@ class KeyServiceKmsImpl(KeyServiceInterface):
             wrapped=WrappedKey(blob=response["CiphertextBlob"], wrapping=response["KeyId"]),
         )
 
-    async def unwrap(
-        self, org_id: UUID, key_id: UUID, version: int, wrapped: WrappedKey
-    ) -> bytes:
+    async def unwrap(self, org_id: UUID, key_id: UUID, version: int, wrapped: WrappedKey) -> bytes:
         with translated("kms", "unwrap"):
             try:
                 response = await self._client().decrypt(

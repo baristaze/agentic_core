@@ -143,7 +143,10 @@ class InfraConfiguredImpl(InfraInterface):
 
         if settings.keys_backend == "kms":
             self._keys: KeyServiceInterface = KeyServiceKmsImpl(
-                self._aws, region=settings.aws_region, key_id=settings.kms_key_id, timeout=aws_timeout
+                self._aws,
+                region=settings.aws_region,
+                key_id=settings.kms_key_id,
+                timeout=aws_timeout,
             )
         else:
             root = settings.keys_root_key

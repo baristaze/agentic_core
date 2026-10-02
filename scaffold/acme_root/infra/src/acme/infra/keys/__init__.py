@@ -54,9 +54,7 @@ class KeyServiceInterface(ABC):
         ...
 
     @abstractmethod
-    async def unwrap(
-        self, org_id: UUID, key_id: UUID, version: int, wrapped: WrappedKey
-    ) -> bytes:
+    async def unwrap(self, org_id: UUID, key_id: UUID, version: int, wrapped: WrappedKey) -> bytes:
         """The data key `wrapped` holds. `KeyRefused` when it was wrapped
         under another name or another tenant's key, or was altered."""
         ...

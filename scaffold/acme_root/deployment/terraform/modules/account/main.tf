@@ -314,6 +314,25 @@ data "aws_iam_policy_document" "task_boundary" {
     ]
   }
 
+  # The key the session keys are wrapped under: a serving task uses it and
+  # never manages it, and the graph grants the use on that one key.
+  statement {
+    sid = "ItsOwnSessionKey"
+    actions = [
+      "kms:Decrypt",
+      "kms:GenerateDataKey",
+      "kms:ReEncryptFrom",
+      "kms:ReEncryptTo",
+    ]
+    resources = ["arn:${local.partition}:kms:*:${local.account}:key/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/acme:environment"
+      values   = [var.environment]
+    }
+  }
+
   statement {
     sid = "ItsOwnLogStreams"
     actions = [
