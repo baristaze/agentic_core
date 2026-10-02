@@ -18,8 +18,8 @@ is one of the kinds of thing [Acme is made of](../../../../README.md).
 - **Resolver**: what picks a session's fills, from a table a product
   sets. The engine never picks a model itself.
 - **Prices**: whether a model has a price of its own in the one source
-  of prices, which the budgets keep. The resolver asks before it picks
-  a model; a root that wires no prices lets no model be picked.
+  of prices, the budgets' list table. The resolver asks before it picks
+  a model, so a model with no row is never picked.
 
 ## What can happen
 

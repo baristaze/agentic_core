@@ -29,6 +29,7 @@ from acme.infra.base import thaw_mapping
 from acme.integrations.model_providers.calls import Message, ModelCall, OutputSchema, ToolSpec
 from acme.om.attribution.rules import trust_of
 from acme.om.attribution.types.authority import RequestAttribution, Trust
+from acme.om.budgets.types.exposure import CacheWrite, CallShape, PromptCount, PromptSize
 from acme.om.models.types.fill import MAIN, SUMMARIZER, Fill, ModelRole, OutputShape
 from acme.om.steps.types.content import (
     Attachment,
@@ -97,8 +98,9 @@ def is_instruction(step: Step) -> bool:
 
 def pins(step: Step) -> bool:
     """Whether a step feeds the pinned zone: a message that instructs, which
-    a principal wrote or a parent sent its child, never a notice."""
-    return step.type is StepType.MESSAGE and is_instruction(step)
+    a principal wrote or a parent sent its child, never the engine's
+    notice."""
+    return step.type is StepType.MESSAGE and step.actor is not Actor.ENGINE and is_instruction(step)
 
 
 def escape(text: str) -> str:
@@ -178,6 +180,24 @@ def prompt_bytes(call: ModelCall, attachments: Sequence[Attachment]) -> bytes:
         "attachments": [attachment.model_dump(mode="json") for attachment in attachments],
     }
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+
+
+def call_shape(call: ModelCall, fill: Fill) -> CallShape:
+    """What the gate holds of a call before it is made. The prompt's size is
+    a proven upper bound, never an estimate: the bytes of the call's JSON,
+    every text in it included, are at least as many as the tokens a provider
+    counts of that text, since a token stands for one byte of it or more and
+    the JSON's own keys outnumber the few tokens a provider adds to frame a
+    turn; each file's bytes are added whole. A call with a cache marker
+    writes the provider's short cache. The output bound is the fill's, and
+    thinking is billed inside it."""
+    size = len(prompt_bytes(call, ())) + sum(len(file.data) for file in call.files)
+    marked = call.system_cache or any(message.cache for message in call.messages)
+    return CallShape(
+        prompt=PromptSize(tokens=size, counted_by=PromptCount.UPPER_BOUND),
+        cache=CacheWrite.SHORT if marked else CacheWrite.NONE,
+        output_bound=fill.max_output_tokens,
+    )
 
 
 # The main conversation within a run of steps.
@@ -287,6 +307,12 @@ def open_use(steps: Sequence[Step], ex: Exchanges) -> int | None:
         ):
             return index
     return None
+
+
+def latest_request_seq(steps: Sequence[Step]) -> int:
+    """The seq of the latest model request of any role among `steps`, 0 when
+    none: where attribution's range for the next request starts."""
+    return max((step.seq for step in steps if step.type is StepType.MODEL_REQUEST), default=0)
 
 
 def latest_summary(steps: Sequence[Step]) -> Step | None:
@@ -800,10 +826,13 @@ def request_step(
     loop_id: UUID,
     step_id: UUID,
     at: datetime,
+    *,
+    hold_id: UUID | None = None,
 ) -> Step:
     """The `model_request` a rendered request is recorded as: it references
-    the inputs it delivers and names its window, its prompt's hash, and who
-    spoke and who pays as attribution answered for it."""
+    the inputs it delivers and names its window, its prompt's hash, who
+    spoke and who pays as attribution answered for it, and the hold the gate
+    reserved its worst case by."""
     window = rendered.window
     return Step(
         id=step_id,
@@ -823,6 +852,7 @@ def request_step(
             left_edge=window.left_edge,
             summary_id=window.summary_id,
             prompt_hash=rendered.prompt_hash,
+            hold_id=hold_id,
         ),
     )
 

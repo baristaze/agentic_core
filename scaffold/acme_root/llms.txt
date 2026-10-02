@@ -20,14 +20,14 @@ served to it. Exposure is by listing, never by folder.
 - [Files](om/src/acme/om/media/README.md): files as references, the bounded upload straight to the store, and the sweep
 - [Agent sessions](om/src/acme/om/agent_sessions/README.md): sessions as a series of loops over one history, and the status read off their steps
 - [Steps](om/src/acme/om/steps/README.md): the history, written once and numbered with no gaps, and the epoch that refuses a stale run
-- [Agents](om/src/acme/om/agents/README.md): agent kinds, sub-agents in a tree that shares one budget and one deadline, hand-offs, and the result gate
+- [Agents](om/src/acme/om/agents/README.md): agent kinds, sub-agents in a tree that shares one budget and one deadline, hand-offs, the result gate, and the loop every agent runs: each step persisted before it is acted on, recovery by effect under a new epoch, provider errors by kind and the outage signal, streams, steering, and taking over
 - [Attribution](om/src/acme/om/attribution/README.md): who acted, on whose authority, and who pays; the untrusted mark and the rule of two
 - [Privacy](om/src/acme/om/privacy/README.md): content sealed per session under a versioned key, the storage policies, and the revocation that erases content and keeps shape
 - [Budgets](om/src/acme/om/budgets/README.md): what may be spent, the one gate every model call passes first, holds at the worst case, and their settlement
 - [Models](om/src/acme/om/models/README.md): model roles, fills, fill sets and their switches, the resolver, and prices
 - [Windows](om/src/acme/om/windows/README.md): what a model reads: the request rendered from the history, the window sized for its model, the pinned zone, compaction into summaries, and artifacts
 - [Tools](om/src/acme/om/tools/README.md): the tool contract, the registry, policy by class and target, approvals bound to one call, failures, recovery by effect, jobs
-- [Infrastructure](infra/README.md): cache, buckets, topics, queues, secrets, observability, workspaces and the transport; what each promises and which twin runs where
+- [Infrastructure](infra/README.md): cache, buckets, topics, queues, secrets, keys, the outage signal, observability, workspaces and the transport; what each promises and which twin runs where
 - [Integrations](integrations/README.md): the identity provider, its twin, the absent provider, and the webhook check; the model providers, their adapters, and the scripted twin
 - [The API process](services/api/README.md): the routes by area, the gateway's guarantees, the subcommands
 - [The maintenance worker](workers/maintenance/README.md): the work queue's loop, the provider deliveries, and the sweep

@@ -71,6 +71,7 @@ def worker_managers(
             purge_batch=batch,
         ),
         integrations=integrations,
+        environment=settings.environment,
         media_options=MediaOptions(
             retention=timedelta(days=settings.media_retention_days),
             pending_expiry=timedelta(hours=settings.media_pending_expiry_hours),

@@ -10,7 +10,7 @@ cache, so an answer is never older than the history. A session with no
 authority runs no tool call and spends nothing."""
 
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from uuid import UUID
 
 from acme.om.attribution.types.authority import (
@@ -62,18 +62,22 @@ class AttributionManagerInterface(ABC):
 
     @abstractmethod
     async def attribute_request(
-        self, ctx: TenantContext, session_id: UUID, after_seq: int, through_seq: int
+        self, ctx: TenantContext, session_id: UUID, after_seq: int, delivered: Mapping[UUID, int]
     ) -> RequestAttribution:
-        """What the session's next model request records, read from the
-        history: `after_seq` is the seq of its latest model request (0
-        before its first), and `through_seq` the last step the new request
-        delivers. The speaker is the principal behind the latest
-        principal-authored input between the two, else the one that request
-        recorded; the spender is that speaker, else the spender its spawn
-        passed it. An input from an agent, the engine, or an external event
-        never becomes the payer. `NoSpender` when nobody can be named, and
-        then nothing is spent. A range whose start is no model request, or
-        that holds one, is `ValidationFailed`."""
+        """What the session's next model request records, read from exactly
+        the inputs it delivers: `after_seq` is the seq of the latest model
+        request the request was rendered after (0 before its first), and
+        `delivered` the inputs the new request carries, each id with its
+        seq. The speaker is the
+        principal behind the latest principal-authored input among them,
+        else the one that request recorded; the spender is that speaker,
+        else the spender its spawn passed it. An input from an agent, the
+        engine, or an external event never becomes the payer. Each delivered
+        input is read back from the history, so an input that landed after
+        the render, and was not delivered, lends nothing. `NoSpender` when
+        nobody can be named, and then nothing is spent. A start that is no
+        model request, or a delivered step the history does not hold at its
+        place, is `ValidationFailed`."""
         ...
 
     @abstractmethod

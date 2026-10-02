@@ -15,11 +15,14 @@ from acme.infra.workspaces import (
     Workspace,
     WorkspaceProviderInterface,
 )
+from acme.om.attribution import AttributionManagerInterface
+from acme.om.attribution.types.authority import CallReach
 from acme.om.base import Platform, derived_id, new_id, thaw_mapping, utcnow
-from acme.om.context import AppType, Permission, TenantContext
+from acme.om.context import Permission, TenantContext
 from acme.om.events import EventsManagerInterface
 from acme.om.events.manager import audit_event
 from acme.om.exceptions import (
+    AuthorityRevoked,
     NotAuthorized,
     NotFound,
     PlatformException,
@@ -32,6 +35,7 @@ from acme.om.exceptions import (
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.types.row import OutboxRow, versioned_row
 from acme.om.steps import StepsManagerInterface
+from acme.om.steps.rules import origin_of
 from acme.om.steps.types.content import Content, TextBlock
 from acme.om.steps.types.header import (
     ControlCommand,
@@ -40,7 +44,7 @@ from acme.om.steps.types.header import (
     ToolFailure,
     ToolRequestHeader,
 )
-from acme.om.steps.types.step import Actor, Origin, Step, StepType
+from acme.om.steps.types.step import Actor, Step, StepType
 from acme.om.tenancy import TenancyManagerInterface
 from acme.om.tools.manager import ToolsManagerInterface
 from acme.om.tools.registry import ToolRegistry
@@ -55,6 +59,7 @@ from acme.om.tools.rules import (
     infra_failure,
     input_hash,
     job_deadline,
+    reaches_outward,
     recovered_text,
     response,
     verdict,
@@ -70,15 +75,6 @@ log = logging.getLogger(__name__)
 CREATED = "tools.tool_policy.created"
 UPDATED = "tools.tool_policy.updated"
 SECRET_USED = "tools.secret.used"
-
-ORIGINS: dict[AppType, Origin] = {
-    AppType.PORTAL: Origin.PORTAL,
-    AppType.ADMIN: Origin.API,
-    AppType.CLI: Origin.CLI,
-    AppType.API: Origin.API,
-    AppType.WORKER: Origin.AUTOMATION,
-}
-"""Where a person's decision came in, by the app that carried it."""
 
 
 class ToolsOptions(Platform):
@@ -107,7 +103,10 @@ class ToolsManagerImpl(ToolsManagerInterface):
         transport: TransportInterface,
         options: ToolsOptions,
         clock: Callable[[], datetime] = utcnow,
+        *,
+        attribution: AttributionManagerInterface,
     ) -> None:
+        self._attribution = attribution
         self._storage = storage
         self._steps = steps
         self._tenancy = tenancy
@@ -192,6 +191,8 @@ class ToolsManagerImpl(ToolsManagerInterface):
         request: Step,
         call_input: Mapping[str, Any],
         workspace: Workspace,
+        *,
+        holds_private: bool = True,
     ) -> Gate:
         ctx.require(Permission.WRITE)
         resolved = self._resolve(registry, request, call_input)
@@ -219,22 +220,38 @@ class ToolsManagerImpl(ToolsManagerInterface):
             effect=tool.spec.effect,
             target=target,
         )
+        # Whose authority the call runs under, asked of the adopter's
+        # transition on every call, and the rule of two: a marked session
+        # holding private data that acts outward waits for a person, however
+        # policy would decide. A delegated principal who no longer holds the
+        # call is answered `denied`; a steady one that lapsed raises, and the
+        # loop waits for a person to take the session over.
+        reach = CallReach(
+            outward=reaches_outward(call, workspace.spec.egress.mode), holds_private=holds_private
+        )
+        try:
+            authority = await self._attribution.authorize_call(ctx, request.session_id, reach)
+        except AuthorityRevoked as revoked:
+            denied = self._answer(request, revoked.message, ToolFailure.DENIED)
+            return Gate(outcome=GateOutcome.REFUSE, response=denied)
         policy = await self._policy(ctx)
         decision = decide(call, defaults, policy.layer(), self._options.ceilings)
+        if decision is Decision.ALLOW and authority.needs_person:
+            decision = Decision.APPROVE
         if decision is Decision.ALLOW:
-            return Gate(outcome=GateOutcome.RUN, decision=decision)
+            return Gate(outcome=GateOutcome.RUN, decision=decision, authority=authority)
         if decision is Decision.DENY:
             detail = f"policy does not allow {tool.spec.name}, a {call.authorization_class} call"
             denied = self._answer(request, detail, ToolFailure.DENIED)
             return Gate(outcome=GateOutcome.REFUSE, decision=decision, response=denied)
         found, decision_step = verdict(request, await self._after(ctx, request), self._clock())
         if found is Verdict.APPROVED:
-            return Gate(outcome=GateOutcome.RUN, decision=decision)
+            return Gate(outcome=GateOutcome.RUN, decision=decision, authority=authority)
         if found is Verdict.DENIED and decision_step is not None:
             note = decision_step.as_text() or "no reason was given"
             denied = self._answer(request, f"a person denied this call: {note}", ToolFailure.DENIED)
             return Gate(outcome=GateOutcome.REFUSE, decision=decision, response=denied)
-        return Gate(outcome=GateOutcome.ASK, decision=decision)
+        return Gate(outcome=GateOutcome.ASK, decision=decision, authority=authority)
 
     async def execute(
         self,
@@ -384,7 +401,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
             loop_id=request.loop_id,
             type=StepType.CONTROL,
             actor=Actor.PERSON,
-            origin=ORIGINS[ctx.app.type],
+            origin=origin_of(ctx.app.type),
             refs=(request.id,),
             header=ControlHeader(
                 command=ControlCommand.APPROVE if approve else ControlCommand.DENY,

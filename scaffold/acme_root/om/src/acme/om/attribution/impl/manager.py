@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from uuid import UUID
 
@@ -148,30 +148,42 @@ class AttributionManagerImpl(AttributionManagerInterface):
         return taken
 
     async def attribute_request(
-        self, ctx: TenantContext, session_id: UUID, after_seq: int, through_seq: int
+        self, ctx: TenantContext, session_id: UUID, after_seq: int, delivered: Mapping[UUID, int]
     ) -> RequestAttribution:
         ctx.require(Permission.READ)
-        if not 0 <= after_seq <= through_seq:
-            raise ValidationFailed(f"no range from {after_seq} through {through_seq}")
+        if after_seq < 0:
+            raise ValidationFailed(f"no model request at {after_seq}")
         authority = await self._authority(ctx, session_id)
-        steps = await self._range(ctx, session_id, max(after_seq - 1, 0), through_seq)
         previous: Principal | None = None
         if after_seq > 0:
-            latest = steps[0] if steps else None
-            if (
-                latest is None
-                or latest.seq != after_seq
-                or not isinstance(latest.header, ModelRequestHeader)
-            ):
+            found = await self._range(ctx, session_id, after_seq - 1, after_seq)
+            latest = found[0] if found else None
+            if latest is None or not isinstance(latest.header, ModelRequestHeader):
                 raise ValidationFailed(f"step {after_seq} of {session_id} is no model request")
-            previous, steps = latest.header.speaker, steps[1:]
-        if any(isinstance(step.header, ModelRequestHeader) for step in steps):
-            raise ValidationFailed(f"a model request of {session_id} lies after {after_seq}")
-        speaker = speaker_after(previous, steps)
+            previous = latest.header.speaker
+        inputs = await self._delivered(ctx, session_id, delivered)
+        speaker = speaker_after(previous, inputs)
         spender = spender_of(authority.spender, speaker)
         if spender is None:
             raise NoSpender(f"nobody can be named to pay for agent session {session_id}")
         return RequestAttribution(speaker=speaker, spender=spender)
+
+    async def _delivered(
+        self, ctx: TenantContext, session_id: UUID, wanted: Mapping[UUID, int]
+    ) -> list[Step]:
+        """The delivered inputs as the history holds them, in `seq` order:
+        each read back at its place, never taken from the caller."""
+        if not wanted:
+            return []
+        lowest, highest = min(wanted.values()), max(wanted.values())
+        held = {
+            step.id: step
+            for step in await self._range(ctx, session_id, max(lowest - 1, 0), highest)
+            if step.id in wanted and step.seq == wanted[step.id]
+        }
+        if len(held) != len(wanted):
+            raise ValidationFailed(f"a delivered step is not in the history of {session_id}")
+        return sorted(held.values(), key=lambda step: step.seq)
 
     async def is_marked(self, ctx: TenantContext, session_id: UUID) -> bool:
         ctx.require(Permission.READ)

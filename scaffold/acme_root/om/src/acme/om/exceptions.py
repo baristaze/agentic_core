@@ -5,6 +5,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from acme.om.budgets.types.breach import Refusal
     from acme.om.steps.types.header import ToolFailure
 
 
@@ -79,6 +80,14 @@ class Unavailable(PlatformException):
 
     http_status = 503
     code = "unavailable"
+
+
+class UnsafeConfiguration(PlatformException):
+    """A root refused what it was handed at boot: a combination that is only
+    safe on a developer's machine, such as a quiet null budget gate outside
+    `local`."""
+
+    code = "unsafe_configuration"
 
 
 class StorageException(PlatformException): ...
@@ -347,6 +356,18 @@ class PolicyFixed(PrivacyException, Conflict):
 
 
 class BudgetsException(PlatformException): ...
+
+
+class BudgetRefused(BudgetsException):
+    """The gate refused a model call: nothing is held, nothing is spent, and
+    the call is never made. `refusal` lists every breach, each with what
+    clears it, and the loop parks on it (`budgets.rules.budget_park`)."""
+
+    code = "budget_refused"
+
+    def __init__(self, refusal: Refusal) -> None:
+        super().__init__(f"the budget gate refused the call: {len(refusal.breaches)} breach(es)")
+        self.refusal = refusal
 
 
 class SpenderUnknown(BudgetsException, NotAuthorized):

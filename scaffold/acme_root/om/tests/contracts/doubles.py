@@ -76,19 +76,21 @@ async def next_attribution(
     managers: Managers, ctx: TenantContext, session_id: UUID
 ) -> RequestAttribution:
     """What the session's next model request records, as the loop asks it:
-    over the range from the latest model request through the head of the
-    history, which the request delivers whole."""
-    after, through, read = 0, 0, 0
+    from the inputs since the latest model request, which the request
+    delivers whole."""
+    after, read = 0, 0
+    inputs: dict[UUID, int] = {}
     while True:
         page = await managers.steps.get_steps(ctx, session_id, read, 200)
         for step in page.items:
-            through = step.seq
             if step.type is StepType.MODEL_REQUEST:
-                after = step.seq
+                after, inputs = step.seq, {}
+            elif step.type.is_input():
+                inputs[step.id] = step.seq
         if not page.has_more or not page.items:
             break
         read = page.items[-1].seq
-    return await managers.attribution.attribute_request(ctx, session_id, after, through)
+    return await managers.attribution.attribute_request(ctx, session_id, after, inputs)
 
 
 async def model_request(

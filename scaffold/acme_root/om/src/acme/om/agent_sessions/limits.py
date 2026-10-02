@@ -7,7 +7,7 @@ no storage. The budget, a guard too, trips at the gate
 |---|---|---|---|
 | Deadline | one instant the tree shares | guard | parks for a person |
 | Step guard | model calls in one loop | guard | parks so a person looks |
-| Error streak | consecutive tool errors, or identical calls | bound | ends `inconclusive` |
+| Error streak | consecutive tool errors, identical calls, or identical requests | bound | ends `inconclusive` |
 | Nudges | turns that neither continue nor submit | bound | ends `inconclusive` |
 | Run time | wall time of one run | yield | hands the loop back to the queue |
 
@@ -31,8 +31,10 @@ from uuid import UUID
 from pydantic import Field, model_validator
 
 from acme.om.base import Platform
+from acme.om.models.types.fill import MAIN
 from acme.om.steps.types.header import (
     LoopOutcome,
+    ModelRequestHeader,
     ModelResponseHeader,
     Park,
     ParkedHeader,
@@ -94,6 +96,16 @@ class LoopTally(Platform):
     repeats: int = 0  # the run of identical tool calls the latest one ends
     nudges: int = 0  # consecutive model turns that called no tool
     last_call: tuple[str, str] | None = None  # the latest tool call's name and input hash
+    # The run of main-role requests whose prompt was the one before it,
+    # when that one got the provider's answer, and the latest's hash, id,
+    # and whether it was answered: a request the provider answered and that
+    # is sent again unchanged makes no progress, as a repeated tool call
+    # does not. One sent again after a provider error is a retry, and the
+    # provider's error is what the loop handles.
+    same_requests: int = 0
+    last_prompt: str | None = None
+    last_request: UUID | None = None
+    last_answered: bool = False
 
 
 class Trip(Platform):
@@ -132,9 +144,21 @@ def tallied(tally: LoopTally, step: Step) -> LoopTally:
     """The tally once `step` is read. A truncated or abandoned response is
     continued or retried, so it is no turn of its own."""
     header = step.header
-    if step.type is StepType.MODEL_REQUEST:
-        return tally.model_copy(update={"model_calls": tally.model_calls + 1})
+    if isinstance(header, ModelRequestHeader):
+        update: dict[str, object] = {"model_calls": tally.model_calls + 1}
+        if header.role == MAIN:
+            same = tally.last_answered and header.prompt_hash == tally.last_prompt
+            update |= {
+                "same_requests": tally.same_requests + 1 if same else 0,
+                "last_prompt": header.prompt_hash,
+                "last_request": step.id,
+                "last_answered": False,
+            }
+        return tally.model_copy(update=update)
     if isinstance(header, ModelResponseHeader):
+        if step.responds_to == tally.last_request and header.stop_reason is not None:
+            # The provider finished it, cut by its bound or whole.
+            tally = tally.model_copy(update={"last_answered": True})
         if header.truncated or header.abandoned:
             return tally
         called = any(block.kind == "tool_use" for block in step.content.blocks)
@@ -172,7 +196,8 @@ def tripped(
     bounds come first, then the guards, then the yield. `deadline` is the
     tree's, the session's own, never the context's: a worker's stage carries
     none."""
-    if tally.tool_errors >= limits.error_streak or tally.repeats >= limits.error_streak:
+    streak = max(tally.tool_errors, tally.repeats, tally.same_requests)
+    if streak >= limits.error_streak:
         return Trip(limit=Limit.ERROR_STREAK, outcome=LoopOutcome.INCONCLUSIVE)
     if tally.nudges > limits.nudges:
         return Trip(limit=Limit.NUDGES, outcome=LoopOutcome.INCONCLUSIVE)

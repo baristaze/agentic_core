@@ -341,7 +341,7 @@ async def test_a_recorded_loop_names_who_acted_on_whose_authority_and_who_paid(
     asked = await say(managers, ctx, sid)
     loop = asked.id
     epoch = await steps.begin_run(ctx, sid)
-    said = await attribution.attribute_request(ctx, sid, 0, asked.seq)
+    said = await attribution.attribute_request(ctx, sid, 0, {asked.id: asked.seq})
     request = make_request(sid, loop, (asked.id,), spender=said.spender, speaker=said.speaker)
     use = ToolUseBlock(id="call_1", name="read_log", input={"lines": [1, 200]})
     response = Step(
@@ -381,7 +381,7 @@ async def test_a_recorded_loop_names_who_acted_on_whose_authority_and_who_paid(
     await steps.append_steps(ctx, sid, epoch, [call, result])
     routed = a_person()
     event = await say(managers, ctx, sid, make_event(sid, principal=routed))
-    again = await attribution.attribute_request(ctx, sid, stored.seq, event.seq)
+    again = await attribution.attribute_request(ctx, sid, stored.seq, {event.id: event.seq})
     second = make_request(
         sid, loop, (result.id, event.id), spender=again.spender, speaker=again.speaker
     )
@@ -459,9 +459,9 @@ async def test_the_person_who_asked_pays_and_nobody_else_ever_does(
         "an automation's trigger is paid by the automation's principal"
     )
     with pytest.raises(ValidationFailed):
-        await attribution.attribute_request(owner, sid, first.seq, trigger.seq)
+        await attribution.attribute_request(owner, sid, first.seq, {trigger.id: trigger.seq})
     with pytest.raises(ValidationFailed):
-        await attribution.attribute_request(owner, sid, 0, trigger.seq)
+        await attribution.attribute_request(owner, sid, 0, {new_id(): trigger.seq})
 
 
 async def test_a_message_naming_another_is_said_in_its_appenders_name(

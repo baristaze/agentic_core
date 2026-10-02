@@ -7,6 +7,7 @@ from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+from acme.integrations.model_providers.types import Usage
 from acme.om.budgets.pricing import ModelPrice, Rates
 from acme.om.budgets.types.amount import NOTHING, Amount, AmountUnit, Spend
 from acme.om.budgets.types.breach import Breach, BreachAction, Refusal
@@ -160,6 +161,31 @@ def call_exposure(shape: CallShape, price: ModelPrice | None) -> Spend:
         + _ceil(shape.output_bound, max(rates.output, thinking_rate))
         + _ceil(shape.thinking_outside, thinking_rate)
         + sum(int(price.tool_fees[tool.name]) * tool.calls for tool in shape.provider_tools)
+    )
+    return Spend(cost_micros=cost, tokens=tokens)
+
+
+def usage_spend(usage: Usage, price: ModelPrice | None) -> Spend:
+    """What a call's reported usage spent: each class of token at its list
+    rate, at the tier the prompt reached, and thinking at its own rate, else
+    the output's; its native tokens are the prompt, the output, and the
+    thinking. A cache write is priced as the short cache's, the one a
+    rendered request marks. With no price, the cost is unknown and the
+    tokens still count."""
+    tokens = usage.prompt + usage.output + usage.thinking
+    if price is None:
+        return Spend(cost_micros=None, tokens=tokens)
+    rates = price.rates
+    for tier in sorted(price.tiers, key=lambda tier: tier.above):
+        if usage.prompt > tier.above:
+            rates = tier.rates
+    thinking_rate = rates.output if rates.thinking is None else rates.thinking
+    cost = (
+        _ceil(usage.input, rates.input)
+        + _ceil(usage.cache_read, rates.cache_read)
+        + _ceil(usage.cache_write, rates.cache_write)
+        + _ceil(usage.output, rates.output)
+        + _ceil(usage.thinking, thinking_rate)
     )
     return Spend(cost_micros=cost, tokens=tokens)
 

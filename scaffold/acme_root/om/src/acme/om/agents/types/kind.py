@@ -4,8 +4,11 @@ session pins the version it started on.
 
 A kind names the tools it may call, the rule that says when a loop is
 done, the result tool a delivery kind submits through, the authority mode
-its calls run under, and the bounds of a tree it roots. Its prompts and
-its tools' contracts are the product's, versioned with it."""
+its calls run under, and the bounds of a tree it roots. It also carries
+what the loop reads of it: its prompts, the model roles it calls, the
+bounds of one loop, its layer of tool policy, the workspace its sessions
+work in, and whether they hold private data. Its prompts and its tools'
+contracts are the product's, versioned with it."""
 
 from datetime import timedelta
 from enum import StrEnum
@@ -13,10 +16,17 @@ from typing import Self
 
 from pydantic import Field, model_validator
 
+from acme.infra.workspaces import EgressMode, EgressPolicy, IsolationMode, IsolationSpec
+from acme.om.agent_sessions.limits import Limits
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.attribution.types.principal import MAX_KIND
 from acme.om.base import Platform
 from acme.om.exceptions import UnknownAgentKind
+from acme.om.models.types.fill import MAIN, SUMMARIZER, ModelRole
+from acme.om.tools.types.policy import PolicyLayer
+
+NO_WORKSPACE = IsolationSpec(mode=IsolationMode.NONE, egress=EgressPolicy(mode=EgressMode.NONE))
+"""The workspace of a kind that touches none: every transport refuses it."""
 
 
 class DoneRule(StrEnum):
@@ -50,6 +60,23 @@ class AgentKind(Platform):
     # How long a tree the kind roots has, from its start: turned into one
     # instant then, never a duration per call. None is no deadline.
     deadline: timedelta | None = None
+    # Its prompts, in order: the first layer of every request it renders.
+    prompts: tuple[str, ...] = ()
+    # The model roles it calls: its own turns, and the summarizer its
+    # compaction calls.
+    roles: tuple[ModelRole, ...] = (MAIN, SUMMARIZER)
+    # The bounds of one loop: the step guard, the error streak, the run time.
+    limits: Limits = Limits()
+    # Its layer of tool policy, before a tenant narrows or loosens it and
+    # under the platform's ceilings.
+    policy: PolicyLayer = PolicyLayer()
+    # The workspace its sessions work in, prepared to this spec before a
+    # loop's first model call and never weakened.
+    isolation: IsolationSpec = NO_WORKSPACE
+    # Whether its sessions hold private data, one of the rule of two's
+    # three. Only a kind that reads no tenant record and no person's words
+    # says False.
+    private_data: bool = True
 
     @model_validator(mode="after")
     def _a_result_tool_is_one_it_calls(self) -> Self:
@@ -60,6 +87,8 @@ class AgentKind(Platform):
             raise ValueError("a result-tool kind names its result tool, and no other kind does")
         if self.result_tool is not None and self.result_tool not in self.tools:
             raise ValueError("a kind's result tool is one of its tools")
+        if MAIN not in self.roles:
+            raise ValueError("a kind calls the main model role")
         return self
 
 

@@ -4,6 +4,7 @@ decision table holds the three layers: the agent kind's defaults, the
 tenant's layer narrowing or loosening them, and the platform's ceilings no
 layer loosens a call past."""
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -11,6 +12,7 @@ from contracts.doubles import context
 from contracts.factories import make_org
 from contracts.tools import (
     KIND_DEFAULTS,
+    Command,
     PushBranch,
     put_call,
     registry_of,
@@ -19,12 +21,18 @@ from contracts.tools import (
 )
 from pydantic import ValidationError
 
-from acme.infra.workspaces import Workspace
+from acme.infra.workspaces import (
+    EgressMode,
+    EgressPolicy,
+    IsolationMode,
+    IsolationSpec,
+    Workspace,
+)
 from acme.om.base import new_id
 from acme.om.context import Role
 from acme.om.exceptions import NotAuthorized, PreconditionFailed
 from acme.om.steps.types.header import ToolFailure, ToolResponseHeader
-from acme.om.tools.rules import DEFAULT_CEILINGS, UNMATCHED, decide
+from acme.om.tools.rules import DEFAULT_CEILINGS, UNMATCHED, decide, reaches_outward
 from acme.om.tools.types.call import GateOutcome
 from acme.om.tools.types.policy import (
     ApproverRule,
@@ -274,3 +282,33 @@ def test_a_service_never_approves() -> None:
 def test_the_kind_defaults_the_suites_share_deny_a_protected_push() -> None:
     protected = call("push_branch", "integration", Effect.UNSAFE, "branch", protected=True)
     assert decide(protected, KIND_DEFAULTS, PolicyLayer(), DEFAULT_CEILINGS) is DENY
+
+
+@pytest.mark.parametrize(
+    ("egress", "outward"),
+    [(EgressMode.OPEN, True), (EgressMode.NONE, False)],
+)
+async def test_a_call_that_runs_code_acts_outward_from_a_workspace_with_open_egress(
+    tmp_path: Path, egress: EgressMode, outward: bool
+) -> None:
+    """With open egress nothing holds a command to an allowlist, so the rule
+    of two reads the call as one that may act outward; with none, it acts
+    inside the workspace alone."""
+    tools = tools_over(twin_transport(tmp_path)[0])
+    ctx = context(Role.OWNER, make_org())
+    spec = IsolationSpec(mode=IsolationMode.TWIN, egress=EgressPolicy(mode=egress))
+    workspace = Workspace(id=new_id(), org_id=ctx.org_id, spec=spec, location="twin:ws")
+    found = await put_call(tools.steps, ctx, "run_command", {"argv": ["true"]}, "execute")
+    await tools.manager.gate(
+        ctx, registry_of(Command()), KIND_DEFAULTS, found.request, found.call_input, workspace
+    )
+    assert [reach.outward for reach in tools.attribution.reaches] == [outward]
+    assert (
+        reaches_outward(
+            PolicyCall(
+                tool="run_command", authorization_class=ToolClass.EXECUTE, effect=Effect.IDEMPOTENT
+            ),
+            egress,
+        )
+        is outward
+    )

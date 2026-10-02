@@ -1,12 +1,13 @@
 from uuid import UUID
 
+from acme.infra.base import QuietNull
 from acme.om.agents.gate import ResultGateInterface
 from acme.om.agents.rules import OUTCOMES
 from acme.om.agents.types.result import Result, Verdict
 from acme.om.context import TenantContext
 
 
-class ResultGateNullImpl(ResultGateInterface):
+class ResultGateNullImpl(ResultGateInterface, QuietNull):
     """Quiet: accepts every result with the outcome it claims, and marks it
     unverified. It never says a result was checked."""
 
