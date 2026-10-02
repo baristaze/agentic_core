@@ -40,13 +40,13 @@ def set_description(repo, value: str) -> None:
 
 def test_valid_tree_passes(repo, skills, capsys):
     assert skills.main() == 0
-    assert "skills ok: 2 skills, 0 scaffold skills" in capsys.readouterr().out
+    assert "skills ok: 3 skills, 1 review groups, 0 scaffold skills" in capsys.readouterr().out
 
 
 def test_no_skills_folder_passes(repo, skills, capsys):
     shutil.rmtree(repo.root / "skills")
     assert skills.main() == 0
-    assert "skills ok: 0 skills, 0 scaffold skills" in capsys.readouterr().out
+    assert "skills ok: 0 skills, 0 review groups, 0 scaffold skills" in capsys.readouterr().out
 
 
 def test_name_must_equal_folder_and_start_with_agentic(repo, skills, capsys):
@@ -323,3 +323,46 @@ def test_the_scaffolds_claude_skills_is_a_link_to_its_agents_skills(repo, skills
     link.symlink_to("../skills")
     assert skills.main() == 1
     assert f"{LINK}: links to '../skills'; it links to '../.agents/skills'" in capsys.readouterr().out
+
+
+def test_every_lens_group_has_one_review_skill_that_full_names(repo, skills, capsys):
+    repo.edit("lenses/README.md", "| Steps  |\n", "| Steps  |\n| `trust`  | `TRU`  | `trust.md` | Trust  |\n")
+    assert skills.main() == 1
+    out = capsys.readouterr().out
+    assert "skills/: no agentic-review-trust skill for lens group 'trust'" in out
+    assert "skills/agentic-review-full/SKILL.md: does not name agentic-review-trust" in out
+    repo.write("lenses/trust.md", "# Trust\n")
+    repo.write("skills/agentic-review-trust/SKILL.md", repo.read(REVIEW).replace("steps", "trust"))
+    both = "`agentic-review-steps` and `agentic-review-trust`"
+    repo.edit("skills/agentic-review-full/SKILL.md", "`agentic-review-steps`", both)
+    assert skills.main() == 0
+
+
+def test_a_review_skill_for_no_group_or_without_its_lens_file_fails(repo, skills, capsys):
+    ghosts = repo.read(REVIEW).replace("steps", "ghosts").replace("lenses/ghosts.md", "lenses/")
+    repo.write("skills/agentic-review-ghosts/SKILL.md", ghosts)
+    repo.edit("skills/agentic-review-steps/SKILL.md", "`../../lenses/steps.md` and the spec", "the spec")
+    assert skills.main() == 1
+    out = capsys.readouterr().out
+    assert "skills/agentic-review-ghosts/SKILL.md: no lens group 'ghosts' in lenses/README.md" in out
+    assert "skills/agentic-review-steps/SKILL.md: does not name its lens file, lenses/steps.md" in out
+
+
+def test_a_missing_full_review_fails_and_a_name_inside_another_does_not_count(repo, skills, capsys):
+    full = "skills/agentic-review-full/SKILL.md"
+    repo.write(full, repo.read(full).replace("agentic-review-steps", "agentic-review-steps-extra"))
+    assert skills.main() == 1
+    assert "skills/agentic-review-full/SKILL.md: does not name agentic-review-steps" in capsys.readouterr().out
+    shutil.rmtree(repo.root / "skills" / "agentic-review-full")
+    assert skills.main() == 1
+    assert "skills/agentic-review-full/SKILL.md: missing" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "path, entry",
+    [("skills/agentic-review-steps/SKILL.md", "Bash(python3:*)"), ("skills/agentic-review-full/SKILL.md", "Bash(uv run:*)")],
+)
+def test_a_review_skill_that_pre_approves_more_than_a_git_command_fails(repo, skills, capsys, path, entry):
+    repo.edit(path, "allowed-tools: Read,", f"allowed-tools: Read, {entry},")
+    assert skills.main() == 1
+    assert f"{path}: {entry!r} lets a review run more than a git command with nobody asked" in capsys.readouterr().out
