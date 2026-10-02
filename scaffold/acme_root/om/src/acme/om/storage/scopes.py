@@ -107,6 +107,8 @@ TABLE_SCOPES: dict[str, TableScope] = {
     "agent_sessions": TableScope(ScopeKind.ORG),
     "steps": TableScope(ScopeKind.ORG),
     "step_cursors": TableScope(ScopeKind.ORG),
+    "session_privacy": TableScope(ScopeKind.ORG),
+    "session_keys": TableScope(ScopeKind.ORG),
     # A tenant's rows that also belong to one person in it. A user's person
     # is the identity behind it, so it narrows on `app.identity_id`; every
     # other row here names the user and narrows on `app.user_id`.

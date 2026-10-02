@@ -14,6 +14,8 @@ from acme.om.orchestrations import OrchestrationsManagerInterface
 from acme.om.orchestrations.storage import OrchestrationsStorageInterface
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.storage import OutboxStorageInterface
+from acme.om.privacy import PrivacyManagerInterface
+from acme.om.privacy.storage import PrivacyStorageInterface
 from acme.om.root import build_managers
 from acme.om.steps import StepsManagerInterface
 from acme.om.steps.storage import StepStorageInterface
@@ -45,6 +47,7 @@ async def test_memory_root_serves_every_storage() -> None:
     assert isinstance(root.get_orchestrations_storage(), OrchestrationsStorageInterface)
     assert isinstance(root.get_step_storage(), StepStorageInterface)
     assert isinstance(root.get_agent_session_storage(), AgentSessionStorageInterface)
+    assert isinstance(root.get_privacy_storage(), PrivacyStorageInterface)
     assert await root.healthcheck() is True
     await root.close()
 
@@ -110,6 +113,7 @@ def test_business_root_has_a_field_per_manager(tmp_path: Path) -> None:
     assert isinstance(managers.orchestrations, OrchestrationsManagerInterface)
     assert isinstance(managers.steps, StepsManagerInterface)
     assert isinstance(managers.agent_sessions, AgentSessionsManagerInterface)
+    assert isinstance(managers.privacy, PrivacyManagerInterface)
 
 
 def test_the_tenancy_manager_carries_each_delegate(tmp_path: Path) -> None:
