@@ -54,8 +54,9 @@ In Claude Code, the repository is a plugin marketplace:
 ## Develop
 
 ```bash
-make check     # everything CI runs
-make gen-toc   # regenerate the spec's Contents from its headings
+make check       # everything CI runs
+make gen-toc     # regenerate the spec's Contents from its headings
+make gen-skills  # regenerate the review skills from the template and the lenses
 ```
 
 [`CONTRIBUTING.md`](CONTRIBUTING.md) says what `make check` needs and
