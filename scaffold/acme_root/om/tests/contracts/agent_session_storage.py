@@ -1,0 +1,136 @@
+"""The agent session storage contract. The cases named in
+`CROSS_TENANT_CASES` are the tenant fence's evidence: each one presents
+another tenant's identifier and asserts that nothing is found and nothing
+changes."""
+
+from datetime import timedelta
+
+import pytest
+
+from acme.om.agent_sessions.storage import AgentSessionStorageInterface
+from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
+from acme.om.base import new_id, utcnow
+from acme.om.exceptions import PreconditionFailed
+from acme.om.steps.types.header import Park, ParkReason
+
+CROSS_TENANT_CASES: frozenset[str] = frozenset(
+    {"create_session", "read_session", "read_sessions", "write_session"}
+)
+"""Every method of `AgentSessionStorageInterface` that takes a tenant has a
+case in this module that presents another tenant's."""
+
+
+def make_session(*, parent: AgentSession | None = None) -> AgentSession:
+    now = utcnow()
+    actor = new_id()
+    session_id = new_id()
+    return AgentSession(
+        id=session_id,
+        created_at=now,
+        updated_at=now,
+        created_by=actor,
+        updated_by=actor,
+        title="the gripper drops the part",
+        participants=(actor, new_id()),
+        parent_id=None if parent is None else parent.id,
+        root_id=session_id if parent is None else parent.root_id,
+    )
+
+
+def parked(session: AgentSession, version: int) -> AgentSession:
+    """The session as a projection leaves it when its loop parks."""
+    return session.model_copy(
+        update={
+            "status": SessionStatus.PARKED,
+            "park": Park(
+                reason=ParkReason.BUDGET, unlock="raise", retry_at=utcnow() + timedelta(hours=1)
+            ),
+            "status_seq": 7,
+            "version": version,
+            "updated_at": utcnow(),
+        }
+    )
+
+
+class AgentSessionStorageContract:
+    @pytest.fixture
+    def storage(self) -> AgentSessionStorageInterface:
+        raise NotImplementedError("the concrete test class provides the storage")
+
+    async def test_round_trip(self, storage: AgentSessionStorageInterface) -> None:
+        org = new_id()
+        root = make_session()
+        child = make_session(parent=root)
+        assert await storage.create_session(org, root, ())
+        assert await storage.create_session(org, child, ())
+        assert await storage.read_session(org, root.id) == root
+        assert await storage.read_session(org, child.id) == child
+        assert await storage.read_session(org, new_id()) is None
+
+    async def test_create_reports_an_existing_id_and_changes_nothing(
+        self, storage: AgentSessionStorageInterface
+    ) -> None:
+        org = new_id()
+        session = make_session()
+        assert await storage.create_session(org, session, ())
+        assert not await storage.create_session(org, session.model_copy(update={"title": "x"}), ())
+        assert await storage.read_session(org, session.id) == session
+
+    async def test_create_session_under_another_tenant_is_not_read_here(
+        self, storage: AgentSessionStorageInterface
+    ) -> None:
+        org_a, org_b = new_id(), new_id()
+        session = make_session()
+        assert await storage.create_session(org_a, session, ())
+        assert not await storage.create_session(
+            org_b, session.model_copy(update={"title": "x"}), ()
+        )
+        assert await storage.read_session(org_b, session.id) is None
+        assert await storage.read_session(org_a, session.id) == session
+
+    async def test_read_sessions_by_status_and_tenant_in_id_order(
+        self, storage: AgentSessionStorageInterface
+    ) -> None:
+        org, elsewhere = new_id(), new_id()
+        sessions = sorted((make_session() for _ in range(3)), key=lambda s: s.id)
+        for session in sessions:
+            assert await storage.create_session(org, session, ())
+        assert await storage.create_session(elsewhere, make_session(), ())
+        waiting = parked(sessions[1], version=2)
+        await storage.write_session(org, waiting, 1, ())
+        assert await storage.read_sessions(org, None, None, 10) == [
+            sessions[0],
+            waiting,
+            sessions[2],
+        ]
+        assert await storage.read_sessions(org, None, sessions[0].id, 1) == [waiting]
+        assert await storage.read_sessions(org, SessionStatus.PARKED, None, 10) == [waiting]
+        assert await storage.read_sessions(org, SessionStatus.IDLE, None, 10) == [
+            sessions[0],
+            sessions[2],
+        ]
+        assert await storage.read_sessions(new_id(), None, None, 10) == []
+
+    async def test_write_is_a_compare_and_set_on_the_version(
+        self, storage: AgentSessionStorageInterface
+    ) -> None:
+        org = new_id()
+        session = make_session()
+        assert await storage.create_session(org, session, ())
+        moved = parked(session, version=2)
+        await storage.write_session(org, moved, 1, ())
+        assert await storage.read_session(org, session.id) == moved
+        with pytest.raises(PreconditionFailed):
+            await storage.write_session(org, parked(session, version=2), 1, ())
+        assert await storage.read_session(org, session.id) == moved
+
+    async def test_write_session_under_another_tenant_lands_nothing(
+        self, storage: AgentSessionStorageInterface
+    ) -> None:
+        org_a, org_b = new_id(), new_id()
+        session = make_session()
+        assert await storage.create_session(org_a, session, ())
+        with pytest.raises(PreconditionFailed):
+            await storage.write_session(org_b, parked(session, version=2), 1, ())
+        assert await storage.read_session(org_a, session.id) == session
+        assert await storage.read_sessions(org_b, None, None, 10) == []
