@@ -46,6 +46,10 @@ This is one of the kinds of thing [Acme is made of](../../../../README.md).
 
 - **A step is written once.** Nothing rewrites it or takes it out of the
   middle of a history: the database refuses both.
+- **A history goes whole, and only by its purge.** When its session or
+  its org is purged, every step goes, and its cursor last. The purge runs
+  in the maintenance worker under a database login of its own, the one
+  login that may delete a step.
 - **No gap, no repeat.** Steps that arrive at once queue for the next
   numbers, and a number is never skipped or given twice.
 - **A stale run is refused, never trusted to stop.**

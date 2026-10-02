@@ -1,6 +1,7 @@
 """The step storage contract over Postgres, and what only the database holds:
-the serving logins cannot rewrite or remove a step, and an append in flight
-holds the session's cursor row to its commit."""
+the serving logins cannot rewrite or remove a step, the purge login removes
+one only within the tenant it names, and an append in flight holds the
+session's cursor row to its commit."""
 
 import asyncio
 from uuid import UUID
@@ -16,10 +17,12 @@ from acme.om.exceptions import StaleWriter
 from acme.om.steps.storage import StepStorageInterface
 from acme.om.steps.storage.impl.postgres import StepStoragePostgresImpl
 from acme.om.steps.storage.tables.step_cursors import StepCursors
+from acme.om.steps.types.page import StepCursor
 from acme.om.storage.impl.pg_base import LoginSessions, SessionFactory, set_scope
-from acme.om.storage.logins import RUNTIME_LOGIN, SYSTEM_LOGIN
+from acme.om.storage.impl.postgres import login_sessions
+from acme.om.storage.logins import PURGE_LOGIN, RUNTIME_LOGIN, SYSTEM_LOGIN
 from acme.om.storage.migrate import ensure_logins_at
-from acme.om.storage.roles import DatabaseRole
+from acme.om.storage.roles import PURGED_TABLES, DatabaseRole
 from acme.om.storage.settings import MigrationSettings
 
 pytestmark = pytest.mark.integration
@@ -165,3 +168,110 @@ async def test_no_serving_login_rewrites_or_removes_a_step(
         (SYSTEM_LOGIN, "INSERT"),
     }
     assert await storage.read_steps(org, session, 0, 10) == [step]
+
+
+DELETE_STEPS = text("DELETE FROM activity.steps RETURNING org_id")
+DELETE_CURSORS = text("DELETE FROM activity.step_cursors RETURNING org_id")
+INSERT_STEP = text("INSERT INTO activity.steps (id) VALUES (gen_random_uuid())")
+EVERY_PRIVILEGE = ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE")
+
+
+async def reached(factory: SessionFactory, scope: UUID | None, statement: TextClause) -> list[UUID]:
+    """The tenants of the rows a DELETE reaches under the given scope, or
+    under none, rolled back so the rows stay."""
+    async with factory() as session:
+        if scope is not None:
+            await set_scope(session, scope, None, None)
+        found = list((await session.execute(statement)).scalars())
+        await session.rollback()
+        return found
+
+
+async def test_only_the_purge_login_deletes_a_step_and_only_in_the_tenant_it_names(
+    pg_sessions: LoginSessions, migration_settings: MigrationSettings
+) -> None:
+    """The one login that may delete a step. Under a tenant's scope it
+    reaches that tenant's steps and cursor rows and no other tenant's; under
+    the system scope, or no scope, it reaches none. It may not insert or
+    rewrite a step, and of every table it holds SELECT and DELETE on the
+    history and its sessions alone. The serving logins hold no DELETE on a
+    step (the case above). A deploy makes the logins again before every
+    migration, so that runs first."""
+    settings = migration_settings
+    await ensure_logins_at(settings.master_url(), settings.login_passwords())
+    storage = StepStoragePostgresImpl(pg_sessions)
+    org, other, session = new_id(), new_id(), new_id()
+    await storage.append_inputs(org, session, [make_message(session)])
+    (theirs,) = await storage.append_inputs(other, session, [make_message(session)])
+    assert pg_sessions.purge is not None
+    purge = pg_sessions.purge[DatabaseRole.ACTIVITY]
+
+    for statement in (DELETE_STEPS, DELETE_CURSORS):
+        assert await reached(purge, org, statement) == [org]
+        assert await reached(purge, other, statement) == [other]
+        assert await reached(purge, EMPTY_UUID, statement) == [], "the system scope"
+        assert await reached(purge, None, statement) == [], "no scope"
+    for statement in (UPDATE_STEP, INSERT_STEP):
+        error = await refused(purge, org, statement)
+        assert "permission denied for table steps" in error, error
+
+    privilege = text("SELECT has_table_privilege(:login, :table, :privilege)")
+    tables = text(
+        "SELECT n.nspname || '.' || c.relname FROM pg_class c"
+        " JOIN pg_namespace n ON n.oid = c.relnamespace"
+        " WHERE c.relkind IN ('r', 'p') AND n.nspname = ANY(:schemas)"
+    )
+    held: set[tuple[str, str]] = set()
+    async with pg_sessions[DatabaseRole.ACTIVITY]() as db:
+        schemas = [role.value for role in DatabaseRole]
+        for table in (await db.execute(tables, {"schemas": schemas})).scalars():
+            for kind in EVERY_PRIVILEGE:
+                found = await db.execute(
+                    privilege, {"login": PURGE_LOGIN, "table": table, "privilege": kind}
+                )
+                if found.scalar_one():
+                    held.add((table.split(".")[1], kind))
+    assert held == {(table, kind) for table in PURGED_TABLES for kind in ("SELECT", "DELETE")}
+
+    assert await storage.purge_tenant(org, 10) == 2, "the step and its cursor"
+    assert await storage.read_steps(org, session, 0, 10) == []
+    assert await storage.read_steps(other, session, 0, 10) == [theirs]
+
+
+async def test_two_workers_purging_one_history_at_once_count_what_is_left(
+    pg_sessions: LoginSessions, migration_settings: MigrationSettings
+) -> None:
+    """Two workers, each with its own purge pool, purge one session's
+    history of more than a batch at once, round after round. The purge login
+    locks no row to choose a batch, so the second one waits for the first
+    and then counts what is left: neither answers fewer than a batch, which
+    reads as the history gone, while a step of it remains."""
+    settings = migration_settings
+    other, engines = login_sessions(
+        settings.role_urls(),
+        settings.role_pools(),
+        system_urls=settings.system_role_urls(),
+        purge_urls=settings.purge_role_urls(),
+    )
+    first, second = StepStoragePostgresImpl(pg_sessions), StepStoragePostgresImpl(other)
+    org, session, batch = new_id(), new_id(), 2
+    await first.append_inputs(org, session, [make_message(session) for _ in range(7)])
+    try:
+        purged, rounds = 0, 0
+        while rounds < 10:
+            rounds += 1
+            run = await race(
+                first.purge_history(org, session, batch),
+                second.purge_history(org, session, batch),
+            )
+            assert run.overlapped, run.summary()
+            purged += sum(run.outcomes)
+            left = await first.read_steps(org, session, 0, 10)
+            if any(count < batch for count in run.outcomes):
+                assert left == [], f"answered gone with {len(left)} steps left: {run.outcomes}"
+                assert await first.read_cursor(org, session) == StepCursor()
+                break
+        assert purged == 8, "seven steps and the cursor, each counted once"
+    finally:
+        for engine in engines.values():
+            await engine.dispose()

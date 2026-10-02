@@ -56,12 +56,16 @@ def urls(name: str) -> dict[str, str]:
     check_name(name)
     settings = MigrationSettings()
     master = master_url()
-    return {
+    found = {
         "ACME_DATABASE_URL": on_database(settings.database_url, name),
         "ACME_DATABASE_SYSTEM_URL": on_database(settings.database_system_url, name),
         "ACME_DATABASE_MIGRATION_URL": on_database(settings.database_migration_url, name),
         "ACME_DATABASE_MASTER_URL": on_database(master, name),
     }
+    # The purge login has no default; ensure-logins refuses to run without it.
+    if settings.database_purge_url:
+        found["ACME_DATABASE_PURGE_URL"] = on_database(settings.database_purge_url, name)
+    return found
 
 
 def master_url() -> str:

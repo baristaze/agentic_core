@@ -1471,6 +1471,7 @@ Decisions][g-adr]).
 | Rule | Summary |
 |---|---|
 | ASY-13 (Infrastructure, Secrets) | When a credential cannot be brokered, a short-lived, scoped secret is injected into the one tool process that needs it, from a stripped environment, redacted everywhere, and audited by name. |
+| STO-28 (The Storage Layer, The Second Fence) | A fourth login, held by the maintenance worker alone, deletes a session and its history within one tenant. |
 | STO-32, STO-34 (Naming Entities; Database Roles) | Step content holds personal values in free text. It is sealed per session, and its erasure is revoking the session's key, never redaction in place. |
 
 ## The Repository

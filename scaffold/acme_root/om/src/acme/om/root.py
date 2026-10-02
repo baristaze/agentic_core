@@ -43,8 +43,17 @@ from acme.om.orchestrations import OrchestrationsManagerInterface
 from acme.om.orchestrations.impl.manager import OrchestrationsManagerImpl, OrchestrationsOptions
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.impl.relay import OutboxRelayImpl
+from acme.om.privacy import PrivacyManagerInterface
+from acme.om.privacy.impl.keys import SessionKeysImpl
+from acme.om.privacy.impl.manager import PrivacyManagerImpl, PrivacyOptions
+from acme.om.privacy.impl.memory_only_steps import StepStorageShapeOnlyImpl
+from acme.om.privacy.impl.routed_steps import StepStorageRoutedImpl
+from acme.om.privacy.impl.sealed_steps import StepStorageSealedImpl
+from acme.om.privacy.keys import SessionKeysInterface
 from acme.om.steps import StepsManagerInterface
 from acme.om.steps.impl.manager import StepsManagerImpl, StepsOptions
+from acme.om.steps.storage import StepStorageInterface
+from acme.om.steps.storage.impl.memory import StepStorageMemoryImpl
 from acme.om.storage.root import StorageInterface
 from acme.om.tenancy import TenancyManagerInterface, TenancyOperatorManagerInterface
 from acme.om.tenancy.impl.credentials import TenancyCredentialsManagerImpl
@@ -72,6 +81,7 @@ class Managers:
     orchestrations: OrchestrationsManagerInterface
     steps: StepsManagerInterface
     agent_sessions: AgentSessionsManagerInterface
+    privacy: PrivacyManagerInterface
     budgets: BudgetsManagerInterface
     budget_gate: BudgetGateInterface
     pricing: PricingInterface
@@ -125,6 +135,22 @@ def build_tenancy(
         credentials=credentials,
     )
     return tenancy
+
+
+def private_history(
+    storage: StorageInterface, keys: SessionKeysInterface, transient: StepStorageInterface
+) -> StepStorageInterface:
+    """The history as the engine reaches it: every session routed by its
+    storage policy to content sealed at rest, to a shape at rest and its
+    content in this process, or to nothing at rest (`transient`). Each impl
+    is wired here, at boot; the steps manager sees one interface."""
+    history = storage.get_step_storage()
+    return StepStorageRoutedImpl(
+        sealed=StepStorageSealedImpl(history, keys),
+        shape_only=StepStorageShapeOnlyImpl(history),
+        transient=transient,
+        policies=storage.get_privacy_storage(),
+    )
 
 
 def build_managers(
@@ -214,14 +240,29 @@ def build_managers(
         outbox,
         orchestrations_options or OrchestrationsOptions(),
     )
-    # The history first: a session's status is read off its steps.
-    steps = StepsManagerImpl(storage.get_step_storage(), tenancy, steps_options or StepsOptions())
+    # The history first: a session's status is read off its steps. What a
+    # step says reaches it through the sealing layer, by the session's policy.
+    session_keys = SessionKeysImpl(storage.get_privacy_storage(), infra.get_keys())
+    steps = StepsManagerImpl(
+        private_history(storage, session_keys, StepStorageMemoryImpl()),
+        tenancy,
+        steps_options or StepsOptions(),
+    )
     agent_sessions = AgentSessionsManagerImpl(
         storage.get_agent_session_storage(),
         steps,
         tenancy,
         outbox,
         agent_sessions_options or AgentSessionsOptions(),
+    )
+    privacy = PrivacyManagerImpl(
+        storage.get_privacy_storage(),
+        session_keys,
+        steps,
+        agent_sessions,
+        tenancy,
+        outbox,
+        PrivacyOptions(),
     )
     # The gate reads the budgets of a call's scopes and holds on the ledger.
     budgets = BudgetsManagerImpl(
@@ -289,6 +330,7 @@ def build_managers(
         orchestrations=orchestrations,
         steps=steps,
         agent_sessions=agent_sessions,
+        privacy=privacy,
         budgets=budgets,
         budget_gate=budget_gate,
         # The one source of prices: the list table.

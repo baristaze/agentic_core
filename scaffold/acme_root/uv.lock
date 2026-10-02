@@ -76,6 +76,7 @@ version = "0.1.0"
 source = { editable = "infra" }
 dependencies = [
     { name = "aioboto3" },
+    { name = "cryptography" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-sdk" },
     { name = "prometheus-client" },
@@ -90,6 +91,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "aioboto3", specifier = ">=15.5" },
+    { name = "cryptography", specifier = ">=50.0" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.44" },
     { name = "opentelemetry-sdk", specifier = ">=1.44" },
     { name = "prometheus-client", specifier = ">=0.26" },

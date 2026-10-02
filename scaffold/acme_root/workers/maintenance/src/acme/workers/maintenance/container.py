@@ -35,6 +35,11 @@ MEDIA_PURGE_BATCH = 100
 """Files one media purge erases. Each is an object deleted from the store, one
 request apiece, before its row, so the batch is smaller than the rows'."""
 
+AGENT_SESSION_PURGE_BATCH = 100
+"""Sessions one purge across tenants takes up. Each costs a claim, a batch of
+its history, and its row, three statements apiece, so the batch is smaller
+than the rows'."""
+
 
 def events_options(settings: MaintenanceSettings) -> EventsOptions:
     """The sweep's trim of each living org's stream, 90 days by default and
@@ -79,7 +84,11 @@ def worker_managers(
         ),
         orchestrations_options=OrchestrationsOptions(purge_batch=batch),
         steps_options=StepsOptions(purge_batch=batch),
-        agent_sessions_options=AgentSessionsOptions(purge_batch=batch),
+        agent_sessions_options=AgentSessionsOptions(
+            purge_batch=batch,
+            retention=timedelta(days=settings.agent_session_retention_days),
+            purge_sessions=AGENT_SESSION_PURGE_BATCH,
+        ),
         agents_options=AgentsOptions(purge_batch=batch),
         attribution_options=AttributionOptions(purge_batch=batch),
         budgets_options=BudgetsOptions(purge_batch=batch),
@@ -108,10 +117,13 @@ class WorkerContainer:
 
     @classmethod
     def build(cls, settings: MaintenanceSettings) -> WorkerContainer:
+        # The worker is the one process that purges a history, so the one
+        # that holds the purge login; it refuses to start without its URL.
         storage = StoragePostgresImpl(
             settings.role_urls(),
             settings.role_pools(),
             system_urls=settings.system_role_urls(),
+            purge_urls=settings.purge_role_urls(),
         )
         infra = InfraConfiguredImpl(settings)
         # The worker signs nobody in. It deletes a deleted account's person,

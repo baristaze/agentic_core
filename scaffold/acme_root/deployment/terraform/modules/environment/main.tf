@@ -29,10 +29,11 @@ locals {
     for f in local.migration_files : "${f} ${filesha256("${local.repository_root}/${f}")}"
   ]))
 
-  # The migrate task's secrets: the serving logins' URLs, which
-  # `ensure-logins` sets the passwords from, and the master's and the
-  # migration login's.
+  # The migrate task's secrets: the serving logins' URLs and the purge
+  # login's, which `ensure-logins` sets the passwords from, and the master's
+  # and the migration login's.
   migrate_secrets = merge(local.process_secrets, {
+    ACME_DATABASE_PURGE_URL     = module.secrets.database_purge_url_secret_arn
     ACME_DATABASE_MIGRATION_URL = module.secrets.database_migration_url_secret_arn
     ACME_DATABASE_MASTER_URL    = module.secrets.database_master_url_secret_arn
   })
@@ -51,6 +52,8 @@ locals {
     ACME_SQS_QUEUE_PREFIX    = module.queue.prefix
     ACME_SECRETS_BACKEND     = "aws"
     ACME_SECRETS_NAME_PREFIX = module.secrets.application_prefix
+    ACME_KEYS_BACKEND        = "kms"
+    ACME_KMS_KEY_ID          = module.keys.alias_name
     ACME_AWS_REGION          = var.region
     ACME_LOG_JSON            = "true"
     ACME_DATABASE_POOL_SIZE  = tostring(var.database_pool_size)
@@ -100,6 +103,7 @@ locals {
     module.queue.policy_arn,
     module.buckets.policy_arn,
     module.secrets.policy_arn,
+    module.keys.policy_arn,
   ]
 }
 
@@ -170,6 +174,15 @@ module "buckets" {
   browser_origins = concat(["https://${var.app_domain_name}"], var.cors_origins)
   # Every key the media namespace writes is <org_id>/media/<purpose>/<id>.
   object_key_patterns = { "user-file-uploads" = "*/media/*" }
+}
+
+# The use of the key the session keys are wrapped under: what a step says
+# is sealed under a session's data key, and the data key is kept wrapped by
+# the account's key, which outlives this graph.
+module "keys" {
+  source = "../keys"
+
+  environment = var.environment
 }
 
 module "secrets" {
@@ -305,10 +318,10 @@ module "domain_records" {
 
 # The two one-off tasks, both on the API image. The migrate task is the one
 # place the master's and the migration login's URLs are injected: it runs
-# `ensure-logins` as the master (the three logins, their passwords from their
+# `ensure-logins` as the master (the four logins, their passwords from their
 # URLs, the ownership moved to the migration login, the grants), then the
-# migrations as the migration login. It holds the runtime and system URLs as
-# well, since `ensure-logins` sets those logins' passwords from them.
+# migrations as the migration login. It holds the runtime, system, and purge
+# URLs as well, since `ensure-logins` sets those logins' passwords from them.
 module "migrate" {
   source = "../task"
 
@@ -452,9 +465,12 @@ module "maintenance" {
   policy_arns        = local.process_policies
 
   # The worker deletes a deleted account's person at WorkOS, through the
-  # same Acme App the API signs people in through, with the same key.
+  # same Acme App the API signs people in through, with the same key. It is
+  # the one process that purges a session's history, so the one that holds
+  # the purge login's URL; it refuses to start without it.
   secrets = merge(local.process_secrets, {
-    ACME_WORKOS_API_KEY = module.secrets.workos_api_key_secret_arn
+    ACME_WORKOS_API_KEY     = module.secrets.workos_api_key_secret_arn
+    ACME_DATABASE_PURGE_URL = module.secrets.database_purge_url_secret_arn
   })
 
   environment_variables = merge(local.process_environment, {

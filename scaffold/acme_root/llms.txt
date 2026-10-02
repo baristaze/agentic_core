@@ -22,6 +22,7 @@ served to it. Exposure is by listing, never by folder.
 - [Steps](om/src/acme/om/steps/README.md): the history, written once and numbered with no gaps, and the epoch that refuses a stale run
 - [Agents](om/src/acme/om/agents/README.md): agent kinds, sub-agents in a tree that shares one budget and one deadline, hand-offs, and the result gate
 - [Attribution](om/src/acme/om/attribution/README.md): who acted, on whose authority, and who pays; the untrusted mark and the rule of two
+- [Privacy](om/src/acme/om/privacy/README.md): content sealed per session under a versioned key, the storage policies, and the revocation that erases content and keeps shape
 - [Budgets](om/src/acme/om/budgets/README.md): what may be spent, the one gate every model call passes first, holds at the worst case, and their settlement
 - [Models](om/src/acme/om/models/README.md): model roles, fills, fill sets and their switches, the resolver, and prices
 - [Infrastructure](infra/README.md): cache, buckets, topics, queues, secrets, observability; what each promises and which twin runs where

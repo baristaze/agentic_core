@@ -55,6 +55,7 @@ LOCAL_DEFAULT_SERVES_THE_CLOUD = {
     "s3_secret_key": "the task role signs; only MinIO needs a key",
     "sqs_endpoint_url": "the hosted endpoint; only ElasticMQ needs one",
     "secrets_file": "the local secrets backend only",
+    "keys_root_key": "the memory key service only; the cloud wraps under KMS",
     "log_level": "INFO everywhere",
     "otel_endpoint": "traces go to the collector sidecar, wired in the task, not a knob",
     "aws_timeout_seconds": "the local default is the tuning",
@@ -91,6 +92,7 @@ LOCAL_DEFAULT_SERVES_THE_CLOUD = {
     "sign_in_delay_retention_hours": "one retention everywhere",
     "media_retention_days": "one retention everywhere",
     "media_pending_expiry_hours": "one retention everywhere",
+    "agent_session_retention_days": "one retention everywhere",
     "event_retention_days": "one retention everywhere, set in code (ADR 0040)",
 }
 
@@ -176,6 +178,7 @@ BOUNDED = (
     "sign_in_delay_retention_hours",
     "media_retention_days",
     "media_pending_expiry_hours",
+    "agent_session_retention_days",
 )
 
 

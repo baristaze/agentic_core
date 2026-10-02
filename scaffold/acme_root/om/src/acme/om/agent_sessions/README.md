@@ -27,6 +27,8 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
   calls, and too many turns that neither go on nor finish, end it
   `inconclusive`; a run that has run long hands its loop to the next run.
 - **Archived**: a flag a person sets on an idle session.
+- **Deleted**: a mark a person sets on an idle session, which hides it
+  and can be undone until its retention ends.
 
 ## What can happen
 
@@ -45,6 +47,14 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
 - **Archive.** An archived session keeps what arrives and wakes for
   nothing, until a person's message brings it back.
 - **List** the sessions in a status, a page at a time.
+- **Delete.** A deleted session is hidden from every read and list. Its
+  history and everything about it stay as they were.
+- **Restore.** Unmarking a deleted session brings it back as it was,
+  with its history.
+- **Purge.** Once a deleted session has waited out its retention, thirty
+  days by default, the sweep removes it and its history for good. From
+  the moment the purge begins, the session can no longer be restored. A
+  deleted org's sessions and history go when the org is purged.
 
 ## The rules
 
@@ -67,3 +77,8 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
   cannot choose otherwise.
 - **Every session belongs to one org.** Another org's session answers as
   one that never existed, and a session's parent is in its own org.
+- **A deleted session answers as one that never existed,** until it is
+  restored.
+- **Nothing is purged on demand.** Only the sweep purges, and only what
+  was deleted longer ago than the retention, or an org deleted longer ago
+  than its own.

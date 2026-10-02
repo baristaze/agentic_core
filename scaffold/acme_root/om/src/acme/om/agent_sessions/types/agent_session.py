@@ -19,7 +19,7 @@ from uuid import UUID
 from pydantic import Field, model_validator
 
 from acme.om.attribution.types.principal import MAX_KIND, Principal
-from acme.om.base import Identifiable, Platform, Trackable
+from acme.om.base import Identifiable, Platform, SoftDeletable, Trackable
 from acme.om.steps.types.content import Stored
 from acme.om.steps.types.header import Park
 
@@ -31,7 +31,7 @@ class SessionStatus(StrEnum):
     IDLE = "idle"  # no loop is open: none began, or the last one ended
 
 
-class AgentSession(Identifiable, Trackable):
+class AgentSession(Identifiable, Trackable, SoftDeletable):
     MANAGER_OWNED_FIELDS: ClassVar[tuple[str, ...]] = (
         "root_id",
         "status",
@@ -44,10 +44,11 @@ class AgentSession(Identifiable, Trackable):
         "depth",
         "speaker",
         "untrusted",
+        "purge_started_at",
     )
-    """The root and the depth follow where the session came from, and the
-    rest is the projection's; a session also takes its mark from where it
-    came and, for a child, the cut of its tools
+    """The root and the depth follow where the session came from, the purge
+    claim is the sweep's, and the rest is the projection's; a session also
+    takes its mark from where it came and, for a child, the cut of its tools
     (`agent_sessions.rules.lineage`)."""
 
     title: Stored = Field(min_length=1, max_length=200)
@@ -81,6 +82,11 @@ class AgentSession(Identifiable, Trackable):
     archived_at: datetime | None = None
     # Every write after the create is a compare-and-set on it.
     version: int = Field(default=1, ge=1)
+    # A session marked deleted (`deleted_at`) is hidden from every read and
+    # comes back when unmarked. Past its retention the sweep claims it for
+    # its purge, here, and from then on it cannot be unmarked: its history
+    # goes, and then its row (ADR 1010).
+    purge_started_at: datetime | None = None
 
     @model_validator(mode="after")
     def _a_park_is_the_parked_status(self) -> Self:
@@ -92,6 +98,12 @@ class AgentSession(Identifiable, Trackable):
     def _one_lineage(self) -> Self:
         if self.parent_id is not None and self.handed_off_from is not None:
             raise ValueError("a session is spawned or handed over, not both")
+        return self
+
+    @model_validator(mode="after")
+    def _a_purge_claims_a_deleted_session(self) -> Self:
+        if self.purge_started_at is not None and self.deleted_at is None:
+            raise ValueError("only a session marked deleted is claimed for its purge")
         return self
 
 

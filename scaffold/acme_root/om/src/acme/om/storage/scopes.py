@@ -109,6 +109,8 @@ TABLE_SCOPES: dict[str, TableScope] = {
     "session_authorities": TableScope(ScopeKind.ORG),
     "steps": TableScope(ScopeKind.ORG),
     "step_cursors": TableScope(ScopeKind.ORG),
+    "session_privacy": TableScope(ScopeKind.ORG),
+    "session_keys": TableScope(ScopeKind.ORG),
     "budgets": TableScope(ScopeKind.ORG),
     "budget_tallies": TableScope(ScopeKind.ORG),
     "budget_holds": TableScope(ScopeKind.ORG),

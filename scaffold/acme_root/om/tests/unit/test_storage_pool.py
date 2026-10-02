@@ -7,14 +7,20 @@ from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from typing import Any, cast
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.pool import QueuePool
 
+from acme.om.base import EMPTY_UUID, new_id
+from acme.om.steps.storage.impl.postgres import StepStoragePostgresImpl
+from acme.om.steps.storage.tables.steps import Steps
 from acme.om.storage.impl.postgres import (
     POOL_RECYCLE_SECONDS,
+    PURGE_POOL_SIZE,
     StoragePostgresImpl,
     connect_args,
     engine_for,
+    login_sessions,
 )
 from acme.om.storage.roles import DatabaseRole
 from acme.om.storage.settings import RolePool, StorageSettings
@@ -98,6 +104,36 @@ async def test_roles_share_a_pool_only_when_url_and_bounds_agree() -> None:
     root = StoragePostgresImpl(urls, split, system_urls=urls)
     assert len(root._engines) == 2
     await root.close()
+
+
+PURGE_URL = "postgresql+asyncpg://acme_purge:acme_purge@127.0.0.1:55432/acme"
+
+
+async def test_only_a_root_that_names_the_purge_login_can_purge_and_never_the_system_scope() -> (
+    None
+):
+    """A serving process names no purge URL, so it holds no purge pool and
+    every purge it might send is refused before a connection opens. The
+    worker's root opens one pool of `PURGE_POOL_SIZE` per URL beside the
+    others, and refuses a purge under the system scope as the policies do."""
+    shared = RolePool(size=4, checkout_timeout_seconds=1.0, statement_timeout_seconds=2.0)
+    urls, pools = dict.fromkeys(DatabaseRole, URL), dict.fromkeys(DatabaseRole, shared)
+    serving, opened = login_sessions(urls, pools, system_urls=urls)
+    assert serving.purge is None and len(opened) == 1
+    with pytest.raises(RuntimeError, match="holds no purge login"):
+        async with StepStoragePostgresImpl(serving)._purge_session_for(Steps, org_id=new_id()):
+            pass
+    worker, engines = login_sessions(
+        urls, pools, system_urls=urls, purge_urls=dict.fromkeys(DatabaseRole, PURGE_URL)
+    )
+    assert worker.purge is not None
+    sizes = sorted(cast(QueuePool, engine.pool).size() for engine in engines.values())
+    assert sizes == [PURGE_POOL_SIZE, 4]
+    with pytest.raises(RuntimeError, match="the system scope purges nothing"):
+        async with StepStoragePostgresImpl(worker)._purge_session_for(Steps, org_id=EMPTY_UUID):
+            pass
+    for engine in (*opened.values(), *engines.values()):
+        await engine.dispose()
 
 
 class HangingEngine:

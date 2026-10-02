@@ -15,7 +15,7 @@ from acme.om.tenancy import TenancyManagerInterface
 class StepsOptions(Platform):
     max_limit: int = 200  # steps one page holds at most
     max_append: int = 100  # steps one append writes at most
-    purge_batch: int = 1000  # the sweep's batch, which a report of what is left stays under
+    purge_batch: int = 1000  # steps one purge statement deletes at most
 
 
 class StepsManagerImpl(StepsManagerInterface):
@@ -65,7 +65,17 @@ class StepsManagerImpl(StepsManagerInterface):
         ctx.require(Permission.WRITE)
         if not await self._tenancy.tenant_expired(ctx):
             return 0
-        return await self._storage.count_tenant(ctx.org_id, max(1, self._options.purge_batch - 1))
+        return await self._storage.purge_tenant(ctx.org_id, self._options.purge_batch)
+
+    async def purge_histories(
+        self, sessions: Sequence[tuple[UUID, UUID]]
+    ) -> list[tuple[UUID, UUID]]:
+        batch = self._options.purge_batch
+        gone: list[tuple[UUID, UUID]] = []
+        for org_id, session_id in sessions:
+            if await self._storage.purge_history(org_id, session_id, batch) < batch:
+                gone.append((org_id, session_id))
+        return gone
 
     def _bound(self, steps: Sequence[Step]) -> None:
         if len(steps) > self._options.max_append:

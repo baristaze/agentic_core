@@ -60,7 +60,19 @@ the agent works, a loop waits on something, or nothing is open.
 A **step** is one event of a session's history: a message, a control, a
 model's request or response, a tool's request or response, a summary, or
 a mark of a loop's life. Steps are numbered with no gaps and written
-once; the history only grows.
+once; the history only grows, until its purge.
+
+A session marked **deleted** is hidden and can be restored. Once it has
+waited out its retention, the sweep **purges** it with its history, the
+one delete a history has, under a database login no serving process
+holds.
+
+What a step says is its **content**, and it is **sealed**: kept only
+under a **session key** of its own session, which the platform holds
+locked by the org's key. Everything else about a step, its **shape**,
+stays readable. **Revoking** a session's key erases its content and
+keeps its shape, so the history keeps its holes in known places. A
+session may instead keep its content in **memory only**.
 
 An **agent kind** is what kind of agent a session runs: the tools it may
 call, when its work is done, and how its calls are allowed. A session
@@ -135,6 +147,8 @@ arrive twice, so the second copy gets the first one's answer.
 - A sub-agent holds no more than the session above it: fewer tools or
   the same, the same person's authority, and the same budget and
   deadline as the whole tree. A tree names its org, as its sessions do.
+- A step's content is sealed under its session's key, so revoking one
+  key erases what one session said and nothing else.
 - Every model call passes the gate first, charged to the scopes it
   serves: its session, its tree, the person who pays, a project, a team,
   or the org. A budget, its holds, and their settlements name their org.
@@ -147,6 +161,7 @@ arrive twice, so the second copy gets the first one's answer.
 - [Steps](src/acme/om/steps/README.md)
 - [Agents](src/acme/om/agents/README.md)
 - [Attribution](src/acme/om/attribution/README.md)
+- [Privacy](src/acme/om/privacy/README.md)
 - [Budgets](src/acme/om/budgets/README.md)
 - [Models](src/acme/om/models/README.md)
 - [Events](src/acme/om/events/README.md)

@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
@@ -37,7 +38,9 @@ class AgentSessionStorageMemoryImpl(MemoryStorageBase, AgentSessionStorageInterf
         return [
             s
             for s in self._rows(self._sessions, org_id)
-            if (status is None or s.status is status) and (after is None or s.id > after)
+            if s.deleted_at is None
+            and (status is None or s.status is status)
+            and (after is None or s.id > after)
         ][:limit]
 
     async def write_session(
@@ -55,7 +58,28 @@ class AgentSessionStorageMemoryImpl(MemoryStorageBase, AgentSessionStorageInterf
                 raise PreconditionFailed(
                     f"agent session {session.id} is no longer at version {expected_version}"
                 )
-            self._put(self._sessions, org_id, session, outbox_rows)
+            # The version is the whole guard, as the statement's WHERE is in
+            # Postgres: a write that read the session before a delete is
+            # refused by it, so an unmark is a write like any other.
+            self._land(org_id, outbox_rows)
+            self._sessions[session.id] = (org_id, session)
+
+    async def read_purgeable(
+        self, deleted_before: datetime, limit: int
+    ) -> list[tuple[UUID, AgentSession]]:
+        return [
+            (org_id, s)
+            for org_id, s in self._rows_across_tenants(self._sessions)
+            if s.deleted_at is not None and s.deleted_at < deleted_before
+        ][:limit]
+
+    async def purge_session(self, org_id: UUID, session_id: UUID) -> bool:
+        async with self._lock:
+            found = self._get(self._sessions, org_id, session_id)
+            if found is None or found.purge_started_at is None:
+                return False
+            del self._sessions[session_id]
+            return True
 
     async def purge_tenant(self, org_id: UUID, limit: int) -> int:
         async with self._lock:

@@ -79,14 +79,15 @@ us-west-2 lists these services at about the same prices:
 ## The pool follows the database
 
 A serving process opens two pools, the runtime login's and the system
-login's, each of up to `database_pool_size` connections. The two one-off
-tasks, migrate and grant, hold at most 8 together. The rule every size
-keeps: (twice the API's ceiling, since a rollout may double it, plus the
-worker's ceiling) × 2 pools × the pool size + 8 stays under the
-instance's `max_connections` (about 80 for `db.t4g.micro`, 180 for
-`db.t4g.small`, 400 for `db.t4g.medium`, 850 for `db.m6g.large`, 1,700
-for `db.m6g.xlarge`). At XS that is 5 × 2 × 6 + 8 =
-68. Because the rule holds at the ceilings, turning autoscaling on is one
+login's, each of up to `database_pool_size` connections. The worker opens
+a third, the purge login's, of one connection. The two one-off tasks,
+migrate and grant, hold at most 8 together. The rule every size keeps:
+(twice the API's ceiling, since a rollout may double it, plus the
+worker's ceiling) × 2 pools × the pool size, plus the worker's ceiling
+for the purge pools, plus 8, stays under the instance's
+`max_connections` (about 80 for `db.t4g.micro`, 180 for `db.t4g.small`,
+400 for `db.t4g.medium`, 850 for `db.m6g.large`, 1,700 for
+`db.m6g.xlarge`). At XS that is 5 × 2 × 6 + 1 + 8 = 69. Because the rule holds at the ceilings, turning autoscaling on is one
 line ([../../docs/runbooks/scale.md](../../docs/runbooks/scale.md)).
 Raise a ceiling, and the pool is the line to check in the same change.
 
