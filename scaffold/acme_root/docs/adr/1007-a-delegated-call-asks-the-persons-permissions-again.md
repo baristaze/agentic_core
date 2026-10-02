@@ -27,8 +27,10 @@ the permissions the principal holds now, never the system's.
 **The mode picks the principal.** A delegated session's call runs under
 the person who asked last in what the model read: the speaker the request
 that led to the call recorded, never someone whose message landed after
-it. A message is said in the name of the context that appends it, so no
-one asks in another's name. A revoked person's next call is refused
+it. A delegated child's call runs under the principal it inherited,
+whoever speaks to it, so no child holds more than its parent. A message
+is said in the name of the context that appends it, so no one asks in
+another's name. A revoked person's next call is refused
 (`AuthorityRevoked`) and denied. A steady session's call runs under its
 one fixed principal, and when that principal no longer holds, its calls
 stop (`PrincipalLapsed`) until a person takes the session over.

@@ -42,8 +42,8 @@ inbox's check to it.
 
 - A message buys no call its sender may not make, in either authority
   mode.
-- A viewer, who holds `read` alone, instructs only a session whose
-  tools read.
+- A viewer, who holds `read` alone, starts and instructs no session: a
+  start and an append ask `write` before they ask the registry.
 - An adopter whose class needs more than `write` adds its row to the
   table.
 - A spawn is asked like a start: whoever spawns a child holds what its
