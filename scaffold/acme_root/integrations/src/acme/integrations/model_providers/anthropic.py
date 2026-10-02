@@ -431,7 +431,9 @@ class AnthropicReply:
     def _usage_out(self) -> Usage:
         def number(*path: str) -> int:
             value = get(self._usage, *path)
-            return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
+            return (
+                value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
+            )
 
         thinking = number("output_tokens_details", "thinking_tokens")
         # The provider counts cached prompt tokens apart from its input, and

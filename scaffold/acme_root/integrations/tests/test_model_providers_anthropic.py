@@ -75,20 +75,35 @@ def sse(*events: dict[str, Any]) -> str:
     return "".join(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n" for e in events)
 
 
-START = {"type": "message_start", "message": {"id": "msg_1", "model": MODEL, "usage": {"input_tokens": 10}}}
+START = {
+    "type": "message_start",
+    "message": {"id": "msg_1", "model": MODEL, "usage": {"input_tokens": 10}},
+}
 STOP = {"type": "message_stop"}
 
 
 def text_block(index: int, text: str) -> list[dict[str, Any]]:
     return [
-        {"type": "content_block_start", "index": index, "content_block": {"type": "text", "text": ""}},
-        {"type": "content_block_delta", "index": index, "delta": {"type": "text_delta", "text": text}},
+        {
+            "type": "content_block_start",
+            "index": index,
+            "content_block": {"type": "text", "text": ""},
+        },
+        {
+            "type": "content_block_delta",
+            "index": index,
+            "delta": {"type": "text_delta", "text": text},
+        },
         {"type": "content_block_stop", "index": index},
     ]
 
 
 def ended(reason: str, output: int = 5) -> dict[str, Any]:
-    return {"type": "message_delta", "delta": {"stop_reason": reason}, "usage": {"output_tokens": output}}
+    return {
+        "type": "message_delta",
+        "delta": {"stop_reason": reason},
+        "usage": {"output_tokens": output},
+    }
 
 
 # The reply, from the provider's events.
@@ -172,7 +187,9 @@ async def test_an_unknown_stop_reason_is_recorded_as_truncated() -> None:
         (["{}"], "x" * 201),  # a name past the bound
     ],
 )
-async def test_a_malformed_tool_use_is_dropped_and_never_runs(fragments: list[str], name: str) -> None:
+async def test_a_malformed_tool_use_is_dropped_and_never_runs(
+    fragments: list[str], name: str
+) -> None:
     events = [
         START,
         {
@@ -181,7 +198,11 @@ async def test_a_malformed_tool_use_is_dropped_and_never_runs(fragments: list[st
             "content_block": {"type": "tool_use", "id": "toolu_9", "name": name, "input": {}},
         },
         *(
-            {"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": f}}
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "input_json_delta", "partial_json": f},
+            }
             for f in fragments
         ),
         {"type": "content_block_stop", "index": 0},
@@ -238,10 +259,24 @@ async def test_thinking_replays_with_its_signature_to_the_model_that_thought_it(
     body, dropped = request_body(continuation(MODEL, thought))
     assert dropped == ()
     assistant = body["messages"][1]["content"]
-    assert assistant[0] == {"type": "thinking", "thinking": thought.text, "signature": thought.signature}
-    assert assistant[1] == {"type": "tool_use", "id": "toolu_1", "name": "add", "input": {"a": 17, "b": 25}}
+    assert assistant[0] == {
+        "type": "thinking",
+        "thinking": thought.text,
+        "signature": thought.signature,
+    }
+    assert assistant[1] == {
+        "type": "tool_use",
+        "id": "toolu_1",
+        "name": "add",
+        "input": {"a": 17, "b": 25},
+    }
     assert body["messages"][2]["content"] == [
-        {"type": "tool_result", "tool_use_id": "toolu_1", "content": [{"type": "text", "text": "42"}], "is_error": False}
+        {
+            "type": "tool_result",
+            "tool_use_id": "toolu_1",
+            "content": [{"type": "text", "text": "42"}],
+            "is_error": False,
+        }
     ]
     assert body["system"] == [{"type": "text", "text": "You are terse."}]
 
@@ -250,14 +285,27 @@ async def test_thinking_replays_with_its_signature_to_the_model_that_thought_it(
     "thought,reason",
     [
         (
-            ThinkingBlock(text="t", signature="s", source=ThinkingSource(provider=ProviderName.ANTHROPIC, model="claude-sonnet-5-5")),
+            ThinkingBlock(
+                text="t",
+                signature="s",
+                source=ThinkingSource(provider=ProviderName.ANTHROPIC, model="claude-sonnet-5-5"),
+            ),
             "thought by",
         ),
         (
-            ThinkingBlock(text="t", signature="s", source=ThinkingSource(provider=ProviderName.OPENAI, model=MODEL)),
+            ThinkingBlock(
+                text="t",
+                signature="s",
+                source=ThinkingSource(provider=ProviderName.OPENAI, model=MODEL),
+            ),
             "thought by",
         ),
-        (ThinkingBlock(text="t", source=ThinkingSource(provider=ProviderName.ANTHROPIC, model=MODEL)), "no signature"),
+        (
+            ThinkingBlock(
+                text="t", source=ThinkingSource(provider=ProviderName.ANTHROPIC, model=MODEL)
+            ),
+            "no signature",
+        ),
     ],
 )
 def test_thinking_another_model_thought_or_unsigned_is_named_and_dropped(
@@ -277,7 +325,11 @@ def test_a_redacted_block_replays_as_its_data() -> None:
 
 def test_cache_markers_take_the_latest_breakpoints_the_provider_allows() -> None:
     turns = tuple(
-        Message(role="user" if i % 2 == 0 else "assistant", blocks=(TextBlock(text=f"turn {i}"),), cache=True)
+        Message(
+            role="user" if i % 2 == 0 else "assistant",
+            blocks=(TextBlock(text=f"turn {i}"),),
+            cache=True,
+        )
         for i in range(5)
     )
     body, dropped = request_body(
@@ -290,10 +342,9 @@ def test_cache_markers_take_the_latest_breakpoints_the_provider_allows() -> None
         )
     )
     marked = [m["content"][-1].get("cache_control") for m in body["messages"]]
-    assert marked == [None, None, {"type": "ephemeral"}, {"type": "ephemeral"}, {"type": "ephemeral"}] or marked[
-        1:
-    ] == [{"type": "ephemeral"}] * 4
-    assert sum(c is not None for c in marked) + ("cache_control" in body["system"][-1]) == 4
+    # Six markers, the system's first: the latest four stay.
+    assert marked == [None, *[{"type": "ephemeral"}] * 4]
+    assert "cache_control" not in body["system"][-1]
     assert [d.what for d in dropped] == ["cache marker"] * 2
 
 
@@ -314,16 +365,25 @@ def test_files_render_from_the_bytes_the_call_carries() -> None:
         ),
         max_output_tokens=100,
         files=(
-            FileData(attachment_id=image, name="arm.png", media_type="image/png", data=b"png"),
+            FileData(attachment_id=image, name="chart.png", media_type="image/png", data=b"png"),
             FileData(attachment_id=pdf, name="spec.pdf", media_type="application/pdf", data=b"pdf"),
             FileData(attachment_id=notes, name="notes.txt", media_type="text/plain", data=b"notes"),
-            FileData(attachment_id=sheet, name="a.xlsx", media_type="application/vnd.ms-excel", data=b"x"),
+            FileData(
+                attachment_id=sheet, name="a.xlsx", media_type="application/vnd.ms-excel", data=b"x"
+            ),
         ),
     )
     body, dropped = request_body(call)
     content = body["messages"][0]["content"]
-    assert content[0] == {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "cG5n"}}
-    assert content[1]["source"] == {"type": "base64", "media_type": "application/pdf", "data": "cGRm"}
+    assert content[0] == {
+        "type": "image",
+        "source": {"type": "base64", "media_type": "image/png", "data": "cG5n"},
+    }
+    assert content[1]["source"] == {
+        "type": "base64",
+        "media_type": "application/pdf",
+        "data": "cGRm",
+    }
     assert content[2]["source"] == {"type": "text", "media_type": "text/plain", "data": "notes"}
     assert len(content) == 3 and [d.what for d in dropped] == ["document"]
     missing = call.model_copy(update={"files": ()})
@@ -342,10 +402,18 @@ def test_effort_a_thinking_budget_and_a_schema_map_to_the_request() -> None:
         output_schema=schema,
     )
     body, dropped = request_body(call)
-    assert body["output_config"] == {"effort": "high", "format": {"type": "json_schema", "schema": {"type": "object"}}}
+    assert body["output_config"] == {
+        "effort": "high",
+        "format": {"type": "json_schema", "schema": {"type": "object"}},
+    }
     assert dropped == () and "thinking" not in body
-    budgeted, _ = request_body(call.model_copy(update={"effort": None, "thinking_budget": 1024, "output_schema": None}))
-    assert budgeted["thinking"] == {"type": "enabled", "budget_tokens": 1024} and "output_config" not in budgeted
+    budgeted, _ = request_body(
+        call.model_copy(update={"effort": None, "thinking_budget": 1024, "output_schema": None})
+    )
+    assert (
+        budgeted["thinking"] == {"type": "enabled", "budget_tokens": 1024}
+        and "output_config" not in budgeted
+    )
     _, none = request_body(call.model_copy(update={"effort": Effort.NONE}))
     assert [d.what for d in none] == ["effort none"]
 
@@ -372,7 +440,9 @@ def test_the_cases_cover_every_kind() -> None:
 # The adapter over HTTP, with the provider stood in by a transport.
 
 
-def adapter(handler: Callable[[httpx.Request], httpx.Response], key: SecretStr | None = KEY) -> ModelProviderAnthropicImpl:
+def adapter(
+    handler: Callable[[httpx.Request], httpx.Response], key: SecretStr | None = KEY
+) -> ModelProviderAnthropicImpl:
     return ModelProviderAnthropicImpl(
         http=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
         api_key=key,

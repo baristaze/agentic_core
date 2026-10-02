@@ -39,14 +39,14 @@ from acme.integrations.model_providers.types import (
 
 CALL = ModelCall(
     model="claude-haiku-4-5",
-    messages=(Message(role="user", blocks=(TextBlock(text="Why does the part drop?"),)),),
+    messages=(Message(role="user", blocks=(TextBlock(text="Why is the total missing?"),)),),
     max_output_tokens=1024,
 )
 SOURCE = ThinkingSource(provider=ProviderName.ANTHROPIC, model="claude-haiku-4-5")
 REPLY = ModelReply(
     blocks=(
-        TextBlock(text="Reading the controller log before anything else."),
-        ToolUseBlock(id="toolu_1", name="read_log", input={"path": "/var/log/arm.log"}),
+        TextBlock(text="Reading the import log before anything else."),
+        ToolUseBlock(id="toolu_1", name="read_log", input={"path": "/var/log/import.log"}),
     ),
     thinking=(ThinkingBlock(text="The log first.", signature="sig", source=SOURCE),),
     stop_reason=StopReason.TOOL_USE,
@@ -61,10 +61,10 @@ async def test_a_reply_streams_in_parts_and_ends_whole_with_its_usage() -> None:
     assert isinstance(parts[-1], Finished) and parts[-1].reply == REPLY
     assert parts[-1].reply.usage == Usage(input=120, cache_read=900, output=40, thinking=12)
     texts = [p.text for p in parts if isinstance(p, TextDelta)]
-    assert len(texts) > 1 and "".join(texts) == "Reading the controller log before anything else."
+    assert len(texts) > 1 and "".join(texts) == "Reading the import log before anything else."
     assert "".join(p.text for p in parts if isinstance(p, ThinkingDelta)) == "The log first."
     inputs = [p.partial_input for p in parts if isinstance(p, ToolUseDelta)]
-    assert "".join(inputs) == '{"path":"/var/log/arm.log"}'
+    assert "".join(inputs) == '{"path":"/var/log/import.log"}'
     assert twin.calls == [CALL] and twin.remaining == 0
 
 
@@ -143,7 +143,9 @@ def test_the_registry_holds_an_adapter_for_every_provider_and_no_other() -> None
     twins = scripted_model_providers()
     assert {twins.get(p).provider for p in ProviderName} == set(ProviderName)
     with pytest.raises(ValueError, match="no adapter"):
-        ModelProvidersOverImpl({ProviderName.OPENAI: ModelProviderScriptedImpl(ProviderName.OPENAI)})
+        ModelProvidersOverImpl(
+            {ProviderName.OPENAI: ModelProviderScriptedImpl(ProviderName.OPENAI)}
+        )
     with pytest.raises(ValueError, match="another provider"):
         ModelProvidersOverImpl(
             {p: ModelProviderScriptedImpl(ProviderName.OPENAI) for p in ProviderName}
