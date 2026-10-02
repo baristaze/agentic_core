@@ -138,8 +138,11 @@ class StepStorageSealedImpl(StepStorageInterface):
     async def read_cursor(self, org_id: UUID, session_id: UUID) -> StepCursor:
         return await self._inner.read_cursor(org_id, session_id)
 
-    async def count_tenant(self, org_id: UUID, limit: int) -> int:
-        return await self._inner.count_tenant(org_id, limit)
+    async def purge_history(self, org_id: UUID, session_id: UUID, limit: int) -> int:
+        return await self._inner.purge_history(org_id, session_id, limit)
+
+    async def purge_tenant(self, org_id: UUID, limit: int) -> int:
+        return await self._inner.purge_tenant(org_id, limit)
 
     async def _sealed(self, org_id: UUID, session_id: UUID, steps: Sequence[Step]) -> list[Step]:
         """Each step that says something, sealed under the session's current

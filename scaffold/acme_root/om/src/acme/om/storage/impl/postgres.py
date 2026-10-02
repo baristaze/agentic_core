@@ -1,9 +1,10 @@
 """The relational storage root: one engine and pool per distinct role URL and
-its bounds, under the runtime login and under the system login, every
-namespace impl constructed here."""
+its bounds, under the runtime login, the system login, and, in the
+maintenance worker, the purge login, every namespace impl constructed here."""
 
 import asyncio
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any
 
 from sqlalchemy import text
@@ -59,6 +60,11 @@ def connect_args(pool: RolePool) -> dict[str, Any]:
     }
 
 
+PURGE_POOL_SIZE = 1
+"""The connections the purge login's pool opens: the sweep sends one purge
+statement at a time, and no other path holds the login (ADR 1010)."""
+
+
 POOL_RECYCLE_SECONDS = 300
 """The age past which a pooled connection is closed at checkout and a new one
 opened in its place. The shortest idle cutoff between a task and its database
@@ -103,24 +109,34 @@ def login_sessions(
     pools: Mapping[DatabaseRole, RolePool],
     *,
     system_urls: Mapping[DatabaseRole, str],
+    purge_urls: Mapping[DatabaseRole, str] | None = None,
 ) -> tuple[LoginSessions, dict[tuple[str, RolePool], AsyncEngine]]:
-    """The session factories of both logins, and the engines behind them keyed
-    by URL and bounds so the caller can dispose of them. This is the one way a
-    pool is opened: the storage root builds its sessions here, and so do the
-    integration suites, which then run every case under the bounds a deployed
-    process holds and not under a library's defaults."""
+    """The session factories of every login the caller names, and the engines
+    behind them keyed by URL and bounds so the caller can dispose of them.
+    This is the one way a pool is opened: the storage root builds its
+    sessions here, and so do the integration suites, which then run every
+    case under the bounds a deployed process holds and not under a library's
+    defaults. `purge_urls` opens the purge login's pools, each of
+    `PURGE_POOL_SIZE` connections under its role's bounds; without it the
+    sessions hold no purge login."""
     engines: dict[tuple[str, RolePool], AsyncEngine] = {}
 
-    def factories(by_role: Mapping[DatabaseRole, str]) -> dict[DatabaseRole, SessionFactory]:
+    def factories(
+        by_role: Mapping[DatabaseRole, str], bounds: Mapping[DatabaseRole, RolePool]
+    ) -> dict[DatabaseRole, SessionFactory]:
         found: dict[DatabaseRole, SessionFactory] = {}
         for role in DatabaseRole:
-            key = (by_role[role], pools[role])
+            key = (by_role[role], bounds[role])
             if key not in engines:
                 engines[key] = engine_for(*key)
             found[role] = async_sessionmaker(engines[key], expire_on_commit=False)
         return found
 
-    return LoginSessions(factories(urls), factories(system_urls)), engines
+    purge = None
+    if purge_urls is not None:
+        one = {role: replace(pool, size=PURGE_POOL_SIZE) for role, pool in pools.items()}
+        purge = factories(purge_urls, one)
+    return LoginSessions(factories(urls, pools), factories(system_urls, pools), purge), engines
 
 
 class StoragePostgresImpl(StorageInterface):
@@ -130,6 +146,7 @@ class StoragePostgresImpl(StorageInterface):
         pools: Mapping[DatabaseRole, RolePool],
         *,
         system_urls: Mapping[DatabaseRole, str],
+        purge_urls: Mapping[DatabaseRole, str] | None = None,
     ) -> None:
         """One engine per distinct URL and bounds: roles that share both share a
         pool, and a role given a size, a checkout bound, or a statement deadline
@@ -140,8 +157,12 @@ class StoragePostgresImpl(StorageInterface):
 
         `system_urls` are the same roles under the system login. They name
         another login, so they open pools of their own under the same bounds,
-        and only the system scope draws on them."""
-        sessions, engines = login_sessions(urls, pools, system_urls=system_urls)
+        and only the system scope draws on them. `purge_urls` are the same
+        roles under the purge login, which only the maintenance worker names:
+        a root built without them deletes no step (ADR 1010)."""
+        sessions, engines = login_sessions(
+            urls, pools, system_urls=system_urls, purge_urls=purge_urls
+        )
         self._engines = engines
         self._sessions = sessions
         self._tenancy = TenancyStoragePostgresImpl(sessions)

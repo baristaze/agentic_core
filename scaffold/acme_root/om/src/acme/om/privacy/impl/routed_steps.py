@@ -80,11 +80,16 @@ class StepStorageRoutedImpl(StepStorageInterface):
         route, _ = await self._route(org_id, session_id, writing=False)
         return await route.read_cursor(org_id, session_id)
 
-    async def count_tenant(self, org_id: UUID, limit: int) -> int:
-        """What the tenant keeps at rest: the history its sealed sessions and
-        its memory-only sessions that keep their shape share, read through
-        the sealed route. A transient session keeps nothing at rest."""
-        return await self._sealed.count_tenant(org_id, limit)
+    async def purge_history(self, org_id: UUID, session_id: UUID, limit: int) -> int:
+        """The session's history at rest, the one its sealed sessions and its
+        memory-only sessions that keep their shape share, purged through the
+        sealed route. A transient session keeps nothing at rest."""
+        return await self._sealed.purge_history(org_id, session_id, limit)
+
+    async def purge_tenant(self, org_id: UUID, limit: int) -> int:
+        """What the tenant keeps at rest, purged through the sealed route, as
+        `purge_history` is."""
+        return await self._sealed.purge_tenant(org_id, limit)
 
     async def _route(
         self, org_id: UUID, session_id: UUID, *, writing: bool

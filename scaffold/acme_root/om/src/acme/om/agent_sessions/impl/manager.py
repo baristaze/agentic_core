@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from acme.om.agent_sessions.manager import AgentSessionsManagerInterface
@@ -7,6 +7,7 @@ from acme.om.agent_sessions.rules import (
     announces,
     parked_step,
     projected,
+    purge_due,
     resumed_step,
     unlock_step,
     wakes_at,
@@ -17,7 +18,7 @@ from acme.om.agent_sessions.types.agent_session import (
     AgentSessionPage,
     SessionStatus,
 )
-from acme.om.base import Platform, new_id, utcnow
+from acme.om.base import EMPTY_UUID, Platform, new_id, utcnow
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import NotFound, PreconditionFailed, TenantMismatch, ValidationFailed
 from acme.om.outbox import OutboxRelayInterface
@@ -29,6 +30,7 @@ from acme.om.work.types.work_item import WakeSessionPayload, WorkKind, work_row_
 
 CREATED = "agent_sessions.agent_session.created"
 UPDATED = "agent_sessions.agent_session.updated"
+DELETED = "agent_sessions.agent_session.deleted"
 
 
 class AgentSessionsOptions(Platform):
@@ -37,6 +39,10 @@ class AgentSessionsOptions(Platform):
     project_attempts: int = 3  # writers one projection reads again behind, at most
     purge_batch: int = 1000  # sessions one purge statement deletes at most
     wake_batch: int = 50  # parked sessions one read of a wake takes
+    # How long a session marked deleted keeps its shape and can be unmarked;
+    # past it the sweep purges it (ADR 1010).
+    retention: timedelta = timedelta(days=30)
+    purge_sessions: int = 100  # sessions one purge across tenants takes up at most
 
 
 class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
@@ -61,7 +67,7 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         root_id = session.id
         if session.parent_id is not None:
             parent = await self._storage.read_session(ctx.org_id, session.parent_id)
-            if parent is None:
+            if parent is None or parent.deleted_at is not None:
                 raise ValidationFailed(f"no parent session {session.parent_id}")
             root_id = parent.root_id
         now = self._clock()
@@ -78,6 +84,9 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
                 "status_seq": 0,
                 "archived_at": None,
                 "version": 1,
+                "deleted_at": None,
+                "deleted_by": None,
+                "purge_started_at": None,
             }
         )
         rows = (versioned_row(ctx, CREATED, created.id, created.version),)
@@ -86,6 +95,8 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
             existing = await self._storage.read_session(ctx.org_id, created.id)
             if existing is None:
                 raise TenantMismatch(f"agent session {created.id} is not in {ctx.org_id}")
+            if existing.deleted_at is not None:
+                raise NotFound(f"agent session {created.id} not found")
             return existing
         await self._relay_all(ctx, rows)
         return created
@@ -211,6 +222,85 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         await self._relay_all(ctx, rows)
         return archived
 
+    async def delete_session(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
+        ctx.require(Permission.WRITE)
+        session = await self._read(ctx, session_id)
+        if session.status is not SessionStatus.IDLE:
+            raise ValidationFailed(f"agent session {session_id} is {session.status.value}")
+        now = self._clock()
+        marked = AgentSession.model_validate(
+            {
+                **session.model_dump(),
+                "deleted_at": now,
+                "deleted_by": ctx.user_id,
+                "version": session.version + 1,
+                "updated_at": now,
+                "updated_by": ctx.user_id,
+            }
+        )
+        rows = (versioned_row(ctx, DELETED, marked.id, marked.version),)
+        await self._storage.write_session(ctx.org_id, marked, session.version, rows)
+        await self._relay_all(ctx, rows)
+        return marked
+
+    async def restore_session(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
+        ctx.require(Permission.WRITE)
+        session = await self._storage.read_session(ctx.org_id, session_id)
+        if session is None or session.purge_started_at is not None:
+            raise NotFound(f"agent session {session_id} not found")
+        if session.deleted_at is None:
+            return session
+        now = self._clock()
+        restored = AgentSession.model_validate(
+            {
+                **session.model_dump(),
+                "deleted_at": None,
+                "deleted_by": None,
+                "version": session.version + 1,
+                "updated_at": now,
+                "updated_by": ctx.user_id,
+            }
+        )
+        rows = (versioned_row(ctx, UPDATED, restored.id, restored.version),)
+        # Conditioned on the version read: a purge claim that lands first
+        # moves it, and this write lands nothing.
+        await self._storage.write_session(ctx.org_id, restored, session.version, rows)
+        await self._relay_all(ctx, rows)
+        return restored
+
+    async def purge_across_tenants(self) -> int:
+        now = self._clock()
+        before = now - self._options.retention
+        found = await self._storage.read_purgeable(before, self._options.purge_sessions)
+        claimed: list[tuple[UUID, UUID]] = []
+        for org_id, session in found:
+            if not purge_due(session, before):
+                continue
+            if session.purge_started_at is None:
+                # The claim is the platform's write, conditioned on the
+                # version read: an unmark that landed since keeps the
+                # session, and one that comes after it is refused.
+                claim = AgentSession.model_validate(
+                    {
+                        **session.model_dump(),
+                        "purge_started_at": now,
+                        "version": session.version + 1,
+                        "updated_at": now,
+                        "updated_by": EMPTY_UUID,
+                    }
+                )
+                try:
+                    await self._storage.write_session(org_id, claim, session.version, ())
+                except PreconditionFailed:
+                    continue
+            claimed.append((org_id, session.id))
+        # The history first, then the row: a failure between the two leaves a
+        # claimed row with no history, which the next pass deletes. The other
+        # order would leave steps no session names, which no pass would find.
+        for org_id, session_id in await self._steps.purge_histories(claimed):
+            await self._storage.purge_session(org_id, session_id)
+        return len(found)
+
     async def purge_tenant(self, ctx: TenantContext) -> int:
         ctx.require(Permission.WRITE)
         if not await self._tenancy.tenant_expired(ctx):
@@ -218,8 +308,10 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         return await self._storage.purge_tenant(ctx.org_id, self._options.purge_batch)
 
     async def _read(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
+        """A session every read may answer: one marked deleted is hidden, as
+        one that never existed is."""
         session = await self._storage.read_session(ctx.org_id, session_id)
-        if session is None:
+        if session is None or session.deleted_at is not None:
             raise NotFound(f"agent session {session_id} not found")
         return session
 

@@ -7,10 +7,12 @@
 -- create roles, and it carries neither attribute.
 --
 -- The master opens one command, `migrate ensure-logins`, which `make migrate`
--- runs first. It makes the three logins the processes connect as: the
+-- runs first. It makes the four logins the processes connect as: the
 -- migration login, which owns the schemas and runs the migrations; the
--- runtime login, which every request uses; and the system login, which only
--- the system scope uses. None of them is a superuser or carries BYPASSRLS.
+-- runtime login, which every request uses; the system login, which only
+-- the system scope uses; and the purge login, which only the worker uses to
+-- delete a session's history. None of them is a superuser or carries
+-- BYPASSRLS.
 --
 -- This runs once, on an empty data directory. A stack that was up before
 -- `acme` could create roles keeps the old login until `make reset`, or until

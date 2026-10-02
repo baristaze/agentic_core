@@ -2,7 +2,7 @@
 # Run the migration once, by hand, as one-off tasks on the migrate task
 # definition an environment root just applied, and fail if either fails:
 # first `acme-api migrate ensure-logins`, which connects as the master and
-# creates or updates the three logins and their grants, then
+# creates or updates the four logins and their grants, then
 # `acme-api migrate --all` as the migration login. The deploys run the same
 # two inside the apply, before the services roll; this is the by-hand
 # runner, from the repo root with the AWS session that applied the

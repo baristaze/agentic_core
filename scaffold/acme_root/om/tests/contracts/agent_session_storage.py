@@ -3,7 +3,7 @@
 another tenant's identifier and asserts that nothing is found and nothing
 changes."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -14,7 +14,14 @@ from acme.om.exceptions import PreconditionFailed
 from acme.om.steps.types.header import Park, ParkReason
 
 CROSS_TENANT_CASES: frozenset[str] = frozenset(
-    {"create_session", "purge_tenant", "read_session", "read_sessions", "write_session"}
+    {
+        "create_session",
+        "purge_session",
+        "purge_tenant",
+        "read_session",
+        "read_sessions",
+        "write_session",
+    }
 )
 """Every method of `AgentSessionStorageInterface` that takes a tenant has a
 case in this module that presents another tenant's."""
@@ -50,6 +57,22 @@ def parked(session: AgentSession, version: int) -> AgentSession:
             "delivering_request": new_id(),
             "version": version,
             "updated_at": utcnow(),
+        }
+    )
+
+
+def marked(
+    session: AgentSession, version: int, at: datetime, *, claimed: bool = False
+) -> AgentSession:
+    """The session as a delete leaves it, and as the sweep's claim leaves it
+    when `claimed`."""
+    return session.model_copy(
+        update={
+            "deleted_at": at,
+            "deleted_by": new_id(),
+            "purge_started_at": at if claimed else None,
+            "version": version,
+            "updated_at": at,
         }
     )
 
@@ -93,6 +116,76 @@ class AgentSessionStorageContract:
         assert await storage.purge_tenant(gone, 2) == 0
         assert await storage.read_sessions(gone, None, None, 10) == []
         assert await storage.read_sessions(kept, None, None, 10) == [stays]
+
+    async def test_a_deleted_session_is_on_no_page_and_still_read_by_id(
+        self, storage: AgentSessionStorageInterface
+    ) -> None:
+        """A page leaves a session marked deleted out, in any status or in
+        none, so no page holds one the manager hides. The read by id answers
+        it as it is, for the manager to hide, unmark, or find claimed, and
+        an unmark puts it back on the page."""
+        org = new_id()
+        kept, gone = make_session(), make_session()
+        for session in (kept, gone):
+            assert await storage.create_session(org, session, ())
+        deleted = marked(gone, 2, utcnow())
+        await storage.write_session(org, deleted, 1, ())
+        assert await storage.read_sessions(org, None, None, 10) == [kept]
+        assert await storage.read_sessions(org, SessionStatus.IDLE, None, 10) == [kept]
+        assert await storage.read_session(org, gone.id) == deleted
+        restored = deleted.model_copy(update={"deleted_at": None, "deleted_by": None, "version": 3})
+        await storage.write_session(org, restored, 2, ())
+        page = await storage.read_sessions(org, None, None, 10)
+        assert page == sorted([kept, restored], key=lambda session: session.id)
+
+    async def test_read_purgeable_answers_sessions_deleted_before_the_cut_with_their_tenant(
+        self, storage: AgentSessionStorageInterface
+    ) -> None:
+        """The sweep's read across tenants: every session marked deleted
+        before the cut, claimed or not, each with its tenant, a batch at most;
+        never one marked since the cut, nor one not marked."""
+        first, second, now = new_id(), new_id(), utcnow()
+        old, older, claimed, recent, live = (make_session() for _ in range(5))
+        for org, session in (
+            (first, old),
+            (first, recent),
+            (first, live),
+            (second, older),
+            (second, claimed),
+        ):
+            assert await storage.create_session(org, session, ())
+        due = {
+            (first, old.id): marked(old, 2, now - timedelta(days=31)),
+            (second, older.id): marked(older, 2, now - timedelta(days=40)),
+            (second, claimed.id): marked(claimed, 2, now - timedelta(days=50), claimed=True),
+        }
+        for (org, _), session in due.items():
+            await storage.write_session(org, session, 1, ())
+        await storage.write_session(first, marked(recent, 2, now - timedelta(days=1)), 1, ())
+        found = await storage.read_purgeable(now - timedelta(days=30), 10)
+        assert {(org, session.id): session for org, session in found} == due
+        assert len(await storage.read_purgeable(now - timedelta(days=30), 2)) == 2
+
+    async def test_purge_session_deletes_a_claimed_session_alone(
+        self, storage: AgentSessionStorageInterface
+    ) -> None:
+        """A session's row goes only once the sweep has claimed it: a session
+        merely marked deleted stays, and so does a claimed one named under
+        another tenant."""
+        org, other, now = new_id(), new_id(), utcnow()
+        unclaimed, claimed = make_session(), make_session()
+        for session in (unclaimed, claimed):
+            assert await storage.create_session(org, session, ())
+        await storage.write_session(org, marked(unclaimed, 2, now), 1, ())
+        purgeable = marked(claimed, 2, now, claimed=True)
+        await storage.write_session(org, purgeable, 1, ())
+        assert not await storage.purge_session(other, claimed.id), "another tenant's"
+        assert not await storage.purge_session(org, unclaimed.id), "marked, never claimed"
+        assert await storage.read_session(org, claimed.id) == purgeable
+        assert await storage.purge_session(org, claimed.id)
+        assert await storage.read_session(org, claimed.id) is None
+        assert not await storage.purge_session(org, claimed.id), "gone already"
+        assert await storage.read_session(org, unclaimed.id) is not None
 
     async def test_create_reports_an_existing_id_and_changes_nothing(
         self, storage: AgentSessionStorageInterface
