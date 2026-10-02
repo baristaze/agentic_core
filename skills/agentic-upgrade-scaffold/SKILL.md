@@ -50,7 +50,9 @@ read as the guideline's skill reads them, with these differences.
   target is the next. A move takes one engine release: when releases
   lie between the base's and a target named, the target is the first of
   them. When the base's commit is no release, `<ref>` is required. When
-  no release is above the base's, stop: there is nothing newer.
+  no release is above the base's, stop: there is nothing newer. A
+  layer's first take has no base, and without `<ref>` takes the newest
+  engine release in that listing, never a guideline tag.
 - `--from <ref>`: the engine release a checkout with no base was copied
   from. `agentic-scaffold-new` names it in its output and in the
   product's first decision.
