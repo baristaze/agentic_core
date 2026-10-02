@@ -275,10 +275,9 @@ class StepStoragePostgresImpl(PgStorageBase, StepStorageInterface):
     async def purge_history(self, org_id: UUID, session_id: UUID, limit: int) -> int:
         # The steps first, a batch on the index that (org_id, session_id)
         # leads, then the cursor row in the same transaction once none is
-        # left, so a history is never left numbered from nothing. The purge
-        # login holds no UPDATE, so it locks no row to choose the batch: a
-        # sweep that picks a step another one is deleting waits for it,
-        # finds it gone, and counts nothing for it.
+        # left, so a history is never left numbered from nothing. The funnel
+        # holds the tenant's purge lock, so a second purge waits for this one
+        # and then counts what is left (`hold_purge`).
         batch = (
             select(Steps.id)
             .where(Steps.org_id == org_id, Steps.session_id == session_id)

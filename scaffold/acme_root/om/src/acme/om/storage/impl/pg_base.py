@@ -342,6 +342,22 @@ costs nothing that shows. `SET LOCAL` ends with the transaction, so no other
 statement on the connection is planned this way."""
 
 
+PURGE_LOCK = text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))")
+"""The lock a purge of one tenant's rows in one role holds to its commit."""
+
+
+async def hold_purge(session: AsyncSession, role: DatabaseRole, org_id: UUID) -> None:
+    """Takes the lock of the purges of one tenant's rows in one role, held to
+    the transaction's end. The purge login holds no UPDATE, so it cannot lock
+    the rows it chooses with `FOR UPDATE SKIP LOCKED`, as `delete_batch`
+    does. Without this lock, a second purge picks the batch the first is
+    deleting, waits for it, and counts nothing, which reads as nothing left
+    while the rest remains. With it, the second waits here, and its delete
+    then reads what the first left. The key names the role, so purges in two
+    roles never wait on each other."""
+    await session.execute(PURGE_LOCK, {"key": f"acme.purge:{role.value}:{org_id}"})
+
+
 def deleted(result: Result[Any]) -> int:
     """The rows a DELETE took, as the driver reports them, so a purge counts
     what went without carrying every id back to count it."""
@@ -409,13 +425,15 @@ class PgStorageBase:
         connection, as the policies refuse it to this login: a purge reaches
         the tenant it names and nothing else. A process that holds no purge
         login, every one but the maintenance worker, is refused too (ADR
-        1010)."""
+        1010). Each transaction holds the tenant's purge lock in its role
+        (`hold_purge`), so two workers purging one tenant take turns."""
         if org_id == EMPTY_UUID:
             raise RuntimeError("a purge names its tenant; the system scope purges nothing")
         if self._sessions.purge is None:
             raise RuntimeError("this process holds no purge login")
         role = role_of(target)
         async with self._scoped(self._sessions.purge[role], role, "purge", org_id) as session:
+            await hold_purge(session, role, org_id)
             yield session
 
     @staticmethod

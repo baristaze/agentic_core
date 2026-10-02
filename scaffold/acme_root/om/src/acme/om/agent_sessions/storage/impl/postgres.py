@@ -106,9 +106,8 @@ class AgentSessionStoragePostgresImpl(PgStorageBase, AgentSessionStorageInterfac
             return purged > 0
 
     async def purge_tenant(self, org_id: UUID, limit: int) -> int:
-        # The purge login holds no UPDATE, so it locks no row to choose a
-        # batch: a sweep that picks a row another one is deleting waits for
-        # it, finds it gone, and counts nothing for it.
+        # The funnel holds the tenant's purge lock, so a second purge waits
+        # for this one and then counts what is left (`hold_purge`).
         batch = select(AgentSessions.id).where(AgentSessions.org_id == org_id).limit(limit)
         stmt = delete(AgentSessions).where(
             AgentSessions.org_id == org_id, AgentSessions.id.in_(batch)

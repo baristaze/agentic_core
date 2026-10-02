@@ -17,7 +17,9 @@ from acme.om.exceptions import StaleWriter
 from acme.om.steps.storage import StepStorageInterface
 from acme.om.steps.storage.impl.postgres import StepStoragePostgresImpl
 from acme.om.steps.storage.tables.step_cursors import StepCursors
+from acme.om.steps.types.page import StepCursor
 from acme.om.storage.impl.pg_base import LoginSessions, SessionFactory, set_scope
+from acme.om.storage.impl.postgres import login_sessions
 from acme.om.storage.logins import PURGE_LOGIN, RUNTIME_LOGIN, SYSTEM_LOGIN
 from acme.om.storage.migrate import ensure_logins_at
 from acme.om.storage.roles import PURGED_TABLES, DatabaseRole
@@ -234,3 +236,42 @@ async def test_only_the_purge_login_deletes_a_step_and_only_in_the_tenant_it_nam
     assert await storage.purge_tenant(org, 10) == 2, "the step and its cursor"
     assert await storage.read_steps(org, session, 0, 10) == []
     assert await storage.read_steps(other, session, 0, 10) == [theirs]
+
+
+async def test_two_workers_purging_one_history_at_once_count_what_is_left(
+    pg_sessions: LoginSessions, migration_settings: MigrationSettings
+) -> None:
+    """Two workers, each with its own purge pool, purge one session's
+    history of more than a batch at once, round after round. The purge login
+    locks no row to choose a batch, so the second one waits for the first
+    and then counts what is left: neither answers fewer than a batch, which
+    reads as the history gone, while a step of it remains."""
+    settings = migration_settings
+    other, engines = login_sessions(
+        settings.role_urls(),
+        settings.role_pools(),
+        system_urls=settings.system_role_urls(),
+        purge_urls=settings.purge_role_urls(),
+    )
+    first, second = StepStoragePostgresImpl(pg_sessions), StepStoragePostgresImpl(other)
+    org, session, batch = new_id(), new_id(), 2
+    await first.append_inputs(org, session, [make_message(session) for _ in range(7)])
+    try:
+        purged, rounds = 0, 0
+        while rounds < 10:
+            rounds += 1
+            run = await race(
+                first.purge_history(org, session, batch),
+                second.purge_history(org, session, batch),
+            )
+            assert run.overlapped, run.summary()
+            purged += sum(run.outcomes)
+            left = await first.read_steps(org, session, 0, 10)
+            if any(count < batch for count in run.outcomes):
+                assert left == [], f"answered gone with {len(left)} steps left: {run.outcomes}"
+                assert await first.read_cursor(org, session) == StepCursor()
+                break
+        assert purged == 8, "seven steps and the cursor, each counted once"
+    finally:
+        for engine in engines.values():
+            await engine.dispose()
