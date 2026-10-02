@@ -217,9 +217,9 @@ the job.
 against the tree's; what cancelling the loop does to it.
 
 **Violation.** A runtime held open while a job works; a job with no
-deadline, or one past the tree's; a job left running after its loop is
-cancelled. (A second job started on recovery is STP-11, and a spending
-job that skips the gate is BND-02.)
+deadline (the hold it under-covers is BND-03), or one past the tree's; a
+job left running after its loop is cancelled. (A second job started on
+recovery is STP-11, and a spending job that skips the gate is BND-02.)
 
 **Severity.** medium
 
@@ -243,7 +243,7 @@ returned; the engine's own retry and the effects it allows.
 
 **Violation.** A failure classed far from where it happened, or with no
 advice; a failing test returned as a tool failure; an engine retry of an
-`unsafe` call.
+`unsafe` call (the repeated side effect is STP-11).
 
 **Severity.** medium
 

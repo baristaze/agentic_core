@@ -150,8 +150,9 @@ source and its lookup; what a model with no price row gets.
 
 **Violation.** One number standing for both figures; a budget read in a
 provider's native tokens when it is set in reference cost; a default
-price row for an unknown model; a call on the tenant's key priced or
-gated differently from one on the platform's.
+price row for an unknown model (the hold it under-covers is BND-03); a
+call on the tenant's key priced or gated differently from one on the
+platform's.
 
 **Severity.** medium
 
