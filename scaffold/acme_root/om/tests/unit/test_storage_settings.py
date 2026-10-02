@@ -59,6 +59,7 @@ def logins(**overrides: str) -> MigrationSettings:
     values = {
         "database_url": LOCAL.format(login="acme_runtime"),
         "database_system_url": LOCAL.format(login="acme_system"),
+        "database_purge_url": LOCAL.format(login="acme_purge"),
         "database_migration_url": LOCAL.format(login="acme_migration"),
         "database_master_url": LOCAL.format(login="acme"),
         **overrides,
@@ -71,15 +72,32 @@ def test_each_login_password_comes_from_its_url() -> None:
         "acme_migration": "acme_migration-pw",
         "acme_runtime": "acme_runtime-pw",
         "acme_system": "acme_system-pw",
+        "acme_purge": "acme_purge-pw",
     }
 
 
 def test_a_url_naming_another_login_is_refused() -> None:
-    # The policies name the system login, so a URL that names another one
-    # would make logins the fence does not know.
-    wrong = logins(database_system_url=LOCAL.format(login="someone"))
-    with pytest.raises(SystemExit, match="names the login 'someone'"):
-        wrong.login_passwords()
+    # The policies name the system login, and the grants the purge login, so
+    # a URL that names another one would make logins the fence does not know.
+    for field in ("database_system_url", "database_purge_url"):
+        wrong = logins(**{field: LOCAL.format(login="someone")})
+        with pytest.raises(SystemExit, match="names the login 'someone'"):
+            wrong.login_passwords()
+
+
+def test_the_purge_login_has_no_default_password() -> None:
+    """With no purge URL, the migrate command sets no password for the login
+    and the worker opens no pool on it: each refuses rather than falls back
+    to a password anyone can read."""
+    bare = MigrationSettings.model_validate(
+        {"_env_file": None, "database_master_url": LOCAL.format(login="acme")}
+    )
+    assert bare.database_purge_url is None
+    with pytest.raises(SystemExit, match="ACME_DATABASE_PURGE_URL"):
+        bare.login_passwords()
+    with pytest.raises(SystemExit, match="ACME_DATABASE_PURGE_URL"):
+        bare.purge_role_urls()
+    assert set(logins().purge_role_urls().values()) == {LOCAL.format(login="acme_purge")}
 
 
 def test_the_migrations_run_under_the_migration_login() -> None:
@@ -94,6 +112,9 @@ def test_a_role_on_its_own_database_keeps_its_database_under_every_login() -> No
     )
     assert moved.system_role_urls()[DatabaseRole.QUEUE] == (
         "postgresql+asyncpg://acme_system:acme_system-pw@db-q:5432/q"
+    )
+    assert moved.purge_role_urls()[DatabaseRole.QUEUE] == (
+        "postgresql+asyncpg://acme_purge:acme_purge-pw@db-q:5432/q"
     )
 
 

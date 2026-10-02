@@ -2,9 +2,10 @@
 any database that is not a local address.
 
 The suites connect the way a deployed process does: the storage impls under
-the runtime login, with the system login's pool beside it, and the migrations
-and the truncation between cases under the migration login, which owns the
-tables. The master opens one connection, `ensure-logins`, once per run."""
+the runtime login, with the system login's pool beside it and the purge
+login's as the worker holds it, and the migrations and the truncation
+between cases under the migration login, which owns the tables. The master
+opens one connection, `ensure-logins`, once per run."""
 
 import asyncio
 from collections.abc import AsyncIterator
@@ -50,15 +51,16 @@ def migrated(migration_settings: MigrationSettings) -> dict[DatabaseRole, str]:
 async def pg_sessions(
     migration_settings: MigrationSettings, migrated: dict[DatabaseRole, str]
 ) -> AsyncIterator[LoginSessions]:
-    """The session factories a storage root builds, built the way it builds
-    them: every role under the runtime login and under the system login beside
-    it, each pool under the bounds the settings name, so every contract case
-    over Postgres runs with the pool size, the checkout bound, and the
-    statement deadline a deployed process holds."""
+    """The session factories a storage root builds, built the way the
+    worker's builds them: every role under the runtime login, the system
+    login, and the purge login, each pool under the bounds the settings name,
+    so every contract case over Postgres runs with the pool size, the
+    checkout bound, and the statement deadline a deployed process holds."""
     sessions, engines = login_sessions(
         migration_settings.role_urls(),
         migration_settings.role_pools(),
         system_urls=migration_settings.system_role_urls(),
+        purge_urls=migration_settings.purge_role_urls(),
     )
     yield sessions
     for engine in engines.values():

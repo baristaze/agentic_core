@@ -51,12 +51,13 @@ network or on the host process. The collector publishes no port.
 
 Only `postgres` is a superuser, and nothing of Acme connects as it.
 `acme_runtime` serves every request, with DML only. `acme_system` is its
-twin for the system scope. `acme_migration` owns the schemas and runs the
-migrations. `acme` is the local master: the init script in
-`postgres/initdb/` makes it, and `make migrate` has it make the other
-three. Each login's password is its name; the superuser's is `postgres`.
-None of the four carries `BYPASSRLS`, so the row-level security policies
-hold for all of them. The init script runs on an empty data directory only.
+twin for the system scope. `acme_purge` deletes a session's history, which
+no serving login may, and only the worker holds it. `acme_migration` owns
+the schemas and runs the migrations. `acme` is the local master: the init
+script in `postgres/initdb/` makes it, and `make migrate` has it make the
+other four. Each login's password is its name; the superuser's is
+`postgres`. None of the five carries `BYPASSRLS`, so the row-level security
+policies hold for all of them. The init script runs on an empty data directory only.
 
 ## Commands
 

@@ -28,7 +28,7 @@ folder:
 | `cache` | Valkey, encrypted in transit |
 | `queue` | One SQS queue and dead-letter queue per `acme.infra.queues.Queues` member |
 | `buckets` | One private versioned bucket per `acme.infra.buckets.Buckets` member |
-| `secrets` | The four database URLs, the TOTP key, the edge secret, the error tracker's DSN, the WorkOS API key and webhook secret, the operator token secrets, the application secrets policy |
+| `secrets` | The five database URLs, the TOTP key, the edge secret, the error tracker's DSN, the WorkOS API key and webhook secret, the operator token secrets, the application secrets policy |
 | `load_balancer` | The API's load balancer: HTTPS, and HTTP redirects |
 | `static_site` | A private bucket behind CloudFront, under security headers; called for the portal and for the company site |
 | `certificate` | A DNS-validated certificate for one name |

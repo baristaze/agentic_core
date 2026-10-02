@@ -14,6 +14,12 @@ output "database_system_url_secret_arn" {
   depends_on  = [aws_secretsmanager_secret_version.login_url]
 }
 
+output "database_purge_url_secret_arn" {
+  description = "The purge login's URL: ACME_DATABASE_PURGE_URL, in the maintenance worker and the migrate task only."
+  value       = aws_secretsmanager_secret.login_url["purge"].arn
+  depends_on  = [aws_secretsmanager_secret_version.login_url]
+}
+
 output "database_migration_url_secret_arn" {
   description = "The migration login's URL: ACME_DATABASE_MIGRATION_URL, in the migrate task only."
   value       = aws_secretsmanager_secret.login_url["migration"].arn

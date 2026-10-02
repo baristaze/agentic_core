@@ -9,6 +9,7 @@ from sqlalchemy.engine import make_url
 
 from acme.om.storage.logins import (
     MIGRATION_LOGIN,
+    PURGE_LOGIN,
     RUNTIME_LOGIN,
     SYSTEM_LOGIN,
     login_of,
@@ -45,6 +46,12 @@ class StorageSettings(BaseSettings):
     # its own URL below, and the system login follows it there.
     database_url: str = "postgresql+asyncpg://acme_runtime:acme_runtime@127.0.0.1:55432/acme"
     database_system_url: str = "postgresql+asyncpg://acme_system:acme_system@127.0.0.1:55432/acme"
+    # The purge login's URL: the one login that may delete a session and its
+    # history (ADR 1010). Only the maintenance worker opens it, on a pool of
+    # one connection, and the migrate command reads it to set the login's
+    # password. It has no default, so no process ever holds a known password
+    # for it: a worker or a migrate run without it refuses to start.
+    database_purge_url: str | None = None
     database_url_core: str | None = None
     database_url_activity: str | None = None
     database_url_queue: str | None = None
@@ -89,14 +96,27 @@ class StorageSettings(BaseSettings):
 
     def local_urls(self) -> list[tuple[str, str]]:
         """Every URL a local command may open, named for the refusal."""
-        return [
+        found = [
             *((role.value, url) for role, url in self.role_urls().items()),
             *((f"{role.value} (system)", url) for role, url in self.system_role_urls().items()),
         ]
+        if self.database_purge_url:
+            found.extend(
+                (f"{role.value} (purge)", url) for role, url in self.purge_role_urls().items()
+            )
+        return found
 
     def system_role_urls(self) -> dict[DatabaseRole, str]:
         """Every role's URL under the system login (see `under_login`)."""
         return self.under_login(self.database_system_url)
+
+    def purge_role_urls(self) -> dict[DatabaseRole, str]:
+        """Every role's URL under the purge login (see `under_login`); refused
+        when the setting is absent, since a default would be a password
+        anyone can read."""
+        if not self.database_purge_url:
+            raise SystemExit("the purge login has no default: set ACME_DATABASE_PURGE_URL")
+        return self.under_login(self.database_purge_url)
 
     def role_overrides(self) -> dict[DatabaseRole, str | None]:
         """The URL each role names of its own, or None for the shared one."""
@@ -190,12 +210,18 @@ class MigrationSettings(StorageSettings):
 
     def login_passwords(self) -> dict[str, str]:
         """Each login's password, from the URL that names it; a URL that names
-        another login is refused, since the policies name these three."""
+        another login is refused, since the policies and the grants name
+        these four, and an absent purge URL is refused (`purge_role_urls`)."""
+        if not self.database_purge_url:
+            raise SystemExit(
+                "ensure-logins sets the purge login's password: set ACME_DATABASE_PURGE_URL"
+            )
         return dict(
             (
                 login_of(self.database_migration_url, MIGRATION_LOGIN),
                 login_of(self.database_url, RUNTIME_LOGIN),
                 login_of(self.database_system_url, SYSTEM_LOGIN),
+                login_of(self.database_purge_url, PURGE_LOGIN),
             )
         )
 
