@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
-from acme.om.attribution.types.principal import Principal, PrincipalKind
+from acme.om.attribution.rules import principal_of
 from acme.om.context import AppType, CredentialKind, TenantContext
 from acme.om.steps.types.content import Content, TextBlock
 from acme.om.steps.types.header import ControlCommand, ControlHeader, InputHeader
@@ -59,9 +59,10 @@ def actor_of(credential: CredentialKind) -> Actor:
 def message_step(
     step_id: UUID, now: datetime, session_id: UUID, ctx: TenantContext, text: str
 ) -> Step:
-    """A principal's message, said through the surface `ctx` arrived on and
-    in its user's name; it wakes as a message does by default. It arrives
-    outside any run, so its loop id is its own."""
+    """A principal's message, said through the surface `ctx` arrived on, in
+    its user's name and through its API key, if it came on one; it wakes as
+    a message does by default. It arrives outside any run, so its loop id is
+    its own."""
     return Step(
         id=step_id,
         created_at=now,
@@ -70,7 +71,7 @@ def message_step(
         type=StepType.MESSAGE,
         actor=actor_of(ctx.credential_kind),
         origin=origin_of(ctx.app.type),
-        header=InputHeader(principal=Principal(kind=PrincipalKind.PERSON, id=ctx.user_id)),
+        header=InputHeader(principal=principal_of(ctx)),
         content=Content(blocks=(TextBlock(text=text),)),
     )
 

@@ -8,6 +8,7 @@ from acme.om.attribution.rules import (
     call_principal,
     inherited,
     needs_person,
+    principal_of,
     speaker_after,
     spender_of,
 )
@@ -60,13 +61,14 @@ async def no_principal_context(
 def members_context(tenancy: TenancyManagerInterface) -> PrincipalContext:
     """The transition a root wires when its adopter hands it none: a person's
     live context as a member of the tenant, asked of the tenancy manager at
-    every call, with the role their membership holds then. A service
-    principal is refused: the tenancy manager grants none."""
+    every call, with the role their membership holds then, capped at the
+    API key they spoke through, if any. A service principal is refused:
+    the tenancy manager grants none."""
 
     async def live(rctx: RequestContext, org_id: UUID, principal: Principal) -> TenantContext:
         if principal.kind is not PrincipalKind.PERSON:
             raise NotAuthorized(f"no {principal.kind.value} principal is granted in the tenant")
-        return await tenancy.member_context(rctx, org_id, principal.id)
+        return await tenancy.member_context(rctx, org_id, principal.id, principal.key_id)
 
     return live
 
@@ -104,7 +106,9 @@ class AttributionManagerImpl(AttributionManagerInterface):
             raise NotAuthorized(f"only the maker of agent session {session_id} opens its authority")
         came_from = session.parent_id or session.handed_off_from
         if came_from is None:
-            principal = Principal(kind=PrincipalKind.PERSON, id=session.created_by)
+            # Its maker, as the context asking (the check above): through
+            # the key it came on, if any, so a key's cap holds here too.
+            principal = principal_of(ctx)
             spender = None
         else:
             source = await self._sessions.get_session_at_head(ctx, came_from)
@@ -144,7 +148,7 @@ class AttributionManagerImpl(AttributionManagerInterface):
         if session.parent_id is not None:
             raise ValidationFailed(f"agent session {session_id} runs under its parent's principal")
         authority = await self._authority(ctx, session_id)
-        principal = Principal(kind=PrincipalKind.PERSON, id=ctx.user_id)
+        principal = principal_of(ctx)
         if authority.principal == principal:
             return authority
         taken = SessionAuthority.model_validate(

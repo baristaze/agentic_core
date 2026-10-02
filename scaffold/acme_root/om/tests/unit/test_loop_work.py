@@ -258,6 +258,42 @@ async def test_no_one_acts_in_an_org_they_hold_no_place_in(engine: Engine) -> No
         await live(request(), ajax.id, Principal(kind=PrincipalKind.SERVICE, id=new_id()))
 
 
+async def test_a_member_who_spoke_through_a_key_acts_no_higher_than_the_key(
+    engine: Engine,
+) -> None:
+    """A message said on an API key records the key, whatever its caller
+    wrote, and a call made on it runs capped at the key's role, with the key
+    as its credential, and only while the key holds."""
+    tenancy = engine.managers.tenancy
+    owner, org = await tenancy.bootstrap(request(), "Ajax", "ajax", "ann@example.test", "Ann")
+    issued = await tenancy.credentials.create_api_key(owner, "ci", Role.MEMBER)
+    program = await tenancy.authenticate(request(), issued.key)
+    session = await engine.session(program)
+    said = message_step(new_id(), utcnow(), session.id, program, "Ship it.")
+    uncapped = Principal(kind=PrincipalKind.PERSON, id=owner.user_id)
+    claimed = said.model_copy(update={"header": InputHeader(principal=uncapped)})
+
+    (stored,), _ = await engine.managers.agent_sessions.receive(program, session.id, [claimed])
+
+    assert isinstance(stored.header, InputHeader)
+    spoken = stored.header.principal
+    assert spoken == uncapped.model_copy(update={"key_id": issued.api_key.id})
+    live = members_context(tenancy)
+    capped = await live(request(), org.id, spoken)
+    assert (capped.role, capped.credential_kind, capped.credential_id) == (
+        Role.MEMBER,
+        CredentialKind.API_KEY,
+        issued.api_key.id,
+    )
+    assert (await live(request(), org.id, uncapped)).role is Role.OWNER
+    _, bob, _ = await tenancy.add_member(request(), "ajax", "bob@example.test", "Bob", Role.ADMIN)
+    with pytest.raises(NotAuthorized, match="not the member's"):
+        await live(request(), org.id, spoken.model_copy(update={"id": bob.id}))
+    await tenancy.credentials.revoke_api_key(owner, issued.api_key.id)
+    with pytest.raises(NotAuthorized, match="revoked"):
+        await live(request(), org.id, spoken)
+
+
 async def test_a_parked_session_the_engine_unlocks_asks_for_its_run(engine: Engine) -> None:
     ctx = context(Role.MEMBER)
     session, epoch, loop_id = await running(engine, ctx)

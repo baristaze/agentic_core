@@ -1,6 +1,7 @@
 """The session runner over memory: the handler of `LOOP`, the claim loop
-that runs a woken session's loop to its end, the kinds each worker
-claims, and the knobs it reads."""
+that runs a woken session's loop to its end, the role a call made on what
+a key said runs with, the kinds each worker claims, and the knobs it
+reads."""
 
 import asyncio
 import re
@@ -10,25 +11,39 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from runner_support import ABSENT, answers
+from runner_support import ABSENT, SONNET, answers
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.integrations.identity.absent import IdentityProviderAbsentImpl
 from acme.integrations.impl.configured import IntegrationsOverImpl
+from acme.integrations.model_providers.calls import ModelReply
+from acme.integrations.model_providers.content import TextBlock, ToolUseBlock
 from acme.integrations.model_providers.registry import scripted_model_providers
-from acme.integrations.model_providers.types import ProviderName
+from acme.integrations.model_providers.types import ProviderName, StopReason, Usage
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
 from acme.om.agents import LoopManagerInterface
+from acme.om.agents.types.kind import NO_WORKSPACE, AgentKind, DoneRule, TreeLimits
 from acme.om.agents.types.request import Start
 from acme.om.agents.types.run import LoopRun, RunEnd
-from acme.om.base import new_id, utcnow
-from acme.om.context import AppContext, AppType, RequestContext, TenantContext
+from acme.om.attribution.types.authority import AuthorityMode
+from acme.om.base import Platform, new_id, utcnow
+from acme.om.context import (
+    AppContext,
+    AppType,
+    CredentialKind,
+    RequestContext,
+    Role,
+    TenantContext,
+)
 from acme.om.exceptions import NotFound, UnknownAgentKind
 from acme.om.steps.rules import message_step
 from acme.om.steps.types.header import LoopOutcome
 from acme.om.steps.types.step import StepType
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.tenancy.rules import ROLE_PERMISSIONS
+from acme.om.tools.tool import ToolInterface, ToolRuntime
+from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule, Target
+from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolSpec
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
 from acme.om.work.types.handler import WorkParked
 from acme.om.work.types.work_item import (
@@ -282,3 +297,115 @@ async def test_the_runner_claims_a_woken_sessions_loop_and_runs_it_to_its_end(
         StepType.LOOP_ENDED,
     ]
     assert page.items[-1].header.outcome is LoopOutcome.SUCCEEDED  # pyright: ignore[reportAttributeAccessIssue]
+
+
+class Nothing(ToolInput):
+    pass
+
+
+class Seen(Platform):
+    role: str
+
+
+class WhoAmI(ToolInterface):
+    """Answers the role its call runs with, and keeps the context."""
+
+    def __init__(self) -> None:
+        self.seen: list[TenantContext] = []
+        self._spec = ToolSpec(
+            name="whoami",
+            description="Answers the role the call runs with.",
+            input_model=Nothing,
+            output_model=Seen,
+            timeout=timedelta(seconds=10),
+            authorization_class=ToolClass.READ,
+            effect=Effect.READ_ONLY,
+            interruptible=False,
+        )
+
+    @property
+    def spec(self) -> ToolSpec:
+        return self._spec
+
+    async def target(self, ctx: TenantContext, call_input: ToolInput) -> Target:
+        return Target()
+
+    async def preflight(
+        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
+    ) -> None:
+        return None
+
+    async def run(
+        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
+    ) -> Platform:
+        self.seen.append(ctx)
+        return Seen(role=ctx.role.value)
+
+
+ASKING = AgentKind(
+    name="assistant",
+    version=1,
+    tools=("whoami",),
+    done_rule=DoneRule.ANSWER,
+    authority=AuthorityMode.DELEGATED,
+    tree=TreeLimits(height=1, count=0),
+    prompts=("Answer.",),
+    policy=PolicyLayer(
+        rules=(PolicyRule(authorization_class=ToolClass.READ, decision=Decision.ALLOW),)
+    ),
+    isolation=NO_WORKSPACE,
+)
+
+
+async def test_a_call_made_on_what_a_key_said_runs_no_higher_than_the_key(
+    tmp_path: Path,
+) -> None:
+    """An owner's key capped at member drives a delegated session: its call
+    runs as a member, on the key, never with the owner's role or as the
+    system."""
+    whoami = WhoAmI()
+    container = RunnerContainer.over(
+        settings(),
+        StorageMemoryImpl(),
+        InfraLocalImpl(tmp_path),
+        IntegrationsOverImpl(IdentityProviderAbsentImpl(), scripted_model_providers()),
+        agent_kinds=(ASKING,),
+        tool_catalog=(whoami,),
+    )
+    managers = container.managers
+    rctx = RequestContext(request_id=new_id(), app=APP)
+    owner, _ = await managers.tenancy.bootstrap(rctx, "Ajax", "ajax", "ann@example.test", "Ann")
+    issued = await managers.tenancy.credentials.create_api_key(owner, "ci", Role.MEMBER)
+    program = await managers.tenancy.authenticate(rctx, issued.key)
+    twin = container.integrations.get_model_providers().get(ProviderName.ANTHROPIC)
+    asks = ToolUseBlock(id=f"use_{new_id().hex[:12]}", name="whoami", input={})
+    twin.add(  # pyright: ignore[reportAttributeAccessIssue]
+        ModelReply(
+            blocks=(TextBlock(text="Checking."), asks),
+            stop_reason=StopReason.TOOL_USE,
+            usage=Usage(input=10, output=5),
+            model=SONNET,
+        )
+    )
+    twin.add(answers("Done."))  # pyright: ignore[reportAttributeAccessIssue]
+    session = await managers.agents.start_session(
+        program, Start(id=new_id(), kind="assistant", title="who acts")
+    )
+    said = message_step(new_id(), utcnow(), session.id, program, "Who are you acting as?")
+    await managers.agent_sessions.receive(program, session.id, [said])
+
+    runner = build_runner(container)
+    running = asyncio.create_task(runner.run())
+    try:
+        await settled(container, owner, session.id)
+    finally:
+        runner.stop()
+        await running
+
+    (call,) = whoami.seen
+    assert program.role is Role.MEMBER
+    assert (call.role, call.credential_kind, call.credential_id) == (
+        Role.MEMBER,
+        CredentialKind.API_KEY,
+        issued.api_key.id,
+    )

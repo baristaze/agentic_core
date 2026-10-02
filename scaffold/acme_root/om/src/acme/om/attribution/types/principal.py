@@ -27,10 +27,14 @@ class PrincipalKind(StrEnum):
 
 class Principal(Platform):
     """On whose authority something runs, or who pays for a model call: a
-    user of the tenant by its id."""
+    user of the tenant by its id, and the API key they spoke through, if
+    any. A key caps its holder's role, so every call made on what they said
+    through it runs capped at the key's role, with the key as its
+    credential; one who spoke for themselves names none."""
 
     kind: PrincipalKind
     id: UUID
+    key_id: UUID | None = None
 
 
 class AgentRef(Platform):
