@@ -93,10 +93,10 @@ of](../../../../README.md).
 - **Every model call passes the gate first,** and records who spoke and
   who pays as [attribution](../attribution/README.md) answers.
 - **A provider error is handled by its kind.** One worth retrying is
-  retried in the process, never sooner than the provider asks. Then the
-  provider is known to be failing for that key: every session parks on
-  it until its retry time, and this one falls back to its next declared
-  fallback when it has one.
+  retried in the process, after a wait that grows and is partly random,
+  never sooner than the provider asks. Then the provider is known to be
+  failing for that key: every session parks on it until its retry time,
+  and this one falls back to its next declared fallback when it has one.
 - **A stopped loop never restarts itself.** A loop that ended in an
   error, or that a principal cancelled, starts no new loop on an input
   it left undelivered.
@@ -104,7 +104,9 @@ of](../../../../README.md).
   engine's notice is written before the next request, so no request
   holds two of the model's turns in a row. A reply cut by its output
   bound is kept truncated, and the model is told so; a request sent again
-  unchanged counts toward the error streak.
+  unchanged counts toward the error streak. A call that fails the same way
+  a few times in a row earns a notice too, before the streak ends the
+  loop.
 - **An interrupt stops the call it names,** and no other.
 - **Isolation is refused, never weakened.** A workspace that cannot meet
   the kind's spec ends the loop before its first model call.

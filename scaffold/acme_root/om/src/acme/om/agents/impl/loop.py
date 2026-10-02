@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import itertools
 import logging
+import random
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -68,7 +69,7 @@ from acme.om.steps.types.header import (
     ToolResponseHeader,
 )
 from acme.om.steps.types.step import Actor, Step, StepType
-from acme.om.steps.types.stream import ToolOutputPart
+from acme.om.steps.types.stream import StreamPart, ToolOutputPart
 from acme.om.tools import ToolsManagerInterface
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.rules import ISOLATION_REFUSED, response, response_id, tool_request
@@ -96,7 +97,9 @@ class LoopOptions(Platform):
     # the platform's own key.
     credential: str = Field(default="platform", min_length=1)
     retries: int = Field(default=2, ge=0)  # in-process retries of an error worth retrying
-    retry_base: timedelta = timedelta(seconds=1)  # the first backoff, doubled after each
+    # The first backoff, doubled after each, half of it fixed and half drawn
+    # at random, so sessions that failed together do not ask again together.
+    retry_base: timedelta = timedelta(seconds=1)
     # A wait longer than this is not spent in process: the loop falls back,
     # or parks on the provider.
     retry_cap: timedelta = timedelta(seconds=30)
@@ -107,6 +110,9 @@ class LoopOptions(Platform):
     control_poll: timedelta = timedelta(milliseconds=500)
     page: int = Field(default=200, gt=0)  # steps one read of the history asks for
     stopped_chars: int = Field(default=2_000, gt=0)  # the most a stopped call's answer holds
+    # The same call failing this many times in a row, and each multiple of
+    # it, earns the model a notice to change its approach.
+    repeats_noticed: int = Field(default=3, ge=1)
 
 
 @dataclass
@@ -129,6 +135,7 @@ class _Run:
     failures: int = 0  # provider errors in a row
     tried: list[Fill] = field(default_factory=lambda: [])
     refused: RenderedRequest | None = None  # a request the provider refused as too long
+    sink_failed: bool = False  # the stream sink refused a part; it is logged once
 
     @property
     def session_id(self) -> UUID:
@@ -165,7 +172,9 @@ class LoopManagerImpl(LoopManagerInterface):
         sleep: Sleep = asyncio.sleep,
         *,
         domain_classes: Sequence[str] = (),
+        jitter: Callable[[], float] = random.random,
     ) -> None:
+        self._jitter = jitter
         self._steps = steps
         self._sessions = sessions
         self._agents = agents
@@ -316,6 +325,10 @@ class LoopManagerImpl(LoopManagerInterface):
                 if trip.park is not None:
                     return await self._park(run, trip.park)
                 return self._result(run, RunEnd.YIELDED)
+            repeated = rules.repeated_failure(history, run.loop_id, self._options.repeats_noticed)
+            if repeated is not None:
+                # Written before the next request, which reads it.
+                await self._notice(run, repeated)
             stopped = await self._model_turn(run)
             if stopped is not None:
                 return stopped
@@ -439,8 +452,18 @@ class LoopManagerImpl(LoopManagerInterface):
                 return part.reply
             emitted = rules.stream_part(run.session_id, response_id, next(numbers), part)
             if emitted is not None:
-                self._sink.emit(emitted)
+                self._emit(run, emitted)
         raise ModelCallFailed(ErrorKind.TRANSIENT, "the stream ended with no reply")
+
+    def _emit(self, run: _Run, part: StreamPart) -> None:
+        """Hands a part to the sink. A sink that fails costs the live view,
+        never the call it watches: the step still holds everything."""
+        try:
+            self._sink.emit(part)
+        except Exception:
+            if not run.sink_failed:
+                run.sink_failed = True
+                log.warning("session %s: the stream sink failed", run.session_id, exc_info=True)
 
     async def _failed(
         self, run: _Run, fill: Fill, rendered: RenderedRequest | None, failed: ModelCallFailed
@@ -453,7 +476,9 @@ class LoopManagerImpl(LoopManagerInterface):
         now = self._clock()
         main = rendered is not None
         if answer is ErrorAnswer.RETRY:
-            wait = rules.retry_wait(failed.retry_after, run.failures, self._options.retry_base)
+            wait = rules.retry_wait(
+                failed.retry_after, run.failures, self._options.retry_base, self._jitter()
+            )
             run.failures += 1
             if run.failures <= self._options.retries and wait <= self._options.retry_cap:
                 await self._sleep(wait.total_seconds())
@@ -784,14 +809,15 @@ class LoopManagerImpl(LoopManagerInterface):
         numbers = itertools.count()
 
         async def on_output(channel: str, text: str) -> None:
-            self._sink.emit(
+            self._emit(
+                run,
                 ToolOutputPart(
                     session_id=run.session_id,
                     step_id=step_id,
                     n=next(numbers),
                     channel=channel,
                     text=text,
-                )
+                ),
             )
 
         return on_output

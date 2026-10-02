@@ -3,6 +3,8 @@ fake clock, and a sleep that only moves it: what the loop suites share.
 Nothing here reaches a network, and no case waits on the wall clock."""
 
 import asyncio
+import random
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -236,9 +238,12 @@ def loop_over(
     kinds: tuple[AgentKind, ...] = (ASSISTANT, DELIVERY),
     storage: StorageInterface | None = None,
     owner: TenantContext | None = None,
+    sink: StreamSinkMemoryImpl | None = None,
+    jitter: Callable[[], float] = random.random,
 ) -> Loop:
     """`storage` None is the memory storage, and `owner` None a fresh
-    tenant's owner; a suite over Postgres hands in both."""
+    tenant's owner; a suite over Postgres hands in both. `jitter` is what
+    the loop draws its retry waits from."""
     infra = InfraLocalImpl(tmp_path)
     anthropic = ModelProviderScriptedImpl(ProviderName.ANTHROPIC)
     openai = ModelProviderScriptedImpl(ProviderName.OPENAI)
@@ -262,7 +267,7 @@ def loop_over(
         clock.now += timedelta(seconds=seconds)
         await asyncio.sleep(0)
 
-    sink = StreamSinkMemoryImpl()
+    sink = sink or StreamSinkMemoryImpl()
     loops = LoopManagerImpl(
         managers.steps,
         managers.agent_sessions,
@@ -280,6 +285,7 @@ def loop_over(
         options or LoopOptions(control_poll=timedelta(milliseconds=1)),
         clock,
         sleep,
+        jitter=jitter,
     )
     owner = owner or context(Role.OWNER, make_org())
     return Loop(infra, storage, managers, loops, anthropic, openai, sink, clock, owner, catalog)
