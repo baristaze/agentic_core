@@ -48,13 +48,13 @@ def model_providers_for(settings: IntegrationsSettings) -> ModelProvidersInterfa
         return ModelProvidersOverImpl(
             {
                 ProviderName.ANTHROPIC: ModelProviderAnthropicImpl(
-                    http=httpx.AsyncClient(),
+                    http=httpx.AsyncClient(timeout=settings.model_timeout_seconds),
                     api_key=settings.anthropic_api_key,
                     base_url=settings.anthropic_base_url,
                     timeout=timeout,
                 ),
                 ProviderName.OPENAI: ModelProviderOpenAIImpl(
-                    http=httpx.AsyncClient(),
+                    http=httpx.AsyncClient(timeout=settings.model_timeout_seconds),
                     api_key=settings.openai_api_key,
                     base_url=settings.openai_base_url,
                     timeout=timeout,

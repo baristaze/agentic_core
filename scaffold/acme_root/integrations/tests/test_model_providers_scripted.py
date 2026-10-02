@@ -112,7 +112,7 @@ async def test_a_broken_stream_delivers_what_arrived_and_fails_with_it_truncated
         async for part in twin.stream(CALL):
             seen.append(part)
     assert seen and not any(isinstance(p, Finished) for p in seen)
-    assert failed.value.partial == partial and failed.value.partial.truncated
+    assert failed.value.partial == partial and partial.truncated
 
 
 def test_a_reply_with_no_stop_reason_or_cut_by_its_bound_is_never_whole() -> None:
