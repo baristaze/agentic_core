@@ -90,7 +90,8 @@ in place of the platform's.
 
 Settings: `ACME_MODEL_PROVIDERS` (`live`, `scripted`, or `none`, the
 default; the scripted twin is refused at boot outside `local` and
-`test`), `ACME_ANTHROPIC_API_KEY` and `ACME_OPENAI_API_KEY` (the
+`test`), `ACME_MODEL_SCRIPT` (the twin's script, a JSON file of each
+provider's turns, read once at boot), `ACME_ANTHROPIC_API_KEY` and `ACME_OPENAI_API_KEY` (the
 platform's keys; empty or `off` leaves a provider with none),
 `ACME_ANTHROPIC_BASE_URL`, `ACME_OPENAI_BASE_URL`, and
 `ACME_MODEL_TIMEOUT_SECONDS`.
