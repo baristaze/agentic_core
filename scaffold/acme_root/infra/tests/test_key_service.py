@@ -101,34 +101,52 @@ def client_error(code: str) -> ClientError:
 
 
 class StubKms:
-    """KMS in a dict: each key a list of materials, the last one current. A
-    blob names its key and material and seals the data key under it, with
-    the encryption context as the associated data, as KMS binds it."""
+    """KMS in a dict. Each key, by its ARN, is a list of materials, the last
+    one current; an alias names one key, and a name never seen before is an
+    alias of a key made for it. A blob names its key's ARN and its material
+    and seals the data key under it, with the encryption context as the
+    associated data, as KMS binds it. A call that names a key opens a blob
+    of that key alone, as KMS's `IncorrectKeyException` says."""
 
     def __init__(self) -> None:
         self.materials: dict[str, list[bytes]] = {}
+        self.aliases: dict[str, str] = {}
         self.calls: list[tuple[str, str, dict[str, str]]] = []
 
+    def resolve(self, key_id: str) -> str:
+        """The ARN a key id names: itself, or the key an alias names."""
+        if key_id in self.materials:
+            return key_id
+        if key_id not in self.aliases:
+            self.repoint(key_id)
+        return self.aliases[key_id]
+
+    def repoint(self, alias: str) -> str:
+        """The alias, moved onto a key made now; the key it named stays."""
+        arn = f"arn:aws:kms:us-east-1:111122223333:key/{new_id()}"
+        self.materials[arn] = [os.urandom(32)]
+        self.aliases[alias] = arn
+        return arn
+
     def rotate(self, key_id: str) -> None:
-        self.materials.setdefault(key_id, [os.urandom(32)]).append(os.urandom(32))
+        self.materials[self.resolve(key_id)].append(os.urandom(32))
 
     @staticmethod
     def _bound(context: dict[str, str]) -> bytes:
         return repr(sorted(context.items())).encode()
 
-    def _seal(self, key_id: str, plaintext: bytes, context: dict[str, str]) -> bytes:
-        materials = self.materials.setdefault(key_id, [os.urandom(32)])
+    def _seal(self, arn: str, plaintext: bytes, context: dict[str, str]) -> bytes:
+        materials = self.materials[arn]
         nonce = os.urandom(12)
         sealed = AESGCM(materials[-1]).encrypt(nonce, plaintext, self._bound(context))
-        head = f"{key_id}|{len(materials) - 1}|".encode()
-        return head + nonce + sealed
+        return f"{arn}|{len(materials) - 1}|".encode() + nonce + sealed
 
     def _open(self, blob: bytes, key_id: str, context: dict[str, str]) -> bytes:
         named, material, rest = blob.split(b"|", 2)
-        if named.decode() != key_id:
+        if named.decode() != self.resolve(key_id):
             raise client_error("IncorrectKeyException")
         try:
-            return AESGCM(self.materials[key_id][int(material)]).decrypt(
+            return AESGCM(self.materials[named.decode()][int(material)]).decrypt(
                 rest[:12], rest[12:], self._bound(context)
             )
         except InvalidTag, KeyError, IndexError:
@@ -137,11 +155,12 @@ class StubKms:
     async def generate_data_key(self, **request: Any) -> dict[str, Any]:
         key_id, context = request["KeyId"], request["EncryptionContext"]
         self.calls.append(("generate_data_key", key_id, context))
+        arn = self.resolve(key_id)
         plaintext = os.urandom(request["NumberOfBytes"])
         return {
             "Plaintext": plaintext,
-            "CiphertextBlob": self._seal(key_id, plaintext, context),
-            "KeyId": f"arn:kms:{key_id}",
+            "CiphertextBlob": self._seal(arn, plaintext, context),
+            "KeyId": arn,
         }
 
     async def decrypt(self, **request: Any) -> dict[str, Any]:
@@ -149,20 +168,20 @@ class StubKms:
         self.calls.append(("decrypt", key_id, context))
         return {
             "Plaintext": self._open(request["CiphertextBlob"], key_id, context),
-            "KeyId": f"arn:kms:{key_id}",
+            "KeyId": self.resolve(key_id),
         }
 
     async def re_encrypt(self, **request: Any) -> dict[str, Any]:
         source, context = request["SourceKeyId"], request["SourceEncryptionContext"]
         self.calls.append(("re_encrypt", source, context))
         plaintext = self._open(request["CiphertextBlob"], source, context)
-        target = request["DestinationKeyId"]
+        target = self.resolve(request["DestinationKeyId"])
         return {
             "CiphertextBlob": self._seal(
                 target, plaintext, request["DestinationEncryptionContext"]
             ),
-            "KeyId": f"arn:kms:{target}",
-            "SourceKeyId": f"arn:kms:{source}",
+            "KeyId": target,
+            "SourceKeyId": self.resolve(source),
         }
 
 
@@ -240,21 +259,44 @@ def test_a_root_key_of_another_shape_refuses_the_boot() -> None:
 
 
 async def test_kms_binds_each_call_to_the_tenants_key_and_the_ids_alone() -> None:
-    """Every call names the tenant's key and an encryption context of ids:
-    the tenant, the key, and the version. Nothing else reaches KMS's own
-    audit trail."""
+    """A new key is made under the key the alias names, and the copy records
+    that key's ARN; it is opened and re-wrapped from under that ARN. Every
+    call carries an encryption context of ids, the tenant, the key, and the
+    version, and nothing else reaches KMS's own audit trail."""
     stub = StubKms()
     keys = await kms(stub)
     org, key = new_id(), new_id()
     data = await keys.generate(org, key, 3)
+    arn = stub.aliases[f"alias/sessions-{org}"]
+    assert data.wrapped.wrapping == arn
     await keys.unwrap(org, key, 3, data.wrapped)
     await keys.rewrap(org, key, 3, data.wrapped)
     context = {"org": str(org), "key": str(key), "version": "3"}
     assert stub.calls == [
-        (call, f"alias/sessions-{org}", context)
-        for call in ("generate_data_key", "decrypt", "re_encrypt")
+        ("generate_data_key", f"alias/sessions-{org}", context),
+        ("decrypt", arn, context),
+        ("re_encrypt", arn, context),
     ]
-    assert data.wrapped.wrapping == f"arn:kms:alias/sessions-{org}"
+
+
+async def test_kms_opens_a_copy_under_its_own_key_after_the_alias_names_another() -> None:
+    """The alias moves to a new key, as it does when the key is made again:
+    a copy wrapped before opens under the key it records, a rewrap moves it
+    onto the key the alias names now, and a new key is made under that one."""
+    stub = StubKms()
+    keys = await kms(stub, key_id="alias/sessions")
+    org, key = new_id(), new_id()
+    before = await keys.generate(org, key, 1)
+    first = stub.aliases["alias/sessions"]
+    second = stub.repoint("alias/sessions")
+    assert before.wrapped.wrapping == first != second
+    assert await keys.unwrap(org, key, 1, before.wrapped) == before.plaintext
+    moved = await keys.rewrap(org, key, 1, before.wrapped)
+    assert moved.wrapping == second
+    assert await keys.unwrap(org, key, 1, moved) == before.plaintext
+    after = await keys.generate(org, key, 2)
+    assert after.wrapped.wrapping == second
+    assert await keys.unwrap(org, key, 2, after.wrapped) == after.plaintext
 
 
 async def test_kms_with_one_key_keeps_tenants_apart_by_their_context() -> None:

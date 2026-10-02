@@ -29,6 +29,11 @@ class KeyServiceKmsImpl(KeyServiceInterface):
     its own schedule, and `rewrap` (ReEncrypt) moves a data key onto the
     newest material inside KMS.
 
+    A new data key is made under the key `key_id` names now, and its
+    wrapped copy records that key's ARN (`wrapping`). It is opened, and
+    re-wrapped from, under that ARN: an alias may come to name another key,
+    and a copy wrapped before still opens under its own.
+
     The permission to use the key is the process's, granted on the key to
     the task roles alone: a database login, or a role that reads the
     database, holds the wrapped keys and cannot unwrap one."""
@@ -72,7 +77,7 @@ class KeyServiceKmsImpl(KeyServiceInterface):
             try:
                 response = await self._client().decrypt(
                     CiphertextBlob=wrapped.blob,
-                    KeyId=self._key(org_id),
+                    KeyId=wrapped.wrapping,
                     EncryptionContext=encryption_context(org_id, key_id, version),
                 )
             except ClientError as error:
@@ -91,7 +96,7 @@ class KeyServiceKmsImpl(KeyServiceInterface):
             try:
                 response = await self._client().re_encrypt(
                     CiphertextBlob=wrapped.blob,
-                    SourceKeyId=self._key(org_id),
+                    SourceKeyId=wrapped.wrapping,
                     SourceEncryptionContext=context,
                     DestinationKeyId=self._key(org_id),
                     DestinationEncryptionContext=context,

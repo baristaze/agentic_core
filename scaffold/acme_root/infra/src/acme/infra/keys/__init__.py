@@ -33,7 +33,7 @@ DATA_KEY_BYTES = 32
 class WrappedKey(InfraModel):
     """A data key as the service wrapped it: bytes only the service opens.
     `wrapping` names the wrapping key that wrapped it, as the service names
-    it, and never holds a key."""
+    it, and never holds a key; the service opens the copy under that key."""
 
     blob: bytes = Field(min_length=1, repr=False)
     wrapping: str = Field(min_length=1)
