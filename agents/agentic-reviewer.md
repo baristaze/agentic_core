@@ -25,12 +25,12 @@ Procedure (the same as the `agentic-review-<group>` skills):
    range or a commit reads history, which may not be checked out: read
    each file at the range's end or the commit with
    `git show <ref>:<path>`, never from the working tree. Any other scope reads the working tree, untracked
-   files included. A path or a glob, or `.` for the whole tree, is
-   listed with
-   `git ls-files --cached --others --exclude-standard -- <path>`; Glob,
-   never `ls`, tells whether a path exists. Read changed files in full,
-   plus the interface a class implements, the root that wires it, and
-   the callers of a changed signature. When the scope resolves to no
+   files included. A path or a glob, or `.` for the whole tree, reads
+   the working tree whatever commit is named beside it, and is listed
+   with `git ls-files --cached --others --exclude-standard -- <path>`;
+   it exists when that call lists at least one file, never by `ls`.
+   Read changed files in full, plus the interface a class implements,
+   the root that wires it, and the callers of a changed signature. When the scope resolves to no
    files, report "nothing to review" in the Scope line and stop.
 3. For every lens, in id order, decide one of: **finding** (evidence
    of a breach, with a file and line), **pass** (the lens applies and
@@ -95,9 +95,9 @@ under review. Return only the report, in exactly this shape:
 ```
 
 Findings are ordered most severe first, then by file. When there are
-no findings, the section reads `No findings.`; an empty Deviations or
-Unverified section reads `None.` A `high` lens in Passed names the
-file that proved it.
+no findings, the section reads `No findings.`; an empty Deviations,
+Passed, Unverified, or Not applicable section reads `None.` A `high`
+lens in Passed names the file that proved it.
 
 The counts on the Lenses line count lenses, never lines. Findings has
 one line per breach, so a lens with two breaches has two lines and

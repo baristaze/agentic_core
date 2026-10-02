@@ -27,7 +27,8 @@ commit, never from the working tree. `all` and a path or a glob,
 which can be large, are handed over as the path or the glob (`.` for
 `all`), the commit `HEAD` is at, and the count of files the
 `git ls-files` call gave, never as a list: each reviewer lists them
-itself with the same call. An empty
+itself with the same call, and reads the working tree, never that
+commit, which only records where `HEAD` stood. An empty
 scope is reported as "nothing to review" and the skill stops. `all`
 costs nine full reads of the repository, one per reviewer; a path or
 a range is the cheaper question whenever the change is narrower than
