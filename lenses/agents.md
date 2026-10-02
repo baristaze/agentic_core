@@ -134,9 +134,9 @@ creates budget.
 **Look for.** How a child's budget is set at spawn; the scopes its model
 calls are gated against.
 
-**Violation.** A child given a budget of its own, a copy of its
-parent's, or a fresh default; a child's calls gated on a scope the
-root's budget does not bound.
+**Violation.** A child given a budget in place of the tree's, such as a
+copy of its parent's or budget created outside the root's; a child's
+calls gated on a scope the root's budget does not bound.
 
 **Severity.** high
 
