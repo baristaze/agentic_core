@@ -3,13 +3,15 @@ from collections.abc import Callable
 from datetime import datetime
 from uuid import UUID
 
+from acme.infra.base import QuietNull
 from acme.infra.observability import OUTCOMES
 from acme.om.base import Platform, new_id, utcnow
 from acme.om.budgets.gate import BudgetGateInterface
 from acme.om.budgets.rules import lines_of, settlement_of
 from acme.om.budgets.storage import BudgetStorageInterface, LedgerStorageInterface
+from acme.om.budgets.types.amount import NOTHING
 from acme.om.budgets.types.breach import Refusal
-from acme.om.budgets.types.hold import Bill, Hold, HoldRequest, Settlement
+from acme.om.budgets.types.hold import Bill, Billed, Hold, HoldRequest, Settlement
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import NotFound, SpenderUnknown, ValidationFailed
 
@@ -87,3 +89,33 @@ class BudgetGateImpl(BudgetGateInterface):
             OUTCOMES.labels(subsystem="budgets", outcome="overshoot").inc()
         OUTCOMES.labels(subsystem="budgets", outcome=f"settled_{stored.bill.kind}").inc()
         return stored
+
+
+class BudgetGateNullImpl(BudgetGateInterface, QuietNull):
+    """The gate of a root that wired none. It is quiet, and its degraded
+    answer is declared: every call passes with a hold of no lines, which
+    bounds nothing, and a settlement counts nowhere. It still fails closed
+    for an unknown payer. A root refuses it outside `local`, where a call
+    would spend outside every budget."""
+
+    def __init__(self, clock: Callable[[], datetime] = utcnow) -> None:
+        self._clock = clock
+
+    async def authorize(self, ctx: TenantContext, request: HoldRequest) -> Hold | Refusal:
+        if request.spender_id is None:
+            raise SpenderUnknown("the engine cannot tell who pays for this call; nothing is spent")
+        return Hold(
+            id=new_id(),
+            created_at=self._clock(),
+            spender_id=request.spender_id,
+            session_id=request.session_id,
+            purpose=request.purpose,
+            exposure=request.exposure,
+            own=request.own,
+        )
+
+    async def settle(self, ctx: TenantContext, hold_id: UUID, bill: Bill) -> Settlement:
+        spent = bill.usage if isinstance(bill, Billed) else NOTHING
+        return Settlement(
+            id=new_id(), created_at=self._clock(), hold_id=hold_id, bill=bill, spent=spent
+        )
