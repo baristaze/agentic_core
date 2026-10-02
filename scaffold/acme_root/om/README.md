@@ -62,6 +62,17 @@ model's request or response, a tool's request or response, a summary, or
 a mark of a loop's life. Steps are numbered with no gaps and written
 once; the history only grows.
 
+An **agent kind** is what kind of agent a session runs: the tools it may
+call, when its work is done, and how its calls are allowed. A session
+may start **sub-agents**, sessions of their own below it; together they
+form a **tree** that shares one budget and one deadline. A session may
+also **hand off** work to another kind, as a new session.
+
+Every step says who produced it. A message and a tool call say on whose
+**authority** they run, and a call to a model says who **pays** for it:
+a person of the org, never the agent. A session that has read outside
+data carries an **untrusted mark**, and passes it on.
+
 ## What the platform writes for itself
 
 No person creates these and no screen shows them, but each belongs to
@@ -99,6 +110,9 @@ arrive twice, so the second copy gets the first one's answer.
 - An agent session's steps are its truth. Its status is read off them,
   and a change of it writes an outbox row like any other change. A
   session and its steps name their org.
+- A sub-agent holds no more than the session above it: fewer tools or
+  the same, the same person's authority, and the same budget and
+  deadline as the whole tree. A tree names its org, as its sessions do.
 
 ## One page per kind
 
@@ -106,6 +120,8 @@ arrive twice, so the second copy gets the first one's answer.
 - [Files](src/acme/om/media/README.md)
 - [Agent sessions](src/acme/om/agent_sessions/README.md)
 - [Steps](src/acme/om/steps/README.md)
+- [Agents](src/acme/om/agents/README.md)
+- [Attribution](src/acme/om/attribution/README.md)
 - [Events](src/acme/om/events/README.md)
 - [Outbox rows](src/acme/om/outbox/README.md)
 - [Work items](src/acme/om/work/README.md)

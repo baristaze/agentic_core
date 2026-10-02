@@ -6,10 +6,13 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
 ## What it holds
 
 - **Agent session**: one conversation with an agent: who started it,
-  its title, the people it is shared with, the session that spawned it
-  and the root of its tree, and a status it keeps up to date from its
-  [steps](../steps/README.md). The steps are the truth; the status is
-  kept for listing and finding.
+  its title, the people it is shared with, its [agent
+  kind](../agents/README.md) and the tools it may call, the session that
+  spawned it or handed it the work, the root of its tree, and a status it
+  keeps up to date from its [steps](../steps/README.md). The steps are
+  the truth; the status is kept for listing and finding, and so are the
+  person who spoke last and the untrusted mark
+  ([attribution](../attribution/README.md)).
 - **Loop**: the steps from what woke the session to how the loop ended.
   It is no record of its own: a loop is a span of steps.
 - **Status**: `pending` while an input waits for the agent, `running`
@@ -43,5 +46,9 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
   on its own is not.
 - **Two writers never both land.** Each write of a session names the
   version it read.
+- **A session takes what it must from where it came.** A sub-agent or
+  a handed-over session carries the mark of the session it came from,
+  and a sub-agent calls only tools its parent may. Whoever makes it
+  cannot choose otherwise.
 - **Every session belongs to one org.** Another org's session answers as
   one that never existed, and a session's parent is in its own org.
