@@ -10,6 +10,8 @@ from acme.infra.root import InfraInterface
 from acme.integrations.identity import IdentityProviderInterface
 from acme.integrations.identity.absent import IdentityProviderAbsentImpl
 from acme.integrations.root import IntegrationsInterface
+from acme.om.agent_sessions import AgentSessionsManagerInterface
+from acme.om.agent_sessions.impl.manager import AgentSessionsManagerImpl, AgentSessionsOptions
 from acme.om.base import utcnow
 from acme.om.events import EventsManagerInterface
 from acme.om.events.impl.manager import EventsManagerImpl, EventsOptions
@@ -21,6 +23,8 @@ from acme.om.orchestrations import OrchestrationsManagerInterface
 from acme.om.orchestrations.impl.manager import OrchestrationsManagerImpl, OrchestrationsOptions
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.impl.relay import OutboxRelayImpl
+from acme.om.steps import StepsManagerInterface
+from acme.om.steps.impl.manager import StepsManagerImpl, StepsOptions
 from acme.om.storage.root import StorageInterface
 from acme.om.tenancy import TenancyManagerInterface, TenancyOperatorManagerInterface
 from acme.om.tenancy.impl.credentials import TenancyCredentialsManagerImpl
@@ -46,6 +50,8 @@ class Managers:
     events: EventsManagerInterface
     outbox: OutboxRelayInterface
     orchestrations: OrchestrationsManagerInterface
+    steps: StepsManagerInterface
+    agent_sessions: AgentSessionsManagerInterface
 
 
 def build_tenancy(
@@ -107,6 +113,8 @@ def build_managers(
     events_options: EventsOptions | None = None,
     work_options: WorkOptions | None = None,
     orchestrations_options: OrchestrationsOptions | None = None,
+    steps_options: StepsOptions | None = None,
+    agent_sessions_options: AgentSessionsOptions | None = None,
 ) -> Managers:
     """`integrations` is the root of the hosted services the managers front:
     the identity provider, which the tenancy manager signs people in and
@@ -161,6 +169,15 @@ def build_managers(
         outbox,
         orchestrations_options or OrchestrationsOptions(),
     )
+    # The history first: a session's status is read off its steps.
+    steps = StepsManagerImpl(storage.get_step_storage(), tenancy, steps_options or StepsOptions())
+    agent_sessions = AgentSessionsManagerImpl(
+        storage.get_agent_session_storage(),
+        steps,
+        tenancy,
+        outbox,
+        agent_sessions_options or AgentSessionsOptions(),
+    )
     idempotency = IdempotencyManagerImpl(
         storage.get_idempotency_storage(), idempotency_options or IdempotencyOptions()
     )
@@ -185,5 +202,7 @@ def build_managers(
         events=events,
         outbox=outbox,
         orchestrations=orchestrations,
+        steps=steps,
+        agent_sessions=agent_sessions,
     )
     return managers

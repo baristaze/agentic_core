@@ -7,7 +7,8 @@ every row-level security policy and the policies are the second fence.
   the deploy's one-off task, and no process holds it otherwise.
 - The runtime login is what every request's connection uses. It owns nothing
   and holds SELECT, INSERT, UPDATE, and DELETE, so it cannot drop a policy,
-  turn FORCE off, or alter a table, whatever statement reaches it.
+  turn FORCE off, or alter a table, whatever statement reaches it. On an
+  append-only table (`APPEND_ONLY_TABLES`) it holds SELECT and INSERT alone.
 - The system login is the runtime login's twin for the system scope. The
   listed system-scope methods run under it, on a pool of their own, and the
   policies admit the system scope to it alone.
@@ -26,7 +27,7 @@ from collections.abc import Iterable
 from sqlalchemy import Connection, text
 from sqlalchemy.engine import URL, make_url
 
-from acme.om.storage.roles import DatabaseRole
+from acme.om.storage.roles import APPEND_ONLY_TABLES, DatabaseRole, role_for
 
 MIGRATION_LOGIN = "acme_migration"
 RUNTIME_LOGIN = "acme_runtime"
@@ -198,6 +199,20 @@ def _grant(connection: Connection, schema: str) -> None:
             connection,
             f"REVOKE ALL ON {schema}.{VERSION_TABLE} FROM {RUNTIME_LOGIN}, {SYSTEM_LOGIN}",
         )
+    # The grant above reaches every table, the append-only ones too, so the
+    # rewrite and the removal are taken back from them on every run, as the
+    # migration that made each one took them back.
+    for table in sorted(APPEND_ONLY_TABLES):
+        if role_for(table).value != schema:
+            continue
+        found = connection.execute(
+            text("SELECT to_regclass(:table)"), {"table": f"{schema}.{table}"}
+        ).scalar_one()
+        if found is not None:
+            _run(
+                connection,
+                f"REVOKE UPDATE, DELETE ON {schema}.{table} FROM {RUNTIME_LOGIN}, {SYSTEM_LOGIN}",
+            )
 
 
 def ensure_logins(connection: Connection, passwords: dict[str, str]) -> None:
@@ -205,8 +220,8 @@ def ensure_logins(connection: Connection, passwords: dict[str, str]) -> None:
     three logins with the passwords their URLs carry, the master a member of
     the migration login, every role schema and everything in it owned by the
     migration login, and the runtime and system logins granted DML now and on
-    every table to come. `passwords` maps each of the three logins to its
-    password."""
+    every table to come, less the rewrite and the removal on an append-only
+    table. `passwords` maps each of the three logins to its password."""
     database = connection.execute(text("SELECT current_database()")).scalar_one()
     for login in (MIGRATION_LOGIN, RUNTIME_LOGIN, SYSTEM_LOGIN):
         ensure_login(connection, login, passwords[login])

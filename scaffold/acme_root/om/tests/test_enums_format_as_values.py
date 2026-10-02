@@ -11,6 +11,7 @@ from acme.infra.buckets import Buckets
 from acme.infra.cache import CacheScope
 from acme.infra.queues import Queues
 from acme.infra.topics import Topics
+from acme.om.agent_sessions.types.agent_session import SessionStatus
 from acme.om.context import (
     AppType,
     CredentialKind,
@@ -21,6 +22,8 @@ from acme.om.context import (
 )
 from acme.om.media.types.file import FilePurpose, FileStatus
 from acme.om.orchestrations.types.orchestration import OrchestrationKind, OrchestrationStatus
+from acme.om.steps.types.header import ControlCommand, LoopOutcome, ParkReason
+from acme.om.steps.types.step import Actor, Origin, StepFamily, StepType
 from acme.om.storage.roles import DatabaseRole
 from acme.om.storage.scopes import ScopeKind
 from acme.om.work.types.work_item import WorkKind, WorkStatus
@@ -44,6 +47,14 @@ ENUMS = [
     OrchestrationStatus,
     WorkKind,
     WorkStatus,
+    SessionStatus,
+    StepType,
+    StepFamily,
+    Actor,
+    Origin,
+    ControlCommand,
+    LoopOutcome,
+    ParkReason,
 ]
 
 

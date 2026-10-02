@@ -2,6 +2,8 @@ from pathlib import Path
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.integrations.impl.configured import absent_integrations
+from acme.om.agent_sessions import AgentSessionsManagerInterface
+from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.events import EventsManagerInterface
 from acme.om.events.storage import EventStorageInterface
 from acme.om.idempotency import IdempotencyManagerInterface
@@ -13,6 +15,8 @@ from acme.om.orchestrations.storage import OrchestrationsStorageInterface
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.storage import OutboxStorageInterface
 from acme.om.root import build_managers
+from acme.om.steps import StepsManagerInterface
+from acme.om.steps.storage import StepStorageInterface
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.storage.impl.postgres import StoragePostgresImpl
 from acme.om.storage.roles import DatabaseRole
@@ -39,6 +43,8 @@ async def test_memory_root_serves_every_storage() -> None:
     assert isinstance(root.get_event_storage(), EventStorageInterface)
     assert isinstance(root.get_outbox_storage(), OutboxStorageInterface)
     assert isinstance(root.get_orchestrations_storage(), OrchestrationsStorageInterface)
+    assert isinstance(root.get_step_storage(), StepStorageInterface)
+    assert isinstance(root.get_agent_session_storage(), AgentSessionStorageInterface)
     assert await root.healthcheck() is True
     await root.close()
 
@@ -102,6 +108,8 @@ def test_business_root_has_a_field_per_manager(tmp_path: Path) -> None:
     assert isinstance(managers.events, EventsManagerInterface)
     assert isinstance(managers.outbox, OutboxRelayInterface)
     assert isinstance(managers.orchestrations, OrchestrationsManagerInterface)
+    assert isinstance(managers.steps, StepsManagerInterface)
+    assert isinstance(managers.agent_sessions, AgentSessionsManagerInterface)
 
 
 def test_the_tenancy_manager_carries_each_delegate(tmp_path: Path) -> None:

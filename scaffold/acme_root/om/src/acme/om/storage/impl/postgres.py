@@ -9,6 +9,8 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
+from acme.om.agent_sessions.storage import AgentSessionStorageInterface
+from acme.om.agent_sessions.storage.impl.postgres import AgentSessionStoragePostgresImpl
 from acme.om.events.storage import EventStorageInterface
 from acme.om.events.storage.impl.postgres import EventStoragePostgresImpl
 from acme.om.idempotency.storage import IdempotencyStorageInterface
@@ -19,6 +21,8 @@ from acme.om.orchestrations.storage import OrchestrationsStorageInterface
 from acme.om.orchestrations.storage.impl.postgres import OrchestrationsStoragePostgresImpl
 from acme.om.outbox.storage import OutboxStorageInterface
 from acme.om.outbox.storage.impl.postgres import OutboxStoragePostgresImpl
+from acme.om.steps.storage import StepStorageInterface
+from acme.om.steps.storage.impl.postgres import StepStoragePostgresImpl
 from acme.om.storage.impl.pg_base import LoginSessions, ScopedConnection, SessionFactory
 from acme.om.storage.roles import DatabaseRole
 from acme.om.storage.root import StorageInterface
@@ -138,6 +142,8 @@ class StoragePostgresImpl(StorageInterface):
         self._events = EventStoragePostgresImpl(sessions)
         self._outbox = OutboxStoragePostgresImpl(sessions)
         self._orchestrations = OrchestrationsStoragePostgresImpl(sessions)
+        self._steps = StepStoragePostgresImpl(sessions)
+        self._agent_sessions = AgentSessionStoragePostgresImpl(sessions)
 
     def get_tenancy_storage(self) -> TenancyStorageInterface:
         return self._tenancy
@@ -159,6 +165,12 @@ class StoragePostgresImpl(StorageInterface):
 
     def get_orchestrations_storage(self) -> OrchestrationsStorageInterface:
         return self._orchestrations
+
+    def get_step_storage(self) -> StepStorageInterface:
+        return self._steps
+
+    def get_agent_session_storage(self) -> AgentSessionStorageInterface:
+        return self._agent_sessions
 
     async def healthcheck(self) -> bool:
         """A connect and a `SELECT 1` on every engine, each under the bounds its

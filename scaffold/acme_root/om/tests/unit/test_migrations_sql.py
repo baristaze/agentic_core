@@ -85,6 +85,8 @@ def test_role_metadata_holds_only_that_role() -> None:
     assert {t.name for t in role_metadata(DatabaseRole.ACTIVITY).tables.values()} == {
         "events",
         "event_cursors",
+        "steps",
+        "step_cursors",
     }
     assert {t.name for t in role_metadata(DatabaseRole.ADMIN).tables.values()} == {"platform_sizes"}
 
