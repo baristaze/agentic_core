@@ -281,6 +281,49 @@ class StaleWriter(StepsException, PreconditionFailed):
     code = "stale_writer"
 
 
+class AttributionException(PlatformException): ...
+
+
+class NoSpender(AttributionException, PreconditionFailed):
+    """A model call nobody can be named to pay for: no principal-authored
+    input in the session, and no spender passed from a spawn. Nothing is
+    spent: the call is never made."""
+
+    code = "no_spender"
+
+
+class AuthorityRevoked(AttributionException, NotAuthorized):
+    """A delegated tool call whose asker no longer holds a place in the
+    tenant, by the adopter's transition asked on this call. The call is
+    denied, and the model reads why (ADR 1007)."""
+
+    code = "authority_revoked"
+
+
+class PrincipalLapsed(AttributionException, PreconditionFailed):
+    """A steady session's fixed principal no longer holds a place in the
+    tenant. Its tool calls park until a person takes the session over."""
+
+    code = "principal_lapsed"
+
+
+class AgentsException(PlatformException): ...
+
+
+class UnknownAgentKind(AgentsException, NotFound):
+    """An agent kind, or a version of one, that this process does not
+    declare."""
+
+    code = "unknown_agent_kind"
+
+
+class TreeBoundReached(AgentsException, Conflict):
+    """A spawn past its tree's height or count. The tree is bounded, and the
+    model reads the refusal as the spawn tool's failure."""
+
+    code = "tree_bound_reached"
+
+
 class PrivacyException(PlatformException): ...
 
 

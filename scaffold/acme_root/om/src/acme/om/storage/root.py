@@ -3,6 +3,8 @@
 from abc import ABC, abstractmethod
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
+from acme.om.agents.storage import AgentStorageInterface
+from acme.om.attribution.storage import AttributionStorageInterface
 from acme.om.budgets.storage import BudgetStorageInterface, LedgerStorageInterface
 from acme.om.events.storage import EventStorageInterface
 from acme.om.idempotency.storage import IdempotencyStorageInterface
@@ -43,6 +45,12 @@ class StorageInterface(ABC):
 
     @abstractmethod
     def get_agent_session_storage(self) -> AgentSessionStorageInterface: ...
+
+    @abstractmethod
+    def get_agent_storage(self) -> AgentStorageInterface: ...
+
+    @abstractmethod
+    def get_attribution_storage(self) -> AttributionStorageInterface: ...
 
     @abstractmethod
     def get_privacy_storage(self) -> PrivacyStorageInterface: ...

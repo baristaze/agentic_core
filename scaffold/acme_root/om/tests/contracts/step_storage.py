@@ -7,6 +7,8 @@ from uuid import UUID
 
 import pytest
 
+from acme.om.attribution.types.authority import AuthorityMode
+from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
 from acme.om.exceptions import StaleWriter, TenantMismatch, UniqueKeyTaken, ValidationFailed
 from acme.om.steps.storage import StepStorageInterface
@@ -50,7 +52,16 @@ this module that presents another tenant's. `test_storage_exceptions.py`
 holds the two sets to each other, so a new method arrives with its case."""
 
 
-def make_message(session_id: UUID, text: str = "the weekly report is missing a total") -> Step:
+def a_person() -> Principal:
+    return Principal(kind=PrincipalKind.PERSON, id=new_id())
+
+
+def make_message(
+    session_id: UUID,
+    text: str = "the weekly report is missing a total",
+    *,
+    principal: Principal | None = None,
+) -> Step:
     """A principal's message: the first step of its loop."""
     step_id = new_id()
     return Step(
@@ -61,13 +72,14 @@ def make_message(session_id: UUID, text: str = "the weekly report is missing a t
         type=StepType.MESSAGE,
         actor=Actor.PERSON,
         origin=Origin.PORTAL,
-        header=InputHeader(),
+        header=InputHeader(principal=principal or a_person()),
         content=Content(blocks=(TextBlock(text=text),)),
     )
 
 
-def make_event(session_id: UUID) -> Step:
-    """An event from outside, built with no word on whether it wakes."""
+def make_event(session_id: UUID, *, principal: Principal | None = None) -> Step:
+    """An event from outside, built with no word on whether it wakes, on
+    the authority the adopter's routing delivers it under."""
     step_id = new_id()
     return Step(
         id=step_id,
@@ -77,12 +89,19 @@ def make_event(session_id: UUID) -> Step:
         type=StepType.EVENT,
         actor=Actor.EXTERNAL,
         origin=Origin.INTEGRATION,
-        header=InputHeader(),
+        header=InputHeader(principal=principal or a_person()),
         content=Content(blocks=(TextBlock(text="the nightly import finished"),)),
     )
 
 
-def make_request(session_id: UUID, loop_id: UUID, carried: tuple[UUID, ...] = ()) -> Step:
+def make_request(
+    session_id: UUID,
+    loop_id: UUID,
+    carried: tuple[UUID, ...] = (),
+    *,
+    spender: Principal | None = None,
+    speaker: Principal | None = None,
+) -> Step:
     """A model request: it references what it carried, and copies nothing."""
     return Step(
         id=new_id(),
@@ -93,7 +112,7 @@ def make_request(session_id: UUID, loop_id: UUID, carried: tuple[UUID, ...] = ()
         actor=Actor.ENGINE,
         origin=Origin.ENGINE,
         refs=carried,
-        header=ModelRequestHeader(role="main"),
+        header=ModelRequestHeader(role="main", spender=spender or a_person(), speaker=speaker),
     )
 
 
@@ -121,17 +140,31 @@ def make_response(session_id: UUID, loop_id: UUID, request_id: UUID) -> Step:
     )
 
 
-def make_tool_request(session_id: UUID, loop_id: UUID, response_id: UUID) -> Step:
+def make_tool_request(
+    session_id: UUID,
+    loop_id: UUID,
+    response_id: UUID,
+    *,
+    principal: Principal | None = None,
+) -> Step:
+    """The agent's call of a tool, on a principal's authority."""
     return Step(
         id=new_id(),
         created_at=utcnow(),
         session_id=session_id,
         loop_id=loop_id,
         type=StepType.TOOL_REQUEST,
-        actor=Actor.ENGINE,
+        actor=Actor.AGENT,
         origin=Origin.ENGINE,
         refs=(response_id,),
-        header=ToolRequestHeader(tool="read_log", tool_use_id="call_1", input_hash="h:1"),
+        header=ToolRequestHeader(
+            tool="read_log",
+            tool_use_id="call_1",
+            input_hash="h:1",
+            principal=principal or a_person(),
+            authority=AuthorityMode.STEADY,
+            agent=AgentRef(kind="delivery", version=1, session_id=session_id),
+        ),
     )
 
 
@@ -183,6 +216,17 @@ def a_loop(session_id: UUID) -> list[Step]:
     return [message, request, response, call, result, make_parked(session_id, message.id)]
 
 
+def attributed(step: Step) -> Principal | None:
+    """Whom a step names: the principal of an input or a tool call, the
+    spender of a model request, and nobody for the rest."""
+    header = step.header
+    if isinstance(header, InputHeader | ToolRequestHeader):
+        return header.principal
+    if isinstance(header, ModelRequestHeader):
+        return header.spender
+    return None
+
+
 class StepStorageContract:
     @pytest.fixture
     def storage(self) -> StepStorageInterface:
@@ -225,6 +269,35 @@ class StepStorageContract:
             step.model_copy(update={"seq": n}) for n, step in enumerate(loop, start=1)
         ]
         assert await storage.read_steps(org, session, 0, 10) == list(appended)
+
+    async def test_a_loop_keeps_who_acted_on_whose_authority_and_who_paid(
+        self, storage: StepStorageInterface
+    ) -> None:
+        """What an audit reads survives the round trip: the actor of every
+        step, the principal of every input and tool call, the spender of
+        every model request, and the agent behind a tool call."""
+        org, session = new_id(), new_id()
+        asker, routed = a_person(), a_person()
+        message = make_message(session, principal=asker)
+        request = make_request(session, message.id, (message.id,), spender=asker)
+        response = make_response(session, message.id, request.id)
+        call = make_tool_request(session, message.id, response.id, principal=asker)
+        result = make_tool_response(session, message.id, call.id)
+        epoch = await storage.begin_run(org, session)
+        await storage.append_steps(org, session, epoch, [message, request, response, call, result])
+        await storage.append_inputs(org, session, [make_event(session, principal=routed)])
+        stored = await storage.read_steps(org, session, 0, 10)
+        assert [(step.actor, attributed(step)) for step in stored] == [
+            (Actor.PERSON, asker),
+            (Actor.ENGINE, asker),
+            (Actor.MODEL, None),
+            (Actor.AGENT, asker),
+            (Actor.ENGINE, None),
+            (Actor.EXTERNAL, routed),
+        ]
+        acted = stored[3].header
+        assert isinstance(acted, ToolRequestHeader)
+        assert acted.agent == AgentRef(kind="delivery", version=1, session_id=session)
 
     async def test_begin_run_takes_an_epoch_above_every_before(
         self, storage: StepStorageInterface

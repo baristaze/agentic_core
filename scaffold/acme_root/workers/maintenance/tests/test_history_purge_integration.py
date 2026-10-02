@@ -17,6 +17,7 @@ from worker_support import request
 
 from acme.om.agent_sessions.storage.tables.agent_sessions import AgentSessions
 from acme.om.agent_sessions.types.agent_session import AgentSession
+from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
 from acme.om.steps.types.header import InputHeader
 from acme.om.steps.types.page import StepCursor
@@ -81,6 +82,8 @@ def a_session() -> AgentSession:
         created_by=by,
         updated_by=by,
         title="the weekly report",
+        kind="delivery",
+        kind_version=1,
         root_id=session_id,
     )
 
@@ -95,7 +98,7 @@ def a_message(session_id: UUID) -> Step:
         type=StepType.MESSAGE,
         actor=Actor.PERSON,
         origin=Origin.PORTAL,
-        header=InputHeader(),
+        header=InputHeader(principal=Principal(kind=PrincipalKind.PERSON, id=new_id())),
     )
 
 

@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Update, delete, select, update
+from sqlalchemy import Update, delete, exists, select, update
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.storage.tables.agent_sessions import AgentSessions
@@ -44,6 +44,18 @@ class AgentSessionStoragePostgresImpl(PgStorageBase, AgentSessionStorageInterfac
         async with self._session_for(stmt, org_id=org_id) as session:
             row = (await session.execute(stmt)).scalar_one_or_none()
             return None if row is None else to_model(row, AgentSession)
+
+    async def read_children(
+        self, org_id: UUID, parent_id: UUID, after: UUID | None, limit: int
+    ) -> list[AgentSession]:
+        stmt = select(AgentSessions).where(
+            AgentSessions.org_id == org_id, AgentSessions.parent_id == parent_id
+        )
+        if after is not None:
+            stmt = stmt.where(AgentSessions.id > after)
+        stmt = stmt.order_by(AgentSessions.id).limit(limit)
+        async with self._session_for(stmt, org_id=org_id) as session:
+            return [to_model(row, AgentSession) for row in (await session.execute(stmt)).scalars()]
 
     async def read_sessions(
         self, org_id: UUID, status: SessionStatus | None, after: UUID | None, limit: int
@@ -93,6 +105,17 @@ class AgentSessionStoragePostgresImpl(PgStorageBase, AgentSessionStorageInterfac
                 (row.org_id, to_model(row, AgentSession))
                 for row in (await session.execute(stmt)).scalars()
             ]
+
+    async def tree_holds_others(self, org_id: UUID, root_id: UUID, session_id: UUID) -> bool:
+        stmt = select(
+            exists().where(
+                AgentSessions.org_id == org_id,
+                AgentSessions.root_id == root_id,
+                AgentSessions.id != session_id,
+            )
+        )
+        async with self._session_for(stmt, org_id=org_id) as session:
+            return bool((await session.execute(stmt)).scalar_one())
 
     async def purge_session(self, org_id: UUID, session_id: UUID) -> bool:
         stmt = delete(AgentSessions).where(

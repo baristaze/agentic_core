@@ -12,6 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.storage.impl.postgres import AgentSessionStoragePostgresImpl
+from acme.om.agents.storage import AgentStorageInterface
+from acme.om.agents.storage.impl.postgres import AgentStoragePostgresImpl
+from acme.om.attribution.storage import AttributionStorageInterface
+from acme.om.attribution.storage.impl.postgres import AttributionStoragePostgresImpl
 from acme.om.budgets.storage import BudgetStorageInterface, LedgerStorageInterface
 from acme.om.budgets.storage.impl.postgres import (
     BudgetStoragePostgresImpl,
@@ -174,6 +178,8 @@ class StoragePostgresImpl(StorageInterface):
         self._orchestrations = OrchestrationsStoragePostgresImpl(sessions)
         self._steps = StepStoragePostgresImpl(sessions)
         self._agent_sessions = AgentSessionStoragePostgresImpl(sessions)
+        self._agents = AgentStoragePostgresImpl(sessions)
+        self._attribution = AttributionStoragePostgresImpl(sessions)
         self._privacy = PrivacyStoragePostgresImpl(sessions)
         self._budgets = BudgetStoragePostgresImpl(sessions)
         self._ledger = LedgerStoragePostgresImpl(sessions)
@@ -205,6 +211,12 @@ class StoragePostgresImpl(StorageInterface):
 
     def get_agent_session_storage(self) -> AgentSessionStorageInterface:
         return self._agent_sessions
+
+    def get_agent_storage(self) -> AgentStorageInterface:
+        return self._agents
+
+    def get_attribution_storage(self) -> AttributionStorageInterface:
+        return self._attribution
 
     def get_privacy_storage(self) -> PrivacyStorageInterface:
         return self._privacy

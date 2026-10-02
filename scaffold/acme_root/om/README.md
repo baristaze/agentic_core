@@ -74,6 +74,17 @@ stays readable. **Revoking** a session's key erases its content and
 keeps its shape, so the history keeps its holes in known places. A
 session may instead keep its content in **memory only**.
 
+An **agent kind** is what kind of agent a session runs: the tools it may
+call, when its work is done, and how its calls are allowed. A session
+may start **sub-agents**, sessions of their own below it; together they
+form a **tree** that shares one budget and one deadline. A session may
+also **hand off** work to another kind, as a new session.
+
+Every step says who produced it. A message and a tool call say on whose
+**authority** they run, and a call to a model says who **pays** for it:
+a person of the org, never the agent. A session that has read outside
+data carries an **untrusted mark**, and passes it on.
+
 ## Budgets
 
 A **budget** says how much may be spent, in money at list price, in
@@ -133,6 +144,9 @@ arrive twice, so the second copy gets the first one's answer.
 - An agent session's steps are its truth. Its status is read off them,
   and a change of it writes an outbox row like any other change. A
   session and its steps name their org.
+- A sub-agent holds no more than the session above it: fewer tools or
+  the same, the same person's authority, and the same budget and
+  deadline as the whole tree. A tree names its org, as its sessions do.
 - A step's content is sealed under its session's key, so revoking one
   key erases what one session said and nothing else.
 - Every model call passes the gate first, charged to the scopes it
@@ -145,6 +159,8 @@ arrive twice, so the second copy gets the first one's answer.
 - [Files](src/acme/om/media/README.md)
 - [Agent sessions](src/acme/om/agent_sessions/README.md)
 - [Steps](src/acme/om/steps/README.md)
+- [Agents](src/acme/om/agents/README.md)
+- [Attribution](src/acme/om/attribution/README.md)
 - [Privacy](src/acme/om/privacy/README.md)
 - [Budgets](src/acme/om/budgets/README.md)
 - [Models](src/acme/om/models/README.md)
