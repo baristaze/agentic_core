@@ -17,12 +17,12 @@ MARKDOWNLINT := $(NPX) markdownlint-cli2@$(call npm_pin,markdownlint-cli2)
 RUFF := uvx ruff@$(call pin,ruff)
 MYPY := uvx --with pytest==$(call pin,pytest) mypy@$(call pin,mypy)
 
-.PHONY: help check lint ruff mypy links toc version skills agents test plugin gen-toc clean
+.PHONY: help check lint ruff mypy lenses links toc version skills agents test plugin gen-toc clean
 
 help:              ## show targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-check: lint ruff mypy links toc version skills agents test plugin ## run every check (what CI runs)
+check: lint ruff mypy lenses links toc version skills agents test plugin ## run every check (what CI runs)
 
 lint:              ## markdownlint over every Markdown file
 	$(MARKDOWNLINT) "**/*.md" "#node_modules"
@@ -33,6 +33,9 @@ ruff:              ## lint and format check of scripts/ and tests/
 
 mypy:              ## type check of scripts/ and tests/
 	$(MYPY)
+
+lenses:            ## every lens follows the format and cites a real section of the spec
+	$(PYTHON) scripts/check_lenses.py
 
 links:             ## every relative link and anchor resolves
 	$(PYTHON) scripts/check_links.py
