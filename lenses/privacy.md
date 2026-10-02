@@ -34,6 +34,9 @@ permission.
 
 **Severity.** medium
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/privacy/impl/sealed_steps.py` and
+`scaffold/acme_root/om/src/acme/om/privacy/impl/keys.py`
+
 **Check.** review
 
 ## PRV-02 A session's key has versions, and rotation touches no content
@@ -55,6 +58,9 @@ key service's impls.
 content; a null key service that passes content through unsealed.
 
 **Severity.** medium
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/privacy/impl/keys.py` and
+`scaffold/acme_root/infra/src/acme/infra/keys/__init__.py`
 
 **Check.** review
 
@@ -82,6 +88,9 @@ billing or audit that reads content.
 
 **Severity.** medium
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/steps/types/header.py` and
+`scaffold/acme_root/om/src/acme/om/steps/types/content.py`
+
 **Check.** review
 
 ## PRV-04 Three deletes: hide, revoke, purge
@@ -106,6 +115,9 @@ version a revoke leaves behind; a purge on demand; a mark deleted that
 cannot be undone.
 
 **Severity.** medium
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_sessions/manager.py` and
+`scaffold/acme_root/om/src/acme/om/privacy/manager.py`
 
 **Check.** review
 
@@ -133,6 +145,9 @@ declared time.
 
 **Severity.** medium
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/privacy/impl/routed_steps.py` and
+`scaffold/acme_root/om/src/acme/om/privacy/types/session_privacy.py`
+
 **Check.** review
 
 ## PRV-06 Every interface has an impl, wired by a root
@@ -154,6 +169,8 @@ a constructor; a branch on whether a provider is `None`; a null object
 built inside the engine.
 
 **Severity.** medium
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/root.py`
 
 **Check.** `agentic-check` decides that no engine constructor takes an
 interface with a default or as optional; the rest is judged.
@@ -178,6 +195,9 @@ returns success; a quiet null that returns a verdict unmarked; a loud
 null that raises an untyped error.
 
 **Severity.** medium
+
+**Shape.** `scaffold/acme_root/infra/src/acme/infra/transports/twin.py` and
+`scaffold/acme_root/om/src/acme/om/agents/impl/gate.py`
 
 **Check.** review
 
@@ -216,5 +236,7 @@ against it; a test of recovery, a deadline, or a park that reads the
 wall clock.
 
 **Severity.** medium
+
+**Shape.** `scaffold/acme_root/om/tests/contracts`
 
 **Check.** review
