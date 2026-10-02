@@ -76,6 +76,9 @@ async def test_local_environment_builds_local_impls(tmp_path: Path) -> None:
         f"buckets=local({tmp_path / 'buckets'})",
         "queues=memory",
         f"secrets=local({tmp_path / 'secrets.env'})",
+        "workspaces=none",
+        "transport=none",
+        "broker=none",
     ]
     await infra.start()
     await infra.close()
@@ -89,6 +92,9 @@ def test_cloud_backends_are_constructed_without_connecting(tmp_path: Path) -> No
         "buckets=s3(us-east-1)",
         "queues=sqs(us-east-1)",
         "secrets=aws(us-east-1)",
+        "workspaces=none",
+        "transport=none",
+        "broker=none",
     ]
     assert (
         infra.get_cache(CacheScope.NETWORK_RESPONSE).describe()
@@ -179,3 +185,22 @@ def test_an_empty_or_off_sentry_dsn_turns_reporting_off(tmp_path: Path, value: s
 def test_a_sentry_dsn_is_kept(tmp_path: Path) -> None:
     dsn = "http://key@glitchtip:8000/1"
     assert local_settings(tmp_path, sentry_dsn=dsn).sentry_dsn == dsn
+
+
+@pytest.mark.parametrize(
+    ("backend", "lines"),
+    [
+        ("host", ["workspaces=host({root})", "transport=local"]),
+        ("container", ["workspaces=container(python:3.14-slim)", "transport=container"]),
+    ],
+)
+def test_a_workspace_backend_builds_its_provider_and_its_transport_together(
+    tmp_path: Path, backend: str, lines: list[str]
+) -> None:
+    """The provider and the transport that runs in what it prepares are one
+    choice, and building them reaches nothing."""
+    root = tmp_path / "workspaces"
+    infra = InfraConfiguredImpl(
+        local_settings(tmp_path, workspace_backend=backend, workspaces_root=root)
+    )
+    assert infra.describe()[-3:-1] == [line.format(root=root) for line in lines]

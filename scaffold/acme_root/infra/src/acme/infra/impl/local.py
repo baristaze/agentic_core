@@ -14,6 +14,11 @@ from acme.infra.secrets import SecretsInterface
 from acme.infra.secrets.local import SecretsLocalImpl
 from acme.infra.topics import TopicsInterface
 from acme.infra.topics.memory import TopicsMemoryImpl
+from acme.infra.transports import CredentialBrokerInterface, TransportInterface
+from acme.infra.transports.broker import BrokerTwinImpl
+from acme.infra.transports.twin import TransportTwinImpl
+from acme.infra.workspaces import WorkspaceProviderInterface
+from acme.infra.workspaces.twin import WorkspaceTwinImpl
 
 
 class InfraLocalImpl(InfraInterface):
@@ -26,6 +31,9 @@ class InfraLocalImpl(InfraInterface):
         self._topics = TopicsMemoryImpl()
         self._queues = QueueMemoryImpl()
         self._secrets = SecretsLocalImpl(root / "secrets.env")
+        self._workspaces = WorkspaceTwinImpl()
+        self._broker = BrokerTwinImpl()
+        self._transport = TransportTwinImpl(self._secrets, self._broker)
 
     def get_cache(self, scope: CacheScope) -> CacheInterface:
         return self._caches[scope]
@@ -42,6 +50,15 @@ class InfraLocalImpl(InfraInterface):
     def get_secrets(self) -> SecretsInterface:
         return self._secrets
 
+    def get_workspaces(self) -> WorkspaceProviderInterface:
+        return self._workspaces
+
+    def get_transport(self) -> TransportInterface:
+        return self._transport
+
+    def get_broker(self) -> CredentialBrokerInterface:
+        return self._broker
+
     def describe(self) -> list[str]:
         return [
             *(cache.describe() for cache in self._caches.values()),
@@ -49,13 +66,20 @@ class InfraLocalImpl(InfraInterface):
             self._buckets.describe(),
             self._queues.describe(),
             self._secrets.describe(),
+            self._workspaces.describe(),
+            self._transport.describe(),
+            self._broker.describe(),
         ]
 
     async def start(self) -> None:
         for capability in (self._topics, self._buckets, self._queues, self._secrets):
             await capability.start()
+        for runtime in (self._broker, self._workspaces, self._transport):
+            await runtime.start()
 
     async def close(self) -> None:
+        for runtime in (self._transport, self._workspaces, self._broker):
+            await runtime.close()
         for cache in self._caches.values():
             await cache.close()
         for capability in (self._secrets, self._queues, self._buckets, self._topics):

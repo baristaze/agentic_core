@@ -27,6 +27,15 @@ from acme.infra.topics import TopicsInterface
 from acme.infra.topics.breaker import TopicsBreakerImpl
 from acme.infra.topics.memory import TopicsMemoryImpl
 from acme.infra.topics.valkey import TopicsValkeyImpl
+from acme.infra.transports import CredentialBrokerInterface, TransportInterface
+from acme.infra.transports.broker import BrokerNullImpl
+from acme.infra.transports.container import TransportContainerImpl
+from acme.infra.transports.local import TransportLocalImpl
+from acme.infra.transports.twin import TransportNullImpl
+from acme.infra.workspaces import WorkspaceProviderInterface
+from acme.infra.workspaces.container import WorkspaceContainerImpl
+from acme.infra.workspaces.host import WorkspaceHostImpl
+from acme.infra.workspaces.twin import WorkspaceNullImpl
 
 
 class UnsafeConfiguration(InfraException):
@@ -137,6 +146,31 @@ class InfraConfiguredImpl(InfraInterface):
         else:
             self._secrets = SecretsLocalImpl(settings.secrets_file, settings.secret_overrides)
 
+        # No credential broker runs here, so a brokered secret is refused
+        # rather than injected.
+        self._broker: CredentialBrokerInterface = BrokerNullImpl()
+        self._workspaces, self._transport = self._build_runtime(settings)
+
+    def _build_runtime(
+        self, settings: InfraSettings
+    ) -> tuple[WorkspaceProviderInterface, TransportInterface]:
+        """The provider and the transport that runs in what it prepares, as a
+        pair."""
+        records = settings.workspaces_root / ".records"
+        broker = self._broker
+        if settings.workspace_backend == "host":
+            return (
+                WorkspaceHostImpl(settings.workspaces_root),
+                TransportLocalImpl(records, self._secrets, broker),
+            )
+        if settings.workspace_backend == "container":
+            timeout = timedelta(seconds=settings.docker_timeout_seconds)
+            return (
+                WorkspaceContainerImpl(settings.workspace_image, timeout),
+                TransportContainerImpl(records, self._secrets, broker, timeout),
+            )
+        return WorkspaceNullImpl(), TransportNullImpl()
+
     def _build_cache(self, scope: CacheScope) -> CacheInterface:
         """Only the out-of-process impl is wrapped. The memory impl is a dict
         on this event loop: it cannot time out and cannot be down, so a breaker
@@ -163,6 +197,15 @@ class InfraConfiguredImpl(InfraInterface):
     def get_secrets(self) -> SecretsInterface:
         return self._secrets
 
+    def get_workspaces(self) -> WorkspaceProviderInterface:
+        return self._workspaces
+
+    def get_transport(self) -> TransportInterface:
+        return self._transport
+
+    def get_broker(self) -> CredentialBrokerInterface:
+        return self._broker
+
     def describe(self) -> list[str]:
         return [
             *(cache.describe() for cache in self._caches.values()),
@@ -170,6 +213,9 @@ class InfraConfiguredImpl(InfraInterface):
             self._buckets.describe(),
             self._queues.describe(),
             self._secrets.describe(),
+            self._workspaces.describe(),
+            self._transport.describe(),
+            self._broker.describe(),
         ]
 
     async def start(self) -> None:
@@ -177,10 +223,14 @@ class InfraConfiguredImpl(InfraInterface):
             await self._valkey.start()
         for capability in (self._topics, self._buckets, self._queues, self._secrets):
             await capability.start()
+        for runtime in (self._broker, self._workspaces, self._transport):
+            await runtime.start()
 
     async def close(self) -> None:
         """Reverse order of start; the caches first and the shared client
         last, once nothing holds it."""
+        for runtime in (self._transport, self._workspaces, self._broker):
+            await runtime.close()
         for cache in self._caches.values():
             await cache.close()
         for capability in (self._secrets, self._queues, self._buckets, self._topics):
