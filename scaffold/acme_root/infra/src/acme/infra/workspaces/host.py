@@ -12,13 +12,16 @@ from acme.infra.workspaces import (
     WorkspaceProviderInterface,
     refusal,
 )
+from acme.infra.workspaces.stragglers import end_stragglers
 
 
 class WorkspaceHostImpl(WorkspaceProviderInterface):
     """A directory on this host, one per workspace, under `root`. A directory
     confines where files go and nothing else: not a process's network, and
     not what it takes of the machine. So it meets the host mode with open
-    egress and no resource limit, and refuses any spec that asks for more."""
+    egress and no resource limit, and refuses any spec that asks for more.
+    Its instance is the processes running in it: a release ends what its
+    commands left running there, and keeps the files."""
 
     def __init__(self, root: Path) -> None:
         self._root = root
@@ -32,10 +35,11 @@ class WorkspaceHostImpl(WorkspaceProviderInterface):
         return Workspace(id=workspace_id, org_id=org_id, spec=spec, location=str(directory))
 
     async def release(self, workspace: Workspace) -> None:
-        return None
+        await end_stragglers(self._directory(workspace.org_id, workspace.id))
 
     async def purge(self, workspace: Workspace) -> None:
         directory = self._directory(workspace.org_id, workspace.id)
+        await end_stragglers(directory)
         await asyncio.to_thread(shutil.rmtree, directory, ignore_errors=True)
 
     def describe(self) -> str:

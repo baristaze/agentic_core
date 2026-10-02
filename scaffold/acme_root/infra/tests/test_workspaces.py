@@ -1,9 +1,13 @@
 """Isolation is chosen up front and never weakened. A provider meets a spec
 whole or refuses it, before it creates anything, and never hands back a
 weaker place: not the host directory for a container, and not a container
-with open egress for one that asked for none."""
+with open egress for one that asked for none. A host directory's release
+ends what its commands left running there."""
 
 import asyncio
+import contextlib
+import os
+import signal
 from datetime import timedelta
 from pathlib import Path
 
@@ -76,6 +80,78 @@ async def test_a_host_directory_meets_the_host_mode_and_keeps_its_files_past_a_r
     assert (Path(again.location) / "notes.txt").read_text() == "kept"
     await provider.purge(again)
     assert not await asyncio.to_thread(Path(again.location).exists)
+
+
+async def left_behind(cwd: Path) -> int:
+    """A process a command left running in `cwd` as one does: put in the
+    background with its output sent elsewhere, by a shell that then ended,
+    so nothing waits on it. Its id."""
+    shell = await asyncio.create_subprocess_exec(
+        "sh",
+        "-c",
+        "sleep 300 >/dev/null 2>&1 & echo $!",
+        cwd=cwd,
+        stdout=asyncio.subprocess.PIPE,
+        start_new_session=True,
+    )
+    out, _ = await shell.communicate()
+    return int(out)
+
+
+async def running(pid: int) -> bool:
+    """Whether `pid` still runs, given a few seconds to be gone."""
+    for _ in range(30):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        await asyncio.sleep(0.1)
+    return True
+
+
+def kill_quietly(*pids: int) -> None:
+    for pid in pids:
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGKILL)
+
+
+async def test_a_host_release_ends_what_its_commands_left_running_and_nothing_else(
+    tmp_path: Path,
+) -> None:
+    """Its instance is what runs in it: a release ends each process whose
+    directory is inside the workspace, one of this process's own children
+    among them, and leaves one elsewhere alone."""
+    provider = WorkspaceHostImpl(tmp_path / "workspaces")
+    workspace = await provider.prepare(new_id(), new_id(), spec(IsolationMode.HOST))
+    nested = Path(workspace.location) / "server"
+    nested.mkdir()
+    left, deeper = await left_behind(Path(workspace.location)), await left_behind(nested)
+    elsewhere = await left_behind(tmp_path)
+    child = await asyncio.create_subprocess_exec(
+        "sleep", "300", cwd=workspace.location, start_new_session=True
+    )
+    try:
+        await provider.release(workspace)
+        assert not await running(left) and not await running(deeper)
+        assert await asyncio.wait_for(child.wait(), 10) < 0, "ended by a signal"
+        os.kill(elsewhere, 0)  # still there
+    finally:
+        kill_quietly(left, deeper, elsewhere)
+        if child.returncode is None:
+            child.kill()
+            await child.wait()
+
+
+async def test_a_host_purge_ends_what_runs_there_before_its_files_go(tmp_path: Path) -> None:
+    provider = WorkspaceHostImpl(tmp_path / "workspaces")
+    workspace = await provider.prepare(new_id(), new_id(), spec(IsolationMode.HOST))
+    left = await left_behind(Path(workspace.location))
+    try:
+        await provider.purge(workspace)
+        assert not await running(left)
+        assert not await asyncio.to_thread(Path(workspace.location).exists)
+    finally:
+        kill_quietly(left)
 
 
 @pytest.mark.parametrize("asked", CONTAINER_REFUSES, ids=lambda s: s.model_dump_json())
