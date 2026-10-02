@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Mapping, Sequence
 from datetime import timedelta
 from pathlib import Path
 from uuid import UUID
@@ -45,12 +46,42 @@ true
 wrote: the tree is frozen, walked again, and killed, as on a host."""
 
 
+def exec_argv(
+    container: str,
+    workdir: str,
+    plain: Mapping[str, str],
+    secrets: Sequence[str],
+    pidfile: str,
+    argv: Sequence[str],
+) -> list[str]:
+    """The `docker exec` that runs a command. A plain variable goes by name
+    and value; a secret by name alone, its value in the command line's own
+    environment, so no other process lists it. None of the command's
+    variables becomes the command line's own: a tool's `HOME` or `PATH`
+    never picks which Docker it reaches, or whether it finds one."""
+    variables = [flag for item in plain.items() for flag in ("--env", "=".join(item))]
+    variables += [flag for secret in secrets for flag in ("--env", secret)]
+    return [
+        "docker",
+        "exec",
+        "--workdir",
+        workdir,
+        *variables,
+        container,
+        "sh",
+        "-c",
+        LAUNCHER,
+        "sh",
+        pidfile,
+        *argv,
+    ]
+
+
 class TransportContainerImpl(TransportInterface):
     """Runs commands in a container workspace through `docker exec`. A
     command's environment inside is the image's, the workspace as its home,
-    a locale, its own variables, and its injected secrets; the secrets reach
-    the `docker` command line through its environment, by name, never on
-    its arguments. At the deadline the command's tree inside the container
+    a locale, its own variables, and its injected secrets
+    (`exec_argv`). At the deadline the command's tree inside the container
     ends, and the command line with it. Records and the epoch fence are
     kept on this host, beside the workspaces."""
 
@@ -77,30 +108,11 @@ class TransportContainerImpl(TransportInterface):
         else:
             pidfile = f"/tmp/acme-{command.key.hex}.pid"
             async with injected(self._secrets, self._broker, workspace, command) as injection:
-                variables = {
-                    "HOME": MOUNT,
-                    "LANG": BASE_LANG,
-                    **dict(command.env),
-                    **injection.env,
-                }
-                names = [flag for variable in variables for flag in ("--env", variable)]
+                plain = {"HOME": MOUNT, "LANG": BASE_LANG, **dict(command.env)}
                 process = await spawn(
-                    [
-                        "docker",
-                        "exec",
-                        "--workdir",
-                        workdir,
-                        *names,
-                        name,
-                        "sh",
-                        "-c",
-                        LAUNCHER,
-                        "sh",
-                        pidfile,
-                        *command.argv,
-                    ],
+                    exec_argv(name, workdir, plain, tuple(injection.env), pidfile, command.argv),
                     Path("/"),
-                    docker_environment(variables),
+                    docker_environment(injection.env),
                 )
 
                 async def end() -> None:

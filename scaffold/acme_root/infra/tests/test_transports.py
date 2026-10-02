@@ -20,6 +20,7 @@ from uuid import UUID
 import pytest
 
 from acme.infra.base import new_id, utcnow
+from acme.infra.docker import DOCKER_VARIABLES
 from acme.infra.exceptions import InfraNotFound
 from acme.infra.secrets.local import SecretsLocalImpl
 from acme.infra.transports import (
@@ -362,6 +363,17 @@ class TestTransportContainer(TransportContract):
         result = await transport.run(workspace, command(self.python, "-c", reach))
         assert result.exit_code != 0
 
+    async def test_a_commands_own_variables_stay_inside_the_container(
+        self, transport: TransportInterface, workspace: Workspace
+    ) -> None:
+        """A tool's `PATH` and `HOME` are the command's, never the `docker`
+        command line's: it still finds Docker, and the same Docker."""
+        env = (("PATH", "/usr/bin:/bin"), ("HOME", "/workspace/home"))
+        script = "echo $HOME; echo $PATH"
+        result = await transport.run(workspace, command("sh", "-c", script, env=env))
+        assert result.exit_code == 0, result.stderr
+        assert result.stdout.splitlines() == ["/workspace/home", "/usr/bin:/bin"]
+
     async def test_a_released_workspace_keeps_its_files_for_the_next_instance(
         self,
         transport: TransportInterface,
@@ -378,3 +390,44 @@ def test_a_secret_in_the_base64_of_a_basic_header_is_one_of_the_forms() -> None:
     """The fixture's script prints this one; the redactor knows it."""
     encoded = base64.b64encode(b"Authorization: Basic " + SECRET.encode()).decode()
     assert any(form in encoded for form in forms(SECRET))
+
+
+async def test_the_docker_command_line_keeps_its_own_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Plain variables go by name and value, a secret by name alone, and the
+    command line's environment is its own and the secrets', never the
+    command's variables."""
+    seen: dict[str, object] = {}
+
+    async def spawned(argv: list[str], cwd: Path, env: dict[str, str]) -> object:
+        seen.update(argv=argv, env=env)
+        raise RuntimeError("seen")
+
+    monkeypatch.setattr("acme.infra.transports.container.spawn", spawned)
+    for name in DOCKER_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("PATH", "/engine/bin:/usr/bin")
+    monkeypatch.setenv("HOME", "/engine/home")
+    workspace = Workspace(
+        id=new_id(),
+        org_id=new_id(),
+        spec=IsolationSpec(mode=IsolationMode.CONTAINER, egress=EgressPolicy(mode=EgressMode.NONE)),
+        location="acme-ws-test",
+    )
+    transport = TransportContainerImpl(
+        tmp_path, secrets_for(workspace.org_id), BrokerTwinImpl(), timedelta(seconds=5)
+    )
+    env = (("PATH", "/tool/bin"), ("HOME", "/workspace/home"))
+    with pytest.raises(RuntimeError, match="seen"):
+        await transport.run(workspace, command("true", env=env, secrets=(TOKEN,)))
+    argv = seen["argv"]
+    assert isinstance(argv, list)
+    flags = [argv[i + 1] for i, flag in enumerate(argv) if flag == "--env"]
+    assert "PATH=/tool/bin" in flags and "HOME=/workspace/home" in flags
+    assert "API_TOKEN" in flags and not any(SECRET in flag for flag in argv)
+    assert seen["env"] == {
+        "PATH": "/engine/bin:/usr/bin",
+        "HOME": "/engine/home",
+        "API_TOKEN": SECRET,
+    }
