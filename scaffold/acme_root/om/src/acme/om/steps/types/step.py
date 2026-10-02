@@ -214,6 +214,29 @@ class Step(Identifiable, Created):
                 return {**data, "header": {**header, "waking": wakes}}
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def _a_file_marks_its_input(cls, data: Any) -> Any:
+        """An input that carries a file says so in its header (`untrusted`),
+        whoever attached it: a file is data, so the session that reads it is
+        marked, and the shape says so after its content is sealed or gone."""
+        if not isinstance(data, Mapping):
+            return data
+        children = data.get("children")
+        if isinstance(children, Children):
+            files = bool(children.attachments)
+        else:
+            files = isinstance(children, Mapping) and bool(children.get("attachments"))
+        header = data.get("header")
+        if not files:
+            return data
+        if isinstance(header, InputHeader) and not header.untrusted:
+            return {**data, "header": header.model_copy(update={"untrusted": True})}
+        if isinstance(header, Mapping) and header.get("kind") == "input":
+            if not header.get("untrusted"):
+                return {**data, "header": {**header, "untrusted": True}}
+        return data
+
     @model_validator(mode="after")
     def _fits_its_type(self) -> Self:
         refusal = shape_refusal(self)

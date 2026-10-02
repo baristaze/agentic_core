@@ -61,7 +61,15 @@ from acme.om.exceptions import (
     ValidationFailed,
 )
 from acme.om.root import Managers, build_managers
-from acme.om.steps.types.content import Content, TextBlock, ToolUseBlock
+from acme.om.steps.types.content import (
+    Attachment,
+    Children,
+    Content,
+    ContentState,
+    DocumentBlock,
+    TextBlock,
+    ToolUseBlock,
+)
 from acme.om.steps.types.header import (
     ControlCommand,
     ControlHeader,
@@ -233,6 +241,41 @@ def test_the_mark_is_set_by_the_first_data_and_never_cleared() -> None:
     carried = from_an_agent(SESSION, asker, origin=Origin.PARENT, untrusted=True)
     assert trust_of(carried) is Trust.INSTRUCTION and marks(carried)
     assert not marks(from_an_agent(SESSION, asker, origin=Origin.PARENT))
+
+
+def with_a_file(step: Step) -> Step:
+    """`step` with a document attached, as its sender sent it: built again,
+    so it is checked and completed as any step is."""
+    report = Attachment(
+        id=new_id(), name="report.pdf", media_type="application/pdf", size=2048, hash="k:1"
+    )
+    return Step.model_validate(
+        {
+            **step.model_dump(),
+            "content": Content(
+                blocks=(*step.content.blocks, DocumentBlock(attachment_id=report.id))
+            ),
+            "children": Children(attachments=(report,)),
+        }
+    )
+
+
+def test_a_file_a_principal_attaches_is_data_and_marks_the_session() -> None:
+    """A person's words instruct, and the file they attach is data: the
+    message marks the session it lands in, and its header says so, so a
+    read that no longer holds its content still does."""
+    asker = a_person()
+    attached = with_a_file(make_message(SESSION, principal=asker))
+    assert trust_of(attached) is Trust.INSTRUCTION and marks(attached)
+    assert isinstance(attached.header, InputHeader) and attached.header.untrusted
+    gone = attached.model_copy(
+        update={"content": Content(state=ContentState.ABSENT), "children": Children()}
+    )
+    assert marks(gone), "the shape keeps the mark once the content is gone"
+    assert fold(None, False, [attached]) == (None, True)
+    assert not marks(make_message(SESSION, principal=asker))
+    from_parent = with_a_file(from_an_agent(SESSION, asker, origin=Origin.PARENT))
+    assert marks(from_parent)
 
 
 def test_a_request_records_the_latest_principal_who_spoke_and_nothing_after_moves_it() -> None:
@@ -563,6 +606,16 @@ async def test_the_mark_is_sticky_from_the_first_data_and_passes_to_children(
         managers, ctx, clean.id, from_an_agent(clean.id, on, origin=Origin.PARENT, untrusted=True)
     )
     assert await attribution.is_marked(ctx, clean.id)
+
+
+async def test_a_session_that_reads_a_persons_file_is_marked(managers: Managers) -> None:
+    ctx = context(Role.MEMBER)
+    sid = (await start(managers, ctx, DELIVERY)).id
+    await say(managers, ctx, sid)
+    assert not await managers.attribution.is_marked(ctx, sid)
+    await say(managers, ctx, sid, with_a_file(make_message(sid)))
+    assert await managers.attribution.is_marked(ctx, sid)
+    assert (await managers.attribution.authorize_call(ctx, sid, OUTWARD)).needs_person
 
 
 async def test_a_marked_session_holding_private_data_needs_a_person_to_act_outward(

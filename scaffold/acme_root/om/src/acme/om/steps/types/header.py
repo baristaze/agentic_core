@@ -103,8 +103,9 @@ class InputHeader(Platform):
     wrote a message, the principal a child's spawn ran under for its
     parent's message, or the one the adopter's routing delivers an event
     under. `agent` names the agent that wrote it, when its actor is an
-    agent, and `untrusted` carries that agent's session's mark to the
-    session it reaches."""
+    agent. `untrusted` carries that agent's session's mark to the session
+    it reaches, and is set on any input that carries a file, which is data
+    whoever attached it (`steps.types.step.Step`)."""
 
     kind: Literal["input"] = "input"
     waking: bool | None = None

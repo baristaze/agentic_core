@@ -67,7 +67,9 @@ def trust_of(step: Step) -> Trust | None:
 
 def marks(step: Step) -> bool:
     """Whether a step marks the session it lands in: it is data, or it is an
-    input from an agent whose session carried the mark."""
+    input whose header carries the mark: one from an agent whose session
+    carried it, or one that carries a file, which is data whoever attached
+    it."""
     carried = isinstance(step.header, InputHeader) and step.header.untrusted
     return carried or trust_of(step) is Trust.DATA
 
