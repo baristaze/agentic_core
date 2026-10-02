@@ -1,7 +1,10 @@
 """A call that runs: through the transport, in its workspace, under its key
 and its run's epoch, by the least of three times, with each secret it uses
 audited by name before its command runs and redacted from everything it
-prints. Its failures carry their class and the advice the model reads."""
+prints. Its failures carry their class and the advice the model reads; one
+worth retrying, of a tool safe to repeat, is run again once first. An
+output past its bound keeps its head and its tail, and an input that is not
+one JSON object never runs."""
 
 import os
 import sys
@@ -19,6 +22,7 @@ from contracts.tools import (
     KIND_DEFAULTS,
     TWIN_SPEC,
     Command,
+    CommandOutput,
     PushBranch,
     Tools,
     echoing,
@@ -43,13 +47,16 @@ from acme.infra.workspaces import (
     Workspace,
 )
 from acme.infra.workspaces.host import WorkspaceHostImpl
-from acme.om.base import new_id, utcnow
+from acme.om.base import Platform, new_id, utcnow
 from acme.om.context import Role, TenantContext
-from acme.om.exceptions import StaleWriter
+from acme.om.exceptions import StaleWriter, ToolFailed
+from acme.om.steps.types.content import UNPARSED
 from acme.om.steps.types.header import ToolFailure
+from acme.om.steps.types.step import Step
 from acme.om.tools.impl.manager import SECRET_USED, ToolsOptions
 from acme.om.tools.rules import ADVICE, call_deadline
-from acme.om.tools.types.tool import Effect
+from acme.om.tools.tool import ToolRuntime
+from acme.om.tools.types.tool import Effect, ToolInput
 
 SECRET = "ghs_9f8e7d6c5b4a3f2e1d0c-token"
 
@@ -386,14 +393,19 @@ async def test_a_preflight_refuses_before_anyone_is_asked(tmp_path: Path) -> Non
     assert failure_of(gate.response) is ToolFailure.INVALID_INPUT
 
 
-async def test_an_output_past_its_bound_is_cut_and_says_so(tmp_path: Path) -> None:
+async def test_an_output_past_its_bound_keeps_its_head_and_its_tail_and_says_so(
+    tmp_path: Path,
+) -> None:
+    """The end of an output, where a run's summary or the error that stopped
+    it usually is, reaches the model, as its start does."""
     transport, _ = twin_transport(tmp_path)
     transport.handler = echoing()
-    tools = tools_over(transport, options=ToolsOptions(max_output_chars=40))
+    tools = tools_over(transport, options=ToolsOptions(max_output_chars=200))
     ctx = context(Role.SERVICE, make_org())
     registry = registry_of(Command())
     workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
-    found = await put_call(tools.steps, ctx, "run_command", {"argv": ["x" * 500]}, "execute")
+    printed = "BEGIN" + "x" * 1000 + "THE END"
+    found = await put_call(tools.steps, ctx, "run_command", {"argv": [printed]}, "execute")
     response = await tools.manager.execute(
         ctx,
         registry,
@@ -403,4 +415,98 @@ async def test_an_output_past_its_bound_is_cut_and_says_so(tmp_path: Path) -> No
         epoch=found.epoch,
         tree_deadline=None,
     )
-    assert "[cut: 40 of" in result_text(response)
+    head, cut, tail = result_text(response).split("\n")
+    assert cut.startswith("[cut: 200 of") and len(head) + len(tail) == 200
+    assert "BEGIN" in head and 'THE END","stderr":""}' in tail
+
+
+class Flaky(Command):
+    """A tool that fails as worth retrying `failures` times, then answers."""
+
+    def __init__(self, failures: int, effect: Effect) -> None:
+        super().__init__("flaky", effect=effect)
+        self.failures = failures
+        self.runs = 0
+
+    async def run(
+        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
+    ) -> Platform:
+        self.runs += 1
+        if self.runs <= self.failures:
+            raise ToolFailed(ToolFailure.TRANSIENT, "the service did not answer")
+        return CommandOutput(exit_code=0, stdout="answered", stderr="")
+
+
+async def flaky_call(tmp_path: Path, tool: Flaky) -> tuple[Tools, Step]:
+    transport, _ = twin_transport(tmp_path)
+    tools = tools_over(transport)
+    ctx = context(Role.SERVICE, make_org())
+    workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
+    found = await put_call(tools.steps, ctx, "flaky", {"argv": ["ask"]}, "execute")
+    response = await tools.manager.execute(
+        ctx,
+        registry_of(tool),
+        found.request,
+        found.call_input,
+        workspace,
+        epoch=found.epoch,
+        tree_deadline=None,
+    )
+    return tools, response
+
+
+@pytest.mark.parametrize("effect", [Effect.READ_ONLY, Effect.IDEMPOTENT])
+async def test_a_transient_failure_of_a_tool_safe_to_repeat_is_run_again_once(
+    tmp_path: Path, effect: Effect
+) -> None:
+    tool = Flaky(1, effect)
+    tools, response = await flaky_call(tmp_path, tool)
+    assert failure_of(response) is None and "answered" in result_text(response)
+    assert tool.runs == 2 and tools.waits == [ToolsOptions().retry_wait.total_seconds()]
+
+
+async def test_a_second_transient_failure_is_answered_and_says_it_was_run_again(
+    tmp_path: Path,
+) -> None:
+    tool = Flaky(5, Effect.IDEMPOTENT)
+    tools, response = await flaky_call(tmp_path, tool)
+    assert failure_of(response) is ToolFailure.TRANSIENT and tool.runs == 2
+    assert "ran it again once, and it failed again" in result_text(response)
+    assert len(tools.waits) == 1
+
+
+async def test_an_unsafe_tools_transient_failure_is_never_run_again(tmp_path: Path) -> None:
+    tool = Flaky(1, Effect.UNSAFE)
+    tools, response = await flaky_call(tmp_path, tool)
+    assert failure_of(response) is ToolFailure.TRANSIENT
+    assert tool.runs == 1 and tools.waits == []
+
+
+@pytest.mark.parametrize("written", ['{"argv": ["ls"', "[1, 2]", "not json"])
+async def test_an_input_that_is_not_one_object_is_invalid_input_and_never_runs(
+    tmp_path: Path, written: str
+) -> None:
+    """What the model wrote for a call reaches it as invalid input it can
+    correct, at the gate and if the call were run, and no command starts."""
+    transport, _ = twin_transport(tmp_path)
+    tools = tools_over(transport)
+    ctx = context(Role.SERVICE, make_org())
+    registry = registry_of(Command())
+    workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
+    found = await put_call(tools.steps, ctx, "run_command", {UNPARSED: written}, "execute")
+    gate = await tools.manager.gate(
+        ctx, registry, KIND_DEFAULTS, found.request, found.call_input, workspace
+    )
+    ran = await tools.manager.execute(
+        ctx,
+        registry,
+        found.request,
+        found.call_input,
+        workspace,
+        epoch=found.epoch,
+        tree_deadline=None,
+    )
+    for answered in (gate.response, ran):
+        assert answered is not None and failure_of(answered) is ToolFailure.INVALID_INPUT
+        assert "not one JSON object, so the call never ran" in result_text(answered)
+    assert transport.commands == []

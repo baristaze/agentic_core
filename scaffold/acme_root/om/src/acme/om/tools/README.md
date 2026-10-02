@@ -42,7 +42,9 @@ thing [Acme is made of](../../../../README.md).
 - **Fail.** A failure says what kind it is (bad input, worth retrying,
   out of time, refused, cut off, will not work), with advice the agent
   reads. A test that fails is not a failure of the tool: it is the
-  result.
+  result. A call worth retrying, of a tool that is safe to repeat, is run
+  again once by the engine before the agent hears of it. An input the
+  agent wrote that is not one JSON object is bad input, and never runs.
 - **Recover.** After a crash, a call that is safe to repeat runs again; one
   that is not is never repeated: the workspace's own record says how it
   ended, or the agent is told its outcome is unknown.

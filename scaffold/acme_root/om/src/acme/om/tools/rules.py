@@ -288,10 +288,14 @@ def engine_retries(failure: ToolFailure, effect: Effect) -> bool:
 
 
 def bounded(text: str, limit: int) -> str:
-    """Text the model reads, within its bound, saying what was cut."""
+    """Text the model reads, within its bound: its head and its tail, where
+    an output's end, its summary or the error that stopped it, usually is,
+    with a line between them saying what was cut."""
     if len(text) <= limit:
         return text
-    return f"{text[:limit]}\n[cut: {limit} of {len(text)} characters shown]"
+    tail = limit // 2
+    shown = f"[cut: {limit} of {len(text)} characters shown, the head above and the tail below]"
+    return f"{text[: limit - tail]}\n{shown}\n{text[len(text) - tail :]}"
 
 
 def response_id(request: Step, epoch: int) -> UUID:

@@ -228,6 +228,7 @@ class Tools:
     storage: StorageMemoryImpl
     clock: Clock
     attribution: Answering
+    waits: list[float]  # each wait of the manager's, in seconds
 
 
 def tools_over(
@@ -244,6 +245,13 @@ def tools_over(
     )
     clock = Clock()
     attribution = Answering()  # pyright: ignore[reportAbstractUsage] (a partial double)
+    waits: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        # The manager's waits move the case's clock; none is slept.
+        waits.append(seconds)
+        clock.now += timedelta(seconds=seconds)
+
     manager = ToolsManagerImpl(
         storage.get_tool_storage(),
         steps,
@@ -255,8 +263,9 @@ def tools_over(
         options or ToolsOptions(),
         clock,
         attribution=attribution,
+        sleep=sleep,
     )
-    return Tools(manager, steps, events, storage, clock, attribution)
+    return Tools(manager, steps, events, storage, clock, attribution, waits)
 
 
 def twin_transport(
