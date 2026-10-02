@@ -1,0 +1,219 @@
+import asyncio
+from datetime import timedelta
+from pathlib import Path
+from uuid import UUID
+
+from acme.infra.base import utcnow
+from acme.infra.docker import docker, docker_environment
+from acme.infra.exceptions import BackendFailed, InfraNotFound
+from acme.infra.secrets import SecretsInterface
+from acme.infra.transports import (
+    CommandResult,
+    CommandSpec,
+    CredentialBrokerInterface,
+    FileEntry,
+    OutputSink,
+    TransportInterface,
+    relative_path,
+    require_mode,
+)
+from acme.infra.transports.injection import BASE_LANG, injected
+from acme.infra.transports.processes import drive, end_tree, spawn
+from acme.infra.transports.records import RecordBook
+from acme.infra.workspaces import IsolationMode, Workspace
+from acme.infra.workspaces.container import MOUNT
+
+LAUNCHER = 'echo $$ > "$1"; shift; exec "$@"'
+"""Writes the command's own pid where the end of its tree finds it, then
+becomes the command."""
+
+END_TREE = r"""
+root=$(cat "$1" 2>/dev/null) || exit 0
+kids() {
+    for status in /proc/[0-9]*/status; do
+        parent=$(sed -n 's/^PPid:[[:space:]]*//p' "$status" 2>/dev/null)
+        if [ "$parent" = "$1" ]; then pid=${status#/proc/}; echo "${pid%/status}"; fi
+    done
+}
+tree() { echo "$1"; for kid in $(kids "$1"); do tree "$kid"; done; }
+for _ in 1 2 3; do kill -STOP $(tree "$root") 2>/dev/null; done
+kill -KILL $(tree "$root") 2>/dev/null
+rm -f "$1"
+true
+"""
+"""Ends a command's tree inside its container, by the pid its launcher
+wrote: the tree is frozen, walked again, and killed, as on a host."""
+
+
+class TransportContainerImpl(TransportInterface):
+    """Runs commands in a container workspace through `docker exec`. A
+    command's environment inside is the image's, the workspace as its home,
+    a locale, its own variables, and its injected secrets; the secrets reach
+    the `docker` command line through its environment, by name, never on
+    its arguments. At the deadline the command's tree inside the container
+    ends, and the command line with it. Records and the epoch fence are
+    kept on this host, beside the workspaces."""
+
+    def __init__(
+        self,
+        records: Path,
+        secrets: SecretsInterface,
+        broker: CredentialBrokerInterface,
+        timeout: timedelta,
+    ) -> None:
+        self._book = RecordBook(records)
+        self._secrets = secrets
+        self._broker = broker
+        self._timeout = timeout
+
+    async def run(
+        self, workspace: Workspace, command: CommandSpec, on_output: OutputSink | None = None
+    ) -> CommandResult:
+        name = self._container(workspace)
+        await asyncio.to_thread(self._book.admit, workspace.id, command.epoch)
+        workdir = _inside(command.cwd)
+        if utcnow() >= command.deadline:
+            result = CommandResult(key=command.key, exit_code=None, timed_out=True)
+        else:
+            pidfile = f"/tmp/acme-{command.key.hex}.pid"
+            async with injected(self._secrets, self._broker, workspace, command) as injection:
+                variables = {
+                    "HOME": MOUNT,
+                    "LANG": BASE_LANG,
+                    **dict(command.env),
+                    **injection.env,
+                }
+                names = [flag for variable in variables for flag in ("--env", variable)]
+                process = await spawn(
+                    [
+                        "docker",
+                        "exec",
+                        "--workdir",
+                        workdir,
+                        *names,
+                        name,
+                        "sh",
+                        "-c",
+                        LAUNCHER,
+                        "sh",
+                        pidfile,
+                        *command.argv,
+                    ],
+                    Path("/"),
+                    docker_environment(variables),
+                )
+
+                async def end() -> None:
+                    await docker(
+                        "exec", name, "sh", "-c", END_TREE, "sh", pidfile, bound=self._timeout
+                    )
+                    await end_tree(process.pid)
+
+                driven = await drive(
+                    process,
+                    injection.redactor,
+                    max_output=command.max_output,
+                    deadline=command.deadline,
+                    on_output=on_output,
+                    end=end,
+                )
+                result = CommandResult(
+                    key=command.key,
+                    exit_code=driven.exit_code,
+                    stdout=driven.stdout,
+                    stderr=driven.stderr,
+                    timed_out=driven.timed_out,
+                    truncated=driven.truncated,
+                    secrets=injection.names,
+                )
+        await asyncio.to_thread(self._book.record, workspace.id, result)
+        return result
+
+    async def outcome(self, workspace: Workspace, key: UUID) -> CommandResult | None:
+        self._container(workspace)
+        return await asyncio.to_thread(self._book.read, workspace.id, key)
+
+    async def read_file(self, workspace: Workspace, path: str, max_bytes: int) -> bytes:
+        name = self._container(workspace)
+        target = _inside(path)
+        reply = await docker(
+            "exec", name, "head", "-c", str(max_bytes), "--", target, bound=self._timeout
+        )
+        if not reply.ok:
+            raise InfraNotFound(f"no file {path!r} in the workspace: {reply.reason()}")
+        return reply.stdout
+
+    async def write_file(self, workspace: Workspace, path: str, data: bytes, epoch: int) -> None:
+        name = self._container(workspace)
+        await asyncio.to_thread(self._book.admit, workspace.id, epoch)
+        target = _inside(path)
+        reply = await docker(
+            "exec",
+            "--interactive",
+            name,
+            "sh",
+            "-c",
+            'mkdir -p "$(dirname "$1")" && cat > "$1"',
+            "sh",
+            target,
+            stdin=data,
+            bound=self._timeout,
+        )
+        if not reply.ok:
+            raise BackendFailed("docker", "exec write", reply.reason())
+
+    async def list_files(self, workspace: Workspace, path: str, limit: int) -> list[FileEntry]:
+        name = self._container(workspace)
+        folder = _inside(path)
+        reply = await docker(
+            "exec",
+            name,
+            "find",
+            folder,
+            "-mindepth",
+            "1",
+            "-maxdepth",
+            "1",
+            "-exec",
+            "stat",
+            "-c",
+            "%F|%s|%n",
+            "{}",
+            "+",
+            bound=self._timeout,
+        )
+        if not reply.ok:
+            raise InfraNotFound(f"no directory {path!r} in the workspace: {reply.reason()}")
+        entries: list[FileEntry] = []
+        for line in sorted(reply.stdout.decode(errors="replace").splitlines()):
+            kind, size, full = line.split("|", 2)
+            is_dir = kind == "directory"
+            entries.append(
+                FileEntry(
+                    path=full.removeprefix(f"{MOUNT}/"),
+                    is_dir=is_dir,
+                    size=0 if is_dir else int(size),
+                )
+            )
+        return sorted(entries, key=lambda entry: entry.path)[:limit]
+
+    def describe(self) -> str:
+        return "transport=container"
+
+    async def start(self) -> None:
+        return None
+
+    async def close(self) -> None:
+        return None
+
+    def _container(self, workspace: Workspace) -> str:
+        require_mode(workspace, IsolationMode.CONTAINER, "container")
+        return workspace.location
+
+
+def _inside(path: str) -> str:
+    """The place `path` names under the workspace's mount. Inside the
+    container a link leads nowhere but the container, so the path alone is
+    held."""
+    relative = relative_path(path)
+    return MOUNT if str(relative) == "." else f"{MOUNT}/{relative}"
