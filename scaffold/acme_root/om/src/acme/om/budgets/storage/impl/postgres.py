@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Update, select, tuple_, update
+from sqlalchemy import Update, func, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +20,7 @@ from acme.om.budgets.types.hold import Hold, HoldLine, Settlement, Tally
 from acme.om.exceptions import NotFound, PreconditionFailed, TenantMismatch
 from acme.om.outbox.storage.tables.outbox_rows import OutboxRows
 from acme.om.outbox.types.row import OutboxRow
-from acme.om.storage.impl.pg_base import PgStorageBase
+from acme.om.storage.impl.pg_base import PgStorageBase, delete_batch, deleted
 from acme.om.storage.utils.translation import to_model, to_row, to_values
 
 
@@ -97,6 +97,13 @@ class BudgetStoragePostgresImpl(PgStorageBase, BudgetStorageInterface):
             for outbox_row in outbox_rows:
                 db.add(to_row(outbox_row, OutboxRows, org_id=org_id))
             await db.commit()
+
+    async def purge_tenant(self, org_id: UUID, limit: int) -> int:
+        stmt = delete_batch(Budgets, Budgets.org_id == org_id, limit=limit)
+        async with self._session_for(stmt, org_id=org_id) as session:
+            purged = deleted(await session.execute(stmt))
+            await session.commit()
+            return purged
 
 
 class LedgerStoragePostgresImpl(PgStorageBase, LedgerStorageInterface):
@@ -184,6 +191,22 @@ class LedgerStoragePostgresImpl(PgStorageBase, LedgerStorageInterface):
         async with self._session_for(stmt, org_id=org_id) as session:
             row = (await session.execute(stmt)).scalar_one_or_none()
             return None if row is None else to_model(row, Tally)
+
+    async def count_tenant(self, org_id: UUID, limit: int) -> int:
+        # Each count stops at the limit.
+        counts = [
+            select(func.count())
+            .select_from(select(column).where(table.org_id == org_id).limit(limit).subquery())
+            .scalar_subquery()
+            for table, column in (
+                (BudgetHolds, BudgetHolds.id),
+                (BudgetSettlements, BudgetSettlements.id),
+                (BudgetTallies, BudgetTallies.budget_id),
+            )
+        ]
+        stmt = select(counts[0] + counts[1] + counts[2])
+        async with self._session_for(BudgetHolds, org_id=org_id) as session:
+            return min(int((await session.execute(stmt)).scalar_one()), limit)
 
 
 async def _lock_tallies(

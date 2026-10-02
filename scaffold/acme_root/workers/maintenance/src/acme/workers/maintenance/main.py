@@ -85,6 +85,10 @@ def build_loop(container: WorkerContainer, lane: str | None = None) -> WorkerLoo
             # Deletes nothing: it reports the history left, so a tenant whose
             # steps remain is never marked purged.
             "steps": managers.steps.purge_tenant,
+            "budgets": managers.budgets.purge_tenant,
+            # Deletes nothing either: what a call held and spent stays, so a
+            # tenant whose ledger remains is never marked purged.
+            "ledger": managers.budgets.purge_ledger,
         },
         # Once a pass, across every tenant: each namespace's rows past their
         # retention.

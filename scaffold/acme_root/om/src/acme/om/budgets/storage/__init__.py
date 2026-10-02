@@ -56,6 +56,12 @@ class BudgetStorageInterface(ABC):
         `PreconditionFailed` otherwise, landing nothing."""
         ...
 
+    @abstractmethod
+    async def purge_tenant(self, org_id: UUID, limit: int) -> int:
+        """At most `limit` budgets of a deleted tenant past its retention;
+        returns how many went."""
+        ...
+
 
 class LedgerStorageInterface(ABC):
     @abstractmethod
@@ -93,4 +99,11 @@ class LedgerStorageInterface(ABC):
         self, org_id: UUID, budget_id: UUID, window_start: datetime
     ) -> Tally | None:
         """One line's count in one window, or None while nothing was held there."""
+        ...
+
+    @abstractmethod
+    async def count_tenant(self, org_id: UUID, limit: int) -> int:
+        """How many holds, settlements, and tallies the tenant keeps, counted
+        up to `limit` and no further: what the sweep reads of a deleted
+        tenant's ledger, which no serving login deletes."""
         ...

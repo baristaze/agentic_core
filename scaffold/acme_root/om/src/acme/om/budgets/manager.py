@@ -48,3 +48,19 @@ class BudgetsManagerInterface(ABC):
         """What the budget's current window spent and holds; nothing yet is a
         tally of zeros."""
         ...
+
+    @abstractmethod
+    async def purge_tenant(self, ctx: TenantContext) -> int:
+        """The sweep, for one tenant past its own retention: every budget, a
+        batch at most a call. Any other tenant returns 0 and reads nothing."""
+        ...
+
+    @abstractmethod
+    async def purge_ledger(self, ctx: TenantContext) -> int:
+        """The sweep, for one tenant past its own retention. No serving login
+        may delete a hold or a settlement (ADR 1006), so it deletes nothing:
+        it answers how many rows of the ledger the tenant still keeps, fewer
+        than a whole batch, so the sweep never marks the tenant purged while
+        its ledger remains and does not call again in the same pass. Any
+        other tenant returns 0 and reads nothing."""
+        ...

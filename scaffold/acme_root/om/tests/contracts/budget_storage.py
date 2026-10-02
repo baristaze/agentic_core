@@ -10,7 +10,14 @@ from acme.om.budgets.types.budget import Budget, BudgetScope, BudgetScopeKind, W
 from acme.om.exceptions import PreconditionFailed
 
 CROSS_TENANT_CASES: frozenset[str] = frozenset(
-    {"create_budget", "read_budget", "read_budgets", "read_budgets_for", "write_budget"}
+    {
+        "create_budget",
+        "purge_tenant",
+        "read_budget",
+        "read_budgets",
+        "read_budgets_for",
+        "write_budget",
+    }
 )
 """Every method of `BudgetStorageInterface` that takes a tenant has a case in
 this module that presents another tenant's."""
@@ -138,3 +145,16 @@ class BudgetStorageContract:
         with pytest.raises(PreconditionFailed):
             await storage.write_budget(org_b, raised(budget, 9, 2), 1, ())
         assert await storage.read_budget(org_a, budget.id) == budget
+
+    async def test_purge_tenant_takes_a_batch_of_the_tenants_budgets_and_no_other(
+        self, storage: BudgetStorageInterface
+    ) -> None:
+        org_a, org_b = new_id(), new_id()
+        for _ in range(3):
+            assert await storage.create_budget(org_a, make_budget(), ())
+        kept = make_budget()
+        assert await storage.create_budget(org_b, kept, ())
+        assert await storage.purge_tenant(org_a, 2) == 2
+        assert await storage.purge_tenant(org_a, 2) == 1
+        assert await storage.read_budgets(org_a, None, 10) == []
+        assert await storage.read_budgets(org_b, None, 10) == [kept]

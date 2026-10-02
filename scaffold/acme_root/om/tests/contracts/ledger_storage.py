@@ -29,7 +29,7 @@ from acme.om.exceptions import NotFound, TenantMismatch
 from contracts.racing import race
 
 CROSS_TENANT_CASES: frozenset[str] = frozenset(
-    {"close_hold", "open_hold", "read_hold", "read_settlement", "read_tally"}
+    {"close_hold", "count_tenant", "open_hold", "read_hold", "read_settlement", "read_tally"}
 )
 """Every method of `LedgerStorageInterface` that takes a tenant has a case in
 this module that presents another tenant's."""
@@ -246,3 +246,17 @@ class LedgerStorageContract:
         assert await storage.read_settlement(org_a, hold.id) is None
         assert await storage.read_tally(org_b, line.budget_id, line.window_start) is None
         assert (await held(storage, org_a, line)).held_cost_micros == 600
+
+    async def test_count_tenant_counts_the_tenants_ledger_up_to_its_limit(
+        self, storage: LedgerStorageInterface
+    ) -> None:
+        org_a, org_b = new_id(), new_id()
+        assert await storage.count_tenant(org_a, 10) == 0
+        line = a_line(cost_micros=10_000)
+        hold = a_hold(line)
+        assert await storage.open_hold(org_a, hold) is None
+        await storage.close_hold(org_a, settlement_of(hold, BillUnknown(), new_id(), utcnow()))
+        # The hold, its settlement, and the line's tally.
+        assert await storage.count_tenant(org_a, 10) == 3
+        assert await storage.count_tenant(org_a, 2) == 2
+        assert await storage.count_tenant(org_b, 10) == 0

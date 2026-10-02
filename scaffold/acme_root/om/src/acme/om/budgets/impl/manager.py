@@ -14,6 +14,7 @@ from acme.om.exceptions import NotFound, TenantMismatch
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.types.row import OutboxRow, outbox_row, versioned_row
 from acme.om.steps.types.header import ParkReason
+from acme.om.tenancy import TenancyManagerInterface
 from acme.om.work.types.work_item import WakeSessionsPayload, WorkKind, work_row_kind
 
 CREATED = "budgets.budget.created"
@@ -26,6 +27,7 @@ the permission that governs members."""
 
 class BudgetsOptions(Platform):
     max_limit: int = 50  # budgets one page holds at most
+    purge_batch: int = 1000  # the sweep's batch, which a report of what is left stays under
 
 
 class BudgetsManagerImpl(BudgetsManagerInterface):
@@ -33,12 +35,14 @@ class BudgetsManagerImpl(BudgetsManagerInterface):
         self,
         storage: BudgetStorageInterface,
         ledger: LedgerStorageInterface,
+        tenancy: TenancyManagerInterface,
         relay: OutboxRelayInterface,
         options: BudgetsOptions,
         clock: Callable[[], datetime] = utcnow,
     ) -> None:
         self._storage = storage
         self._ledger = ledger
+        self._tenancy = tenancy
         self._relay = relay
         self._options = options
         self._clock = clock
@@ -115,6 +119,18 @@ class BudgetsManagerImpl(BudgetsManagerInterface):
         start, _ = window_bounds(budget.window, self._clock())
         tally = await self._ledger.read_tally(ctx.org_id, budget.id, start)
         return tally or Tally(budget_id=budget.id, window_start=start)
+
+    async def purge_tenant(self, ctx: TenantContext) -> int:
+        ctx.require(Permission.WRITE)
+        if not await self._tenancy.tenant_expired(ctx):
+            return 0
+        return await self._storage.purge_tenant(ctx.org_id, self._options.purge_batch)
+
+    async def purge_ledger(self, ctx: TenantContext) -> int:
+        ctx.require(Permission.WRITE)
+        if not await self._tenancy.tenant_expired(ctx):
+            return 0
+        return await self._ledger.count_tenant(ctx.org_id, max(1, self._options.purge_batch - 1))
 
     async def _read(self, ctx: TenantContext, budget_id: UUID) -> Budget:
         budget = await self._storage.read_budget(ctx.org_id, budget_id)

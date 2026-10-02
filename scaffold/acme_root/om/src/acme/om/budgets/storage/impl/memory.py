@@ -61,6 +61,13 @@ class BudgetStorageMemoryImpl(MemoryStorageBase, BudgetStorageInterface):
                 )
             self._put(self._budgets, org_id, budget, outbox_rows)
 
+    async def purge_tenant(self, org_id: UUID, limit: int) -> int:
+        async with self._lock:
+            gone = [b.id for b in self._rows(self._budgets, org_id)][:limit]
+            for budget_id in gone:
+                del self._budgets[budget_id]
+            return len(gone)
+
 
 class LedgerStorageMemoryImpl(MemoryStorageBase, LedgerStorageInterface):
     def __init__(self) -> None:
@@ -114,6 +121,12 @@ class LedgerStorageMemoryImpl(MemoryStorageBase, LedgerStorageInterface):
         self, org_id: UUID, budget_id: UUID, window_start: datetime
     ) -> Tally | None:
         return self._tallies.get((org_id, budget_id, window_start))
+
+    async def count_tenant(self, org_id: UUID, limit: int) -> int:
+        holds = len(self._rows(self._holds, org_id))
+        settlements = sum(1 for org, _ in self._settlements.values() if org == org_id)
+        tallies = sum(1 for org, _, _ in self._tallies if org == org_id)
+        return min(holds + settlements + tallies, limit)
 
     def _tallies_of(self, org_id: UUID, hold: Hold) -> dict[TallyKey, Tally]:
         """The tally of each line, a fresh one where the window has none."""
