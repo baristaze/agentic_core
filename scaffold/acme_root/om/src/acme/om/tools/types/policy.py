@@ -34,9 +34,9 @@ STRICTNESS = {Decision.ALLOW: 0, Decision.APPROVE: 1, Decision.DENY: 2}
 
 class Target(Platform):
     """What a call acts on, as the system it acts on reports it (a branch
-    and whether it is protected, a station and its kind), never as the
-    call's input describes it. A call that targets nothing in particular
-    has an empty one."""
+    and whether it is protected, a repository and whether it is public),
+    never as the call's input describes it. A call that targets nothing in
+    particular has an empty one."""
 
     kind: str | None = None
     attributes: FrozenMapping = Field(default_factory=dict, validate_default=True)

@@ -25,7 +25,7 @@ thing [Acme is made of](../../../../README.md).
   for a person.
 - **Approval**: a person's yes or no to one exact call, the tool and its
   input. It expires.
-- **Job**: work that outlives a run, such as a long training run. The
+- **Job**: work that outlives a run, such as a long build. The
   agent waits for it without holding anything.
 
 ## What can happen

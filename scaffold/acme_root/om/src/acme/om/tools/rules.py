@@ -43,8 +43,8 @@ DEFAULT_CEILINGS = PolicyLayer(
     )
 )
 """The platform's ceilings out of the box: what is destructive, and what
-acts outward, waits for a person. A product adds its own, such as one for
-each physical class it declares."""
+acts outward, waits for a person. An adopter adds its own, such as one for
+each class it declares that must always wait for a person."""
 
 ADVICE: dict[ToolFailure, str] = {
     ToolFailure.INVALID_INPUT: "The input does not fit the tool's schema. Correct it and call again.",

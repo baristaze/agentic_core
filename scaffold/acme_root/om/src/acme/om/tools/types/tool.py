@@ -35,9 +35,9 @@ class ToolMode(StrEnum):
 
 
 class ToolClass(StrEnum):
-    """The authorization classes every engine knows. A product adds domain
-    classes, such as acting on physical hardware, by declaring them to the
-    registry; a class is a name either way, and policy keys on it."""
+    """The authorization classes every engine knows. An adopter adds domain
+    classes of its own by declaring them to the registry; a class is a name
+    either way, and policy keys on it."""
 
     READ = "read"  # reading the workspace, records, or artifacts
     WRITE = "write"  # changing files in the workspace

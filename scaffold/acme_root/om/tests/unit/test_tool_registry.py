@@ -61,10 +61,10 @@ def test_the_registry_refuses_what_would_slip_past_policy() -> None:
         ToolRegistry([Command(), Command()])
     with pytest.raises(ValueError, match="no class"):
         ToolRegistry([Command(authorization_class="destrutive")])
-    hardware = Command("move_arm", authorization_class="hardware")
-    assert ToolRegistry([hardware], domain_classes=["hardware"]).get("move_arm") is hardware
+    release = Command("deploy_release", authorization_class="release")
+    assert ToolRegistry([release], domain_classes=["release"]).get("deploy_release") is release
     with pytest.raises(ValueError, match="job mode"):
-        ToolRegistry([Command("train", mode=ToolMode.JOB)])
+        ToolRegistry([Command("reindex", mode=ToolMode.JOB)])
 
 
 def test_a_tool_declares_its_whole_contract() -> None:
@@ -182,11 +182,11 @@ async def test_an_mcp_call_goes_through_the_adopters_client_with_the_typed_input
 # Jobs.
 
 
-class TrainInput(ToolInput):
-    epochs: int
+class ReindexInput(ToolInput):
+    shards: int
 
 
-class Train(JobToolInterface):
+class Reindex(JobToolInterface):
     def __init__(self) -> None:
         self.started: dict[str, Any] = {}
         self.cancelled: list[JobHandle] = []
@@ -194,9 +194,9 @@ class Train(JobToolInterface):
     @property
     def spec(self) -> ToolSpec:
         return ToolSpec(
-            name="train",
-            description="Trains a policy.",
-            input_model=TrainInput,
+            name="reindex",
+            description="Rebuilds the search index.",
+            input_model=ReindexInput,
             output_model=JobStarted,
             timeout=timedelta(hours=6),
             authorization_class=ToolClass.EXECUTE,
@@ -229,10 +229,10 @@ async def test_a_job_starts_by_a_deadline_no_later_than_the_trees(tmp_path: Path
     transport, _ = twin_transport(tmp_path)
     tools = tools_over(transport)
     ctx = context(Role.SERVICE, make_org())
-    train = Train()
-    registry = registry_of(train)
+    reindex = Reindex()
+    registry = registry_of(reindex)
     workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
-    found = await put_call(tools.steps, ctx, "train", {"epochs": 3}, "execute")
+    found = await put_call(tools.steps, ctx, "reindex", {"shards": 3}, "execute")
     tree_deadline = tools.clock.now + timedelta(hours=1)
     job = await tools.manager.start_job(
         ctx,
@@ -256,7 +256,7 @@ async def test_a_job_starts_by_a_deadline_no_later_than_the_trees(tmp_path: Path
     )
     assert again == job, "a recovered run attaches to the job it started"
     await tools.manager.cancel_job(ctx, registry, job)
-    assert train.cancelled == [job]
+    assert reindex.cancelled == [job]
     with pytest.raises(ValidationFailed, match="job"):
         await tools.manager.execute(
             ctx,
@@ -273,9 +273,9 @@ async def test_a_job_that_will_not_start_is_answered_with_its_failure(tmp_path: 
     transport, _ = twin_transport(tmp_path)
     tools = tools_over(transport)
     ctx = context(Role.SERVICE, make_org())
-    registry = registry_of(Train())
+    registry = registry_of(Reindex())
     workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
-    found = await put_call(tools.steps, ctx, "train", {"epochs": "many"}, "execute")
+    found = await put_call(tools.steps, ctx, "reindex", {"shards": "many"}, "execute")
     answered = await tools.manager.start_job(
         ctx,
         registry,

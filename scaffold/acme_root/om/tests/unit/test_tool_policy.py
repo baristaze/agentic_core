@@ -47,7 +47,7 @@ DEFAULTS = PolicyLayer(
         PolicyRule(authorization_class=ToolClass.NETWORK, decision=APPROVE),
         PolicyRule(authorization_class=ToolClass.INTEGRATION, decision=APPROVE),
         PolicyRule(tool="push_branch", target={"protected": True}, decision=DENY),
-        PolicyRule(target_kind="station", target={"pool": "lab"}, decision=APPROVE),
+        PolicyRule(target_kind="environment", target={"tier": "staging"}, decision=APPROVE),
     )
 )
 """An agent kind's defaults."""
@@ -109,12 +109,16 @@ TABLE = [
     ("outward", call("post_comment", "integration", Effect.UNSAFE, outward=True), APPROVE),
     # A target the kind names by its kind and an attribute.
     (
-        "lab station",
-        call("run_procedure", "hardware", Effect.UNSAFE, "station", pool="lab"),
+        "staging environment",
+        call("deploy_release", "release", Effect.UNSAFE, "environment", tier="staging"),
         APPROVE,
     ),
     # Nothing speaks to it: a person decides.
-    ("unmatched", call("move_arm", "hardware", Effect.UNSAFE, "station", pool="line"), UNMATCHED),
+    (
+        "unmatched",
+        call("deploy_release", "release", Effect.UNSAFE, "environment", tier="sandbox"),
+        UNMATCHED,
+    ),
     # The tenant shuts a tool off.
     ("denied tool", call("drop_cache", "execute", Effect.IDEMPOTENT), DENY),
 ]
@@ -158,7 +162,7 @@ def test_a_tenants_general_rule_leaves_the_kinds_closer_rules_standing() -> None
     everything = PolicyLayer(rules=(PolicyRule(decision=ALLOW),))
     fetch = call("fetch_url", "network", Effect.READ_ONLY)
     assert decide(fetch, DEFAULTS, everything, DEFAULT_CEILINGS) is APPROVE
-    unnamed = call("move_arm", "hardware", Effect.UNSAFE)
+    unnamed = call("deploy_release", "release", Effect.UNSAFE)
     assert decide(unnamed, DEFAULTS, everything, DEFAULT_CEILINGS) is ALLOW
 
 
