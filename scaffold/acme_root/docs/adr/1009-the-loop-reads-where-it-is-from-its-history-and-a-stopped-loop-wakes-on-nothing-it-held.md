@@ -25,9 +25,14 @@ the latest complete response with a call still unanswered is settled
 before any model call, and a turn no step acted on is judged by the
 kind's done rule. A run that finds a model request with no response
 closes it as abandoned and settles the hold the request names at the
-whole of it, since a call that was sent is usually billed. A call that a
-run wrote, or one a park held back, runs; any other was in flight when a
-run was lost, and is settled by its effect.
+whole of it, since a call that was sent is usually billed. A call a lost
+run left open is settled by its effect before the run does anything
+else, a park included, and is never run as new. So a call still open at
+a park the loop wrote is one it held back, and the run that resumes the
+park runs it. A call that would wait for a person after a lost run is
+answered with its outcome unknown rather than parked open. A result the
+gate accepted is recorded in its answer, and the loop ends on it once
+every call of the turn is answered.
 
 **A run's answer is its own.** A tool response's id is derived from its
 request and the run's epoch. Two runs never write the same id, so a run
@@ -47,6 +52,11 @@ run's epoch, on the authority the session's calls run under. They
 instruct, wake nothing, never pay, and never feed the pinned zone. The
 inbox refuses an input the engine wrote. The next request carries the
 notice between the model's two turns.
+
+**A reply cut by its output bound is told, never re-sent.** It is kept
+truncated and never acted on, and the engine's notice says so before the
+next request, which therefore differs. A main request whose prompt is
+the one before it counts toward the error streak.
 
 **A known outage parks.** When the in-process retries of an error worth
 retrying are spent, the loop reports an outage of that provider for that

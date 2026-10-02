@@ -35,6 +35,7 @@ from acme.om.steps.types.header import (
     ParkedHeader,
     ParkReason,
     ToolRequestHeader,
+    ToolResponseHeader,
 )
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.steps.types.stream import StreamPart, TextPart, ThinkingPart, ToolInputPart
@@ -51,6 +52,15 @@ when a turn neither continued nor submitted."""
 
 PAUSED = "Your turn was paused before it ended. Go on from where it stopped."
 """The engine's notice after a provider paused a long turn."""
+
+CUT = (
+    "Your last reply reached its output limit and was cut before it ended, so "
+    "it was not kept. Answer again within the limit: more briefly, or in parts "
+    "over several turns."
+)
+"""The engine's notice after a reply was cut by its output bound: the reply
+is kept truncated and never acted on, and the next request differs from the
+one that was cut."""
 
 HANDED_BACK = (
     "A person held this environment and worked in it by hand. It may not be "
@@ -143,6 +153,23 @@ def open_calls(steps: Sequence[Step], response: Step) -> list[tuple[ToolUseBlock
     return calls
 
 
+def accepted_outcome(steps: Sequence[Step], response: Step) -> LoopOutcome | None:
+    """The outcome a result submitted in `response` was accepted with, as
+    its answer in the history records it, or None."""
+    asked = {
+        step.id for step in steps if step.type is StepType.TOOL_REQUEST and response.id in step.refs
+    }
+    for step in steps:
+        header = step.header
+        if (
+            isinstance(header, ToolResponseHeader)
+            and step.responds_to in asked
+            and header.accepted is not None
+        ):
+            return header.accepted.outcome
+    return None
+
+
 def judged(steps: Sequence[Step], response: Step) -> bool:
     """Whether a turn that called no tool was acted on: a step a run wrote
     in its loop follows it, such as a nudge."""
@@ -200,19 +227,18 @@ def pause_waits(steps: Sequence[Step], loop: OpenLoop) -> bool:
 
 
 def stops_call(steps: Sequence[Step], request: Step, interruptible: bool) -> ControlCommand | None:
-    """The control that stops a running call: a cancel since its request, or
-    an interrupt since its request when its tool may be stopped."""
-    stopping = {ControlCommand.CANCEL}
-    if interruptible:
-        stopping.add(ControlCommand.INTERRUPT)
+    """The control that stops a running call: a cancel since its request,
+    or, when its tool may be stopped, an interrupt that names this call's
+    request. An interrupt binds to the call it names, so it stops no call
+    after it."""
     for step in steps:
         header = step.header
-        if (
-            step.seq > request.seq
-            and isinstance(header, ControlHeader)
-            and header.command in stopping
-        ):
-            return header.command
+        if step.seq <= request.seq or not isinstance(header, ControlHeader):
+            continue
+        if header.command is ControlCommand.CANCEL:
+            return ControlCommand.CANCEL
+        if header.command is ControlCommand.INTERRUPT and interruptible and request.id in step.refs:
+            return ControlCommand.INTERRUPT
     return None
 
 

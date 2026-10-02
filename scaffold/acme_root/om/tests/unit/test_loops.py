@@ -21,17 +21,19 @@ from contracts.loops import (
     said,
     use,
 )
+from contracts.step_storage import make_request
 
 from acme.infra.workspaces import EgressMode, EgressPolicy, IsolationMode, IsolationSpec
 from acme.integrations.model_providers.calls import ModelCall
 from acme.integrations.model_providers.scripted import ScriptedFailure
-from acme.integrations.model_providers.types import ErrorKind
+from acme.integrations.model_providers.types import ErrorKind, StopReason
+from acme.om.agent_sessions.limits import Limit, Limits, tally_loop, tripped
 from acme.om.agent_sessions.types.agent_session import SessionStatus
 from acme.om.agents.loop_rules import kind_prompts
 from acme.om.agents.types.request import Handoff, Spawn
 from acme.om.agents.types.run import RunEnd
 from acme.om.attribution.types.principal import Principal, PrincipalKind
-from acme.om.base import new_id
+from acme.om.base import new_id, utcnow
 from acme.om.exceptions import StaleWriter
 from acme.om.models.types.fill import MAIN, SUMMARIZER, Eligibility
 from acme.om.steps.types.content import TextBlock, ToolResultBlock, ToolUseBlock
@@ -244,11 +246,8 @@ async def test_a_request_a_lost_run_left_open_is_closed_and_its_hold_settled_who
     assert fill is not None
     gate = CallGateBudgetImpl(managers.budget_gate, managers.pricing, managers.agent_sessions)
     hold = await gate.authorize(ctx, session_id, person(ctx.user_id), MAIN, fill, rendered.call)
-    said_by = await managers.attribution.attribute_request(
-        ctx, session_id, rendered.previous_request, rendered.read_through
-    )
     lost = request_step(
-        rendered, said_by, session_id, trigger.id, new_id(), loop.clock(), hold_id=hold
+        rendered, rendered.attribution, session_id, trigger.id, new_id(), loop.clock(), hold_id=hold
     )
     await managers.steps.append_steps(ctx, session_id, epoch, [lost])
     loop.anthropic.add(reply(said("The total is 12.")))
@@ -576,4 +575,254 @@ async def test_a_session_holding_no_private_data_acts_outward_unattended(tmp_pat
     run = await loop.loops.run(loop.owner, session_id)
 
     assert run.outcome is LoopOutcome.SUCCEEDED
+    assert loop.tools["send"].ran_as == [loop.owner.user_id]
+
+
+# What a fresh review of the loop found, each held by a test.
+
+
+def interrupt_of(loop: Loop, session_id: UUID, request: Step) -> Step:
+    return control(loop, session_id, ControlCommand.INTERRUPT).model_copy(
+        update={"refs": (request.id,)}
+    )
+
+
+def answer_to(steps: list[Step], request: Step) -> Step:
+    return next(step for step in steps if step.responds_to == request.id)
+
+
+async def test_a_call_a_lost_run_may_have_started_is_settled_by_its_effect_before_a_park(
+    tmp_path: Path,
+) -> None:
+    loop = loop_over(tmp_path)
+    session_id = await loop.start()
+    await loop.say(session_id, "Note the fix.")
+    loop.anthropic.add(reply(use("note", use_id="use_note")), reply(said("Checked; done.")))
+    note = loop.tools["note"]
+    note.holds = True
+    lost = asyncio.ensure_future(loop.loops.run(loop.owner, session_id))
+    await note.started.wait()
+    await loop.managers.steps.append_inputs(
+        loop.owner, session_id, [control(loop, session_id, ControlCommand.PAUSE)]
+    )
+
+    paused = await loop.loops.run(loop.owner, session_id)
+    note.release.set()
+    await lost
+    await loop.managers.steps.append_inputs(
+        loop.owner, session_id, [control(loop, session_id, ControlCommand.RESUME)]
+    )
+    resumed = await loop.loops.run(loop.owner, session_id)
+
+    assert paused.park is not None and paused.park.reason is ParkReason.PAUSE
+    assert resumed.outcome is LoopOutcome.SUCCEEDED
+    assert len(note.ran_as) == 1, "the unsafe call never runs a second time"
+    steps = await loop.history(session_id)
+    (request,) = of_type(steps, StepType.TOOL_REQUEST)
+    answer = answer_to(steps, request)
+    assert getattr(answer.header, "failure", None) is ToolFailure.INTERRUPTED
+    assert answer.seq < next(s.seq for s in steps if s.type is StepType.PARKED), (
+        "settled before the park"
+    )
+
+
+async def test_a_cancel_answers_a_call_a_lost_run_may_have_started_as_unknown(
+    tmp_path: Path,
+) -> None:
+    loop = loop_over(tmp_path)
+    session_id = await loop.start()
+    await loop.say(session_id, "Note the fix.")
+    loop.anthropic.add(reply(use("note", use_id="use_note")))
+    note = loop.tools["note"]
+    note.holds = True
+    lost = asyncio.ensure_future(loop.loops.run(loop.owner, session_id))
+    await note.started.wait()
+    await loop.managers.steps.append_inputs(
+        loop.owner, session_id, [control(loop, session_id, ControlCommand.CANCEL)]
+    )
+
+    run = await loop.loops.run(loop.owner, session_id)
+    note.release.set()
+    await lost
+
+    assert run.outcome is LoopOutcome.CANCELLED
+    answer = of_type(await loop.history(session_id), StepType.TOOL_RESPONSE)[-1]
+    assert "unknown" in answer.as_tool_response().parts[0].text  # type: ignore[union-attr]
+    assert "before it ran" not in answer.as_tool_response().parts[0].text  # type: ignore[union-attr]
+
+
+async def test_a_reply_cut_by_its_output_limit_is_never_sent_again_unchanged(
+    tmp_path: Path,
+) -> None:
+    loop = loop_over(tmp_path)
+    session_id = await loop.start()
+    await loop.say(session_id, "Write the whole report.")
+    cut = reply(said("The report begins")).model_copy(
+        update={"stop_reason": StopReason.OUTPUT_LIMIT, "truncated": True}
+    )
+    loop.anthropic.add(cut, reply(said("A shorter report.")))
+
+    run = await loop.loops.run(loop.owner, session_id)
+
+    assert run.outcome is LoopOutcome.SUCCEEDED
+    steps = await loop.history(session_id)
+    first, second = of_type(steps, StepType.MODEL_REQUEST)
+    assert isinstance(first.header, ModelRequestHeader)
+    assert isinstance(second.header, ModelRequestHeader)
+    assert first.header.prompt_hash != second.header.prompt_hash
+    (told,) = [s for s in of_type(steps, StepType.MESSAGE) if s.actor is Actor.ENGINE]
+    assert "output limit" in told.as_text() and told.id in second.refs
+    kept = of_type(steps, StepType.MODEL_RESPONSE)[0].header
+    assert isinstance(kept, ModelResponseHeader) and kept.truncated
+
+
+def test_a_request_sent_again_unchanged_counts_toward_the_error_streak() -> None:
+    session_id, loop_id = new_id(), new_id()
+    limits = Limits(error_streak=3)
+    steps = [
+        make_request(session_id, loop_id, ()).model_copy(update={"seq": seq}) for seq in range(1, 4)
+    ]
+    now = utcnow()
+    assert (
+        tripped(limits, tally_loop(steps[:3], loop_id), now=now, run_started_at=now, deadline=None)
+        is None
+    )
+    again = make_request(session_id, loop_id, ()).model_copy(update={"seq": 4})
+    trip = tripped(
+        limits, tally_loop([*steps, again], loop_id), now=now, run_started_at=now, deadline=None
+    )
+    assert trip is not None and trip.limit is Limit.ERROR_STREAK
+    assert trip.outcome is LoopOutcome.INCONCLUSIVE
+
+
+async def test_a_message_that_lands_after_the_render_is_neither_delivered_nor_credited(
+    tmp_path: Path,
+) -> None:
+    loop = loop_over(tmp_path)
+    session_id = await loop.start()
+    owner, colleague = loop.owner, loop.colleague()
+    await loop.say(session_id, "Find the total.")
+    loop.anthropic.add(
+        reply(use("lookup", use_id="use_1")),
+        reply(use("lookup", q="what the colleague asked", use_id="use_2")),
+        reply(said("Done.")),
+    )
+    hashes = loop.managers.windows._hashes  # type: ignore[attr-defined]
+    keyed = hashes.keyed_hash
+    landed: list[Step] = []
+
+    async def racing(ctx: object, sid: UUID, value: bytes) -> str:
+        # After the render read the history, before its request is kept.
+        if not landed:
+            landed.append(await loop.say(session_id, "Look up what I asked.", colleague))
+        return await keyed(ctx, sid, value)
+
+    hashes.keyed_hash = racing
+
+    run = await loop.loops.run(owner, session_id)
+
+    assert run.outcome is LoopOutcome.SUCCEEDED
+    requests = of_type(await loop.history(session_id), StepType.MODEL_REQUEST)
+    for request in requests:
+        header = request.header
+        assert isinstance(header, ModelRequestHeader)
+        who = colleague if landed[0].id in request.refs else owner
+        assert header.speaker == person(who.user_id) or landed[0].id not in request.refs
+    delivering = next(r for r in requests if landed[0].id in r.refs)
+    assert isinstance(delivering.header, ModelRequestHeader)
+    assert delivering.header.speaker == person(colleague.user_id)
+    assert isinstance(requests[0].header, ModelRequestHeader)
+    assert requests[0].header.speaker == person(owner.user_id), "it never read the message"
+    assert loop.tools["lookup"].ran_as == [owner.user_id, colleague.user_id]
+
+
+async def test_a_run_that_lost_its_claim_releases_nothing(tmp_path: Path) -> None:
+    worked = ASSISTANT.model_copy(
+        update={
+            "name": "worked",
+            "isolation": IsolationSpec(
+                mode=IsolationMode.TWIN, egress=EgressPolicy(mode=EgressMode.NONE)
+            ),
+        }
+    )
+    loop = loop_over(tmp_path, kinds=(worked,))
+    session_id = await loop.start("worked")
+    await loop.say(session_id, "Find the total.")
+    loop.anthropic.add(reply(use("slow", use_id="use_slow")))
+    slow = loop.tools["slow"]
+    running = asyncio.ensure_future(loop.loops.run(loop.owner, session_id))
+    await slow.started.wait()
+    await loop.loops.take_over(loop.owner, session_id)
+    slow.release.set()
+
+    fenced = await running
+
+    assert fenced.end is RunEnd.STALE
+    workspaces = loop.infra.get_workspaces()
+    assert session_id in getattr(workspaces, "live", set()), "the person's workspace stays"
+
+
+async def test_an_interrupt_stops_the_call_it_names_and_no_other(tmp_path: Path) -> None:
+    loop = loop_over(tmp_path)
+    session_id = await loop.start()
+    await loop.say(session_id, "Find both.")
+    loop.anthropic.add(
+        reply(use("slow", use_id="use_slow"), use("lookup", use_id="use_lookup")),
+        reply(said("One was stopped.")),
+    )
+    slow = loop.tools["slow"]
+    running = asyncio.ensure_future(loop.loops.run(loop.owner, session_id))
+    await slow.started.wait()
+    request = next(
+        step
+        for step in of_type(await loop.history(session_id), StepType.TOOL_REQUEST)
+        if isinstance(step.header, ToolRequestHeader) and step.header.tool == "slow"
+    )
+    await loop.managers.steps.append_inputs(
+        loop.owner, session_id, [interrupt_of(loop, session_id, request)]
+    )
+
+    run = await running
+
+    assert run.outcome is LoopOutcome.SUCCEEDED
+    steps = await loop.history(session_id)
+    stopped = answer_to(steps, request).header
+    assert isinstance(stopped, ToolResponseHeader) and stopped.failure is ToolFailure.INTERRUPTED
+    assert loop.tools["lookup"].ran_as == [loop.owner.user_id]
+    others = [a for a in of_type(steps, StepType.TOOL_RESPONSE) if a.responds_to != request.id]
+    assert [getattr(a.header, "failure", None) for a in others] == [None]
+
+
+async def test_an_accepted_result_ends_the_loop_from_the_history_after_a_park(
+    tmp_path: Path,
+) -> None:
+    loop = loop_over(tmp_path)
+    session_id = await loop.start(DELIVERY.name)
+    trigger = await loop.say(session_id, "Deliver the report, and send it.")
+    submit = ToolUseBlock(
+        id="use_submit", name="submit", input={"claim": "succeeded", "evidence": [str(trigger.id)]}
+    )
+    loop.anthropic.add(reply(submit, use("send", use_id="use_send")))
+
+    parked = await loop.loops.run(loop.owner, session_id)
+
+    assert parked.park is not None and parked.park.unlock == "approval"
+    steps = await loop.history(session_id)
+    answered = next(
+        s
+        for s in of_type(steps, StepType.TOOL_RESPONSE)
+        if isinstance(s.header, ToolResponseHeader)
+    )
+    assert isinstance(answered.header, ToolResponseHeader)
+    assert answered.header.accepted is not None, "the verdict is a step"
+    send = next(
+        s
+        for s in of_type(steps, StepType.TOOL_REQUEST)
+        if isinstance(s.header, ToolRequestHeader) and s.header.tool == "send"
+    )
+    await loop.managers.tools.decide_call(loop.owner, session_id, send.seq, approve=True)
+    ended = await loop.loops.run(loop.owner, session_id)
+
+    assert ended.outcome is LoopOutcome.SUCCEEDED
+    assert len(loop.anthropic.calls) == 1, "no model call after the accepted result"
     assert loop.tools["send"].ran_as == [loop.owner.user_id]
