@@ -27,11 +27,12 @@ from acme.om.steps.types.header import (
     ControlCommand,
     ControlHeader,
     InputHeader,
+    MarkHeader,
     Park,
     ParkedHeader,
     ParkReason,
 )
-from acme.om.steps.types.step import Step, StepType
+from acme.om.steps.types.step import Actor, Origin, Step, StepType
 
 EVERY_PARK = frozenset(ParkReason)
 
@@ -113,6 +114,65 @@ def announces(before: AgentSession, after: AgentSession, steps: Sequence[Step]) 
         (before.status, before.park, before.archived_at)
         != (after.status, after.park, after.archived_at)
     ) or any(step.type is StepType.LOOP_ENDED and step.seq > before.status_seq for step in steps)
+
+
+def wakes_at(before: AgentSession, after: AgentSession, steps: Sequence[Step]) -> Park | None:
+    """The park a projection asks to be woken from at its retry time: one a
+    `parked` step among the steps it read set, which the session still waits
+    on, when it carries a retry time. A park only a person clears carries
+    none and asks for nothing. Read off the steps, not the status, so a loop
+    that parks, wakes, and parks again within one read is still woken."""
+    park = after.park
+    if after.status is not SessionStatus.PARKED or park is None or park.retry_at is None:
+        return None
+    if any(step.type is StepType.PARKED and step.seq > before.status_seq for step in steps):
+        return park
+    return None
+
+
+def parked_step(step_id: UUID, session_id: UUID, loop_id: UUID, park: Park, now: datetime) -> Step:
+    """The step a run writes when its loop parks: no outcome, only the park."""
+    return Step(
+        id=step_id,
+        created_at=now,
+        session_id=session_id,
+        loop_id=loop_id,
+        type=StepType.PARKED,
+        actor=Actor.ENGINE,
+        origin=Origin.ENGINE,
+        header=ParkedHeader(park=park),
+    )
+
+
+def resumed_step(step_id: UUID, session_id: UUID, loop_id: UUID, now: datetime) -> Step:
+    """The step that starts a new run of a loop whose unlock happened."""
+    return Step(
+        id=step_id,
+        created_at=now,
+        session_id=session_id,
+        loop_id=loop_id,
+        type=StepType.RESUMED,
+        actor=Actor.ENGINE,
+        origin=Origin.ENGINE,
+        header=MarkHeader(),
+    )
+
+
+def unlock_step(step_id: UUID, session_id: UUID, now: datetime) -> Step:
+    """The control the engine writes when a park's unlock happens by itself:
+    its retry time came, or the reason it waited on is gone. It arrives
+    through the inbox, as every control does, outside any run, so its loop id
+    is its own."""
+    return Step(
+        id=step_id,
+        created_at=now,
+        session_id=session_id,
+        loop_id=step_id,
+        type=StepType.CONTROL,
+        actor=Actor.ENGINE,
+        origin=Origin.ENGINE,
+        header=ControlHeader(command=ControlCommand.UNLOCK),
+    )
 
 
 def _seq(step: Step) -> int:

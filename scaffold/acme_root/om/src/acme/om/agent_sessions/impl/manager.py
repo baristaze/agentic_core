@@ -3,19 +3,28 @@ from datetime import datetime
 from uuid import UUID
 
 from acme.om.agent_sessions.manager import AgentSessionsManagerInterface
-from acme.om.agent_sessions.rules import announces, projected
+from acme.om.agent_sessions.rules import (
+    announces,
+    parked_step,
+    projected,
+    resumed_step,
+    unlock_step,
+    wakes_at,
+)
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.types.agent_session import (
     AgentSession,
     AgentSessionPage,
     SessionStatus,
 )
-from acme.om.base import Platform, utcnow
+from acme.om.base import Platform, new_id, utcnow
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import NotFound, PreconditionFailed, TenantMismatch, ValidationFailed
 from acme.om.outbox import OutboxRelayInterface
-from acme.om.outbox.types.row import OutboxRow, versioned_row
+from acme.om.outbox.types.row import OutboxRow, outbox_row, versioned_row
 from acme.om.steps import StepsManagerInterface
+from acme.om.steps.types.header import Park, ParkReason
+from acme.om.work.types.work_item import WakeSessionPayload, WorkKind, work_row_kind
 
 CREATED = "agent_sessions.agent_session.created"
 UPDATED = "agent_sessions.agent_session.updated"
@@ -25,6 +34,7 @@ class AgentSessionsOptions(Platform):
     max_limit: int = 50  # sessions one page holds at most
     project_batch: int = 200  # steps one read of the projection folds
     project_attempts: int = 3  # writers one projection reads again behind, at most
+    wake_batch: int = 50  # parked sessions one read of a wake takes
 
 
 class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
@@ -106,6 +116,9 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
             rows: tuple[OutboxRow, ...] = ()
             if announces(session, after, page.items):
                 rows = (versioned_row(ctx, UPDATED, after.id, after.version),)
+            waiting = wakes_at(session, after, page.items)
+            if waiting is not None:
+                rows += (wake_row(ctx, after, waiting),)
             try:
                 await self._storage.write_session(ctx.org_id, after, session.version, rows)
             except PreconditionFailed:
@@ -120,6 +133,57 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
             session = after
             if not page.has_more:
                 return session
+
+    async def park(
+        self, ctx: TenantContext, session_id: UUID, epoch: int, loop_id: UUID, park: Park
+    ) -> AgentSession:
+        ctx.require(Permission.WRITE)
+        step = parked_step(new_id(), session_id, loop_id, park, self._clock())
+        await self._steps.append_steps(ctx, session_id, epoch, [step])
+        return await self.project_status(ctx, session_id)
+
+    async def resume(
+        self, ctx: TenantContext, session_id: UUID, epoch: int, loop_id: UUID
+    ) -> AgentSession:
+        ctx.require(Permission.WRITE)
+        step = resumed_step(new_id(), session_id, loop_id, self._clock())
+        await self._steps.append_steps(ctx, session_id, epoch, [step])
+        return await self.project_status(ctx, session_id)
+
+    async def wake_session(self, ctx: TenantContext, session_id: UUID, park: Park) -> AgentSession:
+        ctx.require(Permission.WRITE)
+        session = await self._read(ctx, session_id)
+        if session.status is not SessionStatus.PARKED or session.park != park:
+            return session
+        return await self._unlock(ctx, session)
+
+    async def wake_parked(self, ctx: TenantContext, reason: ParkReason) -> int:
+        ctx.require(Permission.WRITE)
+        woken = 0
+        after: UUID | None = None
+        while True:
+            batch = self._options.wake_batch
+            page = await self._storage.read_sessions(ctx.org_id, SessionStatus.PARKED, after, batch)
+            for session in page:
+                if session.park is None or session.park.reason is not reason:
+                    continue
+                try:
+                    await self._unlock(ctx, session)
+                except PreconditionFailed:
+                    continue  # another writer moved it; its gates run when it resumes
+                woken += 1
+            if len(page) < batch:
+                return woken
+            after = page[-1].id
+
+    async def _unlock(self, ctx: TenantContext, session: AgentSession) -> AgentSession:
+        """The engine's unlock, through the inbox, and the status after it. A
+        park that changed meanwhile is unlocked too, which costs one more
+        check: the run that takes it up asks its gates again."""
+        await self._steps.append_inputs(
+            ctx, session.id, [unlock_step(new_id(), session.id, self._clock())]
+        )
+        return await self.project_status(ctx, session.id)
 
     async def archive_session(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
         ctx.require(Permission.WRITE)
@@ -153,3 +217,16 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         """The write has committed; a relay that fails is left to the sweep."""
         if rows:
             await self._relay.relay_all(ctx.org_id, rows)
+
+
+def wake_row(ctx: TenantContext, session: AgentSession, park: Park) -> OutboxRow:
+    """The work row that wakes a session at its park's retry time: the queue
+    holds it until then, and no timer does. It asks as the person who made
+    the session, whoever wrote the park, so the wake runs as them."""
+    payload = WakeSessionPayload(not_before=park.retry_at or session.updated_at, park=park)
+    return outbox_row(
+        ctx,
+        work_row_kind(WorkKind.WAKE_SESSION),
+        session.id,
+        payload.model_dump(mode="json"),
+    ).model_copy(update={"actor_id": session.created_by})
