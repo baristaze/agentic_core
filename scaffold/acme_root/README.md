@@ -80,6 +80,7 @@ follows by hand.
   app imports, and [python/](clients/python/README.md), the one Python client.
 - [deployment/](deployment/README.md): compose, images, and Terraform.
 - [ops/](ops/README.md): the operators' package, skills, and stress scenarios.
+- [checkers/](checkers/README.md): the engine's static checker, `agentic-check`, which `make check` runs.
 - `docs/adr/`: the decisions; [specs/architecture.md](specs/architecture.md) pins the
   guideline and lists the deviations.
 - [llms.txt](llms.txt): the knowledge map.

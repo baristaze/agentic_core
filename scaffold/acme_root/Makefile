@@ -46,11 +46,6 @@ SCRAPE_PORT ?= $(ACME_COLLECTOR_SCRAPE_PORT)
 # .python-version. Offline, point it at a checkout:
 # `make arch-check ARCH_CHECK="python3 ../swe_guidelines/checkers/arch_check.py"`.
 ARCH_CHECK ?= uvx --python "$(shell cat .python-version)" --from "git+https://github.com/baristaze/swe_guidelines@v0.48.0\#subdirectory=checkers" arch-check
-# The engine's static checker, at the engine release this project builds on,
-# on the project's Python. Offline, or on an engine not yet released, point it
-# at a checkout:
-# `make agentic-check AGENTIC_CHECK="python3 ../agentic_core/checkers/agentic_check.py"`.
-AGENTIC_CHECK ?= uvx --python "$(shell cat .python-version)" --from "git+https://github.com/baristaze/agentic_core@v0.0.0\#subdirectory=checkers" agentic-check
 
 .PHONY: help setup up down reset urls infra-up buckets devx-up stack-up infra-down infra-reset collector-scrape migrate seed migrate-check benchmark-boot check lint format-check typecheck arch-check agentic-check test-unit test-integration test-telemetry test-live traffic openapi
 
@@ -216,8 +211,10 @@ typecheck: ## Pyright over every distribution and the scripts
 arch-check: ## The guideline's static checks, configured in pyproject.toml
 	$(ARCH_CHECK)
 
+# The engine's checker is the workspace member checkers/, so it runs in-tree,
+# at the engine release of this project's base, and nothing is fetched.
 agentic-check: ## The engine's static checks, configured in pyproject.toml
-	$(AGENTIC_CHECK)
+	uv run --package acme-checkers agentic-check
 
 test-unit: ## Unit tests over the memory impls
 	uv run pytest -q -m "not integration and not e2e and not telemetry and not live"

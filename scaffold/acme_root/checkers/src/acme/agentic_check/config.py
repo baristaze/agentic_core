@@ -36,11 +36,10 @@ Anything else is a `ConfigError`.
 from __future__ import annotations
 
 import re
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-
-import tomllib
 
 PYPROJECT = "pyproject.toml"
 TABLE = "agentic-check"
@@ -147,7 +146,11 @@ def glob_match(pattern: str, rel: str) -> bool:
 
 def relative_glob(pattern: str) -> bool:
     """Whether a glob stays under the root: not empty, not absolute, never `..`."""
-    return bool(pattern.strip()) and not pattern.startswith(("/", "\\")) and ".." not in re.split(r"[/\\]", pattern)
+    return (
+        bool(pattern.strip())
+        and not pattern.startswith(("/", "\\"))
+        and ".." not in re.split(r"[/\\]", pattern)
+    )
 
 
 def strings(value: Any, where: str) -> tuple[str, ...]:
@@ -200,20 +203,29 @@ def deviations(root: Path, value: Any, name: str, keys: set[str]) -> tuple[Devia
 
 
 def infer_package(root: Path) -> str | None:
-    """The product package when `om/src/` holds exactly one package directory: `om/src/acme/om` gives `acme`."""
+    """The product package when `om/src/` holds exactly one package directory.
+
+    `om/src/acme/om` gives `acme`.
+    """
     src = root / "om" / "src"
     if not src.is_dir():
         return None
     found = [
         p.name
         for p in src.iterdir()
-        if p.is_dir() and PACKAGE.match(p.name) and not p.name.startswith("_") and not p.name.endswith(".egg-info")
+        if p.is_dir()
+        and PACKAGE.match(p.name)
+        and not p.name.startswith("_")
+        and not p.name.endswith(".egg-info")
     ]
     return found[0] if len(found) == 1 else None
 
 
 def rule_options(value: Any) -> dict[str, dict[str, Any]]:
-    """`[tool.agentic-check.options.<RULE-ID>]` tables, each keyed by a lens id; the CLI holds ids and keys to the rules."""
+    """`[tool.agentic-check.options.<RULE-ID>]` tables, each keyed by a lens id.
+
+    The CLI holds the ids and the keys to the rules.
+    """
     where = f"[tool.{TABLE}.options]"
     if not isinstance(value, dict):
         raise ConfigError(f"{where} must be a table of tables")
@@ -241,7 +253,9 @@ def load(root: Path, *, need_package: bool = True) -> Config:
     if name is None and not need_package:
         name = ""
     if name is None:
-        raise ConfigError(f"no package: om/src/ does not hold exactly one package; set `package` under [tool.{TABLE}]")
+        raise ConfigError(
+            f"no package: om/src/ does not hold exactly one package; set `package` under [tool.{TABLE}]"
+        )
     if not isinstance(name, str) or (name and not PACKAGE.match(name)):
         raise ConfigError(f"package {name!r} is not a dotted Python name")
     return Config(

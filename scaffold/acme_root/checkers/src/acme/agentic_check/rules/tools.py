@@ -5,9 +5,9 @@ from __future__ import annotations
 import ast
 from collections.abc import Iterator
 
-from agentic_check.model import Violation
-from agentic_check.project import Project, SourceFile, is_under, names_in
-from agentic_check.registry import rule
+from acme.agentic_check.model import Violation
+from acme.agentic_check.project import Project, SourceFile, is_under, names_in
+from acme.agentic_check.registry import rule
 
 DECLARED = ("authorization_class", "effect", "timeout", "interruptible", "mode")
 """What every tool names when it builds its spec: the fields a review reads, never left to a default."""
@@ -15,7 +15,16 @@ SECRET_TYPES = frozenset({"SecretStr", "SecretBytes"})
 """The types that carry a secret's value."""
 HOST_MODULES = ("subprocess", "socket", "shutil", "pty", "multiprocessing", "asyncio.subprocess")
 """Modules that start a process, open a socket, or touch files on the host the code runs on."""
-HOST_CALLS = ("os.system", "os.popen", "os.fork", "os.exec", "os.spawn", "os.posix_spawn", "os.open", "io.open")
+HOST_CALLS = (
+    "os.system",
+    "os.popen",
+    "os.fork",
+    "os.exec",
+    "os.spawn",
+    "os.posix_spawn",
+    "os.open",
+    "io.open",
+)
 """Calls, by prefix, that start a process or open a file on the host."""
 ASYNC_PROCESSES = ("asyncio.create_subprocess_exec", "asyncio.create_subprocess_shell")
 
@@ -58,7 +67,9 @@ def every_tool_declares_its_contract(project: Project) -> Iterator[Violation]:
         missing = [name for name in DECLARED if name not in given]
         if missing:
             yield Violation.at(
-                file.rel, call, f"builds a ToolSpec without {', '.join(missing)}; every tool declares each by keyword"
+                file.rel,
+                call,
+                f"builds a ToolSpec without {', '.join(missing)}; every tool declares each by keyword",
             )
 
 
@@ -75,7 +86,8 @@ def secret_fields(project: Project, name: str) -> Iterator[tuple[SourceFile, ast
 @rule(
     "TOL-11",
     coverage="partial",
-    summary="No tool input or output, and no type of the steps namespace, declares a field typed SecretStr or SecretBytes.",
+    summary="No tool input or output, and no type of the steps namespace, "
+    "declares a field typed SecretStr or SecretBytes.",
 )
 def no_secret_value_in_a_step(project: Project) -> Iterator[Violation]:
     """A tool's input and its output are written into the steps of its
@@ -92,7 +104,10 @@ def no_secret_value_in_a_step(project: Project) -> Iterator[Violation]:
         carriers |= project.subclasses(tool_input)
     for file, call in spec_calls(project):
         for k in call.keywords:
-            if k.arg == "output_model" and (full := project.full_name(file, k.value)) in project.classes:
+            if (
+                k.arg == "output_model"
+                and (full := project.full_name(file, k.value)) in project.classes
+            ):
                 carriers.add(full)
     steps = project.sub("om.steps")
     carriers |= {n for n, (f, _) in project.classes.items() if is_under(f.module, steps)}
@@ -134,20 +149,34 @@ def tools_reach_only_through_the_transport(project: Project) -> Iterator[Violati
         for node in ast.walk(tree):
             if isinstance(node, ast.Import | ast.ImportFrom):
                 if isinstance(node, ast.ImportFrom):
-                    target = project.resolve(file, node.level, node.module) if node.level else node.module or ""
+                    target = (
+                        project.resolve(file, node.level, node.module)
+                        if node.level
+                        else node.module or ""
+                    )
                     imported = [target, *(f"{target}.{a.name}" for a in node.names)]
                 else:
                     imported = [a.name for a in node.names]
                 hit = next((m for m in imported if any(is_under(m, h) for h in HOST_MODULES)), None)
                 if hit is not None:
                     yield Violation.at(
-                        file.rel, node, f"imports {hit}; a tool runs commands and touches files only through its runtime"
+                        file.rel,
+                        node,
+                        f"imports {hit}; a tool runs commands and touches files only through its runtime",
                     )
             elif isinstance(node, ast.Call):
                 full = project.full_name(file, node.func)
-                if isinstance(node.func, ast.Name) and node.func.id == "open" and "open" not in bound:
+                if (
+                    isinstance(node.func, ast.Name)
+                    and node.func.id == "open"
+                    and "open" not in bound
+                ):
                     full = "open"
-                if full and (full == "open" or full.startswith(HOST_CALLS) or full in ASYNC_PROCESSES):
+                if full and (
+                    full == "open" or full.startswith(HOST_CALLS) or full in ASYNC_PROCESSES
+                ):
                     yield Violation.at(
-                        file.rel, node, f"calls {full}; a tool runs commands and touches files only through its runtime"
+                        file.rel,
+                        node,
+                        f"calls {full}; a tool runs commands and touches files only through its runtime",
                     )

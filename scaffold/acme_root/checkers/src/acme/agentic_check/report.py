@@ -5,13 +5,20 @@ from __future__ import annotations
 import json as jsonlib
 from typing import Any
 
-from agentic_check.model import Rule
-from agentic_check.runner import Result
+from acme.agentic_check.model import Rule
+from acme.agentic_check.runner import Result
 
 
 def rule_dict(r: Rule) -> dict[str, Any]:
     """A rule as JSON; `lens` is the lens id it decides, which is its id."""
-    return {"id": r.id, "lens": r.id, "group": r.group, "coverage": r.coverage, "severity": r.severity, "summary": r.summary}
+    return {
+        "id": r.id,
+        "lens": r.id,
+        "group": r.group,
+        "coverage": r.coverage,
+        "severity": r.severity,
+        "summary": r.summary,
+    }
 
 
 def text(result: Result) -> str:
@@ -40,4 +47,6 @@ def json(result: Result) -> str:
 
 def listing(rules: list[Rule]) -> str:
     """`--list`: one line per rule: id, group, coverage, severity, summary."""
-    return "\n".join(f"{r.id:<7} {r.group:<8} {r.coverage:<8} {r.severity:<7} {r.summary}" for r in rules)
+    return "\n".join(
+        f"{r.id:<7} {r.group:<8} {r.coverage:<8} {r.severity:<7} {r.summary}" for r in rules
+    )

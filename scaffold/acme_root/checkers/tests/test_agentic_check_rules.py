@@ -1,4 +1,4 @@
-"""checkers/src/agentic_check/rules: each rule fires on a bad tree and stays quiet on the good one.
+"""agentic-check's rules: each rule fires on a bad tree and stays quiet on the good one.
 
 The base tree of `agentic_check_fixtures` is clean under every rule, so
 each test plants one breach and reads the rule that decides it.
@@ -118,17 +118,23 @@ def test_tol11_a_secret_typed_field_on_a_tool_input_output_or_step_is_a_finding(
             "from pydantic import SecretBytes, SecretStr\n\nfrom acme.om.base import Platform\n",
         )
         .replace(
-            "class EchoInput(ToolInput):\n    text: str\n", "class EchoInput(ToolInput):\n    text: str\n    token: SecretStr\n"
+            "class EchoInput(ToolInput):\n    text: str\n",
+            "class EchoInput(ToolInput):\n    text: str\n    token: SecretStr\n",
         )
         .replace(
-            "class EchoOutput(Platform):\n    text: str\n", "class EchoOutput(Platform):\n    key: SecretBytes | None = None\n"
+            "class EchoOutput(Platform):\n    text: str\n",
+            "class EchoOutput(Platform):\n    key: SecretBytes | None = None\n",
         )
     )
     step = "from pydantic import SecretStr\n\nfrom acme.om.base import Platform\n\n\n"
     step += "class Step(Platform):\n    secret: 'SecretStr'\n"
     write_project(tmp_path, {TOOL: tool, f"{OM}/steps/types/step.py": step})
     hits = found(tmp_path, "TOL-11")
-    assert sorted(m.split(" is a")[0] for _, _, m in hits) == ["EchoInput.token", "EchoOutput.key", "Step.secret"]
+    assert sorted(m.split(" is a")[0] for _, _, m in hits) == [
+        "EchoInput.token",
+        "EchoOutput.key",
+        "Step.secret",
+    ]
 
 
 def test_tol11_a_secret_outside_what_a_step_carries_is_no_finding(tmp_path):
@@ -165,11 +171,15 @@ def test_tol13_a_module_that_defines_no_tool_may_start_a_process(tmp_path):
 
 
 def test_prv06_an_optional_or_defaulted_interface_in_an_engine_constructor_is_a_finding(tmp_path):
-    manager = BASE[MANAGER].replace("gate: BudgetGateInterface)", "gate: BudgetGateInterface | None = None)")
+    manager = BASE[MANAGER].replace(
+        "gate: BudgetGateInterface)", "gate: BudgetGateInterface | None = None)"
+    )
     sink = (
         "from dataclasses import dataclass\nfrom typing import Optional\n\n"
         "from acme.om.budgets.gate import BudgetGateInterface\n\n\n"
-        "class Meter:\n    def __init__(self, *, gate: Optional[BudgetGateInterface]) -> None:\n        self._gate = gate\n\n\n"
+        "class Meter:\n"
+        "    def __init__(self, *, gate: Optional[BudgetGateInterface]) -> None:\n"
+        "        self._gate = gate\n\n\n"
         "@dataclass(frozen=True)\nclass Wiring:\n    gate: BudgetGateInterface = None\n"
     )
     write_project(tmp_path, {MANAGER: manager, f"{OM}/budgets/impl/meter.py": sink})
