@@ -30,12 +30,14 @@ of](../../../../README.md).
 - **Seal and open.** Each step that says something is sealed on its way
   into storage and opened on its way out. Nothing else in the engine
   sees it happen. An artifact's text is sealed the same way, under the
-  same key, before it reaches the object store.
+  same key, before it reaches the object store, and so is what a command
+  printed, in its transport's record of how it ended.
 - **Add a version.** What comes after is sealed under it.
 - **Revoke the key.** Every version is destroyed at once. The content
   becomes unreadable and the shape stays: every step keeps its place,
   its type, and its cost, and reads as absent. An artifact keeps its
-  record, and its text is noise. It cannot be undone, and
+  record, and its text is noise. A command's record still says how it
+  ended, and what it printed is noise. It cannot be undone, and
   the session takes no content again.
 - **Rotate the tenant's key.** Each version is wrapped again under the
   new one. No content is read or rewritten.
@@ -62,8 +64,10 @@ The sealing layer is `impl/sealed_steps.py`, the memory-only layer
 `impl/memory_only_steps.py`, and the router `impl/routed_steps.py`;
 `root.private_history` wires all three over the one history. The
 artifacts' seal is `impl/artifacts.py`, which the root wires behind the
-windows' `ArtifactSealInterface`. A data key is in the clear only inside
-`impl/keys.py`. Revocation is
+windows' `ArtifactSealInterface`. A command's record takes the same blob
+form (`impl/blobs.py`) through `impl/records.py`, which the root makes for
+each session behind the transport's `RecordSealInterface`. A data key is
+in the clear only inside `impl/keys.py`. Revocation is
 `PrivacyStorageInterface.revoke`, one commit (ADR 1004).
 -->
 

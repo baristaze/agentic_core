@@ -47,7 +47,9 @@ thing [Acme is made of](../../../../README.md).
   agent wrote that is not one JSON object is bad input, and never runs.
 - **Recover.** After a crash, a call that is safe to repeat runs again; one
   that is not is never repeated: the workspace's own record says how it
-  ended, or the agent is told its outcome is unknown.
+  ended, or the agent is told its outcome is unknown. The record keeps
+  what the command printed sealed under the session's key, and goes when
+  the session is purged.
 
 ## The rules
 
@@ -56,7 +58,9 @@ thing [Acme is made of](../../../../README.md).
 - **A message buys no power.** A person starts or talks to an agent only
   if the org lets them make every kind of call it has (ADR 1012).
 - **An approval is for one call.** A different input is a different call,
-  and asks again.
+  and asks again. The call is known by a hash of its input keyed by the
+  session ([privacy](../privacy/README.md)), so the same input hashes
+  apart in two sessions, and confirms nothing once the key is revoked.
 - **A secret never enters a step.** A tool names the secrets it may use.
   Each use is recorded by name, the value is kept out of everything the
   agent sees, and the engine's own credentials never reach a tool.
