@@ -1,7 +1,7 @@
 ---
 name: agentic-deviate
 description: "Record a deliberate deviation from a rule of the agentic_core spec as an ADR under docs/adr/: the rule quoted, the decision, the consequences. Use when a finding of an engine review is accepted as intentional."
-allowed-tools: Read, Grep, Glob, Write, Edit, Bash(date:*)
+allowed-tools: Read, Grep, Glob, Write, Edit, Bash(date:*), Bash(git ls-tree:*)
 ---
 
 # agentic-deviate
@@ -42,27 +42,42 @@ describe one, say which, and stop:
    lens's Principle, or the section's Principle box when no lens holds
    the rule. Read the tag alone on the line under the heading that
    states the rule, if any: a tag covers its own heading's text, never
-   the subsections under it. When the rule itself allows what the arguments describe,
-   such as an `optional` section whose trigger has not arrived, there
-   is nothing to record: say so, quote the words that allow it, and
-   stop.
+   the subsections under it. A lens's first Source is the section that
+   states its rule, so when a lens cites several sections, the first
+   one's tag decides. When the rule itself allows what the arguments
+   describe, such as an `optional` section whose trigger has not
+   arrived, there is nothing to record: say so, quote the words that
+   allow it, and stop.
 2. The ADR goes under `docs/adr/` at the root of the repository you
    run in, created when it does not exist: a review opens the record
-   there by the number cited beside the code. Number the new record as
-   one more than the highest numeric prefix present, whoever wrote that
-   record (the guideline's, the engine's, and the project's own share
-   the folder), zero-padded as the folder's records are
+   there by the number cited beside the code. A project's own records
+   take a thousand no upstream layer uses, so a later release of its
+   base never brings the same number. The records the base holds are
+   upstream: the files of the `docs/adr/` folder on the `scaffold`
+   branch, wherever in that tree the base keeps it
+   (`git ls-tree -r --name-only scaffold`, or `origin/scaffold` when
+   there is no local branch). The project's thousand is the next above
+   the highest upstream number: the engine's records are 1001 to 1999,
+   so a project built on it numbers from 2001. The new record is one
+   above the highest record already in that thousand, or its first
+   number when there is none. When there is no `scaffold` branch, say
+   so and stop: only the base tells an upstream number from the
+   project's own. Zero-pad the number as the folder's records are
    (`NNNN-<slug>.md`, the slug the title's words in lowercase, joined
    by hyphens). Refuse to write a path that already exists.
 3. Take the date from `date +%F`: the ADR records the day the decision
    is made, which is today, not the day of the last commit.
 4. Write the ADR with the template below, under `docs/adr/` only.
    Keep it under one page.
-5. When a file under `specs/` points at this spec (it names
-   `agentic_core_spec.md`) and has a `## Deviations` table, append one
-   row: the ADR number, the rule, and a one-line summary. A file there
-   that points at the guideline alone records the guideline's
-   deviations, not this one.
+5. Append one row, the ADR number, the rule, and a one-line summary, to
+   the `## Deviations` table of the file under `specs/` that points at
+   this spec: it names `agentic_core_spec.md` and has that table. When
+   more than one does, the row goes in the one whose table already
+   holds the engine's rows (ADRs 1001 to 1999), else in
+   `specs/architecture.md` when it is one of them, else in the first of
+   them in path order. A file that points at the guideline alone
+   records the guideline's deviations, not this one. When no file
+   qualifies, there is no deviations table.
 6. Write no checker entry and no inline ignore comment. A lens whose
    `Check` line reads `review` is judged by the review alone, so no
    program reports the breach and none is told to skip it. The ADR, the
