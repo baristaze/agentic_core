@@ -43,6 +43,8 @@ from acme.om.tenancy import (
 from acme.om.tenancy.storage import TenancyStorageInterface
 from acme.om.tools import ToolsManagerInterface
 from acme.om.tools.storage import ToolStorageInterface
+from acme.om.windows import WindowsManagerInterface
+from acme.om.windows.storage import WindowStorageInterface
 from acme.om.work import WorkManagerInterface, WorkOperatorManagerInterface
 from acme.om.work.storage import WorkStorageInterface
 
@@ -64,6 +66,7 @@ async def test_memory_root_serves_every_storage() -> None:
     assert isinstance(root.get_budget_storage(), BudgetStorageInterface)
     assert isinstance(root.get_ledger_storage(), LedgerStorageInterface)
     assert isinstance(root.get_fill_set_storage(), FillSetStorageInterface)
+    assert isinstance(root.get_window_storage(), WindowStorageInterface)
     assert isinstance(root.get_tool_storage(), ToolStorageInterface)
     assert await root.healthcheck() is True
     await root.close()
@@ -137,6 +140,7 @@ def test_business_root_has_a_field_per_manager(tmp_path: Path) -> None:
     assert isinstance(managers.budget_gate, BudgetGateInterface)
     assert isinstance(managers.pricing, PricingInterface)
     assert isinstance(managers.models, ModelsManagerInterface)
+    assert isinstance(managers.windows, WindowsManagerInterface)
     assert isinstance(managers.tools, ToolsManagerInterface)
 
 

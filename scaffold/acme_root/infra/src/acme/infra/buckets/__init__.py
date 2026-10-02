@@ -23,6 +23,7 @@ __all__ = [
 class Buckets(StrEnum):
     USER_FILE_UPLOADS = "user-file-uploads"
     EXPORTS = "exports"
+    ARTIFACTS = "artifacts"  # tool results too large for a step, read a page at a time
 
 
 def object_key(org_id: UUID, key: str) -> str:

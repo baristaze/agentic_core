@@ -112,7 +112,7 @@ infra-up: ## Start Postgres, the cache, the queue, and the object store
 # One bucket per member of acme.infra.buckets.Buckets, named <prefix>-<bucket>
 # as the S3 impl names them; the cloud's are Terraform's. MinIO ships `mc`.
 buckets: ## Create the object store's buckets in MinIO, if they are missing
-	$(COMPOSE) exec -T minio sh -c 'mc alias set local http://127.0.0.1:9000 acme acme-minio-local >/dev/null && mc mb --ignore-existing local/acme-local-user-file-uploads local/acme-local-exports'
+	$(COMPOSE) exec -T minio sh -c 'mc alias set local http://127.0.0.1:9000 acme acme-minio-local >/dev/null && mc mb --ignore-existing local/acme-local-user-file-uploads local/acme-local-exports local/acme-local-artifacts'
 
 devx-up: ## The local stack plus developer dashboards (pgweb, Valkey Admin, ElasticMQ UI, Prometheus and its collector, Grafana, Jaeger, GlitchTip)
 	$(COMPOSE) --profile devx up -d --wait

@@ -45,6 +45,8 @@ from acme.om.tenancy.storage import TenancyStorageInterface
 from acme.om.tenancy.storage.impl.postgres import TenancyStoragePostgresImpl
 from acme.om.tools.storage import ToolStorageInterface
 from acme.om.tools.storage.impl.postgres import ToolStoragePostgresImpl
+from acme.om.windows.storage import WindowStorageInterface
+from acme.om.windows.storage.impl.postgres import WindowStoragePostgresImpl
 from acme.om.work.storage import WorkStorageInterface
 from acme.om.work.storage.impl.postgres import WorkStoragePostgresImpl
 
@@ -186,6 +188,7 @@ class StoragePostgresImpl(StorageInterface):
         self._budgets = BudgetStoragePostgresImpl(sessions)
         self._ledger = LedgerStoragePostgresImpl(sessions)
         self._fill_sets = FillSetStoragePostgresImpl(sessions)
+        self._windows = WindowStoragePostgresImpl(sessions)
         self._tools = ToolStoragePostgresImpl(sessions)
 
     def get_tenancy_storage(self) -> TenancyStorageInterface:
@@ -232,6 +235,9 @@ class StoragePostgresImpl(StorageInterface):
 
     def get_fill_set_storage(self) -> FillSetStorageInterface:
         return self._fill_sets
+
+    def get_window_storage(self) -> WindowStorageInterface:
+        return self._windows
 
     def get_tool_storage(self) -> ToolStorageInterface:
         return self._tools

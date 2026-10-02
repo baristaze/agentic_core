@@ -29,6 +29,8 @@ from acme.om.tenancy.storage import TenancyStorageInterface
 from acme.om.tenancy.storage.impl.memory import TenancyStorageMemoryImpl
 from acme.om.tools.storage import ToolStorageInterface
 from acme.om.tools.storage.impl.memory import ToolStorageMemoryImpl
+from acme.om.windows.storage import WindowStorageInterface
+from acme.om.windows.storage.impl.memory import WindowStorageMemoryImpl
 from acme.om.work.storage import WorkStorageInterface
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
 
@@ -53,6 +55,7 @@ class StorageMemoryImpl(StorageInterface):
         self._budgets = BudgetStorageMemoryImpl(self._outbox)
         self._ledger = LedgerStorageMemoryImpl()
         self._fill_sets = FillSetStorageMemoryImpl()
+        self._windows = WindowStorageMemoryImpl()
         self._tools = ToolStorageMemoryImpl(self._outbox)
 
     def get_tenancy_storage(self) -> TenancyStorageInterface:
@@ -99,6 +102,9 @@ class StorageMemoryImpl(StorageInterface):
 
     def get_fill_set_storage(self) -> FillSetStorageInterface:
         return self._fill_sets
+
+    def get_window_storage(self) -> WindowStorageInterface:
+        return self._windows
 
     def get_tool_storage(self) -> ToolStorageInterface:
         return self._tools

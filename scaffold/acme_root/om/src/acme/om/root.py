@@ -10,6 +10,7 @@ from acme.infra.cache import CacheInterface, CacheScope
 from acme.infra.root import InfraInterface
 from acme.integrations.identity import IdentityProviderInterface
 from acme.integrations.identity.absent import IdentityProviderAbsentImpl
+from acme.integrations.model_providers.registry import absent_model_providers
 from acme.integrations.root import IntegrationsInterface
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.impl.manager import AgentSessionsManagerImpl, AgentSessionsOptions
@@ -66,6 +67,13 @@ from acme.om.tenancy.impl.sign_in import TenancySignInManagerImpl
 from acme.om.tenancy.storage import TenancyStorageInterface
 from acme.om.tools import ToolsManagerInterface
 from acme.om.tools.impl.manager import ToolsManagerImpl, ToolsOptions
+from acme.om.windows import WindowsManagerInterface
+from acme.om.windows.gate import CallGateInterface
+from acme.om.windows.hashes import PromptHashInterface
+from acme.om.windows.impl.gate import CallGateNullImpl
+from acme.om.windows.impl.hashes import PromptHashNullImpl
+from acme.om.windows.impl.manager import WindowsManagerImpl, WindowsOptions
+from acme.om.windows.types.policy import CompactionPolicy
 from acme.om.work import WorkManagerInterface, WorkOperatorManagerInterface
 from acme.om.work.impl.manager import WorkManagerImpl, WorkOptions
 from acme.om.work.impl.operator import WorkOperatorManagerImpl
@@ -89,6 +97,7 @@ class Managers:
     budget_gate: BudgetGateInterface
     pricing: PricingInterface
     models: ModelsManagerInterface
+    windows: WindowsManagerInterface
     attribution: AttributionManagerInterface
     agents: AgentsManagerInterface
     tools: ToolsManagerInterface
@@ -184,6 +193,9 @@ def build_managers(
     budgets_options: BudgetsOptions | None = None,
     models_options: ModelsOptions | None = None,
     model_prices: ModelPricesInterface | None = None,
+    call_gate: CallGateInterface | None = None,
+    prompt_hash: PromptHashInterface | None = None,
+    compaction_policy: CompactionPolicy | None = None,
     agents_options: AgentsOptions | None = None,
     attribution_options: AttributionOptions | None = None,
     agent_kinds: tuple[AgentKind, ...] = (),
@@ -203,6 +215,12 @@ def build_managers(
     `model_prices` is what the resolver asks before it picks a model: the
     one source of prices. None wires the null, which prices nothing, so no
     model resolves until a source is wired.
+
+    `call_gate` is the budget gate a compaction's model call passes, and
+    `prompt_hash` the key service's hash a request's header records. None
+    wires a loud null for each, which refuses: no summarizer is called
+    outside a gate, and no prompt is hashed without its session's key.
+    `compaction_policy` None keeps the default policy.
 
     The last three are the adopter's for its agents: the agent kinds it
     declares, every version it still runs; the transition of its tenancy
@@ -325,6 +343,21 @@ def build_managers(
         outbox,
         agents_options or AgentsOptions(),
     )
+    # What a model request reads: rendered from the history, compacted by
+    # the summarizer through the model providers, behind the gate, paid for
+    # by the spender attribution names.
+    windows = WindowsManagerImpl(
+        storage.get_window_storage(),
+        steps,
+        models,
+        attribution,
+        absent_model_providers() if integrations is None else integrations.get_model_providers(),
+        infra.get_buckets(),
+        call_gate or CallGateNullImpl(),
+        prompt_hash or PromptHashNullImpl(),
+        compaction_policy or CompactionPolicy(),
+        WindowsOptions(),
+    )
     # Where the engine touches the world: the session's history for a
     # person's decisions, the events for the audit of each secret a call
     # uses, and the workspace and the transport infra chose.
@@ -370,6 +403,7 @@ def build_managers(
         # The one source of prices: the list table.
         pricing=PricingTableImpl(),
         models=models,
+        windows=windows,
         attribution=attribution,
         agents=agents,
         tools=tools,
