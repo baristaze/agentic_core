@@ -17,6 +17,7 @@ from starlette.testclient import TestClient
 
 from acme.integrations.identity.twin import IdentityProviderTwinImpl
 from acme.integrations.impl.configured import IntegrationsOverImpl
+from acme.integrations.model_providers.registry import absent_model_providers
 from acme.om.context import Role
 from acme.services.api.app import create_app
 from acme.services.api.container import AppContainer
@@ -136,7 +137,10 @@ async def seed_tenant(
 def container(tmp_path: Path) -> AppContainer:
     """The test container over the identity provider's twin, which the
     invitation routes send through."""
-    return build_container(tmp_path, integrations=IntegrationsOverImpl(IdentityProviderTwinImpl()))
+    return build_container(
+        tmp_path,
+        integrations=IntegrationsOverImpl(IdentityProviderTwinImpl(), absent_model_providers()),
+    )
 
 
 @pytest.fixture

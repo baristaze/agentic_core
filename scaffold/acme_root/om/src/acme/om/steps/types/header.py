@@ -16,6 +16,7 @@ from pydantic import Field, model_validator
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.attribution.types.principal import AgentRef, Principal
 from acme.om.base import Platform
+from acme.om.models.types.fill import FillSwitch
 from acme.om.steps.types.content import MAX_NAME, Stored
 
 
@@ -161,9 +162,17 @@ class LoopEndedHeader(Platform):
     outcome: LoopOutcome
 
 
+class SwitchedHeader(Platform):
+    """A switch, explicit: the fill set's new version and both fills it
+    names. A switch is never silent, so no fill changes without one."""
+
+    kind: Literal["switched"] = "switched"
+    fills: FillSwitch
+
+
 class MarkHeader(Platform):
     """A lifecycle mark with nothing of its own to say: `resumed`,
-    `switched`, `environment_changed`."""
+    `environment_changed`."""
 
     kind: Literal["mark"] = "mark"
 
@@ -178,6 +187,7 @@ StepHeader = Annotated[
     | SummaryHeader
     | ParkedHeader
     | LoopEndedHeader
+    | SwitchedHeader
     | MarkHeader,
     Field(discriminator="kind"),
 ]

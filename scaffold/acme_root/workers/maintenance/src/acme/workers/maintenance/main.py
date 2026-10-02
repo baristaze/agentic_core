@@ -83,6 +83,7 @@ def build_loop(container: WorkerContainer, lane: str | None = None) -> WorkerLoo
             "agent_sessions": managers.agent_sessions.purge_tenant,
             "agent_trees": managers.agents.purge_tenant,
             "session_authorities": managers.attribution.purge_tenant,
+            "models": managers.models.purge_tenant,
             # Deletes nothing: it reports the history left, so a tenant whose
             # steps remain is never marked purged.
             "steps": managers.steps.purge_tenant,

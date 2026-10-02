@@ -18,6 +18,7 @@ from acme.apps.cli import main
 from acme.client.client import ApiClient
 from acme.integrations.identity.twin import IdentityProviderTwinImpl
 from acme.integrations.impl.configured import IntegrationsOverImpl
+from acme.integrations.model_providers.registry import absent_model_providers
 from acme.om.context import Role
 from acme.services.api.app import create_app
 from acme.services.api.container import AppContainer
@@ -116,7 +117,9 @@ class Stack:
 @pytest.fixture
 def stack(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Stack]:
     twin = IdentityProviderTwinImpl()
-    container = build_container(tmp_path, integrations=IntegrationsOverImpl(twin))
+    container = build_container(
+        tmp_path, integrations=IntegrationsOverImpl(twin, absent_model_providers())
+    )
     _, org = run(
         container.managers.tenancy.bootstrap(
             seed_request(), "Ajax", "ajax", OWNER["email"], OWNER["name"]
