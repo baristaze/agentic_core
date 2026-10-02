@@ -18,8 +18,9 @@ This is one of the kinds of thing [Acme is made of](../../../../README.md).
   agent, the model, the engine, or something outside) and where it came
   in.
 - **Principal and spender**: on whose authority a message, an event, or
-  a tool call runs, and who pays for a call to a model. A step an agent
-  produced also names the agent: its kind and its session
+  a tool call runs, and who pays for a call to a model. A person's or a
+  program's message is written in the name of whoever appends it. A step
+  an agent produced also names the agent: its kind and its session
   ([attribution](../attribution/README.md)).
 - **Header and content**: the header is the step's shape, readable
   always: ids, names, counts, flags. The content is what was said: text,

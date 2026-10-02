@@ -17,6 +17,7 @@ from acme.om.attribution.types.authority import (
     AuthorityMode,
     CallAuthority,
     CallReach,
+    RequestAttribution,
     SessionAuthority,
 )
 from acme.om.attribution.types.principal import Principal
@@ -60,12 +61,19 @@ class AttributionManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def spender_for(self, ctx: TenantContext, session_id: UUID) -> Principal:
-        """Who pays for the session's next model call: the principal behind
-        the latest principal-authored input in its history, else the spender
-        its spawn passed it. An input from an agent, the engine, or an
-        external event never becomes the payer. `NoSpender` when nobody can
-        be named, and then nothing is spent."""
+    async def attribute_request(
+        self, ctx: TenantContext, session_id: UUID, after_seq: int, through_seq: int
+    ) -> RequestAttribution:
+        """What the session's next model request records, read from the
+        history: `after_seq` is the seq of its latest model request (0
+        before its first), and `through_seq` the last step the new request
+        delivers. The speaker is the principal behind the latest
+        principal-authored input between the two, else the one that request
+        recorded; the spender is that speaker, else the spender its spawn
+        passed it. An input from an agent, the engine, or an external event
+        never becomes the payer. `NoSpender` when nobody can be named, and
+        then nothing is spent. A range whose start is no model request, or
+        that holds one, is `ValidationFailed`."""
         ...
 
     @abstractmethod
@@ -78,16 +86,19 @@ class AttributionManagerInterface(ABC):
     @abstractmethod
     async def call_principal(self, ctx: TenantContext, session_id: UUID) -> Principal:
         """Whose authority the session's next tool call runs under: a steady
-        session's fixed principal, or a delegated session's latest
-        speaker."""
+        session's fixed principal, or the speaker a delegated session's
+        latest model request recorded."""
         ...
 
     @abstractmethod
     async def authorize_call(
         self, ctx: TenantContext, session_id: UUID, reach: CallReach
     ) -> CallAuthority:
-        """Asked for every tool call, before it runs. The call's principal
-        is asked of the adopter's transition each time, never once per loop,
+        """Asked for every tool call, before it runs, and before the next
+        model request: a delegated call runs under the speaker the request
+        that led to it recorded, never a message that landed after it. The
+        call's principal is asked of the adopter's transition each time,
+        never once per loop,
         and the call runs under the context it answers with. A delegated
         call whose principal no longer holds is `AuthorityRevoked`, and is
         denied; a steady one is `PrincipalLapsed`, and waits until a person

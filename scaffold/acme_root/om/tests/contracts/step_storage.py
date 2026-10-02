@@ -92,6 +92,7 @@ def make_request(
     carried: tuple[UUID, ...] = (),
     *,
     spender: Principal | None = None,
+    speaker: Principal | None = None,
 ) -> Step:
     """A model request: it references what it carried, and copies nothing."""
     return Step(
@@ -103,7 +104,7 @@ def make_request(
         actor=Actor.ENGINE,
         origin=Origin.ENGINE,
         refs=carried,
-        header=ModelRequestHeader(role="main", spender=spender or a_person()),
+        header=ModelRequestHeader(role="main", spender=spender or a_person(), speaker=speaker),
     )
 
 

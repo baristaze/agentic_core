@@ -4,12 +4,19 @@ from uuid import UUID
 
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.attribution.manager import AttributionManagerInterface, PrincipalContext
-from acme.om.attribution.rules import call_principal, inherited, needs_person, spender_of
+from acme.om.attribution.rules import (
+    call_principal,
+    inherited,
+    needs_person,
+    speaker_after,
+    spender_of,
+)
 from acme.om.attribution.storage import AttributionStorageInterface
 from acme.om.attribution.types.authority import (
     AuthorityMode,
     CallAuthority,
     CallReach,
+    RequestAttribution,
     SessionAuthority,
 )
 from acme.om.attribution.types.principal import Principal, PrincipalKind
@@ -27,6 +34,9 @@ from acme.om.exceptions import (
 )
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.types.row import OutboxRow, versioned_row
+from acme.om.steps import StepsManagerInterface
+from acme.om.steps.types.header import ModelRequestHeader
+from acme.om.steps.types.step import Step
 from acme.om.tenancy import TenancyManagerInterface
 
 CREATED = "attribution.session_authority.created"
@@ -35,6 +45,7 @@ UPDATED = "attribution.session_authority.updated"
 
 class AttributionOptions(Platform):
     purge_batch: int = 1000  # authorities one purge statement deletes at most
+    read_batch: int = 200  # steps one read of a request's range holds
 
 
 async def no_principal_context(
@@ -51,6 +62,7 @@ class AttributionManagerImpl(AttributionManagerInterface):
         self,
         storage: AttributionStorageInterface,
         sessions: AgentSessionsManagerInterface,
+        steps: StepsManagerInterface,
         principal_context: PrincipalContext,
         tenancy: TenancyManagerInterface,
         relay: OutboxRelayInterface,
@@ -59,6 +71,7 @@ class AttributionManagerImpl(AttributionManagerInterface):
     ) -> None:
         self._storage = storage
         self._sessions = sessions
+        self._steps = steps
         self._principal_context = principal_context
         self._tenancy = tenancy
         self._relay = relay
@@ -134,14 +147,31 @@ class AttributionManagerImpl(AttributionManagerInterface):
         await self._relay_all(ctx, rows)
         return taken
 
-    async def spender_for(self, ctx: TenantContext, session_id: UUID) -> Principal:
+    async def attribute_request(
+        self, ctx: TenantContext, session_id: UUID, after_seq: int, through_seq: int
+    ) -> RequestAttribution:
         ctx.require(Permission.READ)
+        if not 0 <= after_seq <= through_seq:
+            raise ValidationFailed(f"no range from {after_seq} through {through_seq}")
         authority = await self._authority(ctx, session_id)
-        speaker, _ = await self._at_head(ctx, session_id)
+        steps = await self._range(ctx, session_id, max(after_seq - 1, 0), through_seq)
+        previous: Principal | None = None
+        if after_seq > 0:
+            latest = steps[0] if steps else None
+            if (
+                latest is None
+                or latest.seq != after_seq
+                or not isinstance(latest.header, ModelRequestHeader)
+            ):
+                raise ValidationFailed(f"step {after_seq} of {session_id} is no model request")
+            previous, steps = latest.header.speaker, steps[1:]
+        if any(isinstance(step.header, ModelRequestHeader) for step in steps):
+            raise ValidationFailed(f"a model request of {session_id} lies after {after_seq}")
+        speaker = speaker_after(previous, steps)
         spender = spender_of(authority.spender, speaker)
         if spender is None:
             raise NoSpender(f"nobody can be named to pay for agent session {session_id}")
-        return spender
+        return RequestAttribution(speaker=speaker, spender=spender)
 
     async def is_marked(self, ctx: TenantContext, session_id: UUID) -> bool:
         ctx.require(Permission.READ)
@@ -182,6 +212,21 @@ class AttributionManagerImpl(AttributionManagerInterface):
         if not await self._tenancy.tenant_expired(ctx):
             return 0
         return await self._storage.purge_tenant(ctx.org_id, self._options.purge_batch)
+
+    async def _range(
+        self, ctx: TenantContext, session_id: UUID, after_seq: int, through_seq: int
+    ) -> list[Step]:
+        """The steps after `after_seq` through `through_seq`, page by page."""
+        found: list[Step] = []
+        while after_seq < through_seq:
+            page = await self._steps.get_steps(
+                ctx, session_id, after_seq, min(self._options.read_batch, through_seq - after_seq)
+            )
+            found.extend(step for step in page.items if step.seq <= through_seq)
+            if not page.has_more or not page.items:
+                break
+            after_seq = page.items[-1].seq
+        return found
 
     async def _authority(self, ctx: TenantContext, session_id: UUID) -> SessionAuthority:
         """A session with no authority runs no call and spends nothing."""

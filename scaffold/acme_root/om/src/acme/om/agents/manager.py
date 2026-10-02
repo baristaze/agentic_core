@@ -57,8 +57,9 @@ class AgentsManagerInterface(ABC):
     @abstractmethod
     async def cancel_children(self, ctx: TenantContext, session_id: UUID) -> tuple[UUID, ...]:
         """The cascade of a cancel: a `cancel` control to every session below
-        `session_id` whose loop is open, children and theirs. Answers the
-        sessions it reached."""
+        `session_id` that is not idle, children and theirs, a session that
+        waits to begin its next loop among them. Answers the sessions it
+        reached."""
         ...
 
     @abstractmethod

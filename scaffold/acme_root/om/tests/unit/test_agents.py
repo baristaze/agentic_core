@@ -9,9 +9,9 @@ from uuid import UUID
 
 import pytest
 from contracts.agent_session_storage import make_session
-from contracts.doubles import context
+from contracts.doubles import context, model_request
 from contracts.factories import make_org
-from contracts.step_storage import a_person, make_message, make_parked
+from contracts.step_storage import make_message, make_parked, make_request, make_response
 from pydantic import ValidationError
 
 from acme.infra.impl.local import InfraLocalImpl
@@ -185,6 +185,19 @@ async def start(managers: Managers, ctx: TenantContext, kind: str = "delivery") 
     )
 
 
+def ended(session_id: UUID, loop_id: UUID) -> Step:
+    return Step(
+        id=new_id(),
+        created_at=utcnow(),
+        session_id=session_id,
+        loop_id=loop_id,
+        type=StepType.LOOP_ENDED,
+        actor=Actor.ENGINE,
+        origin=Origin.ENGINE,
+        header=LoopEndedHeader(outcome=LoopOutcome.SUCCEEDED),
+    )
+
+
 def spawn(kind: str = "helper") -> Spawn:
     return Spawn(id=new_id(), kind=kind, title="reproduce it", objective="run the failing test")
 
@@ -222,9 +235,10 @@ async def test_a_child_holds_no_more_than_its_parent(managers: Managers) -> None
     assert (child.parent_id, child.root_id, child.depth) == (parent.id, parent.id, 2)
     # A delegated parent's child runs under whoever asked the parent.
     assistant = await start(managers, owner, "assistant")
-    await managers.steps.append_inputs(
-        owner, assistant.id, [make_message(assistant.id, principal=person_of(teammate))]
+    (said,) = await managers.steps.append_inputs(
+        teammate, assistant.id, [make_message(assistant.id)]
     )
+    await model_request(managers, owner, assistant.id, [said])
     asked = await managers.agents.spawn(owner, assistant.id, spawn("assistant"))
     authority = await on(owner, asked.id)
     assert (authority.mode, authority.principal) == (AuthorityMode.DELEGATED, person_of(teammate))
@@ -236,10 +250,11 @@ async def test_a_child_made_by_hand_is_held_to_its_parent_too(managers: Managers
     a tool its parent lacks, the wrong depth, and no mark is stored with its
     parent's; its authority names no principal its maker chose, only its
     parent's, and it pays as its parent pays."""
-    ctx = context(Role.MEMBER)
+    org = make_org()
+    ctx, asker = context(Role.MEMBER, org), context(Role.MEMBER, org)
     parent = await start(managers, ctx)
-    asker = a_person()
-    await managers.steps.append_inputs(ctx, parent.id, [make_message(parent.id, principal=asker)])
+    (said,) = await managers.steps.append_inputs(asker, parent.id, [make_message(parent.id)])
+    await model_request(managers, ctx, parent.id, [said])
     await managers.steps.append_inputs(
         ctx, parent.id, [make_message(parent.id).model_copy(update={"type": StepType.EVENT})]
     )
@@ -250,7 +265,7 @@ async def test_a_child_made_by_hand_is_held_to_its_parent_too(managers: Managers
     assert child.tools == ("read_log",) and child.depth == 2 and child.untrusted
     authority = await managers.attribution.open_authority(ctx, child.id, AuthorityMode.DELEGATED)
     assert authority.principal == person_of(ctx), "the steady parent's principal"
-    assert authority.spender == asker
+    assert authority.spender == person_of(asker)
 
 
 async def test_a_child_draws_on_its_trees_budget_and_deadline(managers: Managers) -> None:
@@ -295,25 +310,22 @@ async def test_cancelling_a_parent_cancels_every_session_below_it(managers: Mana
     first = await agents.spawn(ctx, root.id, spawn("delivery"))
     second = await agents.spawn(ctx, root.id, spawn())
     grandchild = await agents.spawn(ctx, first.id, spawn())
-    # The second child's loop parks; the grandchild's loop ended already.
+    # The second child's loop parks; the grandchild read its objective, and
+    # its loop ended: it is idle.
     epoch = await steps.begin_run(ctx, second.id)
     opening = (await steps.get_steps(ctx, second.id, 0, 1)).items[0]
     await steps.append_steps(ctx, second.id, epoch, [make_parked(second.id, opening.id)])
     assert (await sessions.project_status(ctx, second.id)).status is SessionStatus.PARKED
+    (objective,) = (await steps.get_steps(ctx, grandchild.id, 0, 1)).items
+    request = make_request(grandchild.id, objective.id, (objective.id,))
+    response = make_response(grandchild.id, objective.id, request.id)
     epoch = await steps.begin_run(ctx, grandchild.id)
-    ended = Step(
-        id=new_id(),
-        created_at=utcnow(),
-        session_id=grandchild.id,
-        loop_id=new_id(),
-        type=StepType.LOOP_ENDED,
-        actor=Actor.ENGINE,
-        origin=Origin.ENGINE,
-        header=LoopEndedHeader(outcome=LoopOutcome.SUCCEEDED),
+    await steps.append_steps(
+        ctx, grandchild.id, epoch, [request, response, ended(grandchild.id, objective.id)]
     )
-    await steps.append_steps(ctx, grandchild.id, epoch, [ended])
+    assert (await sessions.project_status(ctx, grandchild.id)).status is SessionStatus.IDLE
     reached = await agents.cancel_children(ctx, root.id)
-    assert set(reached) == {first.id, second.id}, "a loop that ended has nothing to cancel"
+    assert set(reached) == {first.id, second.id}, "an idle session has nothing to cancel"
     for child in (first, second):
         last = (await steps.get_steps(ctx, child.id, 0, 10)).items[-1]
         assert isinstance(last.header, ControlHeader)
@@ -321,6 +333,27 @@ async def test_cancelling_a_parent_cancels_every_session_below_it(managers: Mana
         assert (last.actor, last.origin) == (Actor.ENGINE, Origin.PARENT)
     assert (await sessions.project_status(ctx, second.id)).status is SessionStatus.PENDING
     assert await agents.cancel_children(ctx, grandchild.id) == ()
+
+
+async def test_a_child_waiting_to_begin_its_next_loop_is_cancelled_too(
+    managers: Managers,
+) -> None:
+    """A child whose loop ended with a waking input undelivered is pending:
+    the input begins its next loop. The cascade reaches it, on the loop that
+    input begins, so it never starts work after its tree was cancelled."""
+    ctx = context(Role.MEMBER)
+    agents, steps, sessions = managers.agents, managers.steps, managers.agent_sessions
+    root = await start(managers, ctx)
+    child = await agents.spawn(ctx, root.id, spawn())
+    (objective,) = (await steps.get_steps(ctx, child.id, 0, 1)).items
+    epoch = await steps.begin_run(ctx, child.id)
+    await steps.append_steps(ctx, child.id, epoch, [ended(child.id, objective.id)])
+    waiting = await sessions.project_status(ctx, child.id)
+    assert waiting.status is SessionStatus.PENDING and waiting.pending_input == objective.id
+    assert await agents.cancel_children(ctx, root.id) == (child.id,)
+    last = (await steps.get_steps(ctx, child.id, 0, 10)).items[-1]
+    assert isinstance(last.header, ControlHeader)
+    assert (last.header.command, last.loop_id) == (ControlCommand.CANCEL, objective.id)
 
 
 async def test_a_child_starts_from_its_objective_never_its_parents_history(
@@ -348,9 +381,8 @@ async def test_a_handoff_waits_for_its_principal_and_its_objective_is_data(
     owner, asker = context(Role.MEMBER, org), context(Role.MEMBER, org)
     agents, sessions = managers.agents, managers.agent_sessions
     source = await start(managers, owner, "assistant")
-    await managers.steps.append_inputs(
-        owner, source.id, [make_message(source.id, principal=person_of(asker))]
-    )
+    (said,) = await managers.steps.append_inputs(asker, source.id, [make_message(source.id)])
+    await model_request(managers, owner, source.id, [said])
     handoff = Handoff(id=new_id(), kind="delivery", title="fix it", objective="fix the total")
     handed = await agents.hand_off(owner, source.id, handoff)
     assert (handed.handed_off_from, handed.parent_id, handed.root_id) == (
@@ -367,9 +399,7 @@ async def test_a_handoff_waits_for_its_principal_and_its_objective_is_data(
     (objective,) = (await managers.steps.get_steps(owner, handed.id, 0, 10)).items
     assert trust_of(objective) is Trust.DATA
     assert (await sessions.project_status(owner, handed.id)).status is SessionStatus.IDLE
-    await managers.steps.append_inputs(
-        asker, handed.id, [make_message(handed.id, principal=person_of(asker))]
-    )
+    await managers.steps.append_inputs(asker, handed.id, [make_message(handed.id)])
     assert (await sessions.project_status(asker, handed.id)).status is SessionStatus.PENDING
     with pytest.raises(ValidationFailed):
         await agents.hand_off(owner, handed.id, handoff)

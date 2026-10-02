@@ -226,6 +226,7 @@ def build_managers(
     attribution = AttributionManagerImpl(
         storage.get_attribution_storage(),
         agent_sessions,
+        steps,
         principal_context or no_principal_context,
         tenancy,
         outbox,

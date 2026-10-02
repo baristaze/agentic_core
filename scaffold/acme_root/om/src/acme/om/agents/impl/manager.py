@@ -3,7 +3,7 @@ from datetime import datetime
 from uuid import UUID
 
 from acme.om.agent_sessions import AgentSessionsManagerInterface
-from acme.om.agent_sessions.types.agent_session import AgentSession
+from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
 from acme.om.agents.gate import ResultGateInterface
 from acme.om.agents.manager import AgentsManagerInterface
 from acme.om.agents.rules import claim_refusal, tree_for, tree_refusal
@@ -277,19 +277,23 @@ class AgentsManagerImpl(AgentsManagerInterface):
         )
 
     async def _cancel(self, ctx: TenantContext, session_id: UUID) -> bool:
-        """A `cancel` control on the session's open loop, or nothing when no
-        loop is open: no history yet, or its last loop ended."""
+        """A `cancel` control on the loop the session has open, or is about
+        to open, decided from its status brought up to its history: an idle
+        session has none and is left as it is. A session pending after its
+        loop ended waits on an input, which begins the next loop."""
+        session = await self._sessions.project_status(ctx, session_id)
         cursor = await self._steps.get_cursor(ctx, session_id)
-        if cursor.head == 0:
+        if session.status is SessionStatus.IDLE or cursor.head == 0:
             return False
-        page = await self._steps.get_steps(ctx, session_id, cursor.head - 1, 1)
-        if not page.items or page.items[0].type is StepType.LOOP_ENDED:
-            return False
+        (last,) = (await self._steps.get_steps(ctx, session_id, cursor.head - 1, 1)).items
+        loop_id = last.loop_id
+        if last.type is StepType.LOOP_ENDED and session.pending_input is not None:
+            loop_id = session.pending_input
         control = Step(
             id=new_id(),
             created_at=self._clock(),
             session_id=session_id,
-            loop_id=page.items[0].loop_id,
+            loop_id=loop_id,
             type=StepType.CONTROL,
             actor=Actor.ENGINE,
             origin=Origin.PARENT,

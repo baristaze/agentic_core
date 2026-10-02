@@ -38,9 +38,10 @@ class SessionAuthority(Identifiable, Trackable):
     parent pays (`attribution.rules.inherited`).
 
     `principal` is the one a steady session's calls run under. A delegated
-    session's calls run under whoever asked last, and under `principal`
-    until a principal speaks. `spender` pays until a principal speaks in
-    the session: what a child's spawn passed it, or nobody."""
+    session's calls run under the speaker the request that led to them
+    recorded, and under `principal` until a principal speaks. `spender`
+    pays until a principal speaks in the session: what a child's spawn
+    passed it, or nobody."""
 
     MANAGER_OWNED_FIELDS: ClassVar[tuple[str, ...]] = ("principal", "spender", "version")
     """Inherited, or taken over; the caller names the mode alone."""
@@ -50,6 +51,15 @@ class SessionAuthority(Identifiable, Trackable):
     spender: Principal | None = None
     # Every write after the create is a compare-and-set on it.
     version: int = Field(default=1, ge=1)
+
+
+class RequestAttribution(Platform):
+    """What a model request records: the speaker, the principal behind the
+    latest principal-authored input the model has received, its delivery
+    included, and the spender who pays for it."""
+
+    speaker: Principal | None
+    spender: Principal
 
 
 class CallReach(Platform):

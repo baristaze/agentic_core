@@ -24,8 +24,8 @@ has a complete response: neither truncated nor abandoned. A request
 delivers every pending input, so the latest one stands for them all.
 
 The cache keeps attribution's two answers beside the status, folded over
-the same steps (`attribution.rules.fold`): the speaker, which a principal's
-message moves, and the untrusted mark, which the first data sets for
+the same steps (`attribution.rules.fold`): the speaker, which each model
+request records, and the untrusted mark, which the first data sets for
 good."""
 
 from collections.abc import Sequence

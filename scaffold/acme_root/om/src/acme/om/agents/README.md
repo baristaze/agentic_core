@@ -30,7 +30,7 @@ kinds of thing [Acme is made of](../../../../README.md).
   never its parent's history, one level down the tree.
 - **Move the deadline** of a tree, for every session in it at once.
 - **Cancel.** Cancelling a parent cancels every session below it that is
-  still working.
+  not idle, one about to begin its next loop included.
 - **Hand off.** The new session holds the objective and where it came
   from, and starts only when its person speaks to it.
 - **Submit** a result through the gate.

@@ -95,11 +95,15 @@ class ControlHeader(Platform):
 
 class ModelRequestHeader(Platform):
     """One call of one model role. Its content is empty: it references the
-    steps it carried."""
+    steps it carried. `speaker` is the principal behind the latest
+    principal-authored input the model has received, this request's
+    included: the person a delegated call it leads to runs under. `spender`
+    pays for the call."""
 
     kind: Literal["model_request"] = "model_request"
     role: Stored = Field(min_length=1, max_length=MAX_NAME)
-    spender: Principal  # who pays for the call
+    spender: Principal
+    speaker: Principal | None = None
 
 
 class ModelResponseHeader(Platform):

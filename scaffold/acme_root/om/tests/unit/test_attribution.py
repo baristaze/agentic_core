@@ -8,7 +8,7 @@ from uuid import UUID
 
 import pytest
 from contracts.agent_session_storage import make_session
-from contracts.doubles import context
+from contracts.doubles import context, model_request, next_attribution
 from contracts.factories import make_org
 from contracts.step_storage import (
     a_person,
@@ -32,6 +32,8 @@ from acme.om.attribution.rules import (
     marks,
     needs_person,
     principal_authored,
+    said_by,
+    speaker_after,
     spender_of,
     trust_of,
 )
@@ -222,7 +224,7 @@ def test_only_a_principals_message_instructs() -> None:
 
 def test_the_mark_is_set_by_the_first_data_and_never_cleared() -> None:
     asker = a_person()
-    said = [make_message(SESSION, principal=asker), make_request(SESSION, new_id())]
+    said = [make_message(SESSION, principal=asker), make_request(SESSION, new_id(), speaker=asker)]
     assert fold(None, False, said) == (asker, False)
     data = make_tool_response(SESSION, new_id(), new_id())
     after = [*said, data, make_message(SESSION, principal=asker)]
@@ -233,20 +235,34 @@ def test_the_mark_is_set_by_the_first_data_and_never_cleared() -> None:
     assert not marks(from_an_agent(SESSION, asker, origin=Origin.PARENT))
 
 
-def test_the_speaker_is_the_latest_principal_who_spoke() -> None:
+def test_a_request_records_the_latest_principal_who_spoke_and_nothing_after_moves_it() -> None:
     first, routed, agents, automation = a_person(), a_person(), a_person(), a_person()
     steps = [
         make_message(SESSION, principal=first),
         make_event(SESSION, principal=routed),
         from_an_agent(SESSION, agents, origin=Origin.PARENT),
     ]
-    assert fold(None, False, steps)[0] == first, "an event or an agent never speaks"
+    assert speaker_after(None, steps) == first, "an event or an agent never speaks"
     automated = [*steps, from_a_program(SESSION, automation)]
-    assert fold(None, False, automated)[0] == automation
+    assert speaker_after(None, automated) == automation
+    assert speaker_after(first, []) == first
+    request = make_request(SESSION, new_id(), speaker=first)
+    late = make_message(SESSION, principal=automation)
+    assert fold(None, False, [request, late]) == (first, False), "unread, it moves nothing"
     spawned = a_person()
     assert spender_of(spawned, None) == spawned
     assert spender_of(spawned, first) == first
     assert spender_of(None, None) is None
+
+
+def test_a_message_is_said_in_the_name_of_the_context_that_appends_it() -> None:
+    claimed, appender = a_person(), new_id()
+    said = said_by(make_message(SESSION, principal=claimed), appender)
+    assert isinstance(said.header, InputHeader) and said.header.principal.id == appender
+    event = make_event(SESSION, principal=claimed)
+    assert said_by(event, appender) == event, "an event is routed, never said"
+    parent = from_an_agent(SESSION, claimed, origin=Origin.PARENT)
+    assert said_by(parent, appender) == parent
 
 
 def test_a_call_runs_under_the_fixed_principal_or_the_latest_asker() -> None:
@@ -300,9 +316,13 @@ async def start(managers: Managers, ctx: TenantContext, kind: AgentKind) -> Agen
     )
 
 
-async def say(managers: Managers, ctx: TenantContext, session_id: UUID, by: Principal) -> Step:
+async def say(
+    managers: Managers, ctx: TenantContext, session_id: UUID, step: Step | None = None
+) -> Step:
+    """An input the person `ctx` holds appends: a message of theirs unless
+    another step is given."""
     (said,) = await managers.steps.append_inputs(
-        ctx, session_id, [make_message(session_id, principal=by)]
+        ctx, session_id, [step or make_message(session_id)]
     )
     return said
 
@@ -312,17 +332,17 @@ async def test_a_recorded_loop_names_who_acted_on_whose_authority_and_who_paid(
 ) -> None:
     """A loop as the engine records it, each attribution asked of the
     manager where the loop asks it: the history names the actor of every
-    step, the principal of every input and tool call, and the spender of
-    every model request."""
+    step, the principal of every input and tool call, and the speaker and
+    the spender of every model request."""
     ctx = context(Role.MEMBER)
     owner = person_of(ctx)
     session = await start(managers, ctx, DELIVERY)
     sid, steps, attribution = session.id, managers.steps, managers.attribution
-    asked = await say(managers, ctx, sid, owner)
+    asked = await say(managers, ctx, sid)
     loop = asked.id
     epoch = await steps.begin_run(ctx, sid)
-    paid = await attribution.spender_for(ctx, sid)
-    request = make_request(sid, loop, (asked.id,), spender=paid)
+    said = await attribution.attribute_request(ctx, sid, 0, asked.seq)
+    request = make_request(sid, loop, (asked.id,), spender=said.spender, speaker=said.speaker)
     use = ToolUseBlock(id="call_1", name="read_log", input={"lines": [1, 200]})
     response = Step(
         id=new_id(),
@@ -336,7 +356,7 @@ async def test_a_recorded_loop_names_who_acted_on_whose_authority_and_who_paid(
         header=ModelResponseHeader(),
         content=Content(blocks=(use,)),
     )
-    await steps.append_steps(ctx, sid, epoch, [request, response])
+    stored, _ = await steps.append_steps(ctx, sid, epoch, [request, response])
     authority = await attribution.authorize_call(ctx, sid, OUTWARD)
     call = Step(
         id=new_id(),
@@ -359,8 +379,11 @@ async def test_a_recorded_loop_names_who_acted_on_whose_authority_and_who_paid(
     result = make_tool_response(sid, loop, call.id)
     await steps.append_steps(ctx, sid, epoch, [call, result])
     routed = a_person()
-    await steps.append_inputs(ctx, sid, [make_event(sid, principal=routed)])
-    second = make_request(sid, loop, (result.id,), spender=await attribution.spender_for(ctx, sid))
+    event = await say(managers, ctx, sid, make_event(sid, principal=routed))
+    again = await attribution.attribute_request(ctx, sid, stored.seq, event.seq)
+    second = make_request(
+        sid, loop, (result.id, event.id), spender=again.spender, speaker=again.speaker
+    )
     answer = make_response(sid, loop, second.id)
     ended = Step(
         id=new_id(),
@@ -396,8 +419,10 @@ async def test_a_recorded_loop_names_who_acted_on_whose_authority_and_who_paid(
         StepType.TOOL_REQUEST: owner,
         StepType.EVENT: routed,
     }
-    spenders = [s.header.spender for s in history if isinstance(s.header, ModelRequestHeader)]
-    assert spenders == [owner, owner], "the event never pays; the person who asked does"
+    requests = [s.header for s in history if isinstance(s.header, ModelRequestHeader)]
+    assert [(r.speaker, r.spender) for r in requests] == [(owner, owner), (owner, owner)], (
+        "the event never pays; the person who asked does"
+    )
     (acted,) = (s for s in history if isinstance(s.header, ToolRequestHeader))
     assert isinstance(acted.header, ToolRequestHeader)
     assert acted.header.agent == AgentRef(kind="delivery", version=1, session_id=sid)
@@ -408,52 +433,103 @@ async def test_a_recorded_loop_names_who_acted_on_whose_authority_and_who_paid(
 async def test_the_person_who_asked_pays_and_nobody_else_ever_does(
     managers: Managers,
 ) -> None:
-    ctx = context(Role.MEMBER)
-    sid = (await start(managers, ctx, DELIVERY)).id
+    org = make_org()
+    owner, teammate, automation = (context(Role.MEMBER, org) for _ in range(3))
+    sid = (await start(managers, owner, DELIVERY)).id
     attribution = managers.attribution
     with pytest.raises(NoSpender):
-        await attribution.spender_for(ctx, sid)
-    await managers.steps.append_inputs(ctx, sid, [make_event(sid, principal=a_person())])
+        await next_attribution(managers, owner, sid)
+    await say(managers, owner, sid, make_event(sid, principal=a_person()))
     with pytest.raises(NoSpender):
-        await attribution.spender_for(ctx, sid)
-    owner, teammate, automation = person_of(ctx), a_person(), a_person()
-    await say(managers, ctx, sid, owner)
-    assert await attribution.spender_for(ctx, sid) == owner
-    await managers.steps.append_inputs(
-        ctx,
-        sid,
-        [
-            make_event(sid, principal=a_person()),
-            from_an_agent(sid, a_person(), origin=Origin.PARENT),
-        ],
+        await next_attribution(managers, owner, sid)
+    first = await say(managers, owner, sid)
+    paid = await next_attribution(managers, owner, sid)
+    assert (paid.speaker, paid.spender) == (person_of(owner), person_of(owner))
+    await model_request(managers, owner, sid, [first])
+    await say(managers, owner, sid, make_event(sid, principal=a_person()))
+    await say(managers, owner, sid, from_an_agent(sid, a_person(), origin=Origin.PARENT))
+    carried = await next_attribution(managers, owner, sid)
+    assert carried.spender == person_of(owner), "the current spender carries over"
+    await managers.agent_sessions.project_status(owner, sid)
+    await say(managers, teammate, sid)
+    assert (await next_attribution(managers, owner, sid)).spender == (person_of(teammate))
+    trigger = await say(managers, automation, sid, from_a_program(sid, a_person()))
+    assert (await next_attribution(managers, owner, sid)).spender == (person_of(automation)), (
+        "an automation's trigger is paid by the automation's principal"
     )
-    assert await attribution.spender_for(ctx, sid) == owner, "the current spender carries over"
-    await say(managers, ctx, sid, teammate)
-    assert await attribution.spender_for(ctx, sid) == teammate
-    await managers.agent_sessions.project_status(ctx, sid)
-    assert await attribution.spender_for(ctx, sid) == teammate, "read off the cache as well"
-    await managers.steps.append_inputs(ctx, sid, [from_a_program(sid, automation)])
-    assert await attribution.spender_for(ctx, sid) == automation
+    with pytest.raises(ValidationFailed):
+        await attribution.attribute_request(owner, sid, first.seq, trigger.seq)
+    with pytest.raises(ValidationFailed):
+        await attribution.attribute_request(owner, sid, 0, trigger.seq)
+
+
+async def test_a_message_naming_another_is_said_in_its_appenders_name(
+    managers: Managers, transition: Transition
+) -> None:
+    """A member who writes a message naming an admin speaks as themselves:
+    they pay for the request that reads it, and the delegated call it leads
+    to runs on their own live context, never the admin's."""
+    org = make_org()
+    member, admin = context(Role.MEMBER, org), context(Role.ADMIN, org)
+    sid = (await start(managers, member, ASSISTANT)).id
+    named = make_message(sid, principal=person_of(admin))
+    said = await say(managers, member, sid, named)
+    assert isinstance(said.header, InputHeader) and said.header.principal == person_of(member)
+    paid = await next_attribution(managers, member, sid)
+    assert paid.spender == person_of(member)
+    await model_request(managers, member, sid, [said])
+    call = await managers.attribution.authorize_call(member, sid, OUTWARD)
+    assert call.principal == person_of(member) and call.context.user_id == member.user_id
+    assert transition.asked == [person_of(member)]
+    epoch = await managers.steps.begin_run(member, sid)
+    (run_said,) = await managers.steps.append_steps(member, sid, epoch, [named])
+    assert run_said.header == said.header, "a run's append writes it in the same name"
+
+
+async def test_a_message_after_the_request_lends_its_authority_to_nothing(
+    managers: Managers, transition: Transition
+) -> None:
+    """The calls and spawns a response leads to run under the speaker the
+    request recorded. An admin's message appended after the response is
+    no part of what the model read, and lends the admin's context to none
+    of them."""
+    org = make_org()
+    member, admin = context(Role.MEMBER, org), context(Role.ADMIN, org)
+    sid = (await start(managers, member, ASSISTANT)).id
+    asked = await say(managers, member, sid)
+    await model_request(managers, member, sid, [asked])
+    await say(managers, admin, sid)
+    call = await managers.attribution.authorize_call(member, sid, OUTWARD)
+    assert call.principal == person_of(member) and transition.asked == [person_of(member)]
+    child = await managers.agents.spawn(
+        member,
+        sid,
+        Spawn(id=new_id(), kind="assistant", title="look", objective="read the records"),
+    )
+    child_authority = await managers.attribution.get_authority(member, child.id)
+    assert child_authority.principal == person_of(member) != person_of(admin)
 
 
 async def test_a_child_pays_as_its_spawn_did_until_a_principal_speaks_to_it(
     managers: Managers,
 ) -> None:
-    ctx = context(Role.MEMBER)
-    parent = await start(managers, ctx, DELIVERY)
-    asker = a_person()
-    await say(managers, ctx, parent.id, asker)
+    org = make_org()
+    owner, asker, steering = (context(Role.MEMBER, org) for _ in range(3))
+    parent = await start(managers, owner, DELIVERY)
+    asked = await say(managers, asker, parent.id)
+    await model_request(managers, owner, parent.id, [asked])
     child = await managers.agents.spawn(
-        ctx,
+        owner,
         parent.id,
         Spawn(id=new_id(), kind="delivery", title="reproduce it", objective="run the tests"),
     )
-    authority = await managers.attribution.get_authority(ctx, child.id)
-    assert (authority.principal, authority.spender) == (person_of(ctx), asker)
-    assert await managers.attribution.spender_for(ctx, child.id) == asker
-    steering = a_person()
-    await say(managers, ctx, child.id, steering)
-    assert await managers.attribution.spender_for(ctx, child.id) == steering
+    authority = await managers.attribution.get_authority(owner, child.id)
+    assert (authority.principal, authority.spender) == (person_of(owner), person_of(asker))
+    paid = await next_attribution(managers, owner, child.id)
+    assert paid.spender == person_of(asker), "a parent's message never pays"
+    await say(managers, steering, child.id)
+    paid = await next_attribution(managers, owner, child.id)
+    assert paid.spender == person_of(steering)
 
 
 async def test_the_mark_is_sticky_from_the_first_data_and_passes_to_children(
@@ -462,17 +538,17 @@ async def test_the_mark_is_sticky_from_the_first_data_and_passes_to_children(
     ctx = context(Role.MEMBER)
     attribution = managers.attribution
     parent = await start(managers, ctx, DELIVERY)
-    await say(managers, ctx, parent.id, person_of(ctx))
+    await say(managers, ctx, parent.id)
     assert not await attribution.is_marked(ctx, parent.id)
     clean = await managers.agents.spawn(
         ctx, parent.id, Spawn(id=new_id(), kind="delivery", title="early", objective="look")
     )
     assert not clean.untrusted and not await attribution.is_marked(ctx, clean.id)
-    await managers.steps.append_inputs(ctx, parent.id, [make_event(parent.id)])
+    await say(managers, ctx, parent.id, make_event(parent.id))
     assert await attribution.is_marked(ctx, parent.id)
     cached = await managers.agent_sessions.project_status(ctx, parent.id)
     assert cached.untrusted
-    await say(managers, ctx, parent.id, person_of(ctx))
+    await say(managers, ctx, parent.id)
     assert await attribution.is_marked(ctx, parent.id), "nothing clears it"
     late = await managers.agents.spawn(
         ctx, parent.id, Spawn(id=new_id(), kind="delivery", title="late", objective="look")
@@ -481,9 +557,10 @@ async def test_the_mark_is_sticky_from_the_first_data_and_passes_to_children(
     objective = (await managers.steps.get_steps(ctx, late.id, 0, 10)).items[0]
     assert isinstance(objective.header, InputHeader) and objective.header.untrusted
     # A marked parent's later message marks the child it reaches.
-    on = (await managers.attribution.get_authority(ctx, clean.id)).principal
-    carried = from_an_agent(clean.id, on, origin=Origin.PARENT, untrusted=True)
-    await managers.steps.append_inputs(ctx, clean.id, [carried])
+    on = (await attribution.get_authority(ctx, clean.id)).principal
+    await say(
+        managers, ctx, clean.id, from_an_agent(clean.id, on, origin=Origin.PARENT, untrusted=True)
+    )
     assert await attribution.is_marked(ctx, clean.id)
 
 
@@ -493,11 +570,11 @@ async def test_a_marked_session_holding_private_data_needs_a_person_to_act_outwa
     ctx = context(Role.MEMBER)
     attribution = managers.attribution
     sid = (await start(managers, ctx, DELIVERY)).id
-    await say(managers, ctx, sid, person_of(ctx))
+    await say(managers, ctx, sid)
     inward = CallReach(outward=False, holds_private=True)
     nothing_private = CallReach(outward=True, holds_private=False)
     assert not (await attribution.authorize_call(ctx, sid, OUTWARD)).needs_person
-    await managers.steps.append_inputs(ctx, sid, [make_event(sid)])
+    await say(managers, ctx, sid, make_event(sid))
     assert (await attribution.authorize_call(ctx, sid, OUTWARD)).needs_person
     assert not (await attribution.authorize_call(ctx, sid, inward)).needs_person
     assert not (await attribution.authorize_call(ctx, sid, nothing_private)).needs_person
@@ -506,23 +583,22 @@ async def test_a_marked_session_holding_private_data_needs_a_person_to_act_outwa
 async def test_delegated_authority_asks_the_transition_again_on_every_call(
     managers: Managers, transition: Transition
 ) -> None:
-    ctx = context(Role.MEMBER)
+    org = make_org()
+    owner, asker, other = (context(Role.MEMBER, org) for _ in range(3))
     attribution = managers.attribution
-    sid = (await start(managers, ctx, ASSISTANT)).id
-    asker = a_person()
-    await say(managers, ctx, sid, asker)
-    first = await attribution.authorize_call(ctx, sid, OUTWARD)
-    second = await attribution.authorize_call(ctx, sid, OUTWARD)
-    assert transition.asked == [asker, asker], "asked on each call, never once per loop"
-    assert first.mode is AuthorityMode.DELEGATED and first.principal == asker
-    assert (second.context.user_id, second.context.org_id) == (asker.id, ctx.org_id)
-    transition.revoked.add(asker.id)
+    sid = (await start(managers, owner, ASSISTANT)).id
+    await model_request(managers, owner, sid, [await say(managers, asker, sid)])
+    first = await attribution.authorize_call(owner, sid, OUTWARD)
+    second = await attribution.authorize_call(owner, sid, OUTWARD)
+    assert transition.asked == [person_of(asker)] * 2, "asked on each call, never once per loop"
+    assert first.mode is AuthorityMode.DELEGATED and first.principal == person_of(asker)
+    assert (second.context.user_id, second.context.org_id) == (asker.user_id, org.id)
+    transition.revoked.add(asker.user_id)
     with pytest.raises(AuthorityRevoked):
-        await attribution.authorize_call(ctx, sid, OUTWARD)
-    assert transition.asked == [asker, asker, asker]
-    other = a_person()
-    await say(managers, ctx, sid, other)
-    assert (await attribution.authorize_call(ctx, sid, OUTWARD)).principal == other
+        await attribution.authorize_call(owner, sid, OUTWARD)
+    assert transition.asked == [person_of(asker)] * 3
+    await model_request(managers, owner, sid, [await say(managers, other, sid)])
+    assert (await attribution.authorize_call(owner, sid, OUTWARD)).principal == person_of(other)
 
 
 async def test_a_steady_session_runs_under_its_principal_and_parks_when_it_lapses(
@@ -533,7 +609,8 @@ async def test_a_steady_session_runs_under_its_principal_and_parks_when_it_lapse
     owner, teammate = person_of(owner_ctx), person_of(teammate_ctx)
     attribution = managers.attribution
     sid = (await start(managers, owner_ctx, DELIVERY)).id
-    await say(managers, teammate_ctx, sid, teammate)
+    steered = await say(managers, teammate_ctx, sid)
+    await model_request(managers, owner_ctx, sid, [steered])
     held = await attribution.authorize_call(teammate_ctx, sid, OUTWARD)
     assert held.principal == owner and held.context.user_id == owner.id
     transition.revoked.add(owner.id)
@@ -549,7 +626,7 @@ async def test_a_transition_that_answers_for_someone_else_answers_nothing(
 ) -> None:
     ctx = context(Role.MEMBER)
     sid = (await start(managers, ctx, ASSISTANT)).id
-    await say(managers, ctx, sid, a_person())
+    await model_request(managers, ctx, sid, [await say(managers, ctx, sid)])
     transition.answers_for = new_id()
     with pytest.raises(AuthorityRevoked):
         await managers.attribution.authorize_call(ctx, sid, OUTWARD)
@@ -572,8 +649,9 @@ async def test_a_viewer_reads_attribution_and_takes_over_nothing(managers: Manag
     org = make_org()
     member, viewer = context(Role.MEMBER, org), context(Role.VIEWER, org)
     sid = (await start(managers, member, DELIVERY)).id
-    await say(managers, member, sid, person_of(member))
-    assert await managers.attribution.spender_for(viewer, sid) == person_of(member)
+    await model_request(managers, member, sid, [await say(managers, member, sid)])
+    paid = await next_attribution(managers, viewer, sid)
+    assert paid.spender == person_of(member)
     with pytest.raises(NotAuthorized):
         await managers.attribution.authorize_call(viewer, sid, OUTWARD)
     with pytest.raises(NotAuthorized):
@@ -589,11 +667,11 @@ async def test_a_session_with_no_authority_runs_no_call_and_spends_nothing(
     org = make_org()
     ctx, other = context(Role.MEMBER, org), context(Role.MEMBER, org)
     bare = await managers.agent_sessions.create_session(ctx, make_session())
-    await say(managers, ctx, bare.id, person_of(ctx))
+    await say(managers, ctx, bare.id)
     with pytest.raises(NotFound):
         await managers.attribution.authorize_call(ctx, bare.id, OUTWARD)
     with pytest.raises(NotFound):
-        await managers.attribution.spender_for(ctx, bare.id)
+        await next_attribution(managers, ctx, bare.id)
     orphan = await managers.agent_sessions.create_session(ctx, make_session(parent=bare))
     with pytest.raises(ValidationFailed):
         await managers.attribution.open_authority(ctx, orphan.id, AuthorityMode.STEADY)

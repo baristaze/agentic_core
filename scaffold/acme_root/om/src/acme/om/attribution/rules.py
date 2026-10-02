@@ -3,18 +3,21 @@ instructs and which is data, who pays for the next model call, whose
 authority a tool call runs under, and when a convinced model needs a
 person. Values in, values out; no clock, no storage.
 
-The session caches two answers its steps give, folded in `seq` order with
-its status (`agent_sessions.rules.after_step`): the speaker, the
-principal behind the latest principal-authored input, and the untrusted
-mark. A reader that needs them now folds the steps after the cache's last
-`seq` with `fold`.
+A model request records its speaker: the principal behind the latest
+principal-authored input the model has received, that request's included.
+The calls a response leads to run under it, so a message that lands after
+the request lends nobody's authority to them. The session caches two
+answers its steps give, folded in `seq` order with its status: the speaker
+of its latest model request, and the untrusted mark. A reader that needs
+them now folds the steps after the cache's last `seq` with `fold`.
 
 The mark is set when the first data lands, no later than the model reads
 it: the next model request delivers every input that waits, and a tool's
 response is read by the request after it. So no tool call is ever decided
 on a mark the model's reading has outrun."""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
+from uuid import UUID
 
 from acme.om.attribution.types.authority import (
     AuthorityMode,
@@ -23,7 +26,7 @@ from acme.om.attribution.types.authority import (
     Trust,
 )
 from acme.om.attribution.types.principal import Principal
-from acme.om.steps.types.header import InputHeader
+from acme.om.steps.types.header import InputHeader, ModelRequestHeader
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 
 PRINCIPAL_ACTORS = frozenset({Actor.PERSON, Actor.PROGRAM})
@@ -65,17 +68,42 @@ def marks(step: Step) -> bool:
     return carried or trust_of(step) is Trust.DATA
 
 
+def said_by(step: Step, user_id: UUID) -> Step:
+    """A principal-authored input as the context that appends it said it:
+    its principal is that context's user, whatever the caller wrote, so no
+    one speaks, or pays, or asks, in another's name. Any other step is
+    answered as it is."""
+    header = step.header
+    if not principal_authored(step) or not isinstance(header, InputHeader):
+        return step
+    if header.principal.id == user_id:
+        return step
+    principal = header.principal.model_copy(update={"id": user_id})
+    return step.model_copy(update={"header": header.model_copy(update={"principal": principal})})
+
+
 def fold(
     speaker: Principal | None, marked: bool, steps: Iterable[Step]
 ) -> tuple[Principal | None, bool]:
-    """The speaker and the mark once `steps` are read, in `seq` order. A
-    principal's message makes its principal the speaker; nothing else moves
-    it. The mark, once set, stays."""
+    """The speaker and the mark once `steps` are read, in `seq` order. The
+    speaker is the one the latest model request recorded; an input that
+    lands after it moves nothing until a request delivers it. The mark,
+    once set, stays."""
     for step in steps:
-        if principal_authored(step) and isinstance(step.header, InputHeader):
-            speaker = step.header.principal
+        if isinstance(step.header, ModelRequestHeader):
+            speaker = step.header.speaker
         marked = marked or marks(step)
     return speaker, marked
+
+
+def speaker_after(previous: Principal | None, delivered: Sequence[Step]) -> Principal | None:
+    """The speaker a model request records: the principal behind the latest
+    principal-authored input among those it delivers, in `seq` order, else
+    the one the request before it recorded."""
+    for step in delivered:
+        if principal_authored(step) and isinstance(step.header, InputHeader):
+            previous = step.header.principal
+    return previous
 
 
 def spender_of(passed: Principal | None, speaker: Principal | None) -> Principal | None:

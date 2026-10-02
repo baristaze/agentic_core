@@ -7,8 +7,8 @@ parent and its root, and the session that handed it over.
 Its status is a projection of its steps, cached here for queries; the
 steps are the truth, and the cache is rebuilt from them
 (`agent_sessions.rules.projected`). The cache also holds two answers of
-attribution: the speaker, the principal behind the latest
-principal-authored input, and the untrusted mark. In code it is
+attribution: the speaker its latest model request recorded, and the
+untrusted mark. In code it is
 `AgentSession`, never the sign-in `Session` of the tenancy namespace."""
 
 from datetime import datetime
@@ -61,8 +61,7 @@ class AgentSession(Identifiable, Trackable):
     root_id: UUID  # its tree's root; its own id when it has no parent
     depth: int = Field(default=1, ge=1)  # 1 for a root; a child is its parent's plus one
     handed_off_from: UUID | None = None  # the session whose agent handed it the work
-    # The principal behind the latest principal-authored input the cache
-    # has read.
+    # The speaker the latest model request the cache has read recorded.
     speaker: Principal | None = None
     # The mark: set by the first data, passed from where it came, never
     # cleared.

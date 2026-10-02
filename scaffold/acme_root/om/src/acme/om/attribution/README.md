@@ -35,14 +35,19 @@ authority. The rest is read off the session and its
   session it came from runs under.
 - **Take over.** A person takes over a session that is no sub-agent: its
   calls run under them from then on.
+- **Speak.** A message is written in the name of whoever appends it;
+  nobody writes one in another's name.
 - **Pay.** A model call is paid by the person behind the latest message
-  a person or a program sent. Anything else that arrives (an outside
-  event, another agent's message, the engine's own notes) never becomes
-  the payer. When nobody can be named, nothing is spent.
+  a person or a program sent that the model reads in it. Anything else
+  that arrives (an outside event, another agent's message, the engine's
+  own notes) never becomes the payer. When nobody can be named, nothing
+  is spent.
 - **Ask.** Before every tool call, the org is asked whether the person
-  the call runs under still holds their place. A delegated call whose
-  person left is refused. A steady session whose person left waits
-  until someone takes it over.
+  the call runs under still holds their place. A delegated call runs
+  under the person whose message the model had read when it asked for
+  the call; a message that lands later changes nothing until it is
+  read. A delegated call whose person left is refused. A steady session
+  whose person left waits until someone takes it over.
 - **Mark.** The first outside data a session reads marks it, for good.
   Its sub-agents and the work it hands over carry the mark too.
 - **Hold back.** A marked session that holds private data or
