@@ -1,7 +1,7 @@
 ---
 name: agentic-review-models
 description: "Engine review through the Models lenses of the agentic_core spec: Models. For a change in this area, or as one leg of agentic-review-full."
-allowed-tools: Read, Grep, Glob, Bash(git diff:*), Bash(git show:*), Bash(git log:*), Bash(git status:*), Bash(git rev-parse:*), Bash(git merge-base:*), Bash(git symbolic-ref:*)
+allowed-tools: Read, Grep, Glob, Bash(git diff:*), Bash(git show:*), Bash(git log:*), Bash(git status:*), Bash(git rev-parse:*), Bash(git merge-base:*), Bash(git symbolic-ref:*), Bash(git ls-files:*)
 ---
 
 # agentic-review-models
@@ -49,7 +49,13 @@ that matches:
    A name that is both a commit and a path reads as the commit; write
    `./<name>` for the path.
 
-The empty scope, `all`, and a path read the working tree. A range and
+The empty scope, `all`, and a path read the working tree. A list that
+is not a diff (`all`, a path or a glob, a repository with no commit)
+comes from `git ls-files --cached --others --exclude-standard`, with
+`-- <path>` for a path or a glob: tracked and untracked files, none
+that git ignores. A path exists when that call lists at least one
+file under it, never by `ls`: a review pre-approves git commands
+alone. A range and
 a commit read history, which may not be checked out: read each file at
 the range's end or the commit with `git show <ref>:<path>`, never from
 the working tree. When the scope resolves to no files, report "nothing
@@ -129,9 +135,9 @@ under review. This skill reads and reports.
 ```
 
 Findings are ordered most severe first, then by file. When there are
-no findings, the section reads `No findings.`; an empty Deviations or
-Unverified section reads `None.` A `high` lens in Passed names the
-file that proved it.
+no findings, the section reads `No findings.`; an empty Deviations,
+Passed, Unverified, or Not applicable section reads `None.` A `high`
+lens in Passed names the file that proved it.
 
 The counts on the Lenses line count lenses, never lines. Findings has
 one line per breach, so a lens with two breaches has two lines and
