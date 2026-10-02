@@ -257,6 +257,31 @@ async def test_a_memory_only_session_keeps_what_it_says_out_of_the_history(
         assert (await managers.steps.get_steps(ctx, session, 0, 50)).items == written
 
 
+async def test_a_revoked_memory_only_session_answers_nothing_it_said(
+    managers: Managers,
+) -> None:
+    """Its content is under no key, so the revocation is what the engine
+    stops answering: what this process holds reads as absent, and the
+    session takes no content again, as a sealed one does not."""
+    ctx = context(Role.MEMBER)
+    for policy in (MEMORY_ONLY, SHAPE_KEPT):
+        session = await a_session(managers, ctx)
+        await managers.privacy.set_policy(ctx, session, policy)
+        epoch = await managers.steps.begin_run(ctx, session)
+        loop = a_loop(session)
+        written = await managers.steps.append_steps(ctx, session, epoch, loop)
+        await managers.privacy.revoke_key(ctx, session)
+        after = (await managers.steps.get_steps(ctx, session, 0, 50)).items
+        assert [shape_of(step) for step in after] == [shape_of(step) for step in written]
+        assert not [phrase for phrase in SAID if phrase in in_the_clear(list(after))]
+        with pytest.raises(KeyRevoked):
+            await managers.steps.append_inputs(ctx, session, [make_message(session)])
+        (mark,) = await managers.steps.append_steps(
+            ctx, session, epoch, [make_parked(session, loop[0].id)]
+        )
+        assert mark.seq == len(loop) + 1
+
+
 async def test_a_policy_is_chosen_once_before_the_history_begins(managers: Managers) -> None:
     ctx = context(Role.MEMBER)
     session = await a_session(managers, ctx)
