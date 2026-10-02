@@ -78,22 +78,37 @@ describe one, say which, and stop:
    them in path order. A file that points at the guideline alone
    records the guideline's deviations, not this one. When no file
    qualifies, there is no deviations table.
-6. Write no checker entry and no inline ignore comment. A lens whose
-   `Check` line reads `review` is judged by the review alone, so no
-   program reports the breach and none is told to skip it. The ADR, the
-   Deviations row, and the citation beside the code are the record.
+6. An `agentic-check` entry goes only with a finding the checker
+   reports. The lens's `Check` line says which part that is: the whole
+   lens when it reads "decides it", and only the part it names when it
+   ends "the rest is judged". A deviation in a judged part, or under a
+   lens whose `Check` line reads `review`, gets no entry: the checker
+   reports nothing there, and an entry that matches no finding is
+   itself a finding that fails the gate. The ADR, the Deviations row,
+   and the citation beside the code are its record. For a deviation in
+   the part the checker decides, the ADR alone does not pass the gate:
+   give it the entry that names the ADR, in the shape
+   `../../checkers/README.md` shows (Exceptions), whose rule id is the
+   lens id. A whole rule turned off is a `[[tool.agentic-check.disable]]`
+   entry with `rule`, `adr` (the ADR's path), and `reason`. A rule
+   broken in some files is a `[[tool.agentic-check.exception]]` entry
+   with `rule`, `path` (a glob), `adr`, and `reason`. Append it to the
+   root `pyproject.toml` when that has a `[tool.agentic-check]` table,
+   and print it otherwise. Write no inline ignore comment: the checker
+   reads none.
 7. Tell the person to cite `ADR-NNNN` in a comment beside the code that
    deviates. A review reports the code under Deviations, and not as a
    finding, only when the ADR is cited there.
 
 Do not commit. Do not edit the spec or the lenses; a deviation belongs
-to the project, not to the rule. Edit nothing but the ADR folder and
-the deviations table.
+to the project, not to the rule. Edit nothing but the ADR folder, the
+deviations table, and the `[tool.agentic-check]` entry.
 
 ## Output
 
 The path of the new ADR, the row appended to the deviations table (or
-"no deviations table"), the reminder to cite `ADR-NNNN` beside the
+"no deviations table"), the `agentic-check` entry appended or printed
+(or "no checker entry"), the reminder to cite `ADR-NNNN` beside the
 code, and the one-line summary for the reviewer. Nothing else.
 
 ## ADR template
