@@ -102,12 +102,18 @@ def instruct_refusal(ctx: TenantContext, classes: Iterable[str]) -> str | None:
 # The call and its hash.
 
 
-def input_hash(call_input: Mapping[str, Any]) -> str:
-    """The hash an approval binds: SHA-256 over the input's canonical JSON,
-    keys sorted, so the same input hashes the same however it was written."""
+INPUT_HASH = "hmac-sha256:"
+"""The scheme of an input's hash: keyed by its session, so once the session's
+key is revoked the hash confirms nothing about the input
+(`ToolsManagerInterface.input_hash`)."""
+
+
+def canonical_input(call_input: Mapping[str, Any]) -> bytes:
+    """An input as its hash reads it: canonical JSON, keys sorted, so the same
+    input reads the same however it was written."""
     plain = thaw_mapping(call_input)
     canonical = json.dumps(plain, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return "sha256:" + hashlib.sha256(canonical.encode()).hexdigest()
+    return canonical.encode()
 
 
 def definition_hash(definition: McpToolDefinition) -> str:
@@ -127,13 +133,15 @@ def tool_request(
     use: ToolUseBlock,
     authorization_class: str,
     *,
+    input_hash: str,
     principal: Principal,
     authority: AuthorityMode,
     agent: AgentRef,
 ) -> Step:
     """The request step of one tool use of a model response, the agent's act:
-    it references the response and the use's id, carries the input's hash,
-    never the input, and names the principal the call runs under."""
+    it references the response and the use's id, carries the input's hash
+    keyed by its session, never the input, and names the principal the call
+    runs under."""
     return Step(
         id=step_id,
         created_at=at,
@@ -146,7 +154,7 @@ def tool_request(
         header=ToolRequestHeader(
             tool=use.name,
             tool_use_id=use.id,
-            input_hash=input_hash(use.input),
+            input_hash=input_hash,
             principal=principal,
             authority=authority,
             agent=agent,

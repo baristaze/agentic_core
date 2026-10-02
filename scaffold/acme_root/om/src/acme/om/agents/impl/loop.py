@@ -598,6 +598,9 @@ class LoopManagerImpl(LoopManagerInterface):
             return [(use, request) for use, request in calls if request is not None]
         principal = await self._attribution.call_principal(run.ctx, run.session_id)
         agent = AgentRef(kind=run.kind.name, version=run.kind.version, session_id=run.session_id)
+        hashes = [
+            await self._tools.input_hash(run.ctx, run.session_id, use.input) for use in missing
+        ]
         now = self._clock()
         built = [
             tool_request(
@@ -606,11 +609,12 @@ class LoopManagerImpl(LoopManagerInterface):
                 response,
                 use,
                 self._class_of(run, use.name),
+                input_hash=hashed,
                 principal=principal,
                 authority=run.kind.authority,
                 agent=agent,
             )
-            for use in missing
+            for use, hashed in zip(missing, hashes, strict=True)
         ]
         stored = await self._steps.append_steps(run.ctx, run.session_id, run.epoch, built)
         by_use = {_use_id(step): step for step in stored}

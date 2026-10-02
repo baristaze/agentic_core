@@ -56,6 +56,7 @@ from acme.om.privacy.impl.artifacts import ArtifactSealKeysImpl
 from acme.om.privacy.impl.keys import SessionKeysImpl
 from acme.om.privacy.impl.manager import PrivacyManagerImpl, PrivacyOptions
 from acme.om.privacy.impl.memory_only_steps import StepStorageShapeOnlyImpl
+from acme.om.privacy.impl.records import RecordSealKeysImpl
 from acme.om.privacy.impl.routed_steps import StepStorageRoutedImpl
 from acme.om.privacy.impl.sealed_steps import StepStorageSealedImpl
 from acme.om.privacy.keys import SessionKeysInterface
@@ -135,10 +136,12 @@ def refuse_quiet_spend(environment: str, *capabilities: object) -> None:
 async def purge_held(
     managers: Managers, org_id: UUID, session_id: UUID, tree_id: UUID | None
 ) -> None:
-    """What the windows, attribution, and the agents hold of a session the
-    sweep purges: its artifacts, which go with its history, its authority,
-    and its tree when it was the tree's last session."""
+    """What the windows, the tools, attribution, and the agents hold of a
+    session the sweep purges: its artifacts and its transport's records,
+    which go with its history, its authority, and its tree when it was the
+    tree's last session."""
     await managers.windows.purge_artifacts(org_id, session_id)
+    await managers.tools.purge_records(org_id, session_id)
     await managers.attribution.purge_authority(org_id, session_id)
     if tree_id is not None:
         await managers.agents.purge_tree(org_id, tree_id)
@@ -430,7 +433,8 @@ def build_managers(
     # person's decisions, the events for the audit of each secret a call
     # uses, the workspace and the transport infra chose, and attribution,
     # which answers whose authority each call runs under and the rule of
-    # two.
+    # two. What a call keeps of its session's content goes under the
+    # session's key: its input's hash, and its command's record.
     tools = ToolsManagerImpl(
         storage.get_tool_storage(),
         steps,
@@ -440,6 +444,10 @@ def build_managers(
         infra.get_workspaces(),
         infra.get_transport(),
         tools_options or ToolsOptions(),
+        keyed_hash=privacy.keyed_hash,
+        record_seals=lambda org_id, session_id: RecordSealKeysImpl(
+            session_keys, storage.get_privacy_storage(), org_id, session_id
+        ),
         attribution=attribution,
     )
     idempotency = IdempotencyManagerImpl(

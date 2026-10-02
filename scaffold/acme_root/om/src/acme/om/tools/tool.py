@@ -21,6 +21,7 @@ from acme.infra.transports import (
     CommandSpec,
     FileEntry,
     OutputSink,
+    RecordSealInterface,
     SecretUse,
     TransportInterface,
 )
@@ -40,13 +41,16 @@ uses it runs."""
 
 
 class ToolRuntime:
-    """One call's way into its workspace. A preflight's is read-only."""
+    """One call's way into its workspace. A preflight's is read-only. Its
+    command goes with the seal its record keeps the output under: its
+    session's."""
 
     def __init__(
         self,
         transport: TransportInterface,
         workspace: Workspace,
         *,
+        seal: RecordSealInterface,
         key: UUID,
         epoch: int,
         deadline: datetime,
@@ -58,6 +62,7 @@ class ToolRuntime:
     ) -> None:
         self._transport = transport
         self._workspace = workspace
+        self._seal = seal
         self._key = key
         self._epoch = epoch
         self._effect = effect
@@ -114,6 +119,7 @@ class ToolRuntime:
                 max_output=max_output,
             ),
             self._on_output,
+            seal=self._seal,
         )
         if result.timed_out:
             raise ToolFailed(ToolFailure.TIMEOUT, command_text(result))

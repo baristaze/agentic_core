@@ -7,21 +7,34 @@ with, and writes only a person's decision and its own audit entries.
 
 A call's request step is in the history, written and audited, before any
 operation here sees it. Its input is the tool use's, and it must hash to
-what the request recorded."""
+what the request recorded, under the key of its session.
+
+What a call keeps of its session's content goes under that session's key
+too: its input's hash is keyed by it, and the transport's record of its
+command keeps the output sealed by it."""
 
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from acme.infra.transports import OutputSink
+from acme.infra.transports import OutputSink, RecordSealInterface
 from acme.infra.workspaces import IsolationSpec, Workspace
 from acme.om.context import TenantContext
 from acme.om.steps.types.step import Step
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.types.call import Gate, JobHandle
 from acme.om.tools.types.policy import PolicyLayer, ToolPolicy
+
+
+KeyedHash = Callable[[TenantContext, UUID, bytes], Awaitable[str]]
+"""A hash of a value keyed by its session: the privacy namespace's, which the
+root wires."""
+
+RecordSeals = Callable[[UUID, UUID], RecordSealInterface]
+"""The seal of one session's commands in their transport's records, by the
+tenant and the session: the privacy namespace's, which the root wires."""
 
 
 class ToolsManagerInterface(ABC):
@@ -52,6 +65,16 @@ class ToolsManagerInterface(ABC):
     @abstractmethod
     async def release_workspace(self, ctx: TenantContext, workspace: Workspace) -> None:
         """Lets the workspace's instance go between loops; its files stay."""
+        ...
+
+    @abstractmethod
+    async def input_hash(
+        self, ctx: TenantContext, session_id: UUID, call_input: Mapping[str, Any]
+    ) -> str:
+        """The hash a call's request records of its input, which an approval
+        binds: keyed by the session, so equal inputs hash alike within it,
+        and apart across sessions, and once its key is revoked nothing can
+        confirm what the hash stood for. `KeyRevoked` when it is."""
         ...
 
     @abstractmethod
@@ -170,6 +193,13 @@ class ToolsManagerInterface(ABC):
         call's class decides it (`NotAuthorized` otherwise), and the
         decision records that role; `NotFound` when no tool request is at
         that place."""
+        ...
+
+    @abstractmethod
+    async def purge_records(self, org_id: UUID, session_id: UUID) -> None:
+        """Platform-internal: what the transport keeps of a session the sweep
+        has claimed for its purge goes with its history: how each command
+        in its workspace ended. For no principal."""
         ...
 
     @abstractmethod
