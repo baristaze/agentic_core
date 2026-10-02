@@ -53,6 +53,7 @@ from acme.om.tools.rules import (
     DEFAULT_CEILINGS,
     STALE_STATUS,
     approver_roles,
+    bounded_json,
     call_deadline,
     command_text,
     decide,
@@ -308,7 +309,12 @@ class ToolsManagerImpl(ToolsManagerInterface):
         if not isinstance(output, tool.spec.output_model):
             detail = f"{tool.spec.name} answered {type(output).__name__}, not its output type"
             return self._answer(request, detail, ToolFailure.PERMANENT)
-        return self._answer(request, output.model_dump_json())
+        text = output.model_dump_json()
+        limit = self._options.max_output_chars
+        if len(text) > limit:
+            # Each of its strings keeps its own end, never only the last's.
+            text = bounded_json(output.model_dump(mode="json"), limit)
+        return self._answer(request, text)
 
     async def recover(
         self,
@@ -349,9 +355,10 @@ class ToolsManagerImpl(ToolsManagerInterface):
         if recorded is None:
             detail = "the run that made this call was lost before the call answered"
             return self._answer(request, detail, ToolFailure.INTERRUPTED)
+        limit = self._options.max_output_chars
         if recorded.timed_out:
-            return self._answer(request, command_text(recorded), ToolFailure.TIMEOUT)
-        return self._answer(request, recovered_text(recorded))
+            return self._answer(request, command_text(recorded, limit), ToolFailure.TIMEOUT)
+        return self._answer(request, recovered_text(recorded, limit))
 
     async def start_job(
         self,
@@ -542,6 +549,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
             audit=audit,
             on_output=on_output,
             read_only=read_only,
+            answer_chars=self._options.max_output_chars,
         )
 
     def _classify(self, error: Exception, tool: ToolInterface) -> tuple[ToolFailure, str]:

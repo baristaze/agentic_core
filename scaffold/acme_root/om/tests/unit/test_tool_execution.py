@@ -6,9 +6,11 @@ worth retrying, of a tool safe to repeat, is run again once first. An
 output past its bound keeps its head and its tail, and an input that is not
 one JSON object never runs."""
 
+import json
 import os
 import sys
 import time
+from collections.abc import Mapping
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -35,9 +37,11 @@ from contracts.tools import (
 )
 
 from acme.infra.secrets.local import SecretsLocalImpl
+from acme.infra.transports import CommandResult, CommandSpec
 from acme.infra.transports.broker import BrokerTwinImpl
 from acme.infra.transports.local import DEFAULT_PATH, TransportLocalImpl
 from acme.infra.transports.redaction import forms, marker
+from acme.infra.transports.twin import TwinHandler, TwinReply
 from acme.infra.workspaces import (
     EgressMode,
     EgressPolicy,
@@ -54,7 +58,7 @@ from acme.om.steps.types.content import UNPARSED
 from acme.om.steps.types.header import ToolFailure
 from acme.om.steps.types.step import Step
 from acme.om.tools.impl.manager import SECRET_USED, ToolsOptions
-from acme.om.tools.rules import ADVICE, call_deadline
+from acme.om.tools.rules import ADVICE, call_deadline, command_text, recovered_text
 from acme.om.tools.tool import ToolRuntime
 from acme.om.tools.types.tool import Effect, ToolInput
 
@@ -197,7 +201,7 @@ async def test_a_failures_text_is_bounded_as_a_result_is(tmp_path: Path) -> None
     )
     text = result_text(response)
     assert failure_of(response) is ToolFailure.TIMEOUT
-    assert "[cut: 300 of" in text and text.endswith(ADVICE[ToolFailure.TIMEOUT])
+    assert "\n[cut: " in text and text.endswith(ADVICE[ToolFailure.TIMEOUT])
     assert len(text) < 300 + 200
 
 
@@ -415,9 +419,67 @@ async def test_an_output_past_its_bound_keeps_its_head_and_its_tail_and_says_so(
         epoch=found.epoch,
         tree_deadline=None,
     )
-    head, cut, tail = result_text(response).split("\n")
-    assert cut.startswith("[cut: 200 of") and len(head) + len(tail) == 200
-    assert "BEGIN" in head and 'THE END","stderr":""}' in tail
+    text = result_text(response)
+    stdout = json.loads(text)["stdout"]
+    assert len(text) <= 200 and "\n[cut: " in stdout
+    assert stdout.startswith("BEGIN") and stdout.endswith("THE END")
+
+
+def a_failing_run(cases: int) -> TwinHandler:
+    """A test run that prints a long stdout ending in its summary and the
+    failing test's name, and a long stderr after it."""
+
+    async def handler(command: CommandSpec, env: Mapping[str, str]) -> TwinReply:
+        stdout = "".join(f"test mod::case_{i} ... ok\n" for i in range(cases))
+        stdout += "failures:\n    mod::case_7\ntest result: FAILED. 1 failed\n"
+        stderr = "".join(f"   Compiling crate_{i} v1.0.{i}\n" for i in range(cases))
+        stderr += "     Running unittests src/lib.rs\n"
+        return TwinReply(exit_code=101, stdout=stdout, stderr=stderr)
+
+    return handler
+
+
+async def test_each_stream_keeps_its_own_end_however_long_the_other(tmp_path: Path) -> None:
+    """A run's stdout ends in its summary and the failing test's name, and
+    its stderr is as long again: within the bound, each keeps its end."""
+    transport, _ = twin_transport(tmp_path)
+    transport.handler = a_failing_run(2000)
+    tools = tools_over(transport)
+    ctx = context(Role.SERVICE, make_org())
+    workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
+    found = await put_call(tools.steps, ctx, "run_command", {"argv": ["test"]}, "execute")
+    response = await tools.manager.execute(
+        ctx,
+        registry_of(Command()),
+        found.request,
+        found.call_input,
+        workspace,
+        epoch=found.epoch,
+        tree_deadline=None,
+    )
+    text = result_text(response)
+    answered = json.loads(text)
+    assert len(text) <= ToolsOptions().max_output_chars
+    assert answered["stdout"].endswith(
+        "failures:\n    mod::case_7\ntest result: FAILED. 1 failed\n"
+    )
+    assert answered["stderr"].endswith("Running unittests src/lib.rs\n")
+    assert answered["exit_code"] == 101
+
+
+def test_a_commands_text_keeps_each_streams_end_within_its_bound() -> None:
+    """What a timed-out or recovered command answers: its stdout and its
+    stderr each cut to its share, never the whole as one text."""
+    result = CommandResult(
+        key=new_id(),
+        exit_code=None,
+        stdout="o" * 5000 + "STDOUT END",
+        stderr="e" * 5000 + "STDERR END",
+        timed_out=True,
+    )
+    for text in (command_text(result, 1000), recovered_text(result, 1000)):
+        assert len(text) <= 1000
+        assert "STDOUT END\nstderr:\n" in text and text.endswith("STDERR END")
 
 
 class Flaky(Command):

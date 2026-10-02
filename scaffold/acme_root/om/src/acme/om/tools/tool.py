@@ -55,7 +55,9 @@ class ToolRuntime:
         audit: SecretAudit,
         on_output: OutputSink | None = None,
         read_only: bool = False,
+        answer_chars: int = 50_000,
     ) -> None:
+        self._answer_chars = answer_chars  # the bound of what the model reads of an answer
         self._transport = transport
         self._workspace = workspace
         self._key = key
@@ -108,7 +110,7 @@ class ToolRuntime:
             self._on_output,
         )
         if result.timed_out:
-            raise ToolFailed(ToolFailure.TIMEOUT, command_text(result))
+            raise ToolFailed(ToolFailure.TIMEOUT, command_text(result, self._answer_chars))
         return result
 
     async def read_file(self, path: str, max_bytes: int) -> bytes:
