@@ -40,6 +40,7 @@ from acme.integrations.model_providers.content import (
     ThinkingSource,
     ToolResultBlock,
     ToolUseBlock,
+    in_turn_order,
 )
 from acme.integrations.model_providers.failures import ModelCallFailed
 from acme.integrations.model_providers.types import (
@@ -54,6 +55,7 @@ from acme.integrations.model_providers.wire import (
     clipped,
     field,
     json_object,
+    key_for,
     retry_after,
     sse_events,
 )
@@ -127,7 +129,9 @@ def _assistant_items(
     call: ModelCall, message: Message, dropped: list[Dropped]
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
-    for block in message.blocks:
+    # Each reasoning item replays in the place its turn gave it, before the
+    # call it led to.
+    for block in in_turn_order(message.blocks):
         if isinstance(block, ThinkingBlock):
             if not block.replays_to(ProviderName.OPENAI, call.model):
                 source = "no signature" if block.signature is None else f"thought by {block.source}"
@@ -216,6 +220,26 @@ def request_body(call: ModelCall) -> tuple[dict[str, Any], tuple[Dropped, ...]]:
     return body, tuple(dropped)
 
 
+SPEND_CODES = frozenset(
+    {
+        "insufficient_quota",
+        "credit_balance_exhausted",
+        "organization_spend_limit_exceeded",
+        "project_spend_limit_exceeded",
+        "organization_usage_limit_exceeded",
+    }
+)
+"""The codes of a spent credit, quota, or spend limit, which the provider
+answers with the status of a rate limit and which no wait clears."""
+
+SPEND_WORDS = (
+    "exceeded your current quota",
+    "credit balance exhausted",
+    "spend limit reached",
+    "usage limit reached",
+)
+
+
 def classify(status: int | None, body: str | bytes | dict[str, Any]) -> tuple[ErrorKind, str]:
     """A provider error's kind, from its status and its message: the
     provider answers a spent quota with the status of a rate limit, so the
@@ -235,9 +259,9 @@ def classify(status: int | None, body: str | bytes | dict[str, Any]) -> tuple[Er
     ):
         return ErrorKind.CONTEXT_OVERFLOW, said
     if (
-        code in ("insufficient_quota", "organization_usage_limit_exceeded")
+        code in SPEND_CODES
         or kind_of == "insufficient_quota"
-        or any(s in text for s in ("exceeded your current quota", "usage limit reached"))
+        or any(s in text for s in SPEND_WORDS)
     ):
         return ErrorKind.BILLING, said
     if code in ("invalid_api_key", "unsupported_country_region_territory") or status in (401, 403):
@@ -362,6 +386,7 @@ class OpenAIReply:
                         signature=encrypted if isinstance(encrypted, str) and encrypted else None,
                         source=source,
                         ref=ref if isinstance(ref, str) and len(ref) <= MAX_NAME else None,
+                        at=len(blocks),
                     )
                 )
             else:
@@ -479,9 +504,7 @@ class ModelProviderOpenAIImpl(ModelProviderInterface):
     async def stream(
         self, call: ModelCall, *, credential: SecretStr | None = None
     ) -> AsyncIterator[StreamPart]:
-        key = credential or self._api_key
-        if key is None:
-            raise ModelCallFailed(ErrorKind.CREDENTIAL, "no OpenAI key for this call")
+        key = key_for("OpenAI", credential, self._api_key)
         body, dropped = request_body(call)
         folded = OpenAIReply(call.model, dropped)
         headers = {"authorization": f"Bearer {key.get_secret_value()}"}

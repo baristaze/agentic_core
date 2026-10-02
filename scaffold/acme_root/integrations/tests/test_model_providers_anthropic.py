@@ -243,7 +243,7 @@ def continuation(model: str, thought: ThinkingBlock) -> ModelCall:
         system=(TextBlock(text="You are terse."),),
         messages=(
             ASK,
-            Message(role="assistant", blocks=(use, thought)),
+            Message(role="assistant", blocks=(thought, use)),
             Message(
                 role="user",
                 blocks=(ToolResultBlock(tool_use_id="toolu_1", parts=(TextBlock(text="42"),)),),
@@ -505,3 +505,81 @@ async def test_a_provider_that_does_not_answer_is_transient() -> None:
     with pytest.raises(ModelCallFailed) as failed:
         await reply_of(adapter(handler).stream(CALL))
     assert failed.value.kind is ErrorKind.TRANSIENT
+
+
+# A turn whose thinking sits between its blocks.
+
+
+INTERLEAVED = (FIXTURES / "anthropic_interleaved.sse").read_text()
+
+
+def streamed_turn(text: str) -> list[dict[str, Any]]:
+    """The turn as the stream carried it, block by block, in its order."""
+    blocks: dict[int, dict[str, Any]] = {}
+    for line in text.splitlines():
+        if not line.startswith("data: "):
+            continue
+        event = json.loads(line[6:])
+        if event["type"] == "content_block_start":
+            blocks[event["index"]] = dict(event["content_block"])
+        elif event["type"] == "content_block_delta":
+            block, delta = blocks[event["index"]], event["delta"]
+            if delta["type"] == "thinking_delta":
+                block["thinking"] += delta["thinking"]
+            elif delta["type"] == "signature_delta":
+                block["signature"] += delta["signature"]
+            elif delta["type"] == "text_delta":
+                block["text"] += delta["text"]
+            elif delta["type"] == "input_json_delta":
+                block["json"] = block.get("json", "") + delta["partial_json"]
+    for block in blocks.values():
+        if block["type"] == "tool_use":
+            block["input"] = json.loads(block.pop("json"))
+    return [blocks[i] for i in sorted(blocks)]
+
+
+async def test_an_interleaved_turn_replays_in_the_providers_order_byte_for_byte() -> None:
+    _, folded = await fold(INTERLEAVED)
+    reply = folded.reply()
+    assert [b.kind for b in reply.turn()] == [
+        "thinking",
+        "text",
+        "thinking",
+        "tool_use",
+        "thinking",
+        "tool_use",
+    ]
+    assert [t.at for t in reply.thinking] == [0, 1, 2]
+    results = Message(
+        role="user",
+        blocks=(
+            ToolResultBlock(tool_use_id="toolu_01FirstPairAdd", parts=(TextBlock(text="42"),)),
+            ToolResultBlock(tool_use_id="toolu_01SecondPairAdd", parts=(TextBlock(text="21"),)),
+        ),
+    )
+    expected = json.dumps(streamed_turn(INTERLEAVED))
+    # As the reply hands it on, and as a step keeps it: its thinking apart.
+    for blocks in (reply.turn(), (*reply.thinking, *reply.blocks)):
+        call = ModelCall(
+            model=MODEL,
+            messages=(ASK, Message(role="assistant", blocks=blocks), results),
+            max_output_tokens=2048,
+            thinking_budget=1024,
+        )
+        body, dropped = request_body(call)
+        assert dropped == ()
+        assert json.dumps(body["messages"][1]["content"]) == expected
+
+
+async def test_an_empty_credential_is_refused_and_never_runs_on_the_platforms_key() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, text=RECORDED)
+
+    for empty in ("", "  "):
+        with pytest.raises(ModelCallFailed) as failed:
+            await reply_of(adapter(handler).stream(CALL, credential=SecretStr(empty)))
+        assert failed.value.kind is ErrorKind.CREDENTIAL
+    assert seen == []

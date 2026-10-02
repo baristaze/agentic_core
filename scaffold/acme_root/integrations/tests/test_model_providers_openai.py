@@ -139,6 +139,7 @@ async def test_cached_written_and_reasoning_tokens_are_taken_out_of_their_counts
         signature="gAAAA-opaque",
         source=ThinkingSource(provider=ProviderName.OPENAI, model=MODEL),
         ref="rs_1",
+        at=0,
     )
     assert reply.blocks == (TextBlock(text="42"),) and reply.stop_reason is StopReason.END_TURN
 
@@ -455,3 +456,52 @@ async def test_a_provider_that_breaks_off_is_transient() -> None:
     with pytest.raises(ModelCallFailed) as failed:
         await reply_of(adapter(handler).stream(CALL))
     assert failed.value.kind is ErrorKind.TRANSIENT
+
+
+async def test_interleaved_reasoning_replays_before_the_call_it_led_to() -> None:
+    second = {**REASONING, "id": "rs_2", "encrypted_content": "gAAAA-second"}
+    output = [
+        REASONING,
+        {
+            "type": "function_call",
+            "call_id": "call_a",
+            "name": "add",
+            "arguments": '{"a":17,"b":25}',
+        },
+        second,
+        {
+            "type": "function_call",
+            "call_id": "call_b",
+            "name": "add",
+            "arguments": '{"a":8,"b":13}',
+        },
+    ]
+    _, folded = await fold(sse(finished("completed", output)))
+    reply = folded.reply()
+    assert [t.at for t in reply.thinking] == [0, 1]
+    # As a step keeps the turn: its thinking apart from its blocks.
+    turn = Message(role="assistant", blocks=(*reply.thinking, *reply.blocks))
+    body, _ = request_body(ModelCall(model=MODEL, messages=(ASK, turn), max_output_tokens=10))
+    replayed = [
+        (item.get("type"), item.get("id") or item.get("call_id")) for item in body["input"][1:]
+    ]
+    assert replayed == [
+        ("reasoning", "rs_1"),
+        ("function_call", "call_a"),
+        ("reasoning", "rs_2"),
+        ("function_call", "call_b"),
+    ]
+
+
+async def test_an_empty_credential_is_refused_and_never_runs_on_the_platforms_key() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, text=RECORDED)
+
+    for empty in ("", "  "):
+        with pytest.raises(ModelCallFailed) as failed:
+            await reply_of(adapter(handler).stream(CALL, credential=SecretStr(empty)))
+        assert failed.value.kind is ErrorKind.CREDENTIAL
+    assert seen == []

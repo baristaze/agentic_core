@@ -39,6 +39,7 @@ from acme.integrations.model_providers.content import (
     ThinkingSource,
     ToolResultBlock,
     ToolUseBlock,
+    in_turn_order,
 )
 from acme.integrations.model_providers.failures import ModelCallFailed
 from acme.integrations.model_providers.types import (
@@ -52,6 +53,7 @@ from acme.integrations.model_providers.types import (
 from acme.integrations.model_providers.wire import (
     clipped,
     json_object,
+    key_for,
     retry_after,
     sse_events,
 )
@@ -186,7 +188,9 @@ def request_body(call: ModelCall) -> tuple[dict[str, Any], tuple[Dropped, ...]]:
                 marked.append(system[-1])
     messages: list[dict[str, Any]] = []
     for message in call.messages:
-        ordered = sorted(message.blocks, key=lambda b: 0 if isinstance(b, ThinkingBlock) else 1)
+        # The provider refuses a latest turn whose thinking moved: each block
+        # replays in the place its turn gave it.
+        ordered = in_turn_order(message.blocks)
         content = [c for c in (_block(call, message, b, dropped) for b in ordered) if c is not None]
         if not content:
             dropped.append(_dropped(f"a {message.role} turn", "nothing in it survived"))
@@ -232,6 +236,7 @@ def classify(status: int | None, body: str | bytes | dict[str, Any]) -> tuple[Er
     is None for an error the stream itself carried."""
     decoded = body if isinstance(body, dict) else json_object(body)
     kind_of = str(get(decoded, "error", "type") or "")
+    code = str(get(decoded, "error", "details", "error_code") or "")
     message = str(get(decoded, "error", "message") or "")
     if not message and not isinstance(body, dict):
         message = body.decode("utf-8", "replace") if isinstance(body, bytes) else body
@@ -242,7 +247,14 @@ def classify(status: int | None, body: str | bytes | dict[str, Any]) -> tuple[Er
         for s in ("prompt is too long", "context window", "context limit", "too many tokens")
     ):
         return ErrorKind.CONTEXT_OVERFLOW, said
-    if kind_of == "billing_error" or status == 402 or "credit balance" in text:
+    # A spend cap answers as a rate limit, and a spend limit an account set
+    # as an invalid request; neither clears by waiting.
+    if (
+        kind_of == "billing_error"
+        or status == 402
+        or code == "enforced_spend_limit_reached"
+        or any(s in text for s in ("credit balance", "api usage limits"))
+    ):
         return ErrorKind.BILLING, said
     if kind_of in ("authentication_error", "permission_error") or status in (401, 403):
         return ErrorKind.CREDENTIAL, said
@@ -404,6 +416,7 @@ class AnthropicReply:
                         signature=signature,
                         source=source,
                         redacted=opened.type == "redacted_thinking",
+                        at=len(blocks),
                     )
                 )
             elif opened.type == "tool_use":
@@ -503,9 +516,7 @@ class ModelProviderAnthropicImpl(ModelProviderInterface):
     async def stream(
         self, call: ModelCall, *, credential: SecretStr | None = None
     ) -> AsyncIterator[StreamPart]:
-        key = credential or self._api_key
-        if key is None:
-            raise ModelCallFailed(ErrorKind.CREDENTIAL, "no Anthropic key for this call")
+        key = key_for("Anthropic", credential, self._api_key)
         body, dropped = request_body(call)
         folded = AnthropicReply(call.model, dropped)
         headers = {"x-api-key": key.get_secret_value(), "anthropic-version": API_VERSION}
