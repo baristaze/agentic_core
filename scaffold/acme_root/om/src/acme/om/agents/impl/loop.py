@@ -622,7 +622,10 @@ class LoopManagerImpl(LoopManagerInterface):
                 use.input,
                 run.workspace,
                 holds_private=rules.holds_private(run.kind, run.registry),
-                tree_deadline=run.deadline,
+                # A fresh call's preflight keeps the tree's deadline. A call a
+                # lost run may have started is settled by its effect, which
+                # the transport's record answers whatever the time.
+                tree_deadline=run.deadline if fresh else None,
             )
         except PrincipalLapsed:
             if not fresh:

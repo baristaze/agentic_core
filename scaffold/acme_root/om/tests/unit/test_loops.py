@@ -6,6 +6,7 @@ records who spoke and who pays for every request, nudges in a step, and
 refuses a weaker workspace before any call."""
 
 import asyncio
+from datetime import timedelta
 from itertools import pairwise
 from pathlib import Path
 from uuid import UUID
@@ -650,6 +651,35 @@ async def test_a_cancel_answers_a_call_a_lost_run_may_have_started_as_unknown(
     answer = of_type(await loop.history(session_id), StepType.TOOL_RESPONSE)[-1]
     assert "unknown" in answer.as_tool_response().parts[0].text  # type: ignore[union-attr]
     assert "before it ran" not in answer.as_tool_response().parts[0].text  # type: ignore[union-attr]
+
+
+async def test_a_call_a_lost_run_may_have_started_is_settled_past_the_trees_deadline(
+    tmp_path: Path,
+) -> None:
+    """The tree's deadline bounds a fresh call's time, never the settling of
+    one a lost run may have started: past it, that call is still answered
+    by its effect, here unknown, and never as a timeout of its gate."""
+    loop = loop_over(tmp_path)
+    session_id = await loop.start()
+    await loop.say(session_id, "Note the fix.")
+    loop.anthropic.add(reply(use("note", use_id="use_note")))
+    note = loop.tools["note"]
+    note.holds, note.remote = True, True
+    lost = asyncio.ensure_future(loop.loops.run(loop.owner, session_id))
+    await note.started.wait()
+    passed = loop.clock.now - timedelta(minutes=1)
+    await loop.managers.agents.set_deadline(loop.owner, session_id, passed)
+
+    run = await loop.loops.run(loop.owner, session_id)
+    note.release.set()
+    await lost
+
+    assert run.park is not None and run.park.unlock == "deadline"
+    steps = await loop.history(session_id)
+    (request,) = of_type(steps, StepType.TOOL_REQUEST)
+    answer = answer_to(steps, request)
+    assert getattr(answer.header, "failure", None) is ToolFailure.INTERRUPTED
+    assert note.ran_as == [loop.owner.user_id], "never run a second time"
 
 
 async def test_a_reply_cut_by_its_output_limit_is_never_sent_again_unchanged(
