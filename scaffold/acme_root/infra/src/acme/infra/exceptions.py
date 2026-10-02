@@ -93,3 +93,11 @@ class PayloadMismatch(InfraValidationFailed):
     """A payload of the wrong type was offered to a topic."""
 
     code = "payload_mismatch"
+
+
+class KeyRefused(InfraValidationFailed):
+    """The key service would not unwrap a key: it was wrapped under another
+    tenant's key, for another key or version, or was altered. The message
+    names the key, never its bytes."""
+
+    code = "key_refused"

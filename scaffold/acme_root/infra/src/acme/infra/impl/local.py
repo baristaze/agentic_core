@@ -7,6 +7,8 @@ from acme.infra.buckets import BucketsInterface
 from acme.infra.buckets.local import BucketsLocalImpl
 from acme.infra.cache import CacheInterface, CacheScope
 from acme.infra.cache.memory import CacheMemoryImpl
+from acme.infra.keys import KeyServiceInterface
+from acme.infra.keys.memory import KeyServiceMemoryImpl
 from acme.infra.queues import QueuesInterface
 from acme.infra.queues.memory import QueueMemoryImpl
 from acme.infra.root import InfraInterface
@@ -31,6 +33,7 @@ class InfraLocalImpl(InfraInterface):
         self._topics = TopicsMemoryImpl()
         self._queues = QueueMemoryImpl()
         self._secrets = SecretsLocalImpl(root / "secrets.env")
+        self._keys = KeyServiceMemoryImpl()
         self._workspaces = WorkspaceTwinImpl()
         self._broker = BrokerTwinImpl()
         self._transport = TransportTwinImpl(self._secrets, self._broker)
@@ -50,6 +53,9 @@ class InfraLocalImpl(InfraInterface):
     def get_secrets(self) -> SecretsInterface:
         return self._secrets
 
+    def get_keys(self) -> KeyServiceInterface:
+        return self._keys
+
     def get_workspaces(self) -> WorkspaceProviderInterface:
         return self._workspaces
 
@@ -66,13 +72,14 @@ class InfraLocalImpl(InfraInterface):
             self._buckets.describe(),
             self._queues.describe(),
             self._secrets.describe(),
+            self._keys.describe(),
             self._workspaces.describe(),
             self._transport.describe(),
             self._broker.describe(),
         ]
 
     async def start(self) -> None:
-        for capability in (self._topics, self._buckets, self._queues, self._secrets):
+        for capability in (self._topics, self._buckets, self._queues, self._secrets, self._keys):
             await capability.start()
         for runtime in (self._broker, self._workspaces, self._transport):
             await runtime.start()
@@ -82,5 +89,5 @@ class InfraLocalImpl(InfraInterface):
             await runtime.close()
         for cache in self._caches.values():
             await cache.close()
-        for capability in (self._secrets, self._queues, self._buckets, self._topics):
+        for capability in (self._keys, self._secrets, self._queues, self._buckets, self._topics):
             await capability.close()

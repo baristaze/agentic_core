@@ -285,6 +285,24 @@ class StaleWriter(StepsException, PreconditionFailed):
     code = "stale_writer"
 
 
+class PrivacyException(PlatformException): ...
+
+
+class KeyRevoked(PrivacyException):
+    """The session's key is revoked: its content is erased, and it takes no
+    content again. Gone, not a conflict: asking again never succeeds."""
+
+    http_status = 410
+    code = "key_revoked"
+
+
+class PolicyFixed(PrivacyException, Conflict):
+    """A session's storage policy is chosen once, before its history holds
+    content, and another was chosen already."""
+
+    code = "policy_fixed"
+
+
 class BudgetsException(PlatformException): ...
 
 

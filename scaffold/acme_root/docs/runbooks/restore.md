@@ -20,6 +20,10 @@ the others.
   `test_outbox_retention_outlives_the_database_backup_retention` holds
   it: any point a restore can reach still has every outbox row written
   after it.
+- **The session key**, `alias/acme-<env>-sessions`, in the bootstrap
+  root. Every session's content in a backup or a snapshot is sealed
+  under it, so a restore opens that content only while the key exists;
+  no environment's destroy removes it, and it goes only by hand.
 
 ## A restore is break-glass
 

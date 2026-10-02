@@ -17,6 +17,7 @@ CLOUD_BACKENDS = {
     "topics_backend": "valkey",
     "buckets_backend": "s3",
     "queues_backend": "sqs",
+    "keys_backend": "kms",
 }
 
 
@@ -46,6 +47,7 @@ def local_settings(tmp_path: Path, **overrides: object) -> InfraSettings:
         ("topics_backend", "memory"),
         ("buckets_backend", "local"),
         ("queues_backend", "memory"),
+        ("keys_backend", "memory"),
     ],
 )
 def test_deployed_environments_refuse_local_backends(
@@ -76,6 +78,7 @@ async def test_local_environment_builds_local_impls(tmp_path: Path) -> None:
         f"buckets=local({tmp_path / 'buckets'})",
         "queues=memory",
         f"secrets=local({tmp_path / 'secrets.env'})",
+        "keys=memory(random root)",
         "workspaces=none",
         "transport=none",
         "broker=none",
@@ -92,6 +95,7 @@ def test_cloud_backends_are_constructed_without_connecting(tmp_path: Path) -> No
         "buckets=s3(us-east-1)",
         "queues=sqs(us-east-1)",
         "secrets=aws(us-east-1)",
+        "keys=kms(us-east-1)",
         "workspaces=none",
         "transport=none",
         "broker=none",
@@ -185,6 +189,15 @@ def test_an_empty_or_off_sentry_dsn_turns_reporting_off(tmp_path: Path, value: s
 def test_a_sentry_dsn_is_kept(tmp_path: Path) -> None:
     dsn = "http://key@glitchtip:8000/1"
     assert local_settings(tmp_path, sentry_dsn=dsn).sentry_dsn == dsn
+
+
+def test_the_keys_root_comes_from_settings_and_refuses_another_shape(tmp_path: Path) -> None:
+    rooted = InfraConfiguredImpl(
+        local_settings(tmp_path, keys_root_key="bG9jYWwtb25seS1rZXlzLXJvb3Qtbm90LXNlY3JldCE=")
+    )
+    assert rooted.get_keys().describe() == "keys=memory(root from settings)"
+    with pytest.raises(ValueError, match="32 bytes"):
+        InfraConfiguredImpl(local_settings(tmp_path, keys_root_key="c2hvcnQ="))
 
 
 @pytest.mark.parametrize(

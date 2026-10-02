@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 from dotenv import dotenv_values
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENVIRONMENTS = frozenset({"local", "test", "dev", "staging", "production"})
@@ -82,6 +82,15 @@ class InfraSettings(BaseSettings):
         default_factory=secret_overrides_from_environment, exclude=True, repr=False
     )
 
+    # The key service the session keys are wrapped by. The memory one holds
+    # each tenant's wrapping key in the process, derived from
+    # `keys_root_key`: URL-safe base64 of 32 bytes, or none, for a random
+    # root whose keys die with the process. KMS wraps under the key
+    # `kms_key_id` names, with `{org_id}` in it for a key per tenant.
+    keys_backend: Literal["memory", "kms"] = "memory"
+    keys_root_key: SecretStr | None = Field(default=None, repr=False)
+    kms_key_id: str = "alias/acme-sessions"
+
     # Where tools run (ADR 1003 for their secrets). `none` prepares no
     # workspace and refuses every command; `host` a directory per workspace
     # under the root, run as processes of this host; `container` a container
@@ -113,6 +122,14 @@ class InfraSettings(BaseSettings):
     def _presign_endpoint_empty_is_none(cls, value: str | None) -> str | None:
         """Empty, as `.env.example` leaves it, means the endpoint itself."""
         return value or None
+
+    @field_validator("keys_root_key")
+    @classmethod
+    def _root_key_empty_is_none(cls, value: SecretStr | None) -> SecretStr | None:
+        """Empty, a random root per process."""
+        if value is None or not value.get_secret_value().strip():
+            return None
+        return value
 
     @field_validator("sentry_dsn")
     @classmethod

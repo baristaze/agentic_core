@@ -8,6 +8,7 @@ dependencies = [
     "pydantic-settings>=2.15",
     "python-dotenv>=1.2",
     "aioboto3>=15.5",
+    "cryptography>=50.0",
     "opentelemetry-sdk>=1.44",
     "opentelemetry-exporter-otlp-proto-http>=1.44",
     "prometheus-client>=0.26",

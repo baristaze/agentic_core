@@ -55,6 +55,7 @@ LOCAL_DEFAULT_SERVES_THE_CLOUD = {
     "s3_secret_key": "the task role signs; only MinIO needs a key",
     "sqs_endpoint_url": "the hosted endpoint; only ElasticMQ needs one",
     "secrets_file": "the local secrets backend only",
+    "keys_root_key": "the memory key service only; the cloud wraps under KMS",
     "workspace_backend": "the API and the sweep run no tool, so they prepare no workspace",
     "workspaces_root": "the host and container workspace backends only",
     "workspace_image": "the container workspace backend only",

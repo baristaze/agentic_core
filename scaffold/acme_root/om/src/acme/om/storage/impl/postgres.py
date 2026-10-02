@@ -28,6 +28,8 @@ from acme.om.orchestrations.storage import OrchestrationsStorageInterface
 from acme.om.orchestrations.storage.impl.postgres import OrchestrationsStoragePostgresImpl
 from acme.om.outbox.storage import OutboxStorageInterface
 from acme.om.outbox.storage.impl.postgres import OutboxStoragePostgresImpl
+from acme.om.privacy.storage import PrivacyStorageInterface
+from acme.om.privacy.storage.impl.postgres import PrivacyStoragePostgresImpl
 from acme.om.steps.storage import StepStorageInterface
 from acme.om.steps.storage.impl.postgres import StepStoragePostgresImpl
 from acme.om.storage.impl.pg_base import LoginSessions, ScopedConnection, SessionFactory
@@ -153,6 +155,7 @@ class StoragePostgresImpl(StorageInterface):
         self._orchestrations = OrchestrationsStoragePostgresImpl(sessions)
         self._steps = StepStoragePostgresImpl(sessions)
         self._agent_sessions = AgentSessionStoragePostgresImpl(sessions)
+        self._privacy = PrivacyStoragePostgresImpl(sessions)
         self._budgets = BudgetStoragePostgresImpl(sessions)
         self._ledger = LedgerStoragePostgresImpl(sessions)
         self._fill_sets = FillSetStoragePostgresImpl(sessions)
@@ -184,6 +187,9 @@ class StoragePostgresImpl(StorageInterface):
 
     def get_agent_session_storage(self) -> AgentSessionStorageInterface:
         return self._agent_sessions
+
+    def get_privacy_storage(self) -> PrivacyStorageInterface:
+        return self._privacy
 
     def get_budget_storage(self) -> BudgetStorageInterface:
         return self._budgets

@@ -26,5 +26,7 @@ async def test_every_capability_works_over_the_local_root(tmp_path: Path) -> Non
     workspace = await infra.get_workspaces().prepare(org, new_id(), spec)
     await infra.get_transport().write_file(workspace, "a.txt", b"hi", epoch=1)
     assert await infra.get_transport().read_file(workspace, "a.txt", 10) == b"hi"
-    assert len(infra.describe()) == len(CacheScope) + 7
+    org_key = await infra.get_keys().generate(org, new_id(), 1)
+    assert len(org_key.plaintext) == 32
+    assert len(infra.describe()) == len(CacheScope) + 8
     await infra.close()

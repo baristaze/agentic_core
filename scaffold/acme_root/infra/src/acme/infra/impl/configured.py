@@ -16,6 +16,9 @@ from acme.infra.cache.valkey import CacheValkeyImpl
 from acme.infra.exceptions import InfraException
 from acme.infra.impl.settings import ENVIRONMENTS, InfraSettings
 from acme.infra.impl.valkey import ValkeyConnection
+from acme.infra.keys import KeyServiceInterface
+from acme.infra.keys.kms import KeyServiceKmsImpl
+from acme.infra.keys.memory import KeyServiceMemoryImpl, root_key
 from acme.infra.queues import QueuesInterface
 from acme.infra.queues.memory import QueueMemoryImpl
 from acme.infra.queues.sqs import QueueSqsImpl
@@ -48,6 +51,7 @@ UNSAFE_IN_CLOUD: tuple[tuple[str, str, str], ...] = (
     ("topics_backend", "memory", "ACME_TOPICS_BACKEND"),
     ("buckets_backend", "local", "ACME_BUCKETS_BACKEND"),
     ("queues_backend", "memory", "ACME_QUEUES_BACKEND"),
+    ("keys_backend", "memory", "ACME_KEYS_BACKEND"),
 )
 
 
@@ -146,6 +150,19 @@ class InfraConfiguredImpl(InfraInterface):
         else:
             self._secrets = SecretsLocalImpl(settings.secrets_file, settings.secret_overrides)
 
+        if settings.keys_backend == "kms":
+            self._keys: KeyServiceInterface = KeyServiceKmsImpl(
+                self._aws,
+                region=settings.aws_region,
+                key_id=settings.kms_key_id,
+                timeout=aws_timeout,
+            )
+        else:
+            root = settings.keys_root_key
+            self._keys = KeyServiceMemoryImpl(
+                None if root is None else root_key(root.get_secret_value())
+            )
+
         # No credential broker runs here, so a brokered secret is refused
         # rather than injected.
         self._broker: CredentialBrokerInterface = BrokerNullImpl()
@@ -197,6 +214,9 @@ class InfraConfiguredImpl(InfraInterface):
     def get_secrets(self) -> SecretsInterface:
         return self._secrets
 
+    def get_keys(self) -> KeyServiceInterface:
+        return self._keys
+
     def get_workspaces(self) -> WorkspaceProviderInterface:
         return self._workspaces
 
@@ -213,6 +233,7 @@ class InfraConfiguredImpl(InfraInterface):
             self._buckets.describe(),
             self._queues.describe(),
             self._secrets.describe(),
+            self._keys.describe(),
             self._workspaces.describe(),
             self._transport.describe(),
             self._broker.describe(),
@@ -221,7 +242,7 @@ class InfraConfiguredImpl(InfraInterface):
     async def start(self) -> None:
         if self._valkey is not None:
             await self._valkey.start()
-        for capability in (self._topics, self._buckets, self._queues, self._secrets):
+        for capability in (self._topics, self._buckets, self._queues, self._secrets, self._keys):
             await capability.start()
         for runtime in (self._broker, self._workspaces, self._transport):
             await runtime.start()
@@ -233,7 +254,7 @@ class InfraConfiguredImpl(InfraInterface):
             await runtime.close()
         for cache in self._caches.values():
             await cache.close()
-        for capability in (self._secrets, self._queues, self._buckets, self._topics):
+        for capability in (self._keys, self._secrets, self._queues, self._buckets, self._topics):
             await capability.close()
         if self._valkey is not None:
             await self._valkey.close()
