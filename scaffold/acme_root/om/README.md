@@ -62,6 +62,13 @@ model's request or response, a tool's request or response, a summary, or
 a mark of a loop's life. Steps are numbered with no gaps and written
 once; the history only grows.
 
+## Models
+
+A **model role** is a job an agent session hands a model: the agent's
+own turns, or a summary. A **fill** is the model that does it, and how. A
+session's **fill set** holds its fills, one per model role; a **switch**
+gives it a new version, and the session's history records each one.
+
 ## Tools and who agrees to them
 
 A **tool** is one thing an agent can do, such as run a command or push a
@@ -107,6 +114,8 @@ arrive twice, so the second copy gets the first one's answer.
 - A work item, an orchestration, an idempotency record, an event, and
   an outbox row each name their org, so the fence between orgs holds
   for them too.
+- An agent session's fill set names the model for each of its jobs, and
+  each switch of it is a step of the session's history.
 - An agent session's steps are its truth. Its status is read off them,
   and a change of it writes an outbox row like any other change. A
   session and its steps name their org.
@@ -119,6 +128,7 @@ arrive twice, so the second copy gets the first one's answer.
 - [Files](src/acme/om/media/README.md)
 - [Agent sessions](src/acme/om/agent_sessions/README.md)
 - [Steps](src/acme/om/steps/README.md)
+- [Models](src/acme/om/models/README.md)
 - [Tools](src/acme/om/tools/README.md)
 - [Events](src/acme/om/events/README.md)
 - [Outbox rows](src/acme/om/outbox/README.md)

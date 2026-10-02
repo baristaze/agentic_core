@@ -10,6 +10,8 @@ from acme.om.idempotency import IdempotencyManagerInterface
 from acme.om.idempotency.storage import IdempotencyStorageInterface
 from acme.om.media import MediaManagerInterface
 from acme.om.media.storage import MediaStorageInterface
+from acme.om.models.manager import ModelsManagerInterface
+from acme.om.models.storage import FillSetStorageInterface
 from acme.om.orchestrations import OrchestrationsManagerInterface
 from acme.om.orchestrations.storage import OrchestrationsStorageInterface
 from acme.om.outbox import OutboxRelayInterface
@@ -47,6 +49,7 @@ async def test_memory_root_serves_every_storage() -> None:
     assert isinstance(root.get_orchestrations_storage(), OrchestrationsStorageInterface)
     assert isinstance(root.get_step_storage(), StepStorageInterface)
     assert isinstance(root.get_agent_session_storage(), AgentSessionStorageInterface)
+    assert isinstance(root.get_fill_set_storage(), FillSetStorageInterface)
     assert isinstance(root.get_tool_storage(), ToolStorageInterface)
     assert await root.healthcheck() is True
     await root.close()
@@ -113,6 +116,7 @@ def test_business_root_has_a_field_per_manager(tmp_path: Path) -> None:
     assert isinstance(managers.orchestrations, OrchestrationsManagerInterface)
     assert isinstance(managers.steps, StepsManagerInterface)
     assert isinstance(managers.agent_sessions, AgentSessionsManagerInterface)
+    assert isinstance(managers.models, ModelsManagerInterface)
     assert isinstance(managers.tools, ToolsManagerInterface)
 
 

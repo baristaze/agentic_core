@@ -369,6 +369,7 @@ async def world(name: str) -> AsyncIterator[World]:
     from acme.infra.impl.local import InfraLocalImpl
     from acme.integrations.identity.twin import IdentityProviderTwinImpl
     from acme.integrations.impl.configured import IntegrationsOverImpl
+    from acme.integrations.model_providers.registry import absent_model_providers
     from acme.services.api.app import create_app
     from acme.services.api.container import AppContainer, postgres_storage
     from acme.services.api.settings import ApiSettings
@@ -395,7 +396,7 @@ async def world(name: str) -> AsyncIterator[World]:
     w = World(name)
     w.storage = postgres_storage(settings)
     w.idp = IdentityProviderTwinImpl()
-    w.integrations = IntegrationsOverImpl(w.idp)
+    w.integrations = IntegrationsOverImpl(w.idp, absent_model_providers())
     for label, getter in PROVIDERS.items():
         count_provider_calls(label, getattr(w.integrations, getter)())
     w.infra = InfraLocalImpl(Path(tempfile.mkdtemp(prefix=f"{name}_")))

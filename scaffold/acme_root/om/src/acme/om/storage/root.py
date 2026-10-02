@@ -6,6 +6,7 @@ from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.events.storage import EventStorageInterface
 from acme.om.idempotency.storage import IdempotencyStorageInterface
 from acme.om.media.storage import MediaStorageInterface
+from acme.om.models.storage import FillSetStorageInterface
 from acme.om.orchestrations.storage import OrchestrationsStorageInterface
 from acme.om.outbox.storage import OutboxStorageInterface
 from acme.om.steps.storage import StepStorageInterface
@@ -41,6 +42,9 @@ class StorageInterface(ABC):
 
     @abstractmethod
     def get_agent_session_storage(self) -> AgentSessionStorageInterface: ...
+
+    @abstractmethod
+    def get_fill_set_storage(self) -> FillSetStorageInterface: ...
 
     @abstractmethod
     def get_tool_storage(self) -> ToolStorageInterface: ...

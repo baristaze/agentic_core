@@ -285,6 +285,24 @@ class StaleWriter(StepsException, PreconditionFailed):
     code = "stale_writer"
 
 
+class ModelsException(PlatformException): ...
+
+
+class UnpricedModel(ModelsException, ValidationFailed):
+    """A model with no row in the one source of prices. A resolver never
+    picks one, and a switch never lands on one: every figure built on a
+    default row would be a guess, the budgets that bind on it included."""
+
+    code = "unpriced_model"
+
+
+class UnresolvedRole(ModelsException, ValidationFailed):
+    """A model role the resolver does not know, or one with no fill the
+    session's eligibility admits."""
+
+    code = "unresolved_model_role"
+
+
 class ToolsException(PlatformException): ...
 
 

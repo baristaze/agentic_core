@@ -19,6 +19,7 @@ from acme.integrations.identity.twin import (
     IdentityProviderTwinImpl,
 )
 from acme.integrations.impl.configured import IntegrationsConfiguredImpl, IntegrationsOverImpl
+from acme.integrations.model_providers.registry import absent_model_providers
 from acme.services.api.app import create_app
 from acme.services.api.container import AppContainer
 from acme.services.api.settings import ApiSettings
@@ -38,7 +39,9 @@ def twin() -> IdentityProviderTwinImpl:
 
 @pytest.fixture
 def container(tmp_path: Path, twin: IdentityProviderTwinImpl) -> AppContainer:
-    return build_container(tmp_path, integrations=IntegrationsOverImpl(twin))
+    return build_container(
+        tmp_path, integrations=IntegrationsOverImpl(twin, absent_model_providers())
+    )
 
 
 async def test_the_start_answers_where_the_browser_goes(client: httpx.AsyncClient) -> None:

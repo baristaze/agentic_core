@@ -1,0 +1,20 @@
+[
+  {"status": 400, "kind": "invalid_request", "body": {"type": "error", "error": {"type": "invalid_request_error", "message": "messages: roles must alternate between \"user\" and \"assistant\""}, "request_id": "req_011CSHoEeqs5C35K2UUqR7Fy"}},
+  {"status": 400, "kind": "context_overflow", "body": {"type": "error", "error": {"type": "invalid_request_error", "message": "prompt is too long: 215000 tokens > 200000 maximum"}}},
+  {"status": 400, "kind": "context_overflow", "body": {"type": "error", "error": {"type": "invalid_request_error", "message": "input length and `max_tokens` exceed context limit: 188240 + 21333 > 200000, decrease input length or `max_tokens` and try again"}}},
+  {"status": 400, "kind": "billing", "body": {"type": "error", "error": {"type": "invalid_request_error", "message": "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."}}},
+  {"status": 400, "kind": "permanent", "body": {"type": "error", "error": {"type": "invalid_request_error", "message": "Output blocked by content filtering policy"}}},
+  {"status": 401, "kind": "credential", "body": {"type": "error", "error": {"type": "authentication_error", "message": "invalid x-api-key"}}},
+  {"status": 402, "kind": "billing", "body": {"type": "error", "error": {"type": "billing_error", "message": "There is an issue with your account's billing."}}},
+  {"status": 403, "kind": "credential", "body": {"type": "error", "error": {"type": "permission_error", "message": "Your API key does not have permission to use the specified resource."}}},
+  {"status": 404, "kind": "model_unavailable", "body": {"type": "error", "error": {"type": "not_found_error", "message": "model: claude-3-opus-20240229"}}},
+  {"status": 413, "kind": "context_overflow", "body": {"type": "error", "error": {"type": "request_too_large", "message": "Request exceeds the maximum allowed number of bytes."}}},
+  {"status": 429, "kind": "rate_limited", "body": {"type": "error", "error": {"type": "rate_limit_error", "message": "This request would exceed the rate limit for your organization of 50,000 input tokens per minute."}}},
+  {"status": 500, "kind": "transient", "body": {"type": "error", "error": {"type": "api_error", "message": "Internal server error"}}},
+  {"status": 502, "kind": "transient", "body": "<html><head><title>502 Bad Gateway</title></head></html>"},
+  {"status": 529, "kind": "overloaded", "body": {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}}},
+  {"status": null, "kind": "overloaded", "body": {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}}},
+  {"status": 429, "kind": "billing", "body": {"type": "error", "error": {"type": "rate_limit_error", "message": "You have reached your API usage limits: your organization has crossed its monthly API usage threshold, set based on your organization's API tier. You will regain access on 2026-09-01 at 00:00 UTC.", "details": {"error_code": "enforced_spend_limit_reached"}}, "request_id": "req_018EeWyXxfu5pfWkrYcMdjWG"}},
+  {"status": 400, "kind": "billing", "body": {"type": "error", "error": {"type": "invalid_request_error", "message": "You have reached your specified API usage limits. You will regain access on 2026-11-01 at 00:00 UTC."}}},
+  {"status": 400, "kind": "billing", "body": {"type": "error", "error": {"type": "invalid_request_error", "message": "You have reached your specified workspace API usage limits. You will regain access on 2026-11-01 at 00:00 UTC."}}}
+]
