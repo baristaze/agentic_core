@@ -40,7 +40,7 @@ from acme.om.steps.types.header import (
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.tenancy.types.org import Org
 from acme.om.tools.registry import ToolRegistry
-from acme.om.tools.rules import input_hash, verdict
+from acme.om.tools.rules import verdict
 from acme.om.tools.types.call import GateOutcome, Verdict
 from acme.om.tools.types.policy import ApproverRule, Decision
 
@@ -67,7 +67,9 @@ async def test_an_approval_binds_the_call_and_a_changed_input_asks_again(setting
     tools, org, push, registry = setting.tools, setting.org, setting.push, setting.registry
     agent, owner = context(Role.SERVICE, org), context(Role.OWNER, org)
     workspace = Workspace.absent(org.id, new_id())
-    first = await put_call(tools.steps, agent, "push_branch", {"branch": "feature"}, "integration")
+    first = await put_call(
+        tools.manager, tools.steps, agent, "push_branch", {"branch": "feature"}, "integration"
+    )
     gate = await tools.manager.gate(
         agent, registry, KIND_DEFAULTS, first.request, first.call_input, workspace
     )
@@ -80,7 +82,8 @@ async def test_an_approval_binds_the_call_and_a_changed_input_asks_again(setting
     assert isinstance(header, ControlHeader) and header.call is not None
     assert decision.actor is Actor.PERSON and decision.refs == (first.request.id,)
     assert header.call.tool == "push_branch"
-    assert header.call.input_hash == input_hash({"branch": "feature"})
+    bound = await tools.manager.input_hash(agent, first.session_id, {"branch": "feature"})
+    assert header.call.input_hash == bound
     assert header.call.decided_by == owner.user_id
 
     gate = await tools.manager.gate(
@@ -90,6 +93,7 @@ async def test_an_approval_binds_the_call_and_a_changed_input_asks_again(setting
 
     # The same tool with another input is another call, in the same loop.
     changed = await put_call(
+        tools.manager,
         tools.steps,
         agent,
         "push_branch",
@@ -115,7 +119,9 @@ async def test_an_expired_approval_asks_again(setting: Setting) -> None:
     tools, org, registry = setting.tools, setting.org, setting.registry
     agent, owner = context(Role.SERVICE, org), context(Role.OWNER, org)
     workspace = Workspace.absent(org.id, new_id())
-    found = await put_call(tools.steps, agent, "push_branch", {"branch": "feature"}, "integration")
+    found = await put_call(
+        tools.manager, tools.steps, agent, "push_branch", {"branch": "feature"}, "integration"
+    )
     await tools.manager.decide_call(owner, found.session_id, found.request.seq, approve=True)
     tools.clock.now += timedelta(hours=1, seconds=1)
     gate = await tools.manager.gate(
@@ -134,7 +140,9 @@ async def test_a_denial_is_a_denied_tool_response_with_the_persons_note(setting:
     tools, org, push, registry = setting.tools, setting.org, setting.push, setting.registry
     agent, owner = context(Role.SERVICE, org), context(Role.OWNER, org)
     workspace = Workspace.absent(org.id, new_id())
-    found = await put_call(tools.steps, agent, "push_branch", {"branch": "feature"}, "integration")
+    found = await put_call(
+        tools.manager, tools.steps, agent, "push_branch", {"branch": "feature"}, "integration"
+    )
     await tools.manager.decide_call(
         owner, found.session_id, found.request.seq, approve=False, note="not during the freeze"
     )
@@ -154,7 +162,9 @@ async def test_only_an_approver_of_the_class_decides(setting: Setting) -> None:
     tools, org = setting.tools, setting.org
     agent = context(Role.SERVICE, org)
     member, admin = context(Role.MEMBER, org), context(Role.ADMIN, org)
-    found = await put_call(tools.steps, agent, "push_branch", {"branch": "feature"}, "integration")
+    found = await put_call(
+        tools.manager, tools.steps, agent, "push_branch", {"branch": "feature"}, "integration"
+    )
     for nobody in (member, context(Role.VIEWER, org), agent):
         with pytest.raises(NotAuthorized):
             await tools.manager.decide_call(
@@ -211,15 +221,18 @@ def decision_on(
 async def test_only_a_persons_decision_on_exactly_this_call_counts(setting: Setting) -> None:
     tools, org = setting.tools, setting.org
     agent = context(Role.SERVICE, org)
-    found = await put_call(tools.steps, agent, "push_branch", {"branch": "feature"}, "integration")
+    found = await put_call(
+        tools.manager, tools.steps, agent, "push_branch", {"branch": "feature"}, "integration"
+    )
     request, now = found.request, utcnow()
+    main = await tools.manager.input_hash(agent, found.session_id, {"branch": "main"})
     assert verdict(request, [decision_on(request)], now, OWNERS)[0] is Verdict.APPROVED
     for stray in (
         decision_on(request, actor=Actor.ENGINE),
         decision_on(request, actor=Actor.MODEL),
         decision_on(request, refs=(new_id(),)),
         decision_on(request, tool="delete_branch"),
-        decision_on(request, hash_=input_hash({"branch": "main"})),
+        decision_on(request, hash_=main),
         decision_on(request, role=Role.MEMBER),
     ):
         assert verdict(request, [stray], now, OWNERS)[0] is Verdict.PENDING
@@ -240,7 +253,9 @@ async def test_a_decision_counts_only_in_a_role_the_policy_lets_decide(setting: 
     agent, member = context(Role.SERVICE, org), context(Role.MEMBER, org)
     owner, admin = context(Role.OWNER, org), context(Role.ADMIN, org)
     workspace = Workspace.absent(org.id, new_id())
-    found = await put_call(tools.steps, agent, "push_branch", {"branch": "feature"}, "integration")
+    found = await put_call(
+        tools.manager, tools.steps, agent, "push_branch", {"branch": "feature"}, "integration"
+    )
 
     async def outcome() -> GateOutcome:
         gate = await tools.manager.gate(

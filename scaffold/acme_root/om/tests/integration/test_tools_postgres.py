@@ -4,7 +4,8 @@ real process in a directory of its own, and every manager over the
 relational root. The tenant's layer is stored, a person's approval lands in
 the history, the call's secret is audited by name in the event stream and
 redacted from its response, and an unsafe call a lost run left open is
-answered from the transport's record without running again."""
+answered from the transport's record without running again, a record that
+keeps what the command printed sealed under the session's key."""
 
 import sys
 from collections.abc import AsyncIterator
@@ -127,7 +128,13 @@ async def test_a_call_is_approved_run_audited_and_recovered_over_postgres(
     workspace = await tools.prepare_workspace(owner, session, HOST_SPEC)
     script = "import os; print('token', os.environ['API_TOKEN'])"
     found = await put_call(
-        steps, owner, "call_api", {"argv": [python, "-c", script]}, "execute", session_id=session
+        tools,
+        steps,
+        owner,
+        "call_api",
+        {"argv": [python, "-c", script]},
+        "execute",
+        session_id=session,
     )
     gate = await tools.gate(
         owner, registry, KIND_DEFAULTS, found.request, found.call_input, workspace
@@ -164,6 +171,7 @@ async def test_a_call_is_approved_run_audited_and_recovered_over_postgres(
     # An unsafe call whose command ended, and whose run was lost before its
     # response was written: the next run answers it from the record.
     deploy = await put_call(
+        tools,
         steps,
         owner,
         "deploy",
@@ -192,4 +200,7 @@ async def test_a_call_is_approved_run_audited_and_recovered_over_postgres(
         tree_deadline=None,
     )
     assert failure_of(settled) is None and "transport's record" in result_text(settled)
+    assert "done" in result_text(settled)
     assert (Path(workspace.location) / "deploys.log").read_text() == "deployed\n"
+    record = tmp_path / "workspaces" / ".records" / session.hex / f"{deploy.request.id}.json"
+    assert b"done" not in record.read_bytes(), "what it printed is sealed at rest"

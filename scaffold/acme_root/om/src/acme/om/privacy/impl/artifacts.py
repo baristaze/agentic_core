@@ -10,21 +10,14 @@ session that keeps no content at rest has its artifact sealed the same
 way, and held in the runtime's memory instead of the store, so revoking
 its key erases it there too."""
 
-import os
 from uuid import UUID
 
-from cryptography.exceptions import InvalidTag
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
 from acme.om.context import TenantContext
-from acme.om.privacy.impl.sealed_steps import NONCE_BYTES
+from acme.om.privacy.impl.blobs import VERSION_BYTES, blob_version, open_blob, seal_blob
 from acme.om.privacy.keys import SessionKeysInterface
 from acme.om.privacy.storage import PrivacyStorageInterface
 from acme.om.privacy.types.session_privacy import StorageMode
 from acme.om.windows.seal import ArtifactSealInterface, SealedArtifact
-
-VERSION_BYTES = 8
-"""The version of the key a blob was sealed under, at its head."""
 
 
 def bound_to(org_id: UUID, session_id: UUID, artifact_id: UUID, version: int) -> bytes:
@@ -50,30 +43,23 @@ class ArtifactSealKeysImpl(ArtifactSealInterface):
         record = await self._policies.read_privacy(ctx.org_id, session_id)
         at_rest = record is None or record.policy.mode is not StorageMode.MEMORY_ONLY
         current = await self._keys.current(ctx.org_id, session_id)
-        nonce = os.urandom(NONCE_BYTES)
-        bound = bound_to(ctx.org_id, session_id, artifact_id, current.version)
-        blob = (
-            current.version.to_bytes(VERSION_BYTES, "big")
-            + nonce
-            + AESGCM(current.key).encrypt(nonce, data, bound)
+        blob = seal_blob(
+            current, data, lambda version: bound_to(ctx.org_id, session_id, artifact_id, version)
         )
         return SealedArtifact(blob=blob, at_rest=at_rest)
 
     async def open(
         self, ctx: TenantContext, session_id: UUID, artifact_id: UUID, sealed: bytes
     ) -> bytes | None:
-        if len(sealed) <= VERSION_BYTES + NONCE_BYTES:
-            raise ValueError(f"artifact {artifact_id} holds no sealed blob")
-        version = int.from_bytes(sealed[:VERSION_BYTES], "big")
+        what = f"artifact {artifact_id}"
+        version = blob_version(sealed, what)
         keys = await self._keys.opened(ctx.org_id, session_id, {version})
         key = keys.get(version)
         if key is None:
             return None
-        nonce = sealed[VERSION_BYTES : VERSION_BYTES + NONCE_BYTES]
-        bound = bound_to(ctx.org_id, session_id, artifact_id, version)
-        try:
-            return AESGCM(key).decrypt(nonce, sealed[VERSION_BYTES + NONCE_BYTES :], bound)
-        except InvalidTag:
-            raise ValueError(
-                f"artifact {artifact_id} does not open under version {version} of its key"
-            ) from None
+        return open_blob(
+            key,
+            sealed,
+            lambda version: bound_to(ctx.org_id, session_id, artifact_id, version),
+            what,
+        )

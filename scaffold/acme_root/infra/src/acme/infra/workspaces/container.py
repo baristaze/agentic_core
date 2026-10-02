@@ -117,9 +117,12 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
     async def release(self, workspace: Workspace) -> None:
         await docker("rm", "-f", workspace.location, bound=self._timeout)
 
-    async def purge(self, workspace: Workspace) -> None:
-        await self.release(workspace)
-        await docker("volume", "rm", "-f", workspace.location, bound=self._timeout)
+    async def purge(self, org_id: UUID, workspace_id: UUID) -> None:
+        name = container_name(workspace_id)
+        for removal in (("rm", "-f", name), ("volume", "rm", "-f", name)):
+            removed = await docker(*removal, bound=self._timeout)
+            if not removed.ok:
+                raise BackendFailed("docker", " ".join(removal[:-2]), removed.reason())
 
     def describe(self) -> str:
         return f"workspaces=container({self._image})"
