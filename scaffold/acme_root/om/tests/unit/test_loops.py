@@ -578,7 +578,8 @@ async def test_a_session_holding_no_private_data_acts_outward_unattended(tmp_pat
     assert loop.tools["send"].ran_as == [loop.owner.user_id]
 
 
-# What a fresh review of the loop found, each held by a test.
+# Recovery before any park, a cut reply, attribution by delivery, a stale
+# run's release, an interrupt's reach, and a verdict kept as a step.
 
 
 def interrupt_of(loop: Loop, session_id: UUID, request: Step) -> Step:
