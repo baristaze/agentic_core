@@ -11,23 +11,22 @@ It is a sibling of the guideline's `arch-check`, in its shape.
 `arch-check` holds the guideline's lenses and `agentic-check` the
 engine's, and a project built on the engine's scaffold runs both in
 `make check`. It reads the project's source with `ast` and never
-imports it. It needs Python 3.11 or later and nothing else.
+imports it, and it needs nothing but the standard library.
 
 ## Running it
 
-A project pins the engine release it builds on:
+The scaffold carries the checker as its workspace member `checkers/`,
+so every copy carries it under the copy's name. `make setup` installs
+it, and `make agentic-check`, a step of `make check`, runs it in-tree:
 
 ```bash
-uvx --python 3.14 --from "git+https://github.com/baristaze/agentic_core@v0.1.0#subdirectory=checkers" agentic-check
+uv run --package acme-checkers agentic-check
 ```
 
-`--python` names the Python the project pins in `.python-version`. On
-an older one the checker exits 2, rather than misread newer syntax.
-From a checkout of this repository it runs without installing:
-
-```bash
-python3 checkers/agentic_check.py --root path/to/project
-```
+Nothing is fetched. The checker is the one of the engine release the
+project's base came from, and a base move brings the next. On a Python
+older than the one `.python-version` pins, it exits 2 rather than
+misread newer syntax.
 
 | Flag | Does |
 |------|------|
@@ -110,7 +109,7 @@ exception never outlives the code it excused.
 
 ## Adding a rule
 
-A rule is one function in `src/agentic_check/rules/<group>.py`,
+A rule is one function in `src/acme/agentic_check/rules/<group>.py`,
 registered with `@rule("<LENS-ID>", coverage=..., summary=...)`. The
 loader imports every module there, so there is nothing else to wire.
 The registration refuses an id no lens has, and the group and the
@@ -119,6 +118,8 @@ resolves a name to the module that defines it.
 
 A rule comes with tests in `tests/test_agentic_check_rules.py`: a tree
 that breaks it and the clean one, built with
-`tests/agentic_check_fixtures.py`. Its lens's Check line names the
-checker in the same change. Before it ships, it runs clean on the
-scaffold, which `tests/test_agentic_check_framework.py` holds.
+`tests/agentic_check_fixtures.py`. A rule is added in the engine,
+beside its lens, whose Check line names the checker in the same change.
+Before it ships, it runs clean on the scaffold, which the engine's
+`tests/test_agentic_check.py` holds. A copy takes it with its next base
+move.

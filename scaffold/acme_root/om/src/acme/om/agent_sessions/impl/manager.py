@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
 from uuid import UUID
@@ -36,6 +37,8 @@ from acme.om.work.types.work_item import (
     WorkKind,
     work_row_kind,
 )
+
+log = logging.getLogger(__name__)
 
 CREATED = "agent_sessions.agent_session.created"
 UPDATED = "agent_sessions.agent_session.updated"
@@ -333,12 +336,17 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         # The history first, then what other namespaces hold of the session,
         # then the row: a failure before the row leaves a claimed row, which
         # the next pass takes up again. The other order would leave steps, an
-        # authority, or a tree no session names, which no pass would find.
+        # authority, or a tree no session names, which no pass would find. A
+        # session whose holdings cannot go yet fails alone: it stays claimed,
+        # and every other session of the pass is purged.
         for org_id, session_id in await self._steps.purge_histories(claimed):
             root_id = roots[session_id]
-            alone = not await self._storage.tree_holds_others(org_id, root_id, session_id)
-            await self._purged(org_id, session_id, root_id if alone else None)
-            await self._storage.purge_session(org_id, session_id)
+            try:
+                alone = not await self._storage.tree_holds_others(org_id, root_id, session_id)
+                await self._purged(org_id, session_id, root_id if alone else None)
+                await self._storage.purge_session(org_id, session_id)
+            except Exception:
+                log.exception("agent session %s stays claimed: its purge failed", session_id)
         return len(found)
 
     async def purge_tenant(self, ctx: TenantContext) -> int:

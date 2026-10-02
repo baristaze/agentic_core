@@ -14,13 +14,14 @@ from acme.infra.transports import (
     CredentialBrokerInterface,
     FileEntry,
     OutputSink,
+    RecordSeal,
     TransportInterface,
     relative_path,
     require_mode,
 )
 from acme.infra.transports.injection import BASE_LANG, injected
 from acme.infra.transports.processes import drive, end_tree, spawn
-from acme.infra.transports.records import RecordBook
+from acme.infra.transports.records import RecordBook, opened_result, sealed_record
 from acme.infra.workspaces import IsolationMode, Workspace
 from acme.infra.workspaces.container import MOUNT
 
@@ -98,7 +99,12 @@ class TransportContainerImpl(TransportInterface):
         self._timeout = timeout
 
     async def run(
-        self, workspace: Workspace, command: CommandSpec, on_output: OutputSink | None = None
+        self,
+        workspace: Workspace,
+        command: CommandSpec,
+        on_output: OutputSink | None = None,
+        *,
+        seal: RecordSeal,
     ) -> CommandResult:
         name = self._container(workspace)
         await asyncio.to_thread(self._book.admit, workspace.id, command.epoch)
@@ -138,13 +144,20 @@ class TransportContainerImpl(TransportInterface):
                     truncated=driven.truncated,
                     secrets=injection.names,
                 )
-        await asyncio.to_thread(self._book.record, workspace.id, result)
+        record = await sealed_record(result, seal)
+        await asyncio.to_thread(self._book.record, workspace.id, record)
         return result
 
-    async def outcome(self, workspace: Workspace, key: UUID, epoch: int) -> CommandResult | None:
+    async def outcome(
+        self, workspace: Workspace, key: UUID, epoch: int, *, seal: RecordSeal
+    ) -> CommandResult | None:
         self._container(workspace)
         await asyncio.to_thread(self._book.admit, workspace.id, epoch)
-        return await asyncio.to_thread(self._book.read, workspace.id, key)
+        record = await asyncio.to_thread(self._book.read, workspace.id, key)
+        return None if record is None else await opened_result(record, seal)
+
+    async def purge_records(self, workspace_id: UUID) -> None:
+        await asyncio.to_thread(self._book.purge, workspace_id)
 
     async def read_file(self, workspace: Workspace, path: str, max_bytes: int) -> bytes:
         name = self._container(workspace)

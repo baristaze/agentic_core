@@ -15,26 +15,37 @@ import traceback
 from collections.abc import Sequence
 from pathlib import Path
 
-from agentic_check import __version__, registry, report
-from agentic_check.config import ConfigError, find_root, load
-from agentic_check.lenses import CORE
-from agentic_check.model import GROUPS
-from agentic_check.project import Project
-from agentic_check.runner import ERROR as RULE_ERROR
-from agentic_check.runner import run
+from acme.agentic_check import __version__, registry, report
+from acme.agentic_check.config import ConfigError, find_root, load
+from acme.agentic_check.lenses import CORE
+from acme.agentic_check.model import GROUPS
+from acme.agentic_check.project import Project
+from acme.agentic_check.runner import ERROR as RULE_ERROR
+from acme.agentic_check.runner import run
 
 CLEAN, FINDINGS, ERROR = 0, 1, 2
 
 
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="agentic-check", description="Static checks for the lenses of the agentic_core spec.", allow_abbrev=False
+        prog="agentic-check",
+        description="Static checks for the lenses of the agentic_core spec.",
+        allow_abbrev=False,
     )
-    p.add_argument("paths", nargs="*", help="report findings only under these paths (the whole project is read)")
-    p.add_argument("--root", help="repository root (default: nearest directory whose pyproject.toml has [tool.agentic-check])")
+    p.add_argument(
+        "paths",
+        nargs="*",
+        help="report findings only under these paths (the whole project is read)",
+    )
+    p.add_argument(
+        "--root",
+        help="repository root (default: nearest directory whose pyproject.toml has [tool.agentic-check])",
+    )
     p.add_argument("--group", help="only the rules of these lens groups, comma-separated")
     p.add_argument("--rule", help="only these rules, comma-separated lens ids")
-    p.add_argument("--format", choices=("text", "json"), default="text", help="report format (default: text)")
+    p.add_argument(
+        "--format", choices=("text", "json"), default="text", help="report format (default: text)"
+    )
     p.add_argument("--list", action="store_true", help="print every rule and exit")
     p.add_argument("--version", action="version", version=f"agentic-check {__version__}")
     return p
@@ -49,7 +60,11 @@ def pinned_python(root: Path) -> tuple[int, int] | None:
     path = root / ".python-version"
     if not path.is_file():
         return None
-    lines = [s for s in path.read_text(encoding="utf-8", errors="replace").splitlines() if s.strip() and not s.startswith("#")]
+    lines = [
+        s
+        for s in path.read_text(encoding="utf-8", errors="replace").splitlines()
+        if s.strip() and not s.startswith("#")
+    ]
     m = re.match(r"\s*(\d+)\.(\d+)", lines[0]) if lines else None
     return (int(m.group(1)), int(m.group(2))) if m else None
 
@@ -72,12 +87,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     groups = split(args.group)
     unknown_groups = [g for g in groups if g not in GROUPS]
     if unknown_groups:
-        return error(f"unknown group(s) {', '.join(unknown_groups)}; groups are {', '.join(GROUPS)}")
+        return error(
+            f"unknown group(s) {', '.join(unknown_groups)}; groups are {', '.join(GROUPS)}"
+        )
     ids = split(args.rule)
     unknown_ids = [i for i in ids if i not in known]
     if unknown_ids:
-        return error(f"unknown rule(s) {', '.join(unknown_ids)}; `agentic-check --list` prints them")
-    selected = [r for r in everything if (not groups or r.group in groups) and (not ids or r.id in ids)]
+        return error(
+            f"unknown rule(s) {', '.join(unknown_ids)}; `agentic-check --list` prints them"
+        )
+    selected = [
+        r for r in everything if (not groups or r.group in groups) and (not ids or r.id in ids)
+    ]
 
     if args.list:
         print(report.listing(selected))
@@ -98,7 +119,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             return error(f"[tool.agentic-check.options] names unknown rule {name}")
         unknown_keys = sorted(set(entries) - declared[name])
         if unknown_keys:
-            return error(f"[tool.agentic-check.options.{name}]: unknown key(s) {', '.join(unknown_keys)}")
+            return error(
+                f"[tool.agentic-check.options.{name}]: unknown key(s) {', '.join(unknown_keys)}"
+            )
     disabled = {d.rule for d in config.disabled}
     selected = [r for r in selected if r.id not in disabled]
     if not selected:
@@ -128,14 +151,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     # package no file is in, and finds nothing. That is an error, not a pass.
     if not project.modules_under(config.package):
         found = sorted({f.module.split(".")[0] for f in project.python_files})
-        return error(f"no module is under the package {config.package!r}; the source roots hold {', '.join(found)}")
+        return error(
+            f"no module is under the package {config.package!r}; the source roots hold {', '.join(found)}"
+        )
     try:
         result = run(project, selected, [p for p in paths if p != "."])
     except ConfigError as e:
         return error(str(e))
     except Exception:
         traceback.print_exc()
-        return error("agentic-check failed outside any rule; this is a bug in agentic-check, not in the project")
+        return error(
+            "agentic-check failed outside any rule; this is a bug in agentic-check, not in the project"
+        )
     print(report.json(result) if args.format == "json" else report.text(result))
     failed = [f for f in result.findings if f.rule == RULE_ERROR]
     if failed:

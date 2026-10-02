@@ -5,7 +5,7 @@ read: the tool contract and one tool, the steps table and its purge,
 the fills and the price table, a manager over an injected gate, a
 memory storage impl, and a root. Every rule passes on it. Each test
 adds, overrides, or drops the files its rule reads. `check` runs
-`agentic_check.cli.main` on the tree and returns the exit status and
+`acme.agentic_check.cli.main` on the tree and returns the exit status and
 what it printed.
 """
 
@@ -18,7 +18,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from agentic_check.cli import main
+from acme.agentic_check.cli import main
 
 PYPROJECT = '[tool.agentic-check]\npackage = "acme"\n'
 ADR = "docs/adr/2001-the-import-job-builds-its-tools-with-no-gate.md"
@@ -39,7 +39,8 @@ BASE: dict[str, str] = {
     f"{OM}/tools/__init__.py": "from .tool import ToolInterface as ToolInterface\n",
     f"{OM}/tools/types/__init__.py": "",
     f"{OM}/tools/types/tool.py": (
-        "from datetime import timedelta\nfrom enum import StrEnum\n\nfrom acme.om.base import Platform\n\n\n"
+        "from datetime import timedelta\nfrom enum import StrEnum\n\n"
+        "from acme.om.base import Platform\n\n\n"
         'class Effect(StrEnum):\n    READ_ONLY = "read_only"\n\n\n'
         'class ToolMode(StrEnum):\n    SYNC = "sync"\n\n\n'
         "class ToolInput(Platform):\n    pass\n\n\n"
@@ -53,7 +54,8 @@ BASE: dict[str, str] = {
         "class JobToolInterface(ToolInterface):\n    pass\n"
     ),
     TOOL: (
-        "from datetime import timedelta\n\nfrom acme.om.base import Platform\nfrom acme.om.tools import ToolInterface\n"
+        "from datetime import timedelta\n\n"
+        "from acme.om.base import Platform\nfrom acme.om.tools import ToolInterface\n"
         "from acme.om.tools.types.tool import Effect, ToolInput, ToolMode, ToolSpec\n\n\n"
         "class EchoInput(ToolInput):\n    text: str\n\n\n"
         "class EchoOutput(Platform):\n    text: str\n\n\n"
@@ -61,12 +63,15 @@ BASE: dict[str, str] = {
         "    @property\n    def spec(self) -> ToolSpec:\n        return ToolSpec(\n"
         '            name="echo",\n            input_model=EchoInput,\n            output_model=EchoOutput,\n'
         '            timeout=timedelta(seconds=5),\n            authorization_class="read",\n'
-        "            effect=Effect.READ_ONLY,\n            interruptible=False,\n            mode=ToolMode.SYNC,\n        )\n"
+        "            effect=Effect.READ_ONLY,\n            interruptible=False,\n"
+        "            mode=ToolMode.SYNC,\n        )\n"
     ),
     # the history: its table, a step type, and a storage that appends and purges
     f"{OM}/steps/__init__.py": "",
     f"{OM}/steps/types/__init__.py": "",
-    f"{OM}/steps/types/step.py": "from acme.om.base import Platform\n\n\nclass Step(Platform):\n    seq: int\n    text: str\n",
+    f"{OM}/steps/types/step.py": (
+        "from acme.om.base import Platform\n\n\nclass Step(Platform):\n    seq: int\n    text: str\n"
+    ),
     f"{OM}/steps/storage/__init__.py": "",
     f"{OM}/steps/storage/tables/__init__.py": "",
     f"{OM}/steps/storage/tables/steps.py": (
@@ -91,19 +96,23 @@ BASE: dict[str, str] = {
     f"{OM}/models/impl/resolver.py": 'FILLS = [dict(provider="anthropic", model="claude-x")]\n',
     f"{OM}/budgets/__init__.py": "",
     f"{OM}/budgets/impl/__init__.py": "",
-    f"{OM}/budgets/impl/pricing.py": 'def row(model: str) -> dict:\n    return {"model": model}\n\n\nROWS = [row("claude-x")]\n',
+    f"{OM}/budgets/impl/pricing.py": (
+        'def row(model: str) -> dict:\n    return {"model": model}\n\n\nROWS = [row("claude-x")]\n'
+    ),
     # a manager over an injected gate, a memory storage, and the root that wires a null gate
     f"{OM}/budgets/gate.py": "from abc import ABC\n\n\nclass BudgetGateInterface(ABC):\n    pass\n",
     MANAGER: (
         "from acme.om.budgets.gate import BudgetGateInterface\n\n\n"
-        "class BudgetsManagerImpl:\n    def __init__(self, gate: BudgetGateInterface) -> None:\n        self._gate = gate\n\n"
+        "class BudgetsManagerImpl:\n"
+        "    def __init__(self, gate: BudgetGateInterface) -> None:\n        self._gate = gate\n\n"
         "    async def charge(self, fill) -> None:\n        await self.call(model=fill.model)\n"
     ),
     f"{OM}/budgets/storage/__init__.py": "",
     f"{OM}/budgets/storage/impl/__init__.py": "",
     f"{OM}/budgets/storage/impl/memory.py": (
         "class OutboxLandingInterface:\n    pass\n\n\n"
-        "class BudgetStorageMemoryImpl:\n    def __init__(self, outbox: OutboxLandingInterface | None = None) -> None:\n"
+        "class BudgetStorageMemoryImpl:\n"
+        "    def __init__(self, outbox: OutboxLandingInterface | None = None) -> None:\n"
         "        self._outbox = outbox\n"
     ),
     f"{OM}/root.py": (
@@ -112,7 +121,9 @@ BASE: dict[str, str] = {
     ),
     # a module outside the tools that may start a process
     "infra/src/acme/infra/__init__.py": "",
-    "infra/src/acme/infra/docker.py": "import subprocess\n\n\ndef run() -> None:\n    subprocess.run(['true'])\n",
+    "infra/src/acme/infra/docker.py": (
+        "import subprocess\n\n\ndef run() -> None:\n    subprocess.run(['true'])\n"
+    ),
     ADR: (
         "# 2001. The import job builds its tools with no gate\n\nDate: 2026-10-02\n\n"
         "## Context\n\nAn old job.\n\n## Decision\n\nA default.\n"
@@ -127,7 +138,9 @@ def write(root: Path, rel: str, text: str) -> Path:
     return path
 
 
-def write_project(root: Path, files: Mapping[str, str | None] | None = None, *, pyproject: str | None = PYPROJECT) -> Path:
+def write_project(
+    root: Path, files: Mapping[str, str | None] | None = None, *, pyproject: str | None = PYPROJECT
+) -> Path:
     """Write the base tree under `root`, then `files` over it; a `None` text drops a base file."""
     if pyproject is not None:
         write(root, "pyproject.toml", pyproject)

@@ -1,6 +1,6 @@
 """The rule registry: one registration per rule, keyed by its lens id.
 
-A rule module under `agentic_check.rules` registers each rule with the
+A rule module under `acme.agentic_check.rules` registers each rule with the
 `rule` decorator. `rules()` imports every module of that package, so a
 rule is one new function in its group's module and nothing else to wire.
 """
@@ -12,8 +12,8 @@ import pkgutil
 import re
 from collections.abc import Callable, Sequence
 
-from agentic_check.lenses import LENSES
-from agentic_check.model import COVERAGES, GROUPS, Check, Coverage, Rule
+from acme.agentic_check.lenses import LENSES
+from acme.agentic_check.model import COVERAGES, GROUPS, Check, Coverage, Rule
 
 RULES: dict[str, Rule] = {}
 """The registered rules, by id."""
@@ -26,7 +26,9 @@ class RegistryError(Exception):
     """A registration that contradicts the lens catalog: a bug in a rule module."""
 
 
-def make(id: str, check: Check, *, coverage: Coverage, summary: str, options: Sequence[str] = ()) -> Rule:
+def make(
+    id: str, check: Check, *, coverage: Coverage, summary: str, options: Sequence[str] = ()
+) -> Rule:
     """A rule checked against the catalog: the lens exists, and the group and the severity are the lens's."""
     m = ID.match(id)
     if not m:
@@ -59,7 +61,9 @@ def register(new: Rule) -> Rule:
     return new
 
 
-def rule(id: str, *, coverage: Coverage, summary: str, options: Sequence[str] = ()) -> Callable[[Check], Check]:
+def rule(
+    id: str, *, coverage: Coverage, summary: str, options: Sequence[str] = ()
+) -> Callable[[Check], Check]:
     """Register the decorated function as the rule that decides lens `id`.
 
     `coverage` is `full` when the rule decides the whole lens and
@@ -77,10 +81,10 @@ def rule(id: str, *, coverage: Coverage, summary: str, options: Sequence[str] = 
 
 def load() -> None:
     """Import every rule module, which registers its rules; modules starting with `_` are skipped."""
-    package = importlib.import_module("agentic_check.rules")
+    package = importlib.import_module("acme.agentic_check.rules")
     for info in pkgutil.iter_modules(package.__path__):
         if not info.name.startswith("_"):
-            importlib.import_module(f"agentic_check.rules.{info.name}")
+            importlib.import_module(f"acme.agentic_check.rules.{info.name}")
 
 
 def order(r: Rule) -> tuple[int, str]:

@@ -287,7 +287,9 @@ async def test_an_mcp_call_goes_through_the_adopters_client_with_the_typed_input
 
     registry = registry_of(McpToolImpl(DEFINITION, binding(), call))
     workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
-    found = await put_call(tools.steps, ctx, "close_issue", {"number": 7}, "integration")
+    found = await put_call(
+        tools.manager, tools.steps, ctx, "close_issue", {"number": 7}, "integration"
+    )
     response = await tools.manager.execute(
         ctx,
         registry,
@@ -354,7 +356,7 @@ async def test_a_job_starts_by_a_deadline_no_later_than_the_trees(tmp_path: Path
     reindex = Reindex()
     registry = registry_of(reindex)
     workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
-    found = await put_call(tools.steps, ctx, "reindex", {"shards": 3}, "execute")
+    found = await put_call(tools.manager, tools.steps, ctx, "reindex", {"shards": 3}, "execute")
     tree_deadline = tools.clock.now + timedelta(hours=1)
     job = await tools.manager.start_job(
         ctx,
@@ -398,7 +400,9 @@ async def test_a_job_that_will_not_start_is_answered_with_its_failure(tmp_path: 
     ctx = context(Role.SERVICE, make_org())
     registry = registry_of(Reindex())
     workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
-    found = await put_call(tools.steps, ctx, "reindex", {"shards": "many"}, "execute")
+    found = await put_call(
+        tools.manager, tools.steps, ctx, "reindex", {"shards": "many"}, "execute"
+    )
     answered = await tools.manager.start_job(
         ctx,
         registry,

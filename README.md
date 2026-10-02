@@ -20,8 +20,9 @@ that tells the story, and tools that hold the detail.
   engine's parts. They follow the [Agent
   Skills](https://agentskills.io/specification) standard.
 - **`scaffold/`**: the engine's domain-free core, built on the
-  guideline's scaffold. A platform renders it under its own name.
-- **`checkers/`**: a checker for the lenses a program can decide.
+  guideline's scaffold. A platform renders it under its own name. It
+  carries `checkers/`, the checker for the lenses a program can decide,
+  so every copy runs it.
 
 [The Repository](agentic_core_spec.md#the-repository) in the spec says
 what each part holds. A part's folder appears with the change that

@@ -16,8 +16,11 @@ MARKDOWNLINT := $(NPX) markdownlint-cli2@$(call npm_pin,markdownlint-cli2)
 # ruff and mypy run at pinned versions through uvx; pyproject.toml holds their configuration
 RUFF := uvx ruff@$(call pin,ruff)
 MYPY := uvx --with pytest==$(call pin,pytest) mypy@$(call pin,mypy)
+# The engine's static checker lives in the scaffold, so every copy
+# carries it; its tests run here too, from the same source.
+CHECKER := scaffold/acme_root/checkers
 
-.PHONY: help check lint ruff mypy lenses links toc version skills agents test plugin checkers-dist gen-skills gen-skills-check gen-toc clean
+.PHONY: help check lint ruff mypy lenses links toc version skills agents test plugin gen-skills gen-skills-check gen-toc clean
 
 help:              ## show targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -27,11 +30,11 @@ check: lint ruff mypy lenses links toc version gen-skills-check skills agents te
 lint:              ## markdownlint over every Markdown file
 	$(MARKDOWNLINT) "**/*.md" "#node_modules"
 
-ruff:              ## lint and format check of scripts/, checkers/, and tests/
+ruff:              ## lint and format check of scripts/, tests/, and the scaffold, which its own ruff.toml configures
 	$(RUFF) check
 	$(RUFF) format --check
 
-mypy:              ## type check of scripts/, checkers/src/, and tests/
+mypy:              ## type check of scripts/ and tests/
 	$(MYPY)
 
 lenses:            ## every lens follows the format and cites a real section of the spec
@@ -52,8 +55,8 @@ skills:            ## every skill, the scaffold's included, has valid frontmatte
 agents:            ## every subagent under agents/ has valid frontmatter and caps its turns; the reviewer mirrors the review template
 	$(PYTHON) scripts/check_agents.py
 
-test:              ## the checkers and generators pass their own tests (pytest through uv, pinned)
-	$(PYTEST) tests -q
+test:              ## the scripts and the scaffold's agentic-check pass their own tests (pytest through uv, pinned)
+	$(PYTEST) tests $(CHECKER)/tests -q
 
 plugin:            ## validate the plugin, marketplace, skills, and agents with Claude Code (skipped when claude is not installed)
 	@if command -v claude >/dev/null 2>&1; then \
@@ -61,11 +64,6 @@ plugin:            ## validate the plugin, marketplace, skills, and agents with 
 	  && for dir in skills agents; do if [ -d "$$dir" ]; then claude plugin validate "$$dir" --strict || exit 1; fi; done \
 	  && $(PYTHON) scripts/check_plugin.py; \
 	else echo "plugin: claude not installed, skipped"; fi
-
-checkers-dist:     ## build the agentic-check wheel and run the agentic-check entry point from it
-	@dist=$$(mktemp -d) && trap 'rm -rf "$$dist"' EXIT \
-	  && uv build --quiet checkers --wheel --out-dir "$$dist" \
-	  && uvx --isolated --from "$$(ls "$$dist"/*.whl)" agentic-check --version
 
 gen-skills:        ## regenerate the review skills from the template and the lens files
 	$(PYTHON) scripts/gen_skills.py

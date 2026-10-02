@@ -23,6 +23,7 @@ from contracts.tools import (
 )
 
 from acme.infra.transports import StaleCommand
+from acme.infra.transports.twin import RecordSealTwin
 from acme.om.base import new_id
 from acme.om.context import Role
 from acme.om.exceptions import StaleWriter
@@ -41,7 +42,9 @@ async def test_a_repeatable_call_runs_again_under_the_same_key(
     ctx = context(Role.SERVICE, make_org())
     registry = registry_of(Command(effect=effect))
     workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
-    found = await put_call(tools.steps, ctx, "run_command", {"argv": ["make", "test"]}, "execute")
+    found = await put_call(
+        tools.manager, tools.steps, ctx, "run_command", {"argv": ["make", "test"]}, "execute"
+    )
     # The lost run's command ran; its response never reached the history.
     await tools.manager.execute(
         ctx,
@@ -68,7 +71,9 @@ async def test_an_unsafe_call_is_answered_from_the_transports_record(tmp_path: P
     ctx = context(Role.SERVICE, make_org())
     registry = registry_of(Command("deploy", effect=Effect.UNSAFE))
     workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
-    found = await put_call(tools.steps, ctx, "deploy", {"argv": ["deploy", "staging"]}, "execute")
+    found = await put_call(
+        tools.manager, tools.steps, ctx, "deploy", {"argv": ["deploy", "staging"]}, "execute"
+    )
     await tools.manager.execute(
         ctx,
         registry,
@@ -100,7 +105,7 @@ async def test_an_unsafe_call_with_no_record_is_interrupted_and_never_repeated(
         ("deploy", {"argv": ["deploy", "staging"]}, "execute"),
         ("push_branch", {"branch": "feature"}, "integration"),
     ):
-        found = await put_call(tools.steps, ctx, tool, call_input, cls)
+        found = await put_call(tools.manager, tools.steps, ctx, tool, call_input, cls)
         later = await tools.steps.begin_run(ctx, found.session_id)
         settled = await tools.manager.recover(
             ctx,
@@ -125,7 +130,9 @@ async def test_recovering_an_unsafe_call_fences_the_lost_runs_command(tmp_path: 
     ctx = context(Role.SERVICE, make_org())
     registry = registry_of(Command("deploy", effect=Effect.UNSAFE))
     workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
-    found = await put_call(tools.steps, ctx, "deploy", {"argv": ["deploy", "staging"]}, "execute")
+    found = await put_call(
+        tools.manager, tools.steps, ctx, "deploy", {"argv": ["deploy", "staging"]}, "execute"
+    )
     later = await tools.steps.begin_run(ctx, found.session_id)
     settled = await tools.manager.recover(
         ctx, registry, found.request, found.call_input, workspace, epoch=later, tree_deadline=None
@@ -143,7 +150,9 @@ async def test_recovering_an_unsafe_call_fences_the_lost_runs_command(tmp_path: 
         )
     assert transport.commands == []
     with pytest.raises(StaleCommand):
-        await transport.outcome(workspace, found.request.id, found.epoch)
+        await transport.outcome(
+            workspace, found.request.id, found.epoch, seal=RecordSealTwin().seal
+        )
 
 
 def test_the_engine_retries_only_a_transient_failure_of_a_repeatable_tool() -> None:
