@@ -34,14 +34,18 @@ TABLE_ROLES: dict[str, DatabaseRole] = {
     "step_cursors": DatabaseRole.ACTIVITY,
     "session_privacy": DatabaseRole.CORE,
     "session_keys": DatabaseRole.CORE,
+    "budgets": DatabaseRole.CORE,
+    "budget_tallies": DatabaseRole.ACTIVITY,
+    "budget_holds": DatabaseRole.ACTIVITY,
+    "budget_settlements": DatabaseRole.ACTIVITY,
     "fill_sets": DatabaseRole.CORE,
 }
 
-APPEND_ONLY_TABLES: frozenset[str] = frozenset({"steps"})
+APPEND_ONLY_TABLES: frozenset[str] = frozenset({"steps", "budget_holds", "budget_settlements"})
 """Tables whose rows are written once: the serving logins hold SELECT and
 INSERT on them and never UPDATE or DELETE. The migration that creates one
 takes the two back from the role's default privileges, and the login command
-takes them back again after each grant it makes (ADR 1002)."""
+takes them back again after each grant it makes (ADR 1002, ADR 1006)."""
 
 DROPPED_TABLE_ROLES: dict[str, DatabaseRole] = {}
 """Tables the migration chain made and later dropped. No process reaches

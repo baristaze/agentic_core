@@ -109,6 +109,10 @@ TABLE_SCOPES: dict[str, TableScope] = {
     "step_cursors": TableScope(ScopeKind.ORG),
     "session_privacy": TableScope(ScopeKind.ORG),
     "session_keys": TableScope(ScopeKind.ORG),
+    "budgets": TableScope(ScopeKind.ORG),
+    "budget_tallies": TableScope(ScopeKind.ORG),
+    "budget_holds": TableScope(ScopeKind.ORG),
+    "budget_settlements": TableScope(ScopeKind.ORG),
     "fill_sets": TableScope(ScopeKind.ORG),
     # A tenant's rows that also belong to one person in it. A user's person
     # is the identity behind it, so it narrows on `app.identity_id`; every

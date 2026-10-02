@@ -299,6 +299,16 @@ class PolicyFixed(PrivacyException, Conflict):
     code = "policy_fixed"
 
 
+class BudgetsException(PlatformException): ...
+
+
+class SpenderUnknown(BudgetsException, NotAuthorized):
+    """A call or a job whose payer the engine cannot tell. The gate fails
+    closed for spend: nothing is held and nothing is spent."""
+
+    code = "spender_unknown"
+
+
 class ModelsException(PlatformException): ...
 
 
