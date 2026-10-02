@@ -15,6 +15,7 @@ from acme.integrations.model_providers.content import (
     ReplyBlock,
     TextBlock,
     ThinkingBlock,
+    in_turn_order,
 )
 from acme.integrations.model_providers.types import Dropped, Effort, StopReason, Usage
 
@@ -77,7 +78,9 @@ class ModelReply(InfraModel):
     """A response, whole, as the engine records it: its main blocks, its
     thinking, why it stopped, and what it used. A reply cut by its output
     bound, or by a broken stream, is `truncated` and never complete; a reply
-    with no stop reason is one the stream never finished."""
+    with no stop reason is one the stream never finished. Each thinking
+    block names its place among the blocks (`at`), so `turn()` is the turn
+    as the provider sent it."""
 
     blocks: tuple[ReplyBlock, ...] = ()
     thinking: tuple[ThinkingBlock, ...] = ()
@@ -87,6 +90,11 @@ class ModelReply(InfraModel):
     model: str = Field(min_length=1, max_length=MAX_NAME)  # as the provider named it
     response_id: str | None = Field(default=None, max_length=MAX_NAME)
     dropped: tuple[Dropped, ...] = ()
+
+    def turn(self) -> tuple[Block, ...]:
+        """The reply's thinking and blocks in the order the provider sent
+        them, as an assistant turn replays them."""
+        return in_turn_order((*self.thinking, *self.blocks))
 
     @model_validator(mode="after")
     def _never_assumed_whole(self) -> Self:

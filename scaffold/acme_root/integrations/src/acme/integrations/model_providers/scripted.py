@@ -24,7 +24,7 @@ from acme.integrations.model_providers.calls import (
     ThinkingDelta,
     ToolUseDelta,
 )
-from acme.integrations.model_providers.content import TextBlock
+from acme.integrations.model_providers.content import TextBlock, ThinkingBlock, ToolUseBlock
 from acme.integrations.model_providers.failures import ModelCallFailed
 from acme.integrations.model_providers.types import ErrorKind, ProviderName
 
@@ -49,17 +49,16 @@ def _chunks(text: str) -> list[str]:
 
 
 def parts_of(reply: ModelReply) -> list[StreamPart]:
-    """The parts a provider would stream for `reply`: its thinking, then its
-    blocks, each in pieces, indexed in that order. The last `Finished` is
-    the caller's to add."""
+    """The parts a provider would stream for `reply`: its turn in order,
+    each block in pieces, indexed by its place in the turn. The last
+    `Finished` is the caller's to add."""
     parts: list[StreamPart] = []
-    for index, thought in enumerate(reply.thinking):
-        parts.extend(ThinkingDelta(index=index, text=piece) for piece in _chunks(thought.text))
-    for offset, block in enumerate(reply.blocks):
-        index = len(reply.thinking) + offset
-        if isinstance(block, TextBlock):
+    for index, block in enumerate(reply.turn()):
+        if isinstance(block, ThinkingBlock):
+            parts.extend(ThinkingDelta(index=index, text=piece) for piece in _chunks(block.text))
+        elif isinstance(block, TextBlock):
             parts.extend(TextDelta(index=index, text=piece) for piece in _chunks(block.text))
-        else:
+        elif isinstance(block, ToolUseBlock):
             text = json.dumps(thaw_mapping(block.input), separators=(",", ":"), sort_keys=True)
             parts.append(ToolUseDelta(index=index, id=block.id, name=block.name))
             parts.extend(

@@ -21,6 +21,7 @@ from pydantic import Field, model_validator
 
 from acme.om.base import Created, Identifiable
 from acme.om.steps.types.content import (
+    Block,
     Children,
     Content,
     DocumentBlock,
@@ -28,6 +29,7 @@ from acme.om.steps.types.content import (
     TextBlock,
     ToolResultBlock,
     ToolUseBlock,
+    in_turn_order,
 )
 from acme.om.steps.types.header import InputHeader, StepHeader
 
@@ -222,6 +224,13 @@ class Step(Identifiable, Created):
         """A model response's tool calls, in the order the model made them."""
         self._require(StepType.MODEL_RESPONSE)
         return tuple(block for block in self.content.blocks if isinstance(block, ToolUseBlock))
+
+    def as_turn(self) -> tuple[Block, ...]:
+        """A model response's thinking and blocks in the order its provider
+        sent them, each thinking block at the place it keeps (`at`): the
+        turn as the next request replays it."""
+        self._require(StepType.MODEL_RESPONSE)
+        return in_turn_order((*self.children.thinking, *self.content.blocks))
 
     def as_tool_response(self) -> ToolResultBlock:
         """A tool response's one result."""
