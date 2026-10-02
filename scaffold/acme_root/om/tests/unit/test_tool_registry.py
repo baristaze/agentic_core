@@ -8,6 +8,7 @@ outlives the run, by a deadline never later than the tree's."""
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import pytest
 from contracts.doubles import context
@@ -172,7 +173,7 @@ def binding(**changes: Any) -> McpBinding:
 async def test_an_mcp_tool_takes_its_class_and_effect_from_the_binding_never_the_server() -> None:
     calls: list[tuple[str, str, dict[str, Any]]] = []
 
-    async def call(ctx: TenantContext, server: str, tool: str, call_input: Any) -> str:
+    async def call(ctx: TenantContext, server: str, tool: str, call_input: Any, key: UUID) -> str:
         calls.append((server, tool, dict(call_input)))
         return "closed"
 
@@ -187,7 +188,7 @@ async def test_an_mcp_tool_takes_its_class_and_effect_from_the_binding_never_the
 
 
 async def test_a_changed_definition_is_not_served_until_its_pin_moves() -> None:
-    async def call(ctx: TenantContext, server: str, tool: str, call_input: Any) -> str:
+    async def call(ctx: TenantContext, server: str, tool: str, call_input: Any, key: UUID) -> str:
         raise AssertionError("not served")
 
     for changed in (
@@ -210,8 +211,8 @@ async def test_an_mcp_call_goes_through_the_adopters_client_with_the_typed_input
     ctx = context(Role.SERVICE, make_org())
     seen: list[Any] = []
 
-    async def call(ctx: TenantContext, server: str, tool: str, call_input: Any) -> str:
-        seen.append((server, tool, call_input))
+    async def call(ctx: TenantContext, server: str, tool: str, call_input: Any, key: UUID) -> str:
+        seen.append((server, tool, call_input, key))
         return "closed #7"
 
     registry = registry_of(McpToolImpl(DEFINITION, binding(), call))
@@ -227,7 +228,8 @@ async def test_an_mcp_call_goes_through_the_adopters_client_with_the_typed_input
         tree_deadline=None,
     )
     assert failure_of(response) is None and "closed #7" in response.model_dump_json()
-    assert seen == [("tracker", "close_issue", {"number": 7})]
+    # The call's key reaches the server, so a repeat after a crash closes once.
+    assert seen == [("tracker", "close_issue", {"number": 7}, found.request.id)]
 
 
 # Jobs.
@@ -239,7 +241,7 @@ class ReindexInput(ToolInput):
 
 class Reindex(JobToolInterface):
     def __init__(self) -> None:
-        self.started: dict[str, Any] = {}
+        self.started: dict[UUID, str] = {}  # each job's handle, by the key it started under
         self.cancelled: list[JobHandle] = []
 
     @property
@@ -268,9 +270,8 @@ class Reindex(JobToolInterface):
         self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
     ) -> Platform:
         # Started under the call's key: starting it again attaches.
-        handle = self.started.setdefault("job-1", runtime.deadline)
-        assert handle == runtime.deadline
-        return JobStarted(handle="job-1")
+        handle = self.started.setdefault(runtime.key, f"job-{len(self.started) + 1}")
+        return JobStarted(handle=handle)
 
     async def cancel(self, ctx: TenantContext, job: JobHandle) -> None:
         self.cancelled.append(job)
@@ -306,6 +307,7 @@ async def test_a_job_starts_by_a_deadline_no_later_than_the_trees(tmp_path: Path
         tree_deadline=tree_deadline,
     )
     assert again == job, "a recovered run attaches to the job it started"
+    assert reindex.started == {found.request.id: "job-1"}
     await tools.manager.cancel_job(ctx, registry, job)
     assert reindex.cancelled == [job]
     with pytest.raises(ValidationFailed, match="job"):
