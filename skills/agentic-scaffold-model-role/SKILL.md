@@ -62,9 +62,14 @@ The shape is the rows of `MAIN` and `SUMMARIZER`.
    or the resolver refuses it. A missing row is read from the
    provider's published price list, the page `LIST_PRICES` cites for
    that provider, on the day `date +%F` gives, with the provider's
-   helper in that file, or a helper of its own in their shape for a
-   provider that has none. A row's `as_of` is the day it was read, and a
-   new reading is a new version of the table.
+   helper in that file. A model the page does not list, or a provider
+   with no page cited there, stops the run, naming the missing price: a
+   price is never estimated, since a guess under-reserves the gate's
+   hold. A row's `as_of` is the day it was read: the helper takes it as
+   an argument that defaults to `READ`, the new row passes today's, and
+   the rows read before keep theirs. The table's next version is
+   today's date; when it already carries today's, it is that date with
+   `.2`, then `.3`.
 3. The tests, in `om/tests/unit/test_models.py`, hold: the role
    resolves from `DEFAULT_TABLE` to its fill and its fallbacks, in
    order, priced as `EVERY_DEFAULT` prices them; and the list table,
