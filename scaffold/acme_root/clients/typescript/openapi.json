@@ -27,6 +27,19 @@
         "title": "AccountDeletedView",
         "type": "object"
       },
+      "Actor": {
+        "description": "Who produced a step.",
+        "enum": [
+          "person",
+          "program",
+          "agent",
+          "model",
+          "engine",
+          "external"
+        ],
+        "title": "Actor",
+        "type": "string"
+      },
       "AddApiKeyRequest": {
         "additionalProperties": false,
         "properties": {
@@ -83,6 +96,76 @@
           "role"
         ],
         "title": "AddMemberRequest",
+        "type": "object"
+      },
+      "AgentSessionView": {
+        "description": "A session: its kind, its title, and its status, which follows its\nsteps. `pending` while an input waits for a run, `running` while a run\nholds its loop, `parked` while the loop waits, `idle` when no loop is\nopen.",
+        "properties": {
+          "archived_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "format": "uuid",
+            "title": "Created By",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "kind_version": {
+            "title": "Kind Version",
+            "type": "integer"
+          },
+          "park": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ParkView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/SessionStatus"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "kind",
+          "kind_version",
+          "status",
+          "park",
+          "created_at",
+          "created_by",
+          "archived_at"
+        ],
+        "title": "AgentSessionView",
         "type": "object"
       },
       "ApiKeyPageView": {
@@ -185,6 +268,34 @@
         "title": "ConfirmTotpRequest",
         "type": "object"
       },
+      "ControlCommand": {
+        "description": "What a `control` step records: a command that travels out of band.",
+        "enum": [
+          "pause",
+          "resume",
+          "cancel",
+          "interrupt",
+          "compact",
+          "approve",
+          "deny",
+          "unlock"
+        ],
+        "title": "ControlCommand",
+        "type": "string"
+      },
+      "ControlRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "$ref": "#/components/schemas/SessionControl"
+          }
+        },
+        "required": [
+          "command"
+        ],
+        "title": "ControlRequest",
+        "type": "object"
+      },
       "CreateOrgRequest": {
         "additionalProperties": false,
         "description": "An org with its owner, as `bootstrap` seeds one. The owner's identity\nis created with its personal org when the email is new; the owner signs\nin through the identity provider with the address.",
@@ -263,6 +374,27 @@
         ],
         "title": "CredentialKind",
         "type": "string"
+      },
+      "DecisionRequest": {
+        "additionalProperties": false,
+        "description": "A person's decision on the tool call at a seq. A denial's note is what\nthe model reads.",
+        "properties": {
+          "approve": {
+            "title": "Approve",
+            "type": "boolean"
+          },
+          "note": {
+            "default": "",
+            "maxLength": 100000,
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "approve"
+        ],
+        "title": "DecisionRequest",
+        "type": "object"
       },
       "DeleteAccountRequest": {
         "additionalProperties": false,
@@ -1066,6 +1198,18 @@
         "title": "LogoutRequest",
         "type": "object"
       },
+      "LoopOutcome": {
+        "description": "The five ways a loop ends. A park is none of them.",
+        "enum": [
+          "succeeded",
+          "failed",
+          "inconclusive",
+          "cancelled",
+          "errored"
+        ],
+        "title": "LoopOutcome",
+        "type": "string"
+      },
       "MeView": {
         "properties": {
           "app": {
@@ -1208,6 +1352,23 @@
           "teams"
         ],
         "title": "MembershipView",
+        "type": "object"
+      },
+      "MessageRequest": {
+        "additionalProperties": false,
+        "description": "A message to the session, said in the caller's name. It wakes an idle\nsession, and a running loop reads it at its next model request.",
+        "properties": {
+          "text": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "MessageRequest",
         "type": "object"
       },
       "MintOperatorTokenRequest": {
@@ -1564,6 +1725,20 @@
         "title": "OrgView",
         "type": "object"
       },
+      "Origin": {
+        "description": "Where a step came in.",
+        "enum": [
+          "portal",
+          "cli",
+          "api",
+          "integration",
+          "automation",
+          "parent",
+          "engine"
+        ],
+        "title": "Origin",
+        "type": "string"
+      },
       "OwnedOrgRef": {
         "description": "An org named in a refusal: enough to find it and to say which.",
         "properties": {
@@ -1587,6 +1762,52 @@
           "slug"
         ],
         "title": "OwnedOrgRef",
+        "type": "object"
+      },
+      "ParkReason": {
+        "description": "Why a loop waits, and so what clears it.",
+        "enum": [
+          "person",
+          "provider",
+          "budget",
+          "resource",
+          "job",
+          "children",
+          "handover",
+          "pause"
+        ],
+        "title": "ParkReason",
+        "type": "string"
+      },
+      "ParkView": {
+        "description": "Why a parked loop waits, what clears it, and when it tries again by\nitself; a park only a person clears has no time.",
+        "properties": {
+          "reason": {
+            "$ref": "#/components/schemas/ParkReason"
+          },
+          "retry_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry At"
+          },
+          "unlock": {
+            "title": "Unlock",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "unlock",
+          "retry_at"
+        ],
+        "title": "ParkView",
         "type": "object"
       },
       "Permission": {
@@ -1694,6 +1915,29 @@
         ],
         "title": "SecondFactorRequest",
         "type": "object"
+      },
+      "SessionControl": {
+        "description": "The controls a person sends a session out of band. A decision on one\ntool call is a route of its own.",
+        "enum": [
+          "pause",
+          "resume",
+          "cancel",
+          "interrupt",
+          "compact",
+          "unlock"
+        ],
+        "title": "SessionControl",
+        "type": "string"
+      },
+      "SessionStatus": {
+        "enum": [
+          "pending",
+          "running",
+          "parked",
+          "idle"
+        ],
+        "title": "SessionStatus",
+        "type": "string"
       },
       "SessionView": {
         "description": "Only the hash of a token is ever kept, so a session view carries no secret.",
@@ -1930,6 +2174,30 @@
         "title": "SsoLinkView",
         "type": "object"
       },
+      "StartSessionRequest": {
+        "additionalProperties": false,
+        "description": "A session to start on the latest version of a kind the product runs.",
+        "properties": {
+          "kind": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Kind",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title"
+        ],
+        "title": "StartSessionRequest",
+        "type": "object"
+      },
       "StartUploadRequest": {
         "additionalProperties": false,
         "description": "An upload to start: the file's name as the uploader had it, its type,\nand its size in bytes. The type must be one the purpose accepts and match\nthe name's extension; the size is the most the store will take.",
@@ -1959,6 +2227,207 @@
         ],
         "title": "StartUploadRequest",
         "type": "object"
+      },
+      "StepPageView": {
+        "description": "One page of a session's history, after the seq the request named.\nWith `has_more`, the next page starts after the last step's seq.",
+        "properties": {
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StepView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "title": "StepPageView",
+        "type": "object"
+      },
+      "StepType": {
+        "description": "What a step records. The type answers questions, so no caller\ncompares strings.",
+        "enum": [
+          "message",
+          "event",
+          "control",
+          "model_request",
+          "model_response",
+          "tool_request",
+          "tool_response",
+          "summary",
+          "parked",
+          "resumed",
+          "loop_ended",
+          "switched",
+          "environment_changed"
+        ],
+        "title": "StepType",
+        "type": "string"
+      },
+      "StepView": {
+        "description": "One step of a session's history, in its order. `text` is what it\nsays: a message's words, a model's answer, a tool's result. The rest is\nits header's, by type: the tools a model response called and why it\nstopped, a tool call's tool and the class of its failure, a control's\ncommand, a park, a loop's outcome.",
+        "properties": {
+          "actor": {
+            "$ref": "#/components/schemas/Actor"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ControlCommand"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "failure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolFailure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "loop_id": {
+            "format": "uuid",
+            "title": "Loop Id",
+            "type": "string"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/Origin"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LoopOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "park": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ParkView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "refs": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Refs",
+            "type": "array"
+          },
+          "responds_to": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responds To"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "stop_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StopReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tools",
+            "type": "array"
+          },
+          "type": {
+            "$ref": "#/components/schemas/StepType"
+          }
+        },
+        "required": [
+          "id",
+          "seq",
+          "loop_id",
+          "type",
+          "actor",
+          "origin",
+          "responds_to",
+          "refs",
+          "created_at",
+          "text",
+          "tools",
+          "stop_reason",
+          "tool",
+          "failure",
+          "command",
+          "park",
+          "outcome"
+        ],
+        "title": "StepView",
+        "type": "object"
+      },
+      "StopReason": {
+        "description": "Why a response stopped. A model's refusal is a response its agent kind\nhandles, never a provider error.",
+        "enum": [
+          "end_turn",
+          "tool_use",
+          "output_limit",
+          "refusal",
+          "content_filter",
+          "pause"
+        ],
+        "title": "StopReason",
+        "type": "string"
       },
       "StorageUsageView": {
         "description": "What the org keeps in the store, counted from its files: the stored ones\nper purpose and in total, and the uploads started and not yet confirmed.\nA removed file stops counting at once.",
@@ -2010,6 +2479,19 @@
         ],
         "title": "StreamTruncatedDetail",
         "type": "object"
+      },
+      "ToolFailure": {
+        "description": "The class of a tool failure, decided where the failure happens. The\nmodel reads it with advice on what to do next.",
+        "enum": [
+          "invalid_input",
+          "transient",
+          "timeout",
+          "denied",
+          "interrupted",
+          "permanent"
+        ],
+        "title": "ToolFailure",
+        "type": "string"
       },
       "TotpConfirmedView": {
         "description": "The second factor is enrolled: from now on the operator plane admits\nthis identity only on a sign-in that verified a code, so the next\nrequest signs in again with one.",
@@ -2203,7 +2685,8 @@
           "DELETE_ACCOUNT",
           "DELETE_ORG",
           "WAKE_SESSION",
-          "WAKE_SESSIONS"
+          "WAKE_SESSIONS",
+          "LOOP"
         ],
         "title": "WorkKind",
         "type": "string"
@@ -3697,6 +4180,689 @@
         "summary": "Platform Size",
         "tags": [
           "admin"
+        ]
+      }
+    },
+    "/v1/agent-sessions": {
+      "post": {
+        "description": "A session on the kind, idle until a message wakes it.",
+        "operationId": "start_session_v1_agent_sessions_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          },
+          {
+            "in": "header",
+            "name": "idempotency-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Session",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/{session_id}": {
+      "get": {
+        "operationId": "get_session_v1_agent_sessions__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Session",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/{session_id}/calls/{request_seq}/decision": {
+      "post": {
+        "description": "An approval or a denial of the tool call at `request_seq`, as stored.",
+        "operationId": "decide_call_v1_agent_sessions__session_id__calls__request_seq__decision_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_seq",
+            "required": true,
+            "schema": {
+              "title": "Request Seq",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          },
+          {
+            "in": "header",
+            "name": "idempotency-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide Call",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/{session_id}/controls": {
+      "post": {
+        "description": "The control as stored, out of band: it never waits behind a message.",
+        "operationId": "send_control_v1_agent_sessions__session_id__controls_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          },
+          {
+            "in": "header",
+            "name": "idempotency-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControlRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send Control",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/{session_id}/messages": {
+      "post": {
+        "description": "The message as stored, durable when this answers.",
+        "operationId": "send_message_v1_agent_sessions__session_id__messages_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          },
+          {
+            "in": "header",
+            "name": "idempotency-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send Message",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/{session_id}/steps": {
+      "get": {
+        "description": "The history in order, strictly after `after_seq`.",
+        "operationId": "get_steps_v1_agent_sessions__session_id__steps_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after_seq",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "After Seq",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepPageView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Steps",
+        "tags": [
+          "agent_sessions"
         ]
       }
     },

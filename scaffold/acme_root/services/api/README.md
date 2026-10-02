@@ -88,6 +88,16 @@ app, and `main.py` is the `acme-api` command: `serve`, `migrate`,
   `/v1/media/files/{file_id}`, `.../upload`, `.../content`,
   `.../confirm`, `.../download`, `/v1/media/usage`)
 - **Events.** The org's diary after a sequence number. (`/v1/events`)
+- **Agent sessions.** Start a session on an agent kind the product runs,
+  under an Idempotency-Key; read it; send it a message or a control
+  (pause, resume, cancel, interrupt, compact, unlock), each kept when the
+  answer comes and kept once under a retried key; decide a tool call its
+  loop waits on; and read its history a page at a time after a seq. A
+  message that wakes the session asks for a run of its loop, which the
+  session runner claims; the API never runs a loop. Another org's
+  session answers as one that never existed. (`/v1/agent-sessions`,
+  `/v1/agent-sessions/{session_id}`, `.../messages`, `.../controls`,
+  `.../calls/{request_seq}/decision`, `.../steps`)
 - **The identity provider's deliveries.** Outside `/v1`, since their
   shape is the provider's. No credential: the route checks the provider's
   signature over the body and its timestamp, and queues the delivery for

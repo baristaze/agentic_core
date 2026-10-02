@@ -5,6 +5,7 @@ translates the request, calls one manager, and projects the result."""
 from abc import ABC, abstractmethod
 
 from acme.services.api.services.admin import AdminServiceInterface
+from acme.services.api.services.agent_sessions import AgentSessionsServiceInterface
 from acme.services.api.services.events import EventsServiceInterface
 from acme.services.api.services.media import MediaServiceInterface
 from acme.services.api.services.realtime import RealtimeServiceInterface
@@ -13,6 +14,7 @@ from acme.services.api.services.webhooks import WebhooksServiceInterface
 
 __all__ = [
     "AdminServiceInterface",
+    "AgentSessionsServiceInterface",
     "EventsServiceInterface",
     "MediaServiceInterface",
     "RealtimeServiceInterface",
@@ -40,3 +42,6 @@ class ServicesInterface(ABC):
 
     @abstractmethod
     def get_webhooks_service(self) -> WebhooksServiceInterface: ...
+
+    @abstractmethod
+    def get_agent_sessions_service(self) -> AgentSessionsServiceInterface: ...
