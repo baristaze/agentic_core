@@ -593,6 +593,8 @@ class WorkKind(StrEnum):
     WAKE_PARKED = 'WAKE_PARKED'
     DELETE_ACCOUNT = 'DELETE_ACCOUNT'
     DELETE_ORG = 'DELETE_ORG'
+    WAKE_SESSION = 'WAKE_SESSION'
+    WAKE_SESSIONS = 'WAKE_SESSIONS'
 
 
 class WorkStatus(StrEnum):

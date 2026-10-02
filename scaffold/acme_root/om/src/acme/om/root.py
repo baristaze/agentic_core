@@ -13,6 +13,9 @@ from acme.integrations.root import IntegrationsInterface
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.impl.manager import AgentSessionsManagerImpl, AgentSessionsOptions
 from acme.om.base import utcnow
+from acme.om.budgets import BudgetGateInterface, BudgetsManagerInterface
+from acme.om.budgets.impl.gate import BudgetGateImpl, BudgetGateOptions
+from acme.om.budgets.impl.manager import BudgetsManagerImpl, BudgetsOptions
 from acme.om.events import EventsManagerInterface
 from acme.om.events.impl.manager import EventsManagerImpl, EventsOptions
 from acme.om.idempotency import IdempotencyManagerInterface
@@ -52,6 +55,8 @@ class Managers:
     orchestrations: OrchestrationsManagerInterface
     steps: StepsManagerInterface
     agent_sessions: AgentSessionsManagerInterface
+    budgets: BudgetsManagerInterface
+    budget_gate: BudgetGateInterface
 
 
 def build_tenancy(
@@ -172,6 +177,13 @@ def build_managers(
     agent_sessions = AgentSessionsManagerImpl(
         storage.get_agent_session_storage(), steps, outbox, AgentSessionsOptions()
     )
+    # The gate reads the budgets of a call's scopes and holds on the ledger.
+    budgets = BudgetsManagerImpl(
+        storage.get_budget_storage(), storage.get_ledger_storage(), outbox, BudgetsOptions()
+    )
+    budget_gate = BudgetGateImpl(
+        storage.get_budget_storage(), storage.get_ledger_storage(), BudgetGateOptions()
+    )
     idempotency = IdempotencyManagerImpl(
         storage.get_idempotency_storage(), idempotency_options or IdempotencyOptions()
     )
@@ -198,5 +210,7 @@ def build_managers(
         orchestrations=orchestrations,
         steps=steps,
         agent_sessions=agent_sessions,
+        budgets=budgets,
+        budget_gate=budget_gate,
     )
     return managers

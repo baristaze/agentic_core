@@ -4,6 +4,8 @@ from acme.infra.impl.local import InfraLocalImpl
 from acme.integrations.impl.configured import absent_integrations
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
+from acme.om.budgets import BudgetGateInterface, BudgetsManagerInterface
+from acme.om.budgets.storage import BudgetStorageInterface, LedgerStorageInterface
 from acme.om.events import EventsManagerInterface
 from acme.om.events.storage import EventStorageInterface
 from acme.om.idempotency import IdempotencyManagerInterface
@@ -45,6 +47,8 @@ async def test_memory_root_serves_every_storage() -> None:
     assert isinstance(root.get_orchestrations_storage(), OrchestrationsStorageInterface)
     assert isinstance(root.get_step_storage(), StepStorageInterface)
     assert isinstance(root.get_agent_session_storage(), AgentSessionStorageInterface)
+    assert isinstance(root.get_budget_storage(), BudgetStorageInterface)
+    assert isinstance(root.get_ledger_storage(), LedgerStorageInterface)
     assert await root.healthcheck() is True
     await root.close()
 
@@ -110,6 +114,8 @@ def test_business_root_has_a_field_per_manager(tmp_path: Path) -> None:
     assert isinstance(managers.orchestrations, OrchestrationsManagerInterface)
     assert isinstance(managers.steps, StepsManagerInterface)
     assert isinstance(managers.agent_sessions, AgentSessionsManagerInterface)
+    assert isinstance(managers.budgets, BudgetsManagerInterface)
+    assert isinstance(managers.budget_gate, BudgetGateInterface)
 
 
 def test_the_tenancy_manager_carries_each_delegate(tmp_path: Path) -> None:

@@ -279,3 +279,13 @@ class StaleWriter(StepsException, PreconditionFailed):
     run ends, and the run that holds the session goes on (ADR 1002)."""
 
     code = "stale_writer"
+
+
+class BudgetsException(PlatformException): ...
+
+
+class SpenderUnknown(BudgetsException, NotAuthorized):
+    """A call or a job whose payer the engine cannot tell. The gate fails
+    closed for spend: nothing is held and nothing is spent."""
+
+    code = "spender_unknown"
