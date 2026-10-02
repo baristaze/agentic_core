@@ -23,14 +23,20 @@ from acme.om.agents.types.request import Start
 from acme.om.agents.types.run import LoopRun, RunEnd
 from acme.om.base import new_id, utcnow
 from acme.om.context import AppContext, AppType, RequestContext, TenantContext
-from acme.om.exceptions import NotFound
+from acme.om.exceptions import NotFound, UnknownAgentKind
 from acme.om.steps.rules import message_step
 from acme.om.steps.types.header import LoopOutcome
 from acme.om.steps.types.step import StepType
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.tenancy.rules import ROLE_PERMISSIONS
+from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
 from acme.om.work.types.handler import WorkParked
-from acme.om.work.types.work_item import WORK_ENQUEUE_PERMISSIONS, WorkItem, WorkKind
+from acme.om.work.types.work_item import (
+    WORK_ENQUEUE_PERMISSIONS,
+    WorkItem,
+    WorkKind,
+    WorkStatus,
+)
 from acme.workers.maintenance.container import WorkerContainer
 from acme.workers.maintenance.main import build_loop
 from acme.workers.session_runner.container import RunnerContainer
@@ -82,16 +88,19 @@ def ending(end: RunEnd) -> Callable[[UUID], LoopRun]:
     return lambda session_id: LoopRun(session_id=session_id, epoch=3, end=end)
 
 
+def handler_over(container: RunnerContainer, answer: Callable[[UUID], LoopRun]) -> LoopHandlerImpl:
+    return LoopHandlerImpl(Answering(answer), container.managers.agent_sessions)  # pyright: ignore[reportAbstractUsage]
+
+
 @pytest.mark.parametrize("end", [RunEnd.ENDED, RunEnd.PARKED, RunEnd.STALE, RunEnd.IDLE])
 async def test_a_run_that_stops_completes_its_item(tmp_path: Path, end: RunEnd) -> None:
-    ctx = (await signed_in(tmp_path))[1]
-    handler = LoopHandlerImpl(Answering(ending(end)))  # pyright: ignore[reportAbstractUsage]
-    await handler.handle(ctx, an_item(ctx, new_id()))
+    container, ctx = await signed_in(tmp_path)
+    await handler_over(container, ending(end)).handle(ctx, an_item(ctx, new_id()))
 
 
 async def test_a_run_whose_time_is_up_hands_its_item_back_at_once(tmp_path: Path) -> None:
-    ctx = (await signed_in(tmp_path))[1]
-    handler = LoopHandlerImpl(Answering(ending(RunEnd.YIELDED)))  # pyright: ignore[reportAbstractUsage]
+    container, ctx = await signed_in(tmp_path)
+    handler = handler_over(container, ending(RunEnd.YIELDED))
 
     with pytest.raises(WorkParked) as parked:
         await handler.handle(ctx, an_item(ctx, new_id()))
@@ -99,14 +108,81 @@ async def test_a_run_whose_time_is_up_hands_its_item_back_at_once(tmp_path: Path
     assert parked.value.resume_after == timedelta(0), "the next run goes on at once"
 
 
+def not_found(session_id: UUID) -> LoopRun:
+    raise NotFound(f"agent session {session_id} not found")
+
+
+def unknown_kind(session_id: UUID) -> LoopRun:
+    raise UnknownAgentKind("agent kind assistant v1 is not declared here")
+
+
 async def test_a_session_that_is_gone_has_nothing_to_run(tmp_path: Path) -> None:
-    ctx = (await signed_in(tmp_path))[1]
+    container, ctx = await signed_in(tmp_path)
+    await handler_over(container, not_found).handle(ctx, an_item(ctx, new_id()))
 
-    def gone(session_id: UUID) -> LoopRun:
-        raise NotFound(f"agent session {session_id} not found")
 
-    handler = LoopHandlerImpl(Answering(gone))  # pyright: ignore[reportAbstractUsage]
-    await handler.handle(ctx, an_item(ctx, new_id()))
+async def test_a_session_whose_kind_this_runner_lacks_fails_its_item(tmp_path: Path) -> None:
+    """What a run did not find completes its item only when it is the
+    session itself; a session that is there fails it, to be retried."""
+    container, ctx = await signed_in(tmp_path)
+    session = await container.managers.agents.start_session(
+        ctx, Start(id=new_id(), kind="assistant", title="the dropped object")
+    )
+
+    with pytest.raises(UnknownAgentKind):
+        await handler_over(container, unknown_kind).handle(ctx, an_item(ctx, session.id))
+
+
+async def test_a_runner_that_lacks_the_kind_leaves_the_loop_to_a_retry(tmp_path: Path) -> None:
+    """A runner that does not declare a woken session's kind, as when the API
+    knows a kind before the runner does, fails the loop's item with the
+    reason, never completes it, so the session is run again once a runner
+    declares it."""
+    storage, infra = StorageMemoryImpl(), InfraLocalImpl(tmp_path)
+    api = RunnerContainer.over(
+        settings(),
+        storage,
+        infra,
+        IntegrationsOverImpl(IdentityProviderAbsentImpl(), scripted_model_providers()),
+        agent_kinds=ABSENT,
+    )
+    lacking = RunnerContainer.over(
+        settings(),
+        storage,
+        infra,
+        IntegrationsOverImpl(IdentityProviderAbsentImpl(), scripted_model_providers()),
+    )
+    owner, _ = await api.managers.tenancy.bootstrap(
+        RequestContext(request_id=new_id(), app=APP), "Ajax", "ajax", "ann@example.test", "Ann"
+    )
+    session = await api.managers.agents.start_session(
+        owner, Start(id=new_id(), kind="assistant", title="the dropped object")
+    )
+    said = message_step(new_id(), utcnow(), session.id, owner, "Why does it drop the object?")
+    await api.managers.agent_sessions.receive(owner, session.id, [said])
+    work = storage.get_work_storage()
+    assert isinstance(work, WorkStorageMemoryImpl)
+
+    def loop_items() -> list[WorkItem]:
+        items = [item for _, item in work._items.values()]  # pyright: ignore[reportPrivateUsage]
+        return [i for i in items if i.kind is WorkKind.LOOP]
+
+    runner = build_runner(lacking)
+    running = asyncio.create_task(runner.run())
+    try:
+        for _ in range(500):
+            if any(item.attempts > 0 for item in loop_items()):
+                break
+            await asyncio.sleep(0.01)
+    finally:
+        runner.stop()
+        await running
+
+    (item,) = loop_items()
+    assert item.status is not WorkStatus.DONE and item.attempts >= 1
+    assert item.last_error is not None and "UnknownAgentKind" in item.last_error
+    pending = await api.managers.agent_sessions.get_session(owner, session.id)
+    assert pending.status is SessionStatus.PENDING
 
 
 def test_every_kind_is_claimed_by_one_worker_and_asked_for_as_widely_as_it_runs(

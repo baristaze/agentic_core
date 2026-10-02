@@ -23,8 +23,11 @@ inside the API ([ADR 1011](../../docs/adr/1011-a-sessions-loop-runs-in-a-worker-
   person who took the environment over, can append no step and send no
   command.
 - **A run whose time is up** hands its item back at once, with no attempt
-  spent, and the next claim goes on with the loop. Any other end completes
-  the item.
+  spent, and the next claim goes on with the loop. A run that finds its
+  session gone completes the item. One that misses anything else, such as
+  a kind this runner does not declare, fails it: it is retried, and past
+  its attempts dead-lettered, where an operator requeues it. Any other end
+  completes the item.
 - **A runner that dies** leaves its item claimed until the lease runs out.
   The next sweep, of any worker, puts it back, and the next run settles
   the calls the lost one left open by their effect: one that only reads or
