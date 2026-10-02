@@ -4,7 +4,7 @@ responses the model reads. Values in, values out; the time is an argument."""
 
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -14,7 +14,7 @@ from acme.infra.workspaces import EgressMode
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.attribution.types.principal import AgentRef, Principal
 from acme.om.base import derived_id, thaw_mapping
-from acme.om.context import Role
+from acme.om.context import Permission, Role, TenantContext
 from acme.om.steps.types.content import Content, TextBlock, ToolResultBlock, ToolUseBlock
 from acme.om.steps.types.header import (
     ControlCommand,
@@ -54,6 +54,17 @@ INWARD_CLASSES = frozenset({ToolClass.READ, ToolClass.WRITE, ToolClass.EXECUTE, 
 nature: its workspace, its records, its children. Every other class, a
 domain class included, acts outward unless its target says it does not."""
 
+CLASS_PERMISSIONS: dict[str, Permission] = {
+    ToolClass.READ: Permission.READ,
+    ToolClass.CONFIGURATION: Permission.MANAGE_MEMBERS,
+    ToolClass.CREDENTIALS: Permission.MANAGE_KEYS,
+}
+"""The tenant permission a principal holds to make a call of a class (ADR
+1012): reading needs `read`; changing configuration needs what changing
+the tenant's own does, as its tool policy is written; binding secret
+references needs what managing its keys does. Every other class, a domain
+class included, needs `write`."""
+
 ADVICE: dict[ToolFailure, str] = {
     ToolFailure.INVALID_INPUT: "The input does not fit the tool's schema. Correct it and call again.",
     ToolFailure.TRANSIENT: "This may pass on its own. Retrying is reasonable.",
@@ -66,6 +77,26 @@ ADVICE: dict[ToolFailure, str] = {
     ToolFailure.PERMANENT: "This will not work as asked. Try another approach.",
 }
 """What the model reads with each failure: the contract of a failure."""
+
+
+# Who may start or instruct a session.
+
+
+def permissions_for(classes: Iterable[str]) -> frozenset[Permission]:
+    """What a principal holds to make every kind of call `classes` names."""
+    return frozenset(CLASS_PERMISSIONS.get(name, Permission.WRITE) for name in classes)
+
+
+def instruct_refusal(ctx: TenantContext, classes: Iterable[str]) -> str | None:
+    """Why `ctx` may not start or instruct a session whose registry offers
+    `classes`, or None when it may: a message enqueues the session's loop,
+    so its sender holds every permission a call the registry offers needs
+    (the guideline's enqueue rule), and a message buys no call its sender
+    may not make."""
+    missing = sorted(p.value for p in permissions_for(classes) if not ctx.has(p))
+    if not missing:
+        return None
+    return f"{ctx.role.value} lacks {', '.join(missing)}, which a tool of this session needs"
 
 
 # The call and its hash.
@@ -217,9 +248,12 @@ def job_deadline(now: datetime, timeout: timedelta, tree_deadline: datetime | No
 # A person's decision.
 
 
-def decides(control: Step, request: Step) -> bool:
+def decides(control: Step, request: Step, approvers: Sequence[Role]) -> bool:
     """Whether a control step is a person's decision on exactly this call:
-    it references the request, and names its tool and its input's hash."""
+    it references the request, names its tool and its input's hash, and
+    was made in a role among `approvers`, those the tenant's policy lets
+    decide the call's class now. A decision in any other role is no
+    decision, however it reached the history."""
     header = control.header
     call = request.header
     return (
@@ -231,14 +265,18 @@ def decides(control: Step, request: Step) -> bool:
         and control.refs == (request.id,)
         and header.call.tool == call.tool
         and header.call.input_hash == call.input_hash
+        and header.call.role in approvers
     )
 
 
-def verdict(request: Step, later: Sequence[Step], now: datetime) -> tuple[Verdict, Step | None]:
+def verdict(
+    request: Step, later: Sequence[Step], now: datetime, approvers: Sequence[Role]
+) -> tuple[Verdict, Step | None]:
     """A person's verdict on a call, from the steps after its request in
-    order: the latest decision on exactly this call holds. An approval that
-    has expired asks again; a denial holds for good."""
-    latest = next((step for step in reversed(later) if decides(step, request)), None)
+    order: the latest decision on exactly this call, by a role among
+    `approvers`, holds. An approval that has expired asks again; a denial
+    holds for good."""
+    latest = next((step for step in reversed(later) if decides(step, request, approvers)), None)
     header = None if latest is None else latest.header
     if not isinstance(header, ControlHeader) or header.call is None:
         return Verdict.PENDING, None

@@ -3,6 +3,7 @@ from datetime import datetime
 from uuid import UUID
 
 from acme.om.agent_sessions import AgentSessionsManagerInterface
+from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.attribution.manager import AttributionManagerInterface, PrincipalContext
 from acme.om.attribution.rules import (
     call_principal,
@@ -116,7 +117,9 @@ class AttributionManagerImpl(AttributionManagerInterface):
             if passed is None:
                 raise ValidationFailed(f"agent session {came_from} holds no authority to pass on")
             child = session.parent_id is not None
-            principal, spender = inherited(passed, source.speaker, child=child)
+            principal, spender = inherited(
+                passed, source.speaker, from_child=source.parent_id is not None, child=child
+            )
         now = self._clock()
         authority = SessionAuthority(
             id=session_id,
@@ -205,22 +208,21 @@ class AttributionManagerImpl(AttributionManagerInterface):
 
     async def is_marked(self, ctx: TenantContext, session_id: UUID) -> bool:
         ctx.require(Permission.READ)
-        _, marked = await self._at_head(ctx, session_id)
-        return marked
+        return (await self._at_head(ctx, session_id)).untrusted
 
     async def call_principal(self, ctx: TenantContext, session_id: UUID) -> Principal:
         ctx.require(Permission.READ)
         authority = await self._authority(ctx, session_id)
-        speaker, _ = await self._at_head(ctx, session_id)
-        return call_principal(authority, speaker)
+        session = await self._at_head(ctx, session_id)
+        return call_principal(authority, session.speaker, child=session.parent_id is not None)
 
     async def authorize_call(
         self, ctx: TenantContext, session_id: UUID, reach: CallReach
     ) -> CallAuthority:
         ctx.require(Permission.WRITE)
         authority = await self._authority(ctx, session_id)
-        speaker, marked = await self._at_head(ctx, session_id)
-        principal = call_principal(authority, speaker)
+        session = await self._at_head(ctx, session_id)
+        principal = call_principal(authority, session.speaker, child=session.parent_id is not None)
         # Asked on every call: a permission taken away between two calls of
         # one loop stops the second (ADR 1007).
         try:
@@ -234,7 +236,7 @@ class AttributionManagerImpl(AttributionManagerInterface):
             principal=principal,
             mode=authority.mode,
             context=live,
-            needs_person=needs_person(marked=marked, reach=reach),
+            needs_person=needs_person(marked=session.untrusted, reach=reach),
         )
 
     async def purge_authority(self, org_id: UUID, session_id: UUID) -> bool:
@@ -268,10 +270,10 @@ class AttributionManagerImpl(AttributionManagerInterface):
             raise NotFound(f"agent session {session_id} holds no authority")
         return authority
 
-    async def _at_head(self, ctx: TenantContext, session_id: UUID) -> tuple[Principal | None, bool]:
-        """The session's speaker and mark as of the head of its history."""
-        session = await self._sessions.get_session_at_head(ctx, session_id)
-        return session.speaker, session.untrusted
+    async def _at_head(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
+        """The session with its speaker and mark as of the head of its
+        history."""
+        return await self._sessions.get_session_at_head(ctx, session_id)
 
     async def _relay_all(self, ctx: TenantContext, rows: tuple[OutboxRow, ...]) -> None:
         """The write has committed; a relay that fails is left to the sweep."""

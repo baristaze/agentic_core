@@ -10,15 +10,23 @@ the session, and nothing else.
 
 Both write a principal's message in the name of the context that appends
 it: its principal is that context's user, never one the caller wrote
-(`attribution.rules.said_by`)."""
+(`attribution.rules.said_by`). A person's decision on a tool call is
+written the same way, with the role that context holds
+(`attribution.rules.decided_by`)."""
 
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from uuid import UUID
 
 from acme.om.context import TenantContext
 from acme.om.steps.types.page import StepCursor, StepPage
 from acme.om.steps.types.step import Step
+
+InstructCheck = Callable[[TenantContext, UUID], Awaitable[None]]
+"""Refuses, with `NotAuthorized`, a context that may not instruct a session:
+one that lacks a permission a call the session's registry offers needs. The
+agents manager answers it, since a session's registry is its kind's; a root
+binds the two."""
 
 
 class StepsManagerInterface(ABC):
@@ -39,7 +47,8 @@ class StepsManagerInterface(ABC):
         `StaleWriter` when the session is held at another epoch, with nothing
         written. A step appended before is answered as stored. A batch past
         the bound, one that names a step of another session, or one that
-        names an id twice is `ValidationFailed`."""
+        names an id twice is `ValidationFailed`. An instruction is asked of
+        `InstructCheck` as the inbox asks it."""
         ...
 
     @abstractmethod
@@ -48,7 +57,10 @@ class StepsManagerInterface(ABC):
     ) -> tuple[Step, ...]:
         """The inbox's append: inputs and controls, durable when this
         returns, with no epoch. A step of any other type is
-        `ValidationFailed`."""
+        `ValidationFailed`. An instruction, a principal's message or a
+        parent's to its child, from a context that may not make every kind
+        of call the session's registry offers is `NotAuthorized`
+        (`InstructCheck`), with nothing appended."""
         ...
 
     @abstractmethod

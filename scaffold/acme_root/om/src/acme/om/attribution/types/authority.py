@@ -37,11 +37,11 @@ class SessionAuthority(Identifiable, Trackable):
     the principal that session's calls run under, and a child pays as its
     parent pays (`attribution.rules.inherited`).
 
-    `principal` is the one a steady session's calls run under. A delegated
-    session's calls run under the speaker the request that led to them
-    recorded, and under `principal` until a principal speaks. `spender`
-    pays until a principal speaks in the session: what a child's spawn
-    passed it, or nobody."""
+    `principal` is the one a steady session's calls run under, and a
+    child's in either mode. A delegated session's calls run under the
+    speaker the request that led to them recorded, and under `principal`
+    until a principal speaks. `spender` pays until a principal speaks in
+    the session: what a child's spawn passed it, or nobody."""
 
     MANAGER_OWNED_FIELDS: ClassVar[tuple[str, ...]] = ("principal", "spender", "version")
     """Inherited, or taken over; the caller names the mode alone."""

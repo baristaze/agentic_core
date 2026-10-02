@@ -65,13 +65,15 @@ class ToolsManagerInterface(ABC):
         workspace: Workspace,
         *,
         holds_private: bool = True,
+        tree_deadline: datetime | None = None,
     ) -> Gate:
         """Where a call stands before it runs. A tool the registry does not
         hold, an input its schema refuses, and a preflight that refuses are
-        answered at once. Then attribution answers whose authority the call
-        runs under, asked again of the adopter's transition (`denied` for a
-        delegated principal who no longer holds it; `PrincipalLapsed` for a
-        steady one), and the rule of two: whether the session is marked,
+        answered at once; the preflight runs by the call's own time, never
+        past `tree_deadline`. Then attribution answers whose authority the
+        call runs under, asked again of the adopter's transition (`denied`
+        for a delegated principal who no longer holds it; `PrincipalLapsed`
+        for a steady one), and the rule of two: whether the session is marked,
         `holds_private` (its private data or credentials), and whether the
         call acts outward, read from its target. Then policy decides from the
         tool, its class, its effect, and its target's attributes (`defaults`
@@ -80,7 +82,8 @@ class ToolsManagerInterface(ABC):
         context the gate's `authority` carries; a denied one is answered
         `denied`; and one that needs approval runs on a person's approval of
         exactly this call, is answered `denied` on a denial, and otherwise
-        asks: the loop parks."""
+        asks: the loop parks. A decision counts only while the policy lets
+        the role its person decided in decide the call's class."""
         ...
 
     @abstractmethod
@@ -164,8 +167,9 @@ class ToolsManagerInterface(ABC):
         its tool and its input's hash, recorded as a control step in the
         session's history. An approval expires; a denial's note is what the
         model reads. Only a person whose role the tenant lets approve the
-        call's class decides it (`NotAuthorized` otherwise); `NotFound` when
-        no tool request is at that place."""
+        call's class decides it (`NotAuthorized` otherwise), and the
+        decision records that role; `NotFound` when no tool request is at
+        that place."""
         ...
 
     @abstractmethod

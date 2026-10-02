@@ -4,6 +4,7 @@ through `McpCall`, the adopter's client of the server."""
 
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
+from uuid import UUID
 
 from acme.om.base import Platform
 from acme.om.context import TenantContext
@@ -14,9 +15,11 @@ from acme.om.tools.types.mcp import McpBinding, McpOutput, McpToolDefinition
 from acme.om.tools.types.policy import Target
 from acme.om.tools.types.tool import ToolInput, ToolMode, ToolSpec
 
-McpCall = Callable[[TenantContext, str, str, Mapping[str, Any]], Awaitable[str]]
-"""Calls a server's tool: the server, the tool's name there, and its input;
-answers the result as text, or raises `ToolFailed` with its class."""
+McpCall = Callable[[TenantContext, str, str, Mapping[str, Any], UUID], Awaitable[str]]
+"""Calls a server's tool: the server, the tool's name there, its input, and
+the call's idempotency key, which the client passes to the server so a
+repeat after a crash does once what the first did; answers the result as
+text, or raises `ToolFailed` with its class."""
 
 
 class McpToolImpl(ToolInterface):
@@ -69,5 +72,6 @@ class McpToolImpl(ToolInterface):
             self._binding.server,
             self._binding.server_tool,
             call_input.model_dump(mode="json"),
+            runtime.key,
         )
         return McpOutput(text=text)

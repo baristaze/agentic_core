@@ -25,16 +25,29 @@ class AgentsManagerInterface(ABC):
     async def start_session(self, ctx: TenantContext, start: Start) -> AgentSession:
         """A root session on the latest version of its kind, run under the
         person who starts it, with its tree: the kind's bounds and one
-        deadline. An unknown kind is `UnknownAgentKind`. An id written
-        already answers the session as stored."""
+        deadline. An unknown kind is `UnknownAgentKind`, and a person who
+        lacks a permission a call its registry offers needs is
+        `NotAuthorized`, with nothing made. An id written already answers
+        the session as stored."""
+        ...
+
+    @abstractmethod
+    async def require_instructor(self, ctx: TenantContext, session_id: UUID) -> None:
+        """The history's check of an instruction, a principal's message or a
+        parent's to its child: `NotAuthorized` when `ctx` lacks a permission
+        a call the session's registry offers needs
+        (`tools.rules.instruct_refusal`). A session that is not there offers
+        nothing to check."""
         ...
 
     @abstractmethod
     async def spawn(self, ctx: TenantContext, parent_id: UUID, spawn: Spawn) -> AgentSession:
         """A child of `parent_id`, one level down its tree, and its objective
         as its first input: a waking message from its parent. A tree past
-        its height or its count is `TreeBoundReached`, and a kind whose
-        result tool its parent lacks is `ValidationFailed`: nothing is made.
+        its height or its count is `TreeBoundReached`, a kind whose result
+        tool its parent lacks is `ValidationFailed`, and a context that lacks
+        a permission a call of the child's registry needs is
+        `NotAuthorized`: nothing is made.
         A spawn asked again under the same id answers the child it made."""
         ...
 
@@ -51,7 +64,9 @@ class AgentsManagerInterface(ABC):
     ) -> AgentTree:
         """Moves the deadline of the tree a session draws on, for every
         session of the tree at once, as a person does to unlock a loop the
-        deadline parked."""
+        deadline parked. A deadline moved past now, or taken away, is that
+        unlock: every session of the tree parked on the deadline is
+        unlocked, and its gates run again when it resumes."""
         ...
 
     @abstractmethod

@@ -49,6 +49,7 @@ from acme.om.steps.types.header import (
     ModelRequestHeader,
     ModelResponseHeader,
     SummaryHeader,
+    SwitchedHeader,
     ToolRequestHeader,
     ToolResponseHeader,
 )
@@ -722,6 +723,29 @@ def _edge(steps: Sequence[Step], index: int) -> int:
     return steps[-1].seq + 1 if steps else 1
 
 
+def thinking_held(steps: Sequence[Step]) -> bool:
+    """Whether the main role's next request runs with thinking off: the role
+    switched while a tool-use cycle was open, and that cycle is open still.
+    A cycle opens with a main response that asks for a tool and closes with
+    one that asks for none; a cut or abandoned response moves nothing. A
+    provider may refuse a pending tool use without its own signed thinking,
+    and thinking replays only to the model that thought it, so the model a
+    switch brings in thinks again only once the cycle closes."""
+    main: set[UUID] = set()
+    cycle = held = False
+    for step in steps:
+        header = step.header
+        if isinstance(header, ModelRequestHeader) and header.role == MAIN:
+            main.add(step.id)
+        elif isinstance(header, ModelResponseHeader) and step.responds_to in main:
+            if not (header.truncated or header.abandoned):
+                cycle = bool(step.as_tool_uses())
+                held = held and cycle
+        elif isinstance(header, SwitchedHeader) and header.fills.role == MAIN:
+            held = held or cycle
+    return held
+
+
 def render_main(
     steps: Sequence[Step],
     kind: KindPrompts,
@@ -733,10 +757,13 @@ def render_main(
     """The main model role's request over the whole history: the pinned zone
     and the latest summary, the window since the summary, the inputs no
     request has delivered, and the plan. Every tool call in the window is
-    answered; an open one is the caller's to settle first."""
+    answered; an open one is the caller's to settle first. It runs with
+    thinking off while a switch holds it off (`thinking_held`)."""
     ex = exchanges(steps)
     if open_use(steps, ex) is not None:
         raise ValueError("a tool call is still open; its response comes before the next request")
+    if fill.thinking_budget is not None and thinking_held(steps):
+        fill = fill.model_copy(update={"thinking_budget": None})
     summary = latest_summary(steps)
     start = window_start(steps, summary)
     lead: list[Block] = []

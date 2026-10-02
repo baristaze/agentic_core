@@ -17,6 +17,7 @@ response is read by the request after it. So no tool call is ever decided
 on a mark the model's reading has outrun."""
 
 from collections.abc import Iterable, Sequence
+from uuid import UUID
 
 from acme.om.attribution.types.authority import (
     AuthorityMode,
@@ -25,8 +26,8 @@ from acme.om.attribution.types.authority import (
     Trust,
 )
 from acme.om.attribution.types.principal import Principal, PrincipalKind
-from acme.om.context import CredentialKind, TenantContext
-from acme.om.steps.types.header import InputHeader, ModelRequestHeader
+from acme.om.context import CredentialKind, Role, TenantContext
+from acme.om.steps.types.header import ControlHeader, InputHeader, ModelRequestHeader
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 
 PRINCIPAL_ACTORS = frozenset({Actor.PERSON, Actor.PROGRAM})
@@ -65,9 +66,24 @@ def trust_of(step: Step) -> Trust | None:
     return None
 
 
+def instructs(step: Step) -> bool:
+    """Whether an input instructs on someone's word: one a model reads as an
+    instruction, a principal's message or a parent's to its child, however
+    its actor is labelled, and not the engine's own notice, which a run
+    writes under its epoch and the inbox refuses. Its sender may make every
+    kind of call the session's registry offers (`steps.manager.InstructCheck`)."""
+    return (
+        step.type.is_input()
+        and step.actor is not Actor.ENGINE
+        and trust_of(step) is Trust.INSTRUCTION
+    )
+
+
 def marks(step: Step) -> bool:
     """Whether a step marks the session it lands in: it is data, or it is an
-    input from an agent whose session carried the mark."""
+    input whose header carries the mark: one from an agent whose session
+    carried it, or one that carries a file, which is data whoever attached
+    it."""
     carried = isinstance(step.header, InputHeader) and step.header.untrusted
     return carried or trust_of(step) is Trust.DATA
 
@@ -91,6 +107,20 @@ def said_by(step: Step, principal: Principal) -> Step:
     if header.principal == principal:
         return step
     return step.model_copy(update={"header": header.model_copy(update={"principal": principal})})
+
+
+def decided_by(step: Step, user_id: UUID, role: Role) -> Step:
+    """A person's decision on a tool call as the context that appends it made
+    it: its decider is that context's user, in the role they hold, whatever
+    the caller wrote, so no one decides in another's name or above their own
+    role. Any other step is answered as it is."""
+    header = step.header
+    if not isinstance(header, ControlHeader) or header.call is None:
+        return step
+    if (header.call.decided_by, header.call.role) == (user_id, role):
+        return step
+    call = header.call.model_copy(update={"decided_by": user_id, "role": role})
+    return step.model_copy(update={"header": header.model_copy(update={"call": call})})
 
 
 def fold(
@@ -124,25 +154,29 @@ def spender_of(passed: Principal | None, speaker: Principal | None) -> Principal
     return speaker if speaker is not None else passed
 
 
-def call_principal(authority: SessionAuthority, speaker: Principal | None) -> Principal:
+def call_principal(
+    authority: SessionAuthority, speaker: Principal | None, *, child: bool
+) -> Principal:
     """Whose authority a tool call runs under: a steady session's fixed
     principal; a delegated session's latest speaker, or its own principal
-    before anyone has spoken."""
-    if authority.mode is AuthorityMode.DELEGATED and speaker is not None:
+    before anyone has spoken. A child's calls run under the principal it
+    inherited whoever speaks to it, so a message to a child lends it no
+    authority its parent's principal lacks; whoever speaks still pays."""
+    if authority.mode is AuthorityMode.DELEGATED and speaker is not None and not child:
         return speaker
     return authority.principal
 
 
 def inherited(
-    source: SessionAuthority, speaker: Principal | None, *, child: bool
+    source: SessionAuthority, speaker: Principal | None, *, from_child: bool, child: bool
 ) -> tuple[Principal, Principal | None]:
     """The principal and the spender a session takes from the one it came
-    from, whose speaker is `speaker`. It runs under the principal that
-    session's calls run under, never one its maker names: no child holds
-    more than its parent. A child pays as its parent pays; a session handed
-    over pays as the principal who confirms its work, so it takes no
-    spender."""
-    principal = call_principal(source, speaker)
+    from, whose speaker is `speaker` and which is a child itself when
+    `from_child`. It runs under the principal that session's calls run
+    under, never one its maker names: no child holds more than its parent.
+    A child pays as its parent pays; a session handed over pays as the
+    principal who confirms its work, so it takes no spender."""
+    principal = call_principal(source, speaker, child=from_child)
     return principal, spender_of(source.spender, speaker) if child else None
 
 

@@ -45,6 +45,7 @@ from acme.om.tools.types.call import GateOutcome, Verdict
 from acme.om.tools.types.policy import ApproverRule, Decision
 
 PROTECTIONS = {"main": True, "feature": False, "hotfix": False}
+OWNERS = (Role.OWNER, Role.ADMIN)
 
 
 @dataclass
@@ -179,6 +180,7 @@ def decision_on(
     tool: str = "push_branch",
     hash_: str | None = None,
     command: ControlCommand = ControlCommand.APPROVE,
+    role: Role = Role.OWNER,
 ) -> Step:
     header = request.header
     assert isinstance(header, ToolRequestHeader)
@@ -198,6 +200,7 @@ def decision_on(
                 tool=tool,
                 input_hash=hash_ or header.input_hash,
                 decided_by=new_id(),
+                role=role,
                 expires_at=now + timedelta(hours=1) if command is ControlCommand.APPROVE else None,
             ),
         ),
@@ -210,19 +213,51 @@ async def test_only_a_persons_decision_on_exactly_this_call_counts(setting: Sett
     agent = context(Role.SERVICE, org)
     found = await put_call(tools.steps, agent, "push_branch", {"branch": "feature"}, "integration")
     request, now = found.request, utcnow()
-    assert verdict(request, [decision_on(request)], now)[0] is Verdict.APPROVED
+    assert verdict(request, [decision_on(request)], now, OWNERS)[0] is Verdict.APPROVED
     for stray in (
         decision_on(request, actor=Actor.ENGINE),
         decision_on(request, actor=Actor.MODEL),
         decision_on(request, refs=(new_id(),)),
         decision_on(request, tool="delete_branch"),
         decision_on(request, hash_=input_hash({"branch": "main"})),
+        decision_on(request, role=Role.MEMBER),
     ):
-        assert verdict(request, [stray], now)[0] is Verdict.PENDING
+        assert verdict(request, [stray], now, OWNERS)[0] is Verdict.PENDING
     # An agent's control step names its agent, so none decides a call.
     with pytest.raises(ValidationError):
         decision_on(request, actor=Actor.AGENT)
     # The latest decision holds.
     approve, deny = decision_on(request), decision_on(request, command=ControlCommand.DENY)
-    assert verdict(request, [approve, deny], now)[0] is Verdict.DENIED
-    assert verdict(request, [deny, approve], now)[0] is Verdict.APPROVED
+    assert verdict(request, [approve, deny], now, OWNERS)[0] is Verdict.DENIED
+    assert verdict(request, [deny, approve], now, OWNERS)[0] is Verdict.APPROVED
+
+
+async def test_a_decision_counts_only_in_a_role_the_policy_lets_decide(setting: Setting) -> None:
+    """However a decision reaches the history, it is its appender's, in the
+    role they hold, and it lets the call run only while the policy lets
+    that role decide the call's class."""
+    tools, org, registry = setting.tools, setting.org, setting.registry
+    agent, member = context(Role.SERVICE, org), context(Role.MEMBER, org)
+    owner, admin = context(Role.OWNER, org), context(Role.ADMIN, org)
+    workspace = Workspace.absent(org.id, new_id())
+    found = await put_call(tools.steps, agent, "push_branch", {"branch": "feature"}, "integration")
+
+    async def outcome() -> GateOutcome:
+        gate = await tools.manager.gate(
+            agent, registry, KIND_DEFAULTS, found.request, found.call_input, workspace
+        )
+        return gate.outcome
+
+    (stored,) = await tools.steps.append_inputs(
+        member, found.session_id, [decision_on(found.request)]
+    )
+    header = stored.header
+    assert isinstance(header, ControlHeader) and header.call is not None
+    assert (header.call.decided_by, header.call.role) == (member.user_id, Role.MEMBER)
+    assert await outcome() is GateOutcome.ASK, "a member's approval is none"
+    await tools.manager.decide_call(owner, found.session_id, found.request.seq, approve=True)
+    assert await outcome() is GateOutcome.RUN
+    policy = await tools.manager.get_policy(admin)
+    admins = (ApproverRule(authorization_class="integration", roles=(Role.ADMIN,)),)
+    await tools.manager.write_policy(admin, policy.model_copy(update={"approvers": admins}))
+    assert await outcome() is GateOutcome.ASK, "the owner no longer decides this class"
