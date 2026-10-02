@@ -49,12 +49,17 @@ the tree.
    absolute path of the spec. Use the `agentic-reviewer` agent that
    `../../agents/agentic-reviewer.md` defines for Claude Code
    (`agentic-core:agentic-reviewer` when installed as the plugin). When
-   no such agent is installed, give a general subagent the text of
+   no such agent is installed, give a general subagent the scope line
+   (it stands for the skill's arguments), the group name, the absolute
+   paths of the lens file and the spec, and the text of
    `../agentic-review-<group>/SKILL.md` with every path in it that
    starts with `../` made absolute from that skill's folder, which sits
    beside this skill's folder, first, since the subagent reads it from
-   elsewhere. Where the agent has no subagents, run the nine group
-   procedures one after another in this session. The groups:
+   elsewhere. Tell it that the run is read-only (it never edits,
+   stages, or commits, and never runs a file of the repository under
+   review), and that it returns its report within 80 turns, the cap
+   `agentic-reviewer` holds. Where the agent has no subagents, run the
+   nine group procedures one after another in this session. The groups:
    - `agentic-review-steps`
    - `agentic-review-windows`
    - `agentic-review-models`
@@ -64,20 +69,34 @@ the tree.
    - `agentic-review-agents`
    - `agentic-review-bounds`
    - `agentic-review-privacy`
-4. Wait for all nine. A reviewer that fails, or returns a report that
-   does not follow the group format, is re-run once; if it fails again,
-   its group is reported as "not reviewed" with the error.
+4. Wait for all nine. A report follows the group format when every
+   section of it is there (the title, the Scope and Lenses lines,
+   Findings, Deviations, Passed, Unverified, Not applicable) and its
+   counts add up: applied is passed plus findings plus unverified, and
+   applied plus not applicable is the number of `## <LENS-ID>`
+   headings in its lens file. A reviewer that fails (an error, or no
+   report within its turns), or returns a report that does not follow
+   the group format, is re-run once with the same message, as soon as
+   it returns; if it fails again, its group is reported as "not
+   reviewed" with the error.
 5. Merge:
+   - First write every path repository-relative, as `git ls-files`
+     prints it at the root: no leading `./`, no absolute prefix, no
+     `<ref>:`. The matching and sorting below compare these.
    - Concatenate all findings and sort by severity (high, medium, low),
      then by file and line.
-   - When two groups flag the same `path:line`, keep both lens ids on
-     one line; the fix text comes from the higher-severity one. At
-     equal severity the group whose opening paragraphs (the top of its
-     lens file) own the rule wins the fix text, and the other id stays
-     on the line.
-   - Two findings whose fix names the same symbol (the same class,
-     method, or setting) merge into one line the same way, whatever
-     their `path:line`; the line named is the higher-severity one's.
+   - When two findings, from two groups or one, flag the same
+     `path:line`, keep both lens ids on one line; the fix text comes
+     from the higher-severity one. At equal severity the group whose
+     opening paragraphs (the top of its lens file) own the rule wins the
+     fix text, and the other id stays on the line. Within one group at
+     equal severity, the lower lens id wins, and between two lines of
+     one lens, the first by file and line. Each id stays on the line
+     once, the winner's first.
+   - Two findings whose fixes change the same symbol (the class,
+     method, or setting the Fix sentence edits, never one it only
+     names) merge into one line the same way, whatever their
+     `path:line`; the line named is the winner's.
    - Concatenate every group's Deviations lines under Deviations, in
      lens id order, or `None.` when there are none. They are not
      findings and count nowhere.
