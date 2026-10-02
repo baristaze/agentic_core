@@ -20,7 +20,7 @@ Lenses: `../../lenses/agents.md`.
 and what the kind's agent does, in the arguments or in the
 conversation.
 
-Example: `fixer --done result_tool --result-tool submit --tools read_log,run_tests,submit --authority steady --tree 2/3 --deadline 8`.
+Example: `fixer --done result_tool --result-tool submit --tools read_log,run_tests,submit --authority steady --tree 1/0 --deadline 8`.
 
 - `<kind>` is the kind's name, snake case, as `AgentKind.name` holds it.
   `<KIND>` is its constant in upper snake case.
@@ -47,6 +47,7 @@ The shape of a kind is `DELIVERY` and `ASSISTANT` in
 |------|-------|
 | `om/src/<name>/om/agents/kinds.py` (the first kind) | the product's kinds, each an `AgentKind` constant, and `AGENT_KINDS`, every version the product still runs |
 | `om/tests/unit/test_agent_kinds.py` (the first kind) | the cases of step 5 |
+| `workers/maintenance/tests/test_container.py` (the first kind) | the worker's container passes `AGENT_KINDS` |
 
 ## Changed
 
@@ -55,7 +56,7 @@ The shape of a kind is `DELIVERY` and `ASSISTANT` in
 | `om/src/<name>/om/agents/kinds.py` | `<KIND>`, and its version in `AGENT_KINDS` |
 | `services/api/src/<name>/services/api/container.py`, `workers/maintenance/src/<name>/workers/maintenance/container.py` (the first kind) | `agent_kinds=AGENT_KINDS` in the call to `build_managers` |
 | `om/tests/unit/test_agent_kinds.py` | the kind's cases |
-| `services/api/tests/test_container.py`, a test of the worker's container in `workers/maintenance/tests/` (the first kind) | the container passes `AGENT_KINDS` |
+| `services/api/tests/test_container.py` (the first kind) | the API's container passes `AGENT_KINDS` |
 | `om/src/<name>/om/agents/README.md` | the kind, in the product's language |
 
 ## Procedure
