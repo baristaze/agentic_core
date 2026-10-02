@@ -71,8 +71,10 @@ of a changed signature.
    would decide it lies outside the scope and the neighbors the Input
    section says to read; name what would decide it). A lens whose
    `Check` line reads `review` is judged here whole: no program decides
-   any part of it. Keep the "Look for" and "Violation" text of the lens
-   in front of you while deciding. When the lens has a `Shape` line,
+   any part of it. A lens whose `Check` line names `agentic-check` is
+   still judged here for everything that line does not claim: the
+   checker decides only the part it names. Keep the "Look for" and
+   "Violation" text of the lens in front of you while deciding. When the lens has a `Shape` line,
    open the scaffold file or folder it names, `../../<path>`, and
    compare the code with it: it is the rule as code, so a difference
    shows where to look. The decision still rests on the lens's

@@ -35,8 +35,9 @@ hold is MOD-02.)
 **Shape.** `scaffold/acme_root/om/src/acme/om/models/types/fill.py` and
 `scaffold/acme_root/om/src/acme/om/models/resolver.py`
 
-**Check.** `agentic-check` decides that no model id is written outside the
-price table and the fills; the rest is judged.
+**Check.** `agentic-check` decides that no string is written as a `model`
+argument, key, field, or default outside the price table and the fills;
+the rest is judged.
 
 ## MOD-02 A switch is explicit, never silent
 

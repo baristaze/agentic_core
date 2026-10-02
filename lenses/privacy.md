@@ -172,8 +172,9 @@ built inside the engine.
 
 **Shape.** `scaffold/acme_root/om/src/acme/om/root.py`
 
-**Check.** `agentic-check` decides that no engine constructor takes an
-interface with a default or as optional; the rest is judged.
+**Check.** `agentic-check` decides that no `__init__` parameter or dataclass
+field in the engine's modules, their storage left out, takes an interface
+with a default or as optional; the rest is judged.
 
 ## PRV-07 A null object may do nothing; it never pretends it did
 

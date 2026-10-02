@@ -66,7 +66,8 @@ def engine_files(project: Project, modules: list[str]) -> list[SourceFile]:
     "PRV-06",
     coverage="partial",
     options=("modules",),
-    summary="No constructor in the engine takes an interface with a default or as optional: a root wires a null object.",
+    summary="No __init__ parameter or dataclass field in the engine's modules, storage left out, takes an interface "
+    "with a default or as optional: a root wires a null object.",
 )
 def every_dependency_is_wired(project: Project) -> Iterator[Violation]:
     """In the engine's modules, no `__init__` parameter and no dataclass

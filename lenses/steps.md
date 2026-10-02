@@ -191,8 +191,9 @@ steps.
 `scaffold/acme_root/om/migrations/sql/activity/202610020101_steps.up.sql` and
 `scaffold/acme_root/om/src/acme/om/steps/storage/__init__.py`
 
-**Check.** `agentic-check` decides that no statement updates the steps table
-and that only a purge deletes from it; the rest is judged.
+**Check.** `agentic-check` decides that no SQLAlchemy statement or SQL text
+updates the steps table, and that none deletes from it outside a `purge`
+function; the rest is judged.
 
 ## STP-08 Five outcomes end a loop, and a park is none of them
 

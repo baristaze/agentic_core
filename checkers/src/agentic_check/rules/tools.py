@@ -40,7 +40,8 @@ def spec_calls(project: Project) -> Iterator[tuple[SourceFile, ast.Call]]:
 @rule(
     "TOL-01",
     coverage="partial",
-    summary="Every ToolSpec the source builds names its class, effect, timeout, interruptibility, and mode by keyword.",
+    summary="Every ToolSpec the source builds without unpacking a mapping names its class, effect, timeout, "
+    "interruptibility, and mode by keyword.",
 )
 def every_tool_declares_its_contract(project: Project) -> Iterator[Violation]:
     """Each call of the tools namespace's `ToolSpec` passes
@@ -109,8 +110,8 @@ def no_secret_value_in_a_step(project: Project) -> Iterator[Violation]:
 @rule(
     "TOL-13",
     coverage="partial",
-    summary="A module that defines a tool imports no subprocess, socket, or shutil, and opens no file and starts no "
-    "process on its host.",
+    summary="A module that defines a tool imports no process, socket, or shutil module, and calls no open() and no os "
+    "or asyncio function that starts a process.",
 )
 def tools_reach_only_through_the_transport(project: Project) -> Iterator[Violation]:
     """A module that defines a tool, a class deriving from the tools

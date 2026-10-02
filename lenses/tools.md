@@ -40,8 +40,9 @@ TOL-02.)
 **Shape.** `scaffold/acme_root/om/src/acme/om/tools/types/tool.py` and
 `scaffold/acme_root/om/src/acme/om/tools/tool.py`
 
-**Check.** `agentic-check` decides that every `ToolSpec` names its class,
-effect, timeout, interruptibility, and mode; the rest is judged.
+**Check.** `agentic-check` decides that every `ToolSpec` built without
+unpacking a mapping names its class, effect, timeout, interruptibility,
+and mode; the rest is judged.
 
 ## TOL-02 A tool's effect says what a repeat may do
 
@@ -364,8 +365,10 @@ run a command.
 **Shape.** `scaffold/acme_root/om/src/acme/om/tools/tool.py` and
 `scaffold/acme_root/infra/src/acme/infra/transports/__init__.py`
 
-**Check.** `agentic-check` decides that a module defining a tool starts no
-process, opens no socket, and opens no file on its host; the rest is judged.
+**Check.** `agentic-check` decides that a module defining a tool imports no
+process, socket, or `shutil` module, and calls no `open()`, `os.open()`, or
+`io.open()` and no `os` or `asyncio` function that starts a process; the
+rest is judged.
 
 ## TOL-14 Isolation is refused, never weakened
 
