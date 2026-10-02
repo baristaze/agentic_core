@@ -1527,12 +1527,10 @@ need.
 
 Each `agentic_core` release pins the guideline release it was built on.
 A platform's base is one render of the engine's scaffold, which holds
-the guideline's at that pinned release. `agentic-upgrade-scaffold`,
-the guideline's `arch-upgrade-scaffold` taught the engine's layer, moves
-that base one engine release at a time, by a merge, so one move upgrades
-both foundations. A platform moves by `agentic-upgrade-scaffold`, never
-by `arch-upgrade-scaffold`, whose guideline-only render would delete the
-engine's layer.
+the guideline's at that pinned release. A platform moves by
+`agentic-upgrade-scaffold`, which runs the guideline's
+`arch-upgrade-scaffold` from the source its base records, the engine, so
+one move upgrades both foundations.
 
 ## What This Spec Does Not Cover
 
