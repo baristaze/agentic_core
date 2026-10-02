@@ -29,6 +29,7 @@ from acme.om.attribution.manager import PrincipalContext
 from acme.om.attribution.rules import (
     call_principal,
     fold,
+    inherited,
     marks,
     needs_person,
     principal_authored,
@@ -312,9 +313,12 @@ def test_a_call_runs_under_the_fixed_principal_or_the_latest_asker() -> None:
     fixed, asker = a_person(), a_person()
     steady = an_authority(AuthorityMode.STEADY, fixed)
     delegated = an_authority(AuthorityMode.DELEGATED, fixed)
-    assert call_principal(steady, asker) == fixed
-    assert call_principal(delegated, asker) == asker
-    assert call_principal(delegated, None) == fixed
+    assert call_principal(steady, asker, child=False) == fixed
+    assert call_principal(delegated, asker, child=False) == asker
+    assert call_principal(delegated, None, child=False) == fixed
+    assert call_principal(delegated, asker, child=True) == fixed, "a child never escalates"
+    assert inherited(delegated, asker, from_child=True, child=True)[0] == fixed
+    assert inherited(delegated, asker, from_child=False, child=True)[0] == asker
 
 
 @pytest.mark.parametrize("marked", [True, False])
@@ -574,6 +578,31 @@ async def test_a_child_pays_as_its_spawn_did_until_a_principal_speaks_to_it(
     await say(managers, steering, child.id)
     paid = await next_attribution(managers, owner, child.id)
     assert paid.spender == person_of(steering)
+
+
+async def test_a_person_who_speaks_to_a_child_lends_it_no_authority(
+    managers: Managers, transition: Transition
+) -> None:
+    """A delegated child runs under the principal its spawn passed it. An
+    admin who messages it pays for what it reads next, and its calls still
+    run under the member its parent ran under: no child holds more than its
+    parent."""
+    org = make_org()
+    member, admin = context(Role.MEMBER, org), context(Role.ADMIN, org)
+    parent = await start(managers, member, ASSISTANT)
+    await model_request(managers, member, parent.id, [await say(managers, member, parent.id)])
+    child = await managers.agents.spawn(
+        member,
+        parent.id,
+        Spawn(id=new_id(), kind="assistant", title="look", objective="read the records"),
+    )
+    asked = await say(managers, admin, child.id)
+    request = await model_request(managers, member, child.id, [asked])
+    assert isinstance(request.header, ModelRequestHeader)
+    assert request.header.spender == person_of(admin), "whoever speaks pays"
+    call = await managers.attribution.authorize_call(member, child.id, OUTWARD)
+    assert call.principal == person_of(member) and call.context.user_id == member.user_id
+    assert await managers.attribution.call_principal(member, child.id) == person_of(member)
 
 
 async def test_the_mark_is_sticky_from_the_first_data_and_passes_to_children(

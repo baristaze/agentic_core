@@ -119,25 +119,29 @@ def spender_of(passed: Principal | None, speaker: Principal | None) -> Principal
     return speaker if speaker is not None else passed
 
 
-def call_principal(authority: SessionAuthority, speaker: Principal | None) -> Principal:
+def call_principal(
+    authority: SessionAuthority, speaker: Principal | None, *, child: bool
+) -> Principal:
     """Whose authority a tool call runs under: a steady session's fixed
     principal; a delegated session's latest speaker, or its own principal
-    before anyone has spoken."""
-    if authority.mode is AuthorityMode.DELEGATED and speaker is not None:
+    before anyone has spoken. A child's calls run under the principal it
+    inherited whoever speaks to it, so a message to a child lends it no
+    authority its parent's principal lacks; whoever speaks still pays."""
+    if authority.mode is AuthorityMode.DELEGATED and speaker is not None and not child:
         return speaker
     return authority.principal
 
 
 def inherited(
-    source: SessionAuthority, speaker: Principal | None, *, child: bool
+    source: SessionAuthority, speaker: Principal | None, *, from_child: bool, child: bool
 ) -> tuple[Principal, Principal | None]:
     """The principal and the spender a session takes from the one it came
-    from, whose speaker is `speaker`. It runs under the principal that
-    session's calls run under, never one its maker names: no child holds
-    more than its parent. A child pays as its parent pays; a session handed
-    over pays as the principal who confirms its work, so it takes no
-    spender."""
-    principal = call_principal(source, speaker)
+    from, whose speaker is `speaker` and which is a child itself when
+    `from_child`. It runs under the principal that session's calls run
+    under, never one its maker names: no child holds more than its parent.
+    A child pays as its parent pays; a session handed over pays as the
+    principal who confirms its work, so it takes no spender."""
+    principal = call_principal(source, speaker, child=from_child)
     return principal, spender_of(source.spender, speaker) if child else None
 
 

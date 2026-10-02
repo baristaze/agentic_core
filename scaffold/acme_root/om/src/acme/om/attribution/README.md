@@ -23,7 +23,9 @@ authority. The rest is read off the session and its
 - **Authority**: how an agent's tool calls are allowed. *Delegated*: with
   the permissions the asking person holds right now. *Steady*: under one
   person fixed when the session started, whoever talks to it later. A
-  sub-agent's also says who pays for it until someone speaks to it.
+  sub-agent's calls run under the person its parent's ran under when it
+  started, whoever talks to it later, so it never holds more than its
+  parent. It also says who pays for it until someone speaks to it.
 - **Untrusted mark**: a flag a session carries from the first outside
   data it reads.
 
