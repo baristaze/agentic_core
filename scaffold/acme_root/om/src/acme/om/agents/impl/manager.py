@@ -90,11 +90,16 @@ class AgentsManagerImpl(AgentsManagerInterface):
         child = await self._find(ctx, spawn.id)
         if child is not None and child.parent_id != parent_id:
             raise ValidationFailed(f"agent session {spawn.id} is not a child of {parent_id}")
-        if child is None:
+        if child is not None:
+            self._may_instruct(ctx, child.tools)
+        else:
             kind = self._kinds.latest(spawn.kind)
             if kind.result_tool is not None and kind.result_tool not in parent.tools:
                 # Its tools are cut to its parent's, so it could never submit.
                 raise ValidationFailed(f"agent session {parent_id} cannot grant {kind.result_tool}")
+            # Its objective instructs it: whoever spawns it may make every
+            # call it will offer, asked before anything is made.
+            self._may_instruct(ctx, [tool for tool in kind.tools if tool in parent.tools])
             tree = await self._tree(ctx, parent.root_id)
             refusal = tree_refusal(tree, parent.depth + 1)
             if refusal is not None:

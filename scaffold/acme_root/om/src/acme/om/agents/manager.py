@@ -33,8 +33,9 @@ class AgentsManagerInterface(ABC):
 
     @abstractmethod
     async def require_instructor(self, ctx: TenantContext, session_id: UUID) -> None:
-        """The inbox's check of a principal's message: `NotAuthorized` when
-        `ctx` lacks a permission a call the session's registry offers needs
+        """The history's check of an instruction, a principal's message or a
+        parent's to its child: `NotAuthorized` when `ctx` lacks a permission
+        a call the session's registry offers needs
         (`tools.rules.instruct_refusal`). A session that is not there offers
         nothing to check."""
         ...
@@ -43,8 +44,10 @@ class AgentsManagerInterface(ABC):
     async def spawn(self, ctx: TenantContext, parent_id: UUID, spawn: Spawn) -> AgentSession:
         """A child of `parent_id`, one level down its tree, and its objective
         as its first input: a waking message from its parent. A tree past
-        its height or its count is `TreeBoundReached`, and a kind whose
-        result tool its parent lacks is `ValidationFailed`: nothing is made.
+        its height or its count is `TreeBoundReached`, a kind whose result
+        tool its parent lacks is `ValidationFailed`, and a context that lacks
+        a permission a call of the child's registry needs is
+        `NotAuthorized`: nothing is made.
         A spawn asked again under the same id answers the child it made."""
         ...
 

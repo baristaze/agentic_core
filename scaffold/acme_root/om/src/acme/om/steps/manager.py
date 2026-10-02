@@ -47,7 +47,8 @@ class StepsManagerInterface(ABC):
         `StaleWriter` when the session is held at another epoch, with nothing
         written. A step appended before is answered as stored. A batch past
         the bound, one that names a step of another session, or one that
-        names an id twice is `ValidationFailed`."""
+        names an id twice is `ValidationFailed`. An instruction is asked of
+        `InstructCheck` as the inbox asks it."""
         ...
 
     @abstractmethod
@@ -56,9 +57,10 @@ class StepsManagerInterface(ABC):
     ) -> tuple[Step, ...]:
         """The inbox's append: inputs and controls, durable when this
         returns, with no epoch. A step of any other type is
-        `ValidationFailed`. A principal's message from a context that may
-        not make every kind of call the session's registry offers is
-        `NotAuthorized` (`InstructCheck`), with nothing appended."""
+        `ValidationFailed`. An instruction, a principal's message or a
+        parent's to its child, from a context that may not make every kind
+        of call the session's registry offers is `NotAuthorized`
+        (`InstructCheck`), with nothing appended."""
         ...
 
     @abstractmethod

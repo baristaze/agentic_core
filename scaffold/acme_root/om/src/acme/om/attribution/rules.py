@@ -66,6 +66,19 @@ def trust_of(step: Step) -> Trust | None:
     return None
 
 
+def instructs(step: Step) -> bool:
+    """Whether an input instructs on someone's word: one a model reads as an
+    instruction, a principal's message or a parent's to its child, however
+    its actor is labelled, and not the engine's own notice, which a run
+    writes under its epoch and the inbox refuses. Its sender may make every
+    kind of call the session's registry offers (`steps.manager.InstructCheck`)."""
+    return (
+        step.type.is_input()
+        and step.actor is not Actor.ENGINE
+        and trust_of(step) is Trust.INSTRUCTION
+    )
+
+
 def marks(step: Step) -> bool:
     """Whether a step marks the session it lands in: it is data, or it is an
     input whose header carries the mark: one from an agent whose session

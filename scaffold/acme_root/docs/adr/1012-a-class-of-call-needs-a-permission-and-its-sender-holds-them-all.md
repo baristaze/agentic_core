@@ -27,10 +27,12 @@ class needs `write`, a domain class an adopter declares included. The
 table is `CLASS_PERMISSIONS` in `om/src/acme/om/tools/rules.py`.
 
 **The sender holds every permission its session's registry needs.** A
-start is refused before anything is made, and a principal's message is
-refused at the inbox, with nothing appended. An agent's message, an
-event from outside, and a control are no principal's instruction, and
-are not asked.
+start and a spawn by a sender who lacks one are refused before anything
+is made. So is an instruction, a principal's message or a parent's to
+its child, however its actor is labelled, by the inbox and by a run's
+append alike, with nothing appended. The engine's own notice, an event from outside, an
+agent's message from no parent, and a control instruct nobody, and are
+not asked.
 
 **The agents answer it.** A session's registry is its kind's tools that
 the catalog holds, so the agents manager reads it; the root binds the
@@ -44,5 +46,5 @@ inbox's check to it.
   tools read.
 - An adopter whose class needs more than `write` adds its row to the
   table.
-- A spawn is not asked: a child's registry is cut to its parent's, whose
-  sender was asked already.
+- A spawn is asked like a start: whoever spawns a child holds what its
+  registry, cut to its parent's, needs.

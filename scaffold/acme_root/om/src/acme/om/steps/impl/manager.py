@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from uuid import UUID
 
-from acme.om.attribution.rules import decided_by, principal_authored, principal_of, said_by
+from acme.om.attribution.rules import decided_by, instructs, principal_of, said_by
 from acme.om.base import Platform
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import ValidationFailed
@@ -46,6 +46,7 @@ class StepsManagerImpl(StepsManagerInterface):
     ) -> tuple[Step, ...]:
         ctx.require(Permission.WRITE)
         self._bound(steps)
+        await self._asked(ctx, session_id, steps)
         return await self._storage.append_steps(
             ctx.org_id, session_id, epoch, self._said(ctx, steps)
         )
@@ -55,8 +56,7 @@ class StepsManagerImpl(StepsManagerInterface):
     ) -> tuple[Step, ...]:
         ctx.require(Permission.WRITE)
         self._bound(steps)
-        if any(principal_authored(step) for step in steps):
-            await self._instructs(ctx, session_id)
+        await self._asked(ctx, session_id, steps)
         return await self._storage.append_inputs(ctx.org_id, session_id, self._said(ctx, steps))
 
     async def get_steps(
@@ -86,6 +86,12 @@ class StepsManagerImpl(StepsManagerInterface):
             if await self._storage.purge_history(org_id, session_id, batch) < batch:
                 gone.append((org_id, session_id))
         return gone
+
+    async def _asked(self, ctx: TenantContext, session_id: UUID, steps: Sequence[Step]) -> None:
+        """An append that holds an instruction asks first whether its sender
+        may instruct the session, whichever append carries it."""
+        if any(instructs(step) for step in steps):
+            await self._instructs(ctx, session_id)
 
     def _said(self, ctx: TenantContext, steps: Sequence[Step]) -> list[Step]:
         """Each step in the name of the context that appends it: a principal's
