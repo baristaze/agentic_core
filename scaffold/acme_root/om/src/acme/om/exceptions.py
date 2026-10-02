@@ -267,3 +267,15 @@ class InvitationClosed(TenancyException, Conflict):
     sent again or revoked."""
 
     code = "invitation_closed"
+
+
+class StepsException(PlatformException): ...
+
+
+class StaleWriter(StepsException, PreconditionFailed):
+    """An append under a writer epoch the session's cursor row no longer
+    holds: a run that lost its claim to another run, or one that never took
+    it. Refused with nothing written, never trusted to stop on its own; the
+    run ends, and the run that holds the session goes on (ADR 1002)."""
+
+    code = "stale_writer"
