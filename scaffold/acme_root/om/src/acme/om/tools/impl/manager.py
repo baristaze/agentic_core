@@ -226,7 +226,9 @@ class ToolsManagerImpl(ToolsManagerInterface):
         # policy would decide. A delegated principal who no longer holds the
         # call is answered `denied`; a steady one that lapsed raises, and the
         # loop waits for a person to take the session over.
-        reach = CallReach(outward=reaches_outward(call), holds_private=holds_private)
+        reach = CallReach(
+            outward=reaches_outward(call, workspace.spec.egress.mode), holds_private=holds_private
+        )
         try:
             authority = await self._attribution.authorize_call(ctx, request.session_id, reach)
         except AuthorityRevoked as revoked:

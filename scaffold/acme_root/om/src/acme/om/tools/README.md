@@ -24,7 +24,8 @@ thing [Acme is made of](../../../../README.md).
   ceilings hold above both: what cannot be undone, or acts outside, waits
   for a person. A session that has read outside data and holds private
   data or credentials waits for a person before any call that acts
-  outside, whatever policy says.
+  outside, whatever policy says. A command run in a workspace whose
+  network is open acts outside too.
 - **Approval**: a person's yes or no to one exact call, the tool and its
   input. It expires.
 - **Job**: work that outlives a run, such as a long build. The

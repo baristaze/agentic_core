@@ -10,6 +10,7 @@ from typing import Any
 from uuid import UUID
 
 from acme.infra.transports import CommandResult
+from acme.infra.workspaces import EgressMode
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.attribution.types.principal import AgentRef, Principal
 from acme.om.base import derived_id, thaw_mapping
@@ -141,14 +142,18 @@ def matches(rule: PolicyRule, call: PolicyCall) -> bool:
     )
 
 
-def reaches_outward(call: PolicyCall) -> bool:
+def reaches_outward(call: PolicyCall, egress: EgressMode) -> bool:
     """Whether a call acts outward, for the rule of two: on external state
     beyond the session's own work product, or past its egress allowlist.
     The target's `outward` attribute answers, as the system it acts on
-    reports it; a target that does not say takes its class's answer."""
+    reports it. A target that does not say takes its class's answer, and a
+    call that runs code acts outward from a workspace whose egress is open,
+    since nothing there holds it to an allowlist."""
     said = call.target.attributes.get("outward")
     if isinstance(said, bool):
         return said
+    if call.authorization_class == ToolClass.EXECUTE and egress is EgressMode.OPEN:
+        return True
     return call.authorization_class not in INWARD_CLASSES
 
 
