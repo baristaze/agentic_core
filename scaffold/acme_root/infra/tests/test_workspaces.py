@@ -145,6 +145,39 @@ async def test_a_host_release_ends_what_its_commands_left_running_and_nothing_el
             await child.wait()
 
 
+def left_locked(location: Path, outside: Path) -> None:
+    """What commands leave in a workspace: a module cache read-only, as `go
+    mod download` leaves its own, a directory no one may read, and a link
+    to a directory outside the workspace."""
+    cache = location / "go" / "pkg" / "mod" / "m@v1"
+    cache.mkdir(parents=True)
+    (cache / "go.mod").write_text("module m\n")
+    cache.chmod(0o555)
+    cache.parent.chmod(0o555)
+    hidden = location / "hidden"
+    hidden.mkdir()
+    (hidden / "secret.txt").write_text("x")
+    hidden.chmod(0)
+    outside.mkdir()
+    outside.chmod(0o555)
+    (location / "elsewhere").symlink_to(outside)
+
+
+async def test_a_host_purge_removes_what_a_command_left_locked_and_follows_no_link(
+    tmp_path: Path,
+) -> None:
+    provider = WorkspaceHostImpl(tmp_path / "workspaces")
+    workspace = await provider.prepare(new_id(), new_id(), spec(IsolationMode.HOST))
+    outside = tmp_path / "outside"
+    await asyncio.to_thread(left_locked, Path(workspace.location), outside)
+    try:
+        await provider.purge(workspace.org_id, workspace.id)
+        assert not await asyncio.to_thread(Path(workspace.location).exists)
+        assert (await asyncio.to_thread(outside.stat)).st_mode & 0o777 == 0o555, "not followed"
+    finally:
+        await asyncio.to_thread(outside.chmod, 0o755)
+
+
 async def test_a_host_purge_ends_what_runs_there_before_its_files_go(tmp_path: Path) -> None:
     provider = WorkspaceHostImpl(tmp_path / "workspaces")
     workspace = await provider.prepare(new_id(), new_id(), spec(IsolationMode.HOST))

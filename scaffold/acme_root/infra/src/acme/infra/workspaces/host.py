@@ -1,5 +1,8 @@
 import asyncio
+import os
 import shutil
+import stat
+from collections.abc import Callable
 from pathlib import Path
 from uuid import UUID
 
@@ -57,9 +60,29 @@ class WorkspaceHostImpl(WorkspaceProviderInterface):
 
 
 def _removed(directory: Path) -> None:
-    """The directory and everything in it gone; one already gone is no
-    error, and a file that cannot be removed is."""
+    """The directory and everything in it gone, a directory a command left
+    read-only, or unreadable, included, as a module cache leaves its own.
+    One already gone is no error, and a file that still cannot be removed
+    is."""
     try:
-        shutil.rmtree(directory)
+        shutil.rmtree(directory, onexc=_given_back)
     except FileNotFoundError:
         return
+
+
+def _given_back(function: Callable[..., object], path: str, error: BaseException) -> None:
+    """What `rmtree` could not remove for want of a permission: the
+    directory that holds it, and it when it is a directory, are given back
+    to their owner, and the removal is tried again. A link is never
+    followed, so nothing outside the workspace changes."""
+    if isinstance(error, FileNotFoundError):
+        return
+    if not isinstance(error, PermissionError):
+        raise error
+    for place in (os.path.dirname(path), path):
+        if os.path.isdir(place) and not os.path.islink(place):
+            os.chmod(place, stat.S_IRWXU)
+    if os.path.isdir(path) and not os.path.islink(path):
+        shutil.rmtree(path, onexc=_given_back)
+    else:
+        function(path)

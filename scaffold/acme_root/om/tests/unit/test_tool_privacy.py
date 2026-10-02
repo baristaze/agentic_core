@@ -228,6 +228,59 @@ async def test_a_purged_sessions_workspace_and_records_are_gone_from_the_host(
     assert await roots.holds_files(stays) and roots.at_rest(stays.id), "another session's stay"
 
 
+def lock_a_module_cache(location: str) -> None:
+    """A module cache left read-only in the workspace, as `go mod download`
+    leaves its own under a home that is the workspace."""
+    cache = Path(location) / "go" / "pkg" / "mod" / "m@v1"
+    cache.mkdir(parents=True)
+    (cache / "go.mod").write_text("module m\n")
+    cache.chmod(0o555)
+
+
+async def test_a_workspace_a_command_left_read_only_is_purged(tmp_path: Path) -> None:
+    roots = Roots(tmp_path, "host")
+    session = await roots.session()
+    workspace, _ = await roots.ran(session)
+    await asyncio.to_thread(lock_a_module_cache, workspace.location)
+    await roots.managers.agent_sessions.delete_session(roots.ctx, session)
+    assert await roots.managers.agent_sessions.purge_across_tenants() == 1
+    assert not await roots.holds_files(workspace)
+    sessions = roots.storage.get_agent_session_storage()
+    assert await sessions.read_session(roots.ctx.org_id, session) is None
+
+
+async def test_a_session_whose_workspace_cannot_go_fails_alone_and_stays_claimed(
+    roots: Roots, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stuck, other = await roots.session(), await roots.session()
+    (held, made), (gone, kept) = await roots.ran(stuck), await roots.ran(other)
+    for workspace, call in ((held, made), (gone, kept)):
+        await roots.transport.write_file(workspace, "notes.txt", LINE.encode(), call.epoch)
+    provider = roots.infra.get_workspaces()
+    purge = provider.purge
+
+    async def refusing(org_id: UUID, workspace_id: UUID) -> None:
+        if workspace_id == stuck:
+            raise PermissionError("a file there cannot be removed")
+        await purge(org_id, workspace_id)
+
+    monkeypatch.setattr(provider, "purge", refusing)
+    for session in (stuck, other):
+        await roots.managers.agent_sessions.delete_session(roots.ctx, session)
+    assert await roots.managers.agent_sessions.purge_across_tenants() == 2
+    sessions = roots.storage.get_agent_session_storage()
+    assert not await roots.holds_files(gone), "the other session is purged"
+    assert await sessions.read_session(roots.ctx.org_id, other) is None
+    left = await sessions.read_session(roots.ctx.org_id, stuck)
+    assert left is not None and left.purge_started_at is not None, "it stays claimed"
+    assert await roots.holds_files(held)
+
+    monkeypatch.setattr(provider, "purge", purge)
+    assert await roots.managers.agent_sessions.purge_across_tenants() == 1, "the next pass"
+    assert not await roots.holds_files(held)
+    assert await sessions.read_session(roots.ctx.org_id, stuck) is None
+
+
 async def calls_lookup(loop: Loop) -> tuple[UUID, str]:
     """A session whose loop calls `lookup` with the one input every such
     session gives it, and the hash its request recorded."""
