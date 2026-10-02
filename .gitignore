@@ -1,0 +1,22 @@
+# tool caches
+node_modules/
+.markdownlint-cli2-cache/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# local scratch
+/tmp/
+
+# Python environments, builds, and local secrets
+.venv/
+dist/
+.env
