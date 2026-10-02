@@ -56,3 +56,10 @@ class AgentSessionStorageMemoryImpl(MemoryStorageBase, AgentSessionStorageInterf
                     f"agent session {session.id} is no longer at version {expected_version}"
                 )
             self._put(self._sessions, org_id, session, outbox_rows)
+
+    async def purge_tenant(self, org_id: UUID, limit: int) -> int:
+        async with self._lock:
+            gone = [s.id for s in self._rows(self._sessions, org_id)][:limit]
+            for session_id in gone:
+                del self._sessions[session_id]
+            return len(gone)

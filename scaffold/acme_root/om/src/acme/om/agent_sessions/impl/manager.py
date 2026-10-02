@@ -19,6 +19,7 @@ from acme.om.exceptions import NotFound, PreconditionFailed, TenantMismatch, Val
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.types.row import OutboxRow, versioned_row
 from acme.om.steps import StepsManagerInterface
+from acme.om.tenancy import TenancyManagerInterface
 
 CREATED = "agent_sessions.agent_session.created"
 UPDATED = "agent_sessions.agent_session.updated"
@@ -28,6 +29,7 @@ class AgentSessionsOptions(Platform):
     max_limit: int = 50  # sessions one page holds at most
     project_batch: int = 200  # steps one read of the projection folds
     project_attempts: int = 3  # writers one projection reads again behind, at most
+    purge_batch: int = 1000  # sessions one purge statement deletes at most
 
 
 class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
@@ -35,12 +37,14 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         self,
         storage: AgentSessionStorageInterface,
         steps: StepsManagerInterface,
+        tenancy: TenancyManagerInterface,
         relay: OutboxRelayInterface,
         options: AgentSessionsOptions,
         clock: Callable[[], datetime] = utcnow,
     ) -> None:
         self._storage = storage
         self._steps = steps
+        self._tenancy = tenancy
         self._relay = relay
         self._options = options
         self._clock = clock
@@ -181,6 +185,12 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         await self._storage.write_session(ctx.org_id, archived, session.version, rows)
         await self._relay_all(ctx, rows)
         return archived
+
+    async def purge_tenant(self, ctx: TenantContext) -> int:
+        ctx.require(Permission.WRITE)
+        if not await self._tenancy.tenant_expired(ctx):
+            return 0
+        return await self._storage.purge_tenant(ctx.org_id, self._options.purge_batch)
 
     async def _read(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
         session = await self._storage.read_session(ctx.org_id, session_id)

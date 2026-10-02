@@ -17,6 +17,8 @@ CREATE TABLE core.agent_sessions (
     status text NOT NULL,
     park jsonb,
     status_seq bigint NOT NULL,
+    pending_input uuid,
+    delivering_request uuid,
     archived_at timestamptz,
     version integer NOT NULL,
     CONSTRAINT pk_agent_sessions PRIMARY KEY (id)

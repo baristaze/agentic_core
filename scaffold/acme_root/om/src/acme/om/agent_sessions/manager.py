@@ -90,3 +90,10 @@ class AgentSessionsManagerInterface(ABC):
         answered as it is, and one with a loop open is `ValidationFailed`.
         A principal's message undoes it."""
         ...
+
+    @abstractmethod
+    async def purge_tenant(self, ctx: TenantContext) -> int:
+        """The sweep, for one tenant past its own retention: every session,
+        a batch at most a call. Any other tenant returns 0 and reads
+        nothing."""
+        ...

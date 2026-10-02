@@ -38,5 +38,7 @@ class AgentSessions(IdentifiableMixin, TrackableMixin, Base):
     park: Mapped[dict[str, Any] | None]
     # The same width as a step's seq.
     status_seq: Mapped[int] = mapped_column(BigInteger)
+    pending_input: Mapped[UUID | None]
+    delivering_request: Mapped[UUID | None]
     archived_at: Mapped[datetime | None]
     version: Mapped[int]

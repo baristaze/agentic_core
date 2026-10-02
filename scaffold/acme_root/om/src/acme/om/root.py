@@ -121,6 +121,8 @@ def build_managers(
     events_options: EventsOptions | None = None,
     work_options: WorkOptions | None = None,
     orchestrations_options: OrchestrationsOptions | None = None,
+    steps_options: StepsOptions | None = None,
+    agent_sessions_options: AgentSessionsOptions | None = None,
     agent_kinds: tuple[AgentKind, ...] = (),
     principal_context: PrincipalContext | None = None,
     result_gate: ResultGateInterface | None = None,
@@ -186,9 +188,13 @@ def build_managers(
         orchestrations_options or OrchestrationsOptions(),
     )
     # The history first: a session's status is read off its steps.
-    steps = StepsManagerImpl(storage.get_step_storage(), StepsOptions())
+    steps = StepsManagerImpl(storage.get_step_storage(), tenancy, steps_options or StepsOptions())
     agent_sessions = AgentSessionsManagerImpl(
-        storage.get_agent_session_storage(), steps, outbox, AgentSessionsOptions()
+        storage.get_agent_session_storage(),
+        steps,
+        tenancy,
+        outbox,
+        agent_sessions_options or AgentSessionsOptions(),
     )
     attribution = AttributionManagerImpl(
         agent_sessions, principal_context or no_principal_context

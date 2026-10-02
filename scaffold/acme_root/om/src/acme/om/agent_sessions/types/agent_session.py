@@ -21,6 +21,7 @@ from pydantic import Field, model_validator
 from acme.om.attribution.types.authority import Authority
 from acme.om.attribution.types.principal import MAX_KIND, Principal
 from acme.om.base import Identifiable, Platform, Trackable
+from acme.om.steps.types.content import Stored
 from acme.om.steps.types.header import Park
 
 
@@ -37,6 +38,8 @@ class AgentSession(Identifiable, Trackable):
         "status",
         "park",
         "status_seq",
+        "pending_input",
+        "delivering_request",
         "archived_at",
         "version",
         "depth",
@@ -49,7 +52,7 @@ class AgentSession(Identifiable, Trackable):
     another also takes its authority's principal and, for a child, the cut
     of its tools from there (`agent_sessions.rules.lineage`)."""
 
-    title: str = Field(min_length=1, max_length=200)
+    title: Stored = Field(min_length=1, max_length=200)
     participants: tuple[UUID, ...] = ()  # the users the session is shared with
     kind: str = Field(min_length=1, max_length=MAX_KIND)  # its agent kind, pinned
     kind_version: int = Field(ge=1)
@@ -74,6 +77,11 @@ class AgentSession(Identifiable, Trackable):
     # The last seq the cached status has read: the projection goes on from
     # the step after it.
     status_seq: int = Field(default=0, ge=0)
+    # The last waking input no complete model response has delivered yet,
+    # and the model request that carries it, once one does: a loop that ends
+    # with an input still undelivered leaves the session pending.
+    pending_input: UUID | None = None
+    delivering_request: UUID | None = None
     # A flag, undone by a principal's message. An archived session records
     # what arrives and wakes for nothing else.
     archived_at: datetime | None = None

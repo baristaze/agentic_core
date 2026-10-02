@@ -16,7 +16,7 @@ from pydantic import Field, model_validator
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.attribution.types.principal import AgentRef, Principal
 from acme.om.base import Platform
-from acme.om.steps.types.content import MAX_NAME
+from acme.om.steps.types.content import MAX_NAME, Stored
 
 
 class ControlCommand(StrEnum):
@@ -60,7 +60,7 @@ class Park(Platform):
     tries again by itself. No retry time means only a person can unblock it."""
 
     reason: ParkReason
-    unlock: str = Field(min_length=1, max_length=MAX_NAME)
+    unlock: Stored = Field(min_length=1, max_length=MAX_NAME)
     """What clears the park, named as a kind or an id (`approval`, a job's
     id), never as content."""
     retry_at: datetime | None = None
@@ -69,6 +69,9 @@ class Park(Platform):
 class InputHeader(Platform):
     """A `message` or an `event`. `waking` is set when the input arrives, by
     the adopter's routing: a waking input starts a loop on an idle session.
+    Left None, it takes its type's default when the step is built
+    (`steps.types.step.WAKES_BY_DEFAULT`): a principal's message wakes, and
+    an event from outside does not.
 
     `principal` is the authority it arrives on: the person or program that
     wrote a message, the principal a child's spawn ran under for its
@@ -78,7 +81,7 @@ class InputHeader(Platform):
     session it reaches."""
 
     kind: Literal["input"] = "input"
-    waking: bool = True
+    waking: bool | None = None
     principal: Principal
     agent: AgentRef | None = None
     untrusted: bool = False
@@ -94,7 +97,7 @@ class ModelRequestHeader(Platform):
     steps it carried."""
 
     kind: Literal["model_request"] = "model_request"
-    role: str = Field(min_length=1, max_length=MAX_NAME)
+    role: Stored = Field(min_length=1, max_length=MAX_NAME)
     spender: Principal  # who pays for the call
 
 
@@ -116,9 +119,9 @@ class ToolRequestHeader(Platform):
     the adopter's transition answered for on this call."""
 
     kind: Literal["tool_request"] = "tool_request"
-    tool: str = Field(min_length=1, max_length=MAX_NAME)
-    tool_use_id: str = Field(min_length=1, max_length=MAX_NAME)
-    input_hash: str = Field(min_length=1, max_length=MAX_NAME)
+    tool: Stored = Field(min_length=1, max_length=MAX_NAME)
+    tool_use_id: Stored = Field(min_length=1, max_length=MAX_NAME)
+    input_hash: Stored = Field(min_length=1, max_length=MAX_NAME)
     principal: Principal
     authority: AuthorityMode
     agent: AgentRef
