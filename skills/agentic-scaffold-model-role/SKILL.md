@@ -62,8 +62,10 @@ The shape is the rows of `MAIN` and `SUMMARIZER`.
    or the resolver refuses it. A missing row is read from the
    provider's published price list, the page `LIST_PRICES` cites for
    that provider, on the day `date +%F` gives, with the provider's
-   helper in that file. A model the page does not list, or a provider
-   with no page cited there, stops the run, naming the missing price: a
+   helper in that file. For a provider with no page cited yet, read the
+   provider's own published pricing page, cite it in the `LIST_PRICES`
+   docstring, and write its helper in the shape of the others. A model
+   no published page lists stops the run, naming the missing price: a
    price is never estimated, since a guess under-reserves the gate's
    hold. A row's `as_of` is the day it was read: the helper takes it as
    an argument that defaults to `READ`, the new row passes today's, and
