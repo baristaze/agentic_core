@@ -1,10 +1,11 @@
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
 from uuid import UUID
 
 from acme.om.agent_sessions.manager import AgentSessionsManagerInterface, SessionPurged
 from acme.om.agent_sessions.rules import (
     announces,
+    asks_for_run,
     lineage,
     parked_step,
     projected,
@@ -27,8 +28,14 @@ from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.types.row import OutboxRow, outbox_row, versioned_row
 from acme.om.steps import StepsManagerInterface
 from acme.om.steps.types.header import Park, ParkReason
+from acme.om.steps.types.step import Step
 from acme.om.tenancy import TenancyManagerInterface
-from acme.om.work.types.work_item import WakeSessionPayload, WorkKind, work_row_kind
+from acme.om.work.types.work_item import (
+    LoopPayload,
+    WakeSessionPayload,
+    WorkKind,
+    work_row_kind,
+)
 
 CREATED = "agent_sessions.agent_session.created"
 UPDATED = "agent_sessions.agent_session.updated"
@@ -152,6 +159,8 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
             waiting = wakes_at(session, after, page.items)
             if waiting is not None:
                 rows += (wake_row(ctx, after, waiting),)
+            if asks_for_run(session, after):
+                rows += (loop_row(ctx, after),)
             try:
                 await self._storage.write_session(ctx.org_id, after, session.version, rows)
             except PreconditionFailed:
@@ -166,6 +175,14 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
             session = after
             if not page.has_more:
                 return session
+
+    async def receive(
+        self, ctx: TenantContext, session_id: UUID, inputs: Sequence[Step]
+    ) -> tuple[tuple[Step, ...], AgentSession]:
+        ctx.require(Permission.WRITE)
+        await self._read(ctx, session_id)
+        stored = await self._steps.append_inputs(ctx, session_id, inputs)
+        return stored, await self.project_status(ctx, session_id)
 
     async def park(
         self, ctx: TenantContext, session_id: UUID, epoch: int, loop_id: UUID, park: Park
@@ -213,10 +230,10 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         """The engine's unlock, through the inbox, and the status after it. A
         park that changed meanwhile is unlocked too, which costs one more
         check: the run that takes it up asks its gates again."""
-        await self._steps.append_inputs(
+        _, unlocked = await self.receive(
             ctx, session.id, [unlock_step(new_id(), session.id, self._clock())]
         )
-        return await self.project_status(ctx, session.id)
+        return unlocked
 
     async def archive_session(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
         ctx.require(Permission.WRITE)
@@ -354,6 +371,16 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         """The write has committed; a relay that fails is left to the sweep."""
         if rows:
             await self._relay.relay_all(ctx.org_id, rows)
+
+
+def loop_row(ctx: TenantContext, session: AgentSession) -> OutboxRow:
+    """The work row that asks for a run of the session's loop, written with
+    the projection that made the session pending. It asks as the caller whose
+    write woke the session: the claim rebuilds that principal under the
+    service role, and every tool call asks its own principal again."""
+    return outbox_row(
+        ctx, work_row_kind(WorkKind.LOOP), session.id, LoopPayload().model_dump(mode="json")
+    )
 
 
 def wake_row(ctx: TenantContext, session: AgentSession, park: Park) -> OutboxRow:

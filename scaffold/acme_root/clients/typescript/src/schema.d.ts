@@ -236,6 +236,123 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agent-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Session
+         * @description A session on the kind, idle until a message wakes it.
+         */
+        post: operations["start_session_v1_agent_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agent-sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Session */
+        get: operations["get_session_v1_agent_sessions__session_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agent-sessions/{session_id}/calls/{request_seq}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decide Call
+         * @description An approval or a denial of the tool call at `request_seq`, as stored.
+         */
+        post: operations["decide_call_v1_agent_sessions__session_id__calls__request_seq__decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agent-sessions/{session_id}/controls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send Control
+         * @description The control as stored, out of band: it never waits behind a message.
+         */
+        post: operations["send_control_v1_agent_sessions__session_id__controls_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agent-sessions/{session_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send Message
+         * @description The message as stored, durable when this answers.
+         */
+        post: operations["send_message_v1_agent_sessions__session_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agent-sessions/{session_id}/steps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Steps
+         * @description The history in order, strictly after `after_seq`.
+         */
+        get: operations["get_steps_v1_agent_sessions__session_id__steps_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/api-keys": {
         parameters: {
             query?: never;
@@ -887,6 +1004,12 @@ export interface components {
             /** Provider Logout Url */
             provider_logout_url?: string | null;
         };
+        /**
+         * Actor
+         * @description Who produced a step.
+         * @enum {string}
+         */
+        Actor: "person" | "program" | "agent" | "model" | "engine" | "external";
         /** AddApiKeyRequest */
         AddApiKeyRequest: {
             /** Name */
@@ -907,6 +1030,40 @@ export interface components {
             /** Email */
             email: string;
             role: components["schemas"]["Role"];
+        };
+        /**
+         * AgentSessionView
+         * @description A session: its kind, its title, and its status, which follows its
+         *     steps. `pending` while an input waits for a run, `running` while a run
+         *     holds its loop, `parked` while the loop waits, `idle` when no loop is
+         *     open.
+         */
+        AgentSessionView: {
+            /** Archived At */
+            archived_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Created By
+             * Format: uuid
+             */
+            created_by: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Kind Version */
+            kind_version: number;
+            park: components["schemas"]["ParkView"] | null;
+            status: components["schemas"]["SessionStatus"];
+            /** Title */
+            title: string;
         };
         /**
          * ApiKeyPageView
@@ -956,6 +1113,22 @@ export interface components {
             totp_code: string;
         };
         /**
+         * ControlCommand
+         * @description What a `control` step records: a command that travels out of band.
+         * @enum {string}
+         */
+        ControlCommand: "pause" | "resume" | "cancel" | "interrupt" | "compact" | "approve" | "deny" | "unlock";
+        /**
+         * ControlRequest
+         * @description A control. An interrupt names the seq of the tool request it stops,
+         *     and no other control names one.
+         */
+        ControlRequest: {
+            command: components["schemas"]["SessionControl"];
+            /** Request Seq */
+            request_seq?: number | null;
+        };
+        /**
          * CreateOrgRequest
          * @description An org with its owner, as `bootstrap` seeds one. The owner's identity
          *     is created with its personal org when the email is new; the owner signs
@@ -988,6 +1161,20 @@ export interface components {
          * @enum {string}
          */
         CredentialKind: "api_key" | "session_token" | "login" | "socket_ticket" | "operator_token" | "internal";
+        /**
+         * DecisionRequest
+         * @description A person's decision on the tool call at a seq. A denial's note is what
+         *     the model reads.
+         */
+        DecisionRequest: {
+            /** Approve */
+            approve: boolean;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+        };
         /**
          * DeleteAccountRequest
          * @description The account's email as the person typed it, which is how they say
@@ -1407,6 +1594,12 @@ export interface components {
             /** Return To */
             return_to?: string | null;
         };
+        /**
+         * LoopOutcome
+         * @description The five ways a loop ends. A park is none of them.
+         * @enum {string}
+         */
+        LoopOutcome: "succeeded" | "failed" | "inconclusive" | "cancelled" | "errored";
         /** MeView */
         MeView: {
             /** App */
@@ -1462,6 +1655,15 @@ export interface components {
              * Format: uuid
              */
             user_id: string;
+        };
+        /**
+         * MessageRequest
+         * @description A message to the session, said in the caller's name. It wakes an idle
+         *     session, and a running loop reads it at its next model request.
+         */
+        MessageRequest: {
+            /** Text */
+            text: string;
         };
         /**
          * MintOperatorTokenRequest
@@ -1662,6 +1864,12 @@ export interface components {
             slug: string;
         };
         /**
+         * Origin
+         * @description Where a step came in.
+         * @enum {string}
+         */
+        Origin: "portal" | "cli" | "api" | "integration" | "automation" | "parent" | "engine";
+        /**
          * OwnedOrgRef
          * @description An org named in a refusal: enough to find it and to say which.
          */
@@ -1675,6 +1883,24 @@ export interface components {
             name: string;
             /** Slug */
             slug: string;
+        };
+        /**
+         * ParkReason
+         * @description Why a loop waits, and so what clears it.
+         * @enum {string}
+         */
+        ParkReason: "person" | "provider" | "budget" | "resource" | "job" | "children" | "handover" | "pause";
+        /**
+         * ParkView
+         * @description Why a parked loop waits, what clears it, and when it tries again by
+         *     itself; a park only a person clears has no time.
+         */
+        ParkView: {
+            reason: components["schemas"]["ParkReason"];
+            /** Retry At */
+            retry_at: string | null;
+            /** Unlock */
+            unlock: string;
         };
         /**
          * Permission
@@ -1735,6 +1961,18 @@ export interface components {
             /** Totp Code */
             totp_code: string;
         };
+        /**
+         * SessionControl
+         * @description The controls a person sends a session out of band. A decision on one
+         *     tool call is a route of its own.
+         * @enum {string}
+         */
+        SessionControl: "pause" | "resume" | "cancel" | "interrupt" | "compact" | "unlock";
+        /**
+         * SessionStatus
+         * @enum {string}
+         */
+        SessionStatus: "pending" | "running" | "parked" | "idle";
         /**
          * SessionView
          * @description Only the hash of a token is ever kept, so a session view carries no secret.
@@ -1866,6 +2104,16 @@ export interface components {
             url: string;
         };
         /**
+         * StartSessionRequest
+         * @description A session to start on the latest version of a kind the product runs.
+         */
+        StartSessionRequest: {
+            /** Kind */
+            kind: string;
+            /** Title */
+            title: string;
+        };
+        /**
          * StartUploadRequest
          * @description An upload to start: the file's name as the uploader had it, its type,
          *     and its size in bytes. The type must be one the purpose accepts and match
@@ -1879,6 +2127,76 @@ export interface components {
             /** Size Bytes */
             size_bytes: number;
         };
+        /**
+         * StepPageView
+         * @description One page of a session's history, after the seq the request named.
+         *     With `has_more`, the next page starts after the last step's seq.
+         */
+        StepPageView: {
+            /** Has More */
+            has_more: boolean;
+            /** Items */
+            items: components["schemas"]["StepView"][];
+        };
+        /**
+         * StepType
+         * @description What a step records. The type answers questions, so no caller
+         *     compares strings.
+         * @enum {string}
+         */
+        StepType: "message" | "event" | "control" | "model_request" | "model_response" | "tool_request" | "tool_response" | "summary" | "parked" | "resumed" | "loop_ended" | "switched" | "environment_changed";
+        /**
+         * StepView
+         * @description One step of a session's history, in its order. `text` is what it
+         *     says: a message's words, a model's answer, a tool's result. The rest is
+         *     its header's, by type: the tools a model response called and why it
+         *     stopped, a tool call's tool and the class of its failure, a control's
+         *     command, a park, a loop's outcome.
+         */
+        StepView: {
+            actor: components["schemas"]["Actor"];
+            command: components["schemas"]["ControlCommand"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            failure: components["schemas"]["ToolFailure"] | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Loop Id
+             * Format: uuid
+             */
+            loop_id: string;
+            origin: components["schemas"]["Origin"];
+            outcome: components["schemas"]["LoopOutcome"] | null;
+            park: components["schemas"]["ParkView"] | null;
+            /** Refs */
+            refs: string[];
+            /** Responds To */
+            responds_to: string | null;
+            /** Seq */
+            seq: number;
+            stop_reason: components["schemas"]["StopReason"] | null;
+            /** Text */
+            text: string;
+            /** Tool */
+            tool: string | null;
+            /** Tools */
+            tools: string[];
+            type: components["schemas"]["StepType"];
+        };
+        /**
+         * StopReason
+         * @description Why a response stopped. A model's refusal is a response its agent kind
+         *     handles, never a provider error.
+         * @enum {string}
+         */
+        StopReason: "end_turn" | "tool_use" | "output_limit" | "refusal" | "content_filter" | "pause";
         /**
          * StorageUsageView
          * @description What the org keeps in the store, counted from its files: the stored ones
@@ -1907,6 +2225,13 @@ export interface components {
             /** Head */
             head: number;
         };
+        /**
+         * ToolFailure
+         * @description The class of a tool failure, decided where the failure happens. The
+         *     model reads it with advice on what to do next.
+         * @enum {string}
+         */
+        ToolFailure: "invalid_input" | "transient" | "timeout" | "denied" | "interrupted" | "permanent";
         /**
          * TotpConfirmedView
          * @description The second factor is enrolled: from now on the operator plane admits
@@ -1998,7 +2323,7 @@ export interface components {
          * WorkKind
          * @enum {string}
          */
-        WorkKind: "NOOP" | "ORCHESTRATION" | "WAKE_PARKED" | "DELETE_ACCOUNT" | "DELETE_ORG" | "WAKE_SESSION" | "WAKE_SESSIONS";
+        WorkKind: "NOOP" | "ORCHESTRATION" | "WAKE_PARKED" | "DELETE_ACCOUNT" | "DELETE_ORG" | "WAKE_SESSION" | "WAKE_SESSIONS" | "LOOP";
         /**
          * WorkStatus
          * @enum {string}
@@ -2540,6 +2865,238 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlatformSizeView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_session_v1_agent_sessions_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-app"?: string | null;
+                "x-app-version"?: string | null;
+                "idempotency-key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentSessionView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_session_v1_agent_sessions__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-app"?: string | null;
+                "x-app-version"?: string | null;
+            };
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentSessionView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_call_v1_agent_sessions__session_id__calls__request_seq__decision_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-app"?: string | null;
+                "x-app-version"?: string | null;
+                "idempotency-key"?: string | null;
+            };
+            path: {
+                session_id: string;
+                request_seq: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_control_v1_agent_sessions__session_id__controls_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-app"?: string | null;
+                "x-app-version"?: string | null;
+                "idempotency-key"?: string | null;
+            };
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ControlRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_message_v1_agent_sessions__session_id__messages_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-app"?: string | null;
+                "x-app-version"?: string | null;
+                "idempotency-key"?: string | null;
+            };
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_steps_v1_agent_sessions__session_id__steps_get: {
+        parameters: {
+            query?: {
+                after_seq?: number;
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+                "x-app"?: string | null;
+                "x-app-version"?: string | null;
+            };
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepPageView"];
                 };
             };
             /** @description Validation Error */

@@ -15,6 +15,7 @@ members = [
     "integrations",
     "services/api",
     "workers/maintenance",
+    "workers/session_runner",
     "clients/python",
     "apps/cli",
     "ops",
@@ -26,6 +27,7 @@ acme-infra = { workspace = true }
 acme-integrations = { workspace = true }
 acme-api = { workspace = true }
 acme-maintenance = { workspace = true }
+acme-session-runner = { workspace = true }
 acme-client = { workspace = true }
 acme-cli = { workspace = true }
 acme-ops = { workspace = true }
@@ -49,6 +51,7 @@ pythonpath = [
     "om/tests",
     "services/api/tests",
     "workers/maintenance/tests",
+    "workers/session_runner/tests",
     "clients/python/tests",
     "apps/cli/tests",
     "ops/tests",
@@ -61,6 +64,7 @@ testpaths = [
     "integrations/tests",
     "services/api/tests",
     "workers/maintenance/tests",
+    "workers/session_runner/tests",
     "clients/python/tests",
     "apps/cli/tests",
     "ops/tests",
@@ -69,12 +73,16 @@ markers = [
     "integration: needs the local compose stack",
     "slow: takes more than a few seconds",
     "telemetry: needs the devx profile",
+    "live: calls a live model provider and spends; `make test-live` runs it by hand",
 ]
 
 # The engine's static checker (`make agentic-check`). The layout is the
-# scaffold's, so only the package is named.
+# scaffold's, so only the package is named, and the Python client's types,
+# generated from the committed OpenAPI document by `make openapi` and never
+# hand-edited, are left out, as the linter leaves them.
 [tool.agentic-check]
 package = "acme"
+exclude = ["clients/python/src/acme/client/schema.py"]
 
 # The guideline's static checker (`make arch-check`). The layout is the
 # guideline's, so only the package and the project's own lists are named.
@@ -171,5 +179,6 @@ sites = [
     "om/src/acme/om/tenancy/impl/manager.py::TenancyManagerImpl.resume",
     "om/src/acme/om/tenancy/impl/manager.py::TenancyManagerImpl.service_context",
     "om/src/acme/om/tenancy/impl/manager.py::TenancyManagerImpl.service_contexts",
+    "om/src/acme/om/tenancy/impl/manager.py::TenancyManagerImpl.member_context",
 ]
 builders = ["build_context"]

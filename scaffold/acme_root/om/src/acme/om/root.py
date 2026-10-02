@@ -27,7 +27,7 @@ from acme.om.attribution import AttributionManagerInterface, PrincipalContext
 from acme.om.attribution.impl.manager import (
     AttributionManagerImpl,
     AttributionOptions,
-    no_principal_context,
+    members_context,
 )
 from acme.om.base import utcnow
 from acme.om.budgets import BudgetGateInterface, BudgetsManagerInterface
@@ -268,9 +268,9 @@ def build_managers(
     each kind it still runs; `principal_context`, the transition of its
     tenancy manager that answers for a principal's live permissions, which
     every tool call asks; and `result_gate`, the gate a result passes. None
-    wires the transition that answers for nobody, so every tool call is
-    refused, and the null gate, which accepts a result and marks it
-    unverified.
+    wires the tenancy manager's own, which answers for a person by the
+    membership they hold at the call and for no service principal, and the
+    null gate, which accepts a result and marks it unverified.
 
     The loop takes the rest: `tool_catalog`, the adopter's tools, of which a
     session's registry holds those its kind names, with `domain_classes`,
@@ -382,7 +382,7 @@ def build_managers(
         storage.get_attribution_storage(),
         agent_sessions,
         steps,
-        principal_context or no_principal_context,
+        principal_context or members_context(tenancy),
         tenancy,
         outbox,
         attribution_options or AttributionOptions(),

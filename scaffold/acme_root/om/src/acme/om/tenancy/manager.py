@@ -215,6 +215,21 @@ class TenancyManagerInterface(ABC):
         ...
 
     @abstractmethod
+    async def member_context(
+        self, rctx: RequestContext, org_id: UUID, user_id: UUID, key_id: UUID | None = None
+    ) -> TenantContext:
+        """Platform-internal: the live context of a member, for a call made on
+        their authority while they are not there, such as an agent's tool
+        call: the role their membership holds now and that role's
+        permissions, never the service role's. Read at each call, so a
+        member whose role changed acts with the new one. With `key_id`, the
+        member spoke through that API key: the role is capped at the key's,
+        as `authenticate` caps it, and the key is the context's credential.
+        `NotAuthorized` when the org, the user, or the membership is gone,
+        or the key is revoked, expired, or not the member's."""
+        ...
+
+    @abstractmethod
     async def service_contexts(self, rctx: RequestContext) -> list[TenantContext]:
         """Platform-internal: one service context per tenant, deleted ones
         included, for sweeps, with one for the system scope (`EMPTY_UUID` as the

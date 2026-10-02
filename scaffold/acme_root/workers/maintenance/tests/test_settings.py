@@ -70,6 +70,7 @@ LOCAL_DEFAULT_SERVES_THE_CLOUD = {
     "workos_base_url": "the worker signs nobody in",
     "model_providers": "no process here calls a model; none until a process that runs a loop is deployed",
     "anthropic_api_key": "no process here calls a model",
+    "model_script": "the scripted twin's only, which a deployed process refuses",
     "anthropic_base_url": "the hosted API everywhere",
     "openai_api_key": "no process here calls a model",
     "openai_base_url": "the hosted API everywhere",

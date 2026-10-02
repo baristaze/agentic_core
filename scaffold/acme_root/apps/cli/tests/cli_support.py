@@ -19,11 +19,21 @@ from acme.client.client import ApiClient
 from acme.integrations.identity.twin import IdentityProviderTwinImpl
 from acme.integrations.impl.configured import IntegrationsOverImpl
 from acme.integrations.model_providers.registry import absent_model_providers
+from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
+from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.context import Role
 from acme.services.api.app import create_app
 from acme.services.api.container import AppContainer
 
 BOB = {"email": "bob@example.test"}
+ASSISTANT = AgentKind(
+    name="assistant",
+    version=1,
+    done_rule=DoneRule.ANSWER,
+    authority=AuthorityMode.DELEGATED,
+    tree=TreeLimits(height=1, count=0),
+)
+"""The one agent kind the in-process API runs; no loop runs behind it."""
 
 
 class Hop(httpx.AsyncBaseTransport):
@@ -118,7 +128,9 @@ class Stack:
 def stack(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Stack]:
     twin = IdentityProviderTwinImpl()
     container = build_container(
-        tmp_path, integrations=IntegrationsOverImpl(twin, absent_model_providers())
+        tmp_path,
+        integrations=IntegrationsOverImpl(twin, absent_model_providers()),
+        agent_kinds=(ASSISTANT,),
     )
     _, org = run(
         container.managers.tenancy.bootstrap(

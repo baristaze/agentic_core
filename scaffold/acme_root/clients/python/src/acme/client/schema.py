@@ -19,6 +19,18 @@ class AccountDeletedView(BaseModel):
     provider_logout_url: Annotated[str | None, Field(title='Provider Logout Url')] = None
 
 
+class Actor(StrEnum):
+    """
+    Who produced a step.
+    """
+    person = 'person'
+    program = 'program'
+    agent = 'agent'
+    model = 'model'
+    engine = 'engine'
+    external = 'external'
+
+
 class TtlDays(RootModel[int]):
     root: Annotated[int, Field(ge=1, le=90, title='Ttl Days')]
 
@@ -31,6 +43,24 @@ class ConfirmTotpRequest(BaseModel):
         extra='forbid',
     )
     totp_code: Annotated[str, Field(max_length=6, min_length=6, title='Totp Code')]
+
+
+class ControlCommand(StrEnum):
+    """
+    What a `control` step records: a command that travels out of band.
+    """
+    pause = 'pause'
+    resume = 'resume'
+    cancel = 'cancel'
+    interrupt = 'interrupt'
+    compact = 'compact'
+    approve = 'approve'
+    deny = 'deny'
+    unlock = 'unlock'
+
+
+class RequestSeq(RootModel[int]):
+    root: Annotated[int, Field(ge=1, title='Request Seq')]
 
 
 class CreateOrgRequest(BaseModel):
@@ -72,6 +102,18 @@ class CredentialKind(StrEnum):
     socket_ticket = 'socket_ticket'
     operator_token = 'operator_token'
     internal = 'internal'
+
+
+class DecisionRequest(BaseModel):
+    """
+    A person's decision on the tool call at a seq. A denial's note is what
+    the model reads.
+    """
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    approve: Annotated[bool, Field(title='Approve')]
+    note: Annotated[str | None, Field(max_length=100000, title='Note')] = ''
 
 
 class ReturnTo(RootModel[str]):
@@ -256,6 +298,28 @@ class LogoutRequest(BaseModel):
     return_to: Annotated[ReturnTo | None, Field(title='Return To')] = None
 
 
+class LoopOutcome(StrEnum):
+    """
+    The five ways a loop ends. A park is none of them.
+    """
+    succeeded = 'succeeded'
+    failed = 'failed'
+    inconclusive = 'inconclusive'
+    cancelled = 'cancelled'
+    errored = 'errored'
+
+
+class MessageRequest(BaseModel):
+    """
+    A message to the session, said in the caller's name. It wakes an idle
+    session, and a running loop reads it at its next model request.
+    """
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    text: Annotated[str, Field(max_length=100000, min_length=1, title='Text')]
+
+
 class ExpiresIn(RootModel[int]):
     root: Annotated[int, Field(ge=1, le=3600, title='Expires In')]
 
@@ -331,6 +395,19 @@ class OrgView(BaseModel):
     slug: Annotated[str, Field(title='Slug')]
 
 
+class Origin(StrEnum):
+    """
+    Where a step came in.
+    """
+    portal = 'portal'
+    cli = 'cli'
+    api = 'api'
+    integration = 'integration'
+    automation = 'automation'
+    parent = 'parent'
+    engine = 'engine'
+
+
 class OwnedOrgRef(BaseModel):
     """
     An org named in a refusal: enough to find it and to say which.
@@ -338,6 +415,30 @@ class OwnedOrgRef(BaseModel):
     id: Annotated[UUID, Field(title='Id')]
     name: Annotated[str, Field(title='Name')]
     slug: Annotated[str, Field(title='Slug')]
+
+
+class ParkReason(StrEnum):
+    """
+    Why a loop waits, and so what clears it.
+    """
+    person = 'person'
+    provider = 'provider'
+    budget = 'budget'
+    resource = 'resource'
+    job = 'job'
+    children = 'children'
+    handover = 'handover'
+    pause = 'pause'
+
+
+class ParkView(BaseModel):
+    """
+    Why a parked loop waits, what clears it, and when it tries again by
+    itself; a park only a person clears has no time.
+    """
+    reason: ParkReason
+    retry_at: Annotated[AwareDatetime | None, Field(title='Retry At')]
+    unlock: Annotated[str, Field(title='Unlock')]
 
 
 class Permission(StrEnum):
@@ -389,6 +490,26 @@ class SecondFactorRequest(BaseModel):
         extra='forbid',
     )
     totp_code: Annotated[str, Field(max_length=6, min_length=6, title='Totp Code')]
+
+
+class SessionControl(StrEnum):
+    """
+    The controls a person sends a session out of band. A decision on one
+    tool call is a route of its own.
+    """
+    pause = 'pause'
+    resume = 'resume'
+    cancel = 'cancel'
+    interrupt = 'interrupt'
+    compact = 'compact'
+    unlock = 'unlock'
+
+
+class SessionStatus(StrEnum):
+    pending = 'pending'
+    running = 'running'
+    parked = 'parked'
+    idle = 'idle'
 
 
 class SessionView(BaseModel):
@@ -494,6 +615,17 @@ class SsoLinkView(BaseModel):
     url: Annotated[str, Field(title='Url')]
 
 
+class StartSessionRequest(BaseModel):
+    """
+    A session to start on the latest version of a kind the product runs.
+    """
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    kind: Annotated[str, Field(max_length=200, min_length=1, title='Kind')]
+    title: Annotated[str, Field(max_length=200, min_length=1, title='Title')]
+
+
 class StartUploadRequest(BaseModel):
     """
     An upload to start: the file's name as the uploader had it, its type,
@@ -506,6 +638,39 @@ class StartUploadRequest(BaseModel):
     content_type: Annotated[str, Field(max_length=255, min_length=1, title='Content Type')]
     name: Annotated[str, Field(max_length=255, min_length=1, title='Name')]
     size_bytes: Annotated[int, Field(gt=0, title='Size Bytes')]
+
+
+class StepType(StrEnum):
+    """
+    What a step records. The type answers questions, so no caller
+    compares strings.
+    """
+    message = 'message'
+    event = 'event'
+    control = 'control'
+    model_request = 'model_request'
+    model_response = 'model_response'
+    tool_request = 'tool_request'
+    tool_response = 'tool_response'
+    summary = 'summary'
+    parked = 'parked'
+    resumed = 'resumed'
+    loop_ended = 'loop_ended'
+    switched = 'switched'
+    environment_changed = 'environment_changed'
+
+
+class StopReason(StrEnum):
+    """
+    Why a response stopped. A model's refusal is a response its agent kind
+    handles, never a provider error.
+    """
+    end_turn = 'end_turn'
+    tool_use = 'tool_use'
+    output_limit = 'output_limit'
+    refusal = 'refusal'
+    content_filter = 'content_filter'
+    pause = 'pause'
 
 
 class StorageUsageView(BaseModel):
@@ -528,6 +693,19 @@ class StreamTruncatedDetail(BaseModel):
     """
     floor: Annotated[int, Field(title='Floor')]
     head: Annotated[int, Field(title='Head')]
+
+
+class ToolFailure(StrEnum):
+    """
+    The class of a tool failure, decided where the failure happens. The
+    model reads it with advice on what to do next.
+    """
+    invalid_input = 'invalid_input'
+    transient = 'transient'
+    timeout = 'timeout'
+    denied = 'denied'
+    interrupted = 'interrupted'
+    permanent = 'permanent'
 
 
 class TotpConfirmedView(BaseModel):
@@ -595,6 +773,7 @@ class WorkKind(StrEnum):
     DELETE_ORG = 'DELETE_ORG'
     WAKE_SESSION = 'WAKE_SESSION'
     WAKE_SESSIONS = 'WAKE_SESSIONS'
+    LOOP = 'LOOP'
 
 
 class WorkStatus(StrEnum):
@@ -627,6 +806,24 @@ class AddMemberRequest(BaseModel):
     role: Role
 
 
+class AgentSessionView(BaseModel):
+    """
+    A session: its kind, its title, and its status, which follows its
+    steps. `pending` while an input waits for a run, `running` while a run
+    holds its loop, `parked` while the loop waits, `idle` when no loop is
+    open.
+    """
+    archived_at: Annotated[AwareDatetime | None, Field(title='Archived At')]
+    created_at: Annotated[AwareDatetime, Field(title='Created At')]
+    created_by: Annotated[UUID, Field(title='Created By')]
+    id: Annotated[UUID, Field(title='Id')]
+    kind: Annotated[str, Field(title='Kind')]
+    kind_version: Annotated[int, Field(title='Kind Version')]
+    park: ParkView | None
+    status: SessionStatus
+    title: Annotated[str, Field(title='Title')]
+
+
 class ApiKeyView(BaseModel):
     created_at: Annotated[AwareDatetime, Field(title='Created At')]
     deleted_at: Annotated[AwareDatetime | None, Field(title='Deleted At')]
@@ -635,6 +832,18 @@ class ApiKeyView(BaseModel):
     name: Annotated[str, Field(title='Name')]
     role: Role
     user_id: Annotated[UUID, Field(title='User Id')]
+
+
+class ControlRequest(BaseModel):
+    """
+    A control. An interrupt names the seq of the tool request it stops,
+    and no other control names one.
+    """
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    command: SessionControl
+    request_seq: Annotated[RequestSeq | None, Field(title='Request Seq')] = None
 
 
 class FilePageView(BaseModel):
@@ -822,6 +1031,33 @@ class OrgPageView(BaseModel):
     next_cursor: Annotated[str | None, Field(title='Next Cursor')]
 
 
+class StepView(BaseModel):
+    """
+    One step of a session's history, in its order. `text` is what it
+    says: a message's words, a model's answer, a tool's result. The rest is
+    its header's, by type: the tools a model response called and why it
+    stopped, a tool call's tool and the class of its failure, a control's
+    command, a park, a loop's outcome.
+    """
+    actor: Actor
+    command: ControlCommand | None
+    created_at: Annotated[AwareDatetime, Field(title='Created At')]
+    failure: ToolFailure | None
+    id: Annotated[UUID, Field(title='Id')]
+    loop_id: Annotated[UUID, Field(title='Loop Id')]
+    origin: Origin
+    outcome: LoopOutcome | None
+    park: ParkView | None
+    refs: Annotated[list[UUID], Field(title='Refs')]
+    responds_to: Annotated[UUID | None, Field(title='Responds To')]
+    seq: Annotated[int, Field(title='Seq')]
+    stop_reason: StopReason | None
+    text: Annotated[str, Field(title='Text')]
+    tool: Annotated[str | None, Field(title='Tool')]
+    tools: Annotated[list[str], Field(title='Tools')]
+    type: StepType
+
+
 class UserPageView(BaseModel):
     """
     One page of the tenant's members. `next_cursor` fetches the next page
@@ -889,3 +1125,12 @@ class MembershipPageView(BaseModel):
     """
     items: Annotated[list[MembershipView], Field(title='Items')]
     next_cursor: Annotated[str | None, Field(title='Next Cursor')]
+
+
+class StepPageView(BaseModel):
+    """
+    One page of a session's history, after the seq the request named.
+    With `has_more`, the next page starts after the last step's seq.
+    """
+    has_more: Annotated[bool, Field(title='Has More')]
+    items: Annotated[list[StepView], Field(title='Items')]

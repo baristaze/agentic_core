@@ -17,7 +17,6 @@ response is read by the request after it. So no tool call is ever decided
 on a mark the model's reading has outrun."""
 
 from collections.abc import Iterable, Sequence
-from uuid import UUID
 
 from acme.om.attribution.types.authority import (
     AuthorityMode,
@@ -25,7 +24,8 @@ from acme.om.attribution.types.authority import (
     SessionAuthority,
     Trust,
 )
-from acme.om.attribution.types.principal import Principal
+from acme.om.attribution.types.principal import Principal, PrincipalKind
+from acme.om.context import CredentialKind, TenantContext
 from acme.om.steps.types.header import InputHeader, ModelRequestHeader
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 
@@ -72,17 +72,24 @@ def marks(step: Step) -> bool:
     return carried or trust_of(step) is Trust.DATA
 
 
-def said_by(step: Step, user_id: UUID) -> Step:
+def principal_of(ctx: TenantContext) -> Principal:
+    """The principal a context speaks for: its user, and the API key it came
+    on, which caps the user's role at every call made on what they said. A
+    context on any other credential speaks for the person alone."""
+    key = ctx.credential_id if ctx.credential_kind is CredentialKind.API_KEY else None
+    return Principal(kind=PrincipalKind.PERSON, id=ctx.user_id, key_id=key)
+
+
+def said_by(step: Step, principal: Principal) -> Step:
     """A principal-authored input as the context that appends it said it:
-    its principal is that context's user, whatever the caller wrote, so no
-    one speaks, or pays, or asks, in another's name. Any other step is
-    answered as it is."""
+    its principal is that context's (`principal_of`), key included, whatever
+    the caller wrote, so no one speaks, or pays, or asks, in another's name
+    or past their key's cap. Any other step is answered as it is."""
     header = step.header
     if not principal_authored(step) or not isinstance(header, InputHeader):
         return step
-    if header.principal.id == user_id:
+    if header.principal == principal:
         return step
-    principal = header.principal.model_copy(update={"id": user_id})
     return step.model_copy(update={"header": header.model_copy(update={"principal": principal})})
 
 

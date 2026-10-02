@@ -536,6 +536,40 @@ class TenancyManagerImpl(TenancyManagerInterface):
             credential_kind=CredentialKind.INTERNAL,
         )
 
+    async def member_context(
+        self, rctx: RequestContext, org_id: UUID, user_id: UUID, key_id: UUID | None = None
+    ) -> TenantContext:
+        # The member's own authority, read now: a role that changed since the
+        # work was asked for is the role the call runs with, and a member who
+        # left runs nothing. A member who spoke through a key acts no higher
+        # than the key, and only while it holds.
+        org, user, membership = await self._storage.read_principal(org_id, user_id)
+        if org is None or org.deleted_at is not None:
+            raise NotAuthorized("the org is gone")
+        if user is None or user.deleted_at is not None or membership is None:
+            raise NotAuthorized(f"user {user_id} holds no place in the org")
+        role, kind, credential = membership.role, CredentialKind.INTERNAL, EMPTY_UUID
+        if key_id is not None:
+            api_key = await self._storage.read_api_key(org_id, key_id)
+            if api_key is None or api_key.user_id != user.id:
+                raise NotAuthorized(f"api key {key_id} is not the member's")
+            try:
+                self._check_api_key(api_key)
+            except CredentialExpired as lapsed:
+                raise NotAuthorized(f"api key {key_id}: {lapsed}") from lapsed
+            role = capped_role(api_key.role, membership.role)
+            kind, credential = CredentialKind.API_KEY, api_key.id
+        return build_context(
+            rctx,
+            user_id=user.id,
+            org_id=org.id,
+            role=role,
+            permissions=permissions_of(role),
+            credential_kind=kind,
+            teams=membership.teams,
+            credential_id=credential,
+        )
+
     async def _every_org(self) -> list[Org]:
         """Every tenant, page by page: a sweep that stopped at the first clamp
         would never reach the tenants behind it."""

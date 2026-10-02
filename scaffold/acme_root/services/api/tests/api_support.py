@@ -13,6 +13,7 @@ import httpx
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.integrations.root import IntegrationsInterface
+from acme.om.agents.types.kind import AgentKind
 from acme.om.base import new_id, utcnow
 from acme.om.context import AppContext, AppType, OperatorRole, RequestContext, Role
 from acme.om.storage.impl.memory import StorageMemoryImpl
@@ -38,15 +39,18 @@ def build_container(
     tmp_path: Path,
     storage: StorageInterface | None = None,
     integrations: IntegrationsInterface | None = None,
+    *,
+    agent_kinds: tuple[AgentKind, ...] = (),
     **overrides: object,
 ) -> AppContainer:
     """The test container over the memory storage root and the local infra
-    root, with the local sign-in on. A test that needs a bound or a deadline
-    of its own names the settings it overrides, one that needs storage to
-    behave a certain way passes its own root, and one that signs in through
-    the identity provider passes the integrations root over the twin. The
-    developer's `.env` is never read: its DSN would send every error a test
-    raises on purpose to the local tracker."""
+    root, with the local sign-in on, and the agent kinds a case runs. A test
+    that needs a bound or a deadline of its own names the settings it
+    overrides, one that needs storage to behave a certain way passes its own
+    root, and one that signs in through the identity provider passes the
+    integrations root over the twin. The developer's `.env` is never read:
+    its DSN would send every error a test raises on purpose to the local
+    tracker."""
     settings = ApiSettings.model_validate(
         {
             "_env_file": None,
@@ -57,7 +61,11 @@ def build_container(
         }
     )
     return AppContainer.for_tests(
-        storage or StorageMemoryImpl(), InfraLocalImpl(tmp_path), settings, integrations
+        storage or StorageMemoryImpl(),
+        InfraLocalImpl(tmp_path),
+        settings,
+        integrations,
+        agent_kinds=agent_kinds,
     )
 
 

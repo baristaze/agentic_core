@@ -48,8 +48,10 @@ authority. The rest is read off the session and its
   the call runs under still holds their place. A delegated call runs
   under the person whose message the model had read when it asked for
   the call; a message that lands later changes nothing until it is
-  read. A delegated call whose person left is refused. A steady session
-  whose person left waits until someone takes it over.
+  read. A person who spoke through an API key acts no higher than the
+  key, and only while it holds. A delegated call whose person left is
+  refused. A steady session whose person left waits until someone takes
+  it over.
 - **Mark.** The first outside data a session reads marks it, for good.
   Its sub-agents and the work it hands over carry the mark too.
 - **Hold back.** A marked session that holds private data or
@@ -81,4 +83,4 @@ answer on the request, and asks for the authority of each tool call
 before it runs and writes the principal on the call. The tool policy
 reads the rule of two from the same answer. The adopter supplies the
 question asked of the org, one operation of its tenancy manager; with
-none, every tool call is refused.
+none, the root asks the tenancy manager's own, `member_context`.

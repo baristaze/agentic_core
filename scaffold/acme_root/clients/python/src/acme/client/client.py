@@ -15,6 +15,7 @@ import httpx
 import truststore
 
 from acme.client.types import (
+    AgentSessionView,
     DeviceSignInView,
     EventView,
     FilePageView,
@@ -37,9 +38,12 @@ from acme.client.types import (
     OrgView,
     PlatformSizeView,
     Role,
+    SessionControl,
     SignedOutView,
     SignInStartView,
     SsoLinkView,
+    StepPageView,
+    StepView,
     StorageUsageView,
     UserPageView,
     UserView,
@@ -636,6 +640,89 @@ class ApiClient:
         if fetched.is_error:
             raise ApiError(fetched.status_code, "download_refused", fetched.text[:200], None)
         return fetched.content
+
+    # Agent sessions: started on a kind, spoken to, steered, and read. The
+    # loop runs in the session runner; a send answers once it is durable.
+
+    async def start_agent_session(
+        self, kind: str, title: str, *, idempotency_key: str | None = None
+    ) -> AgentSessionView:
+        """A session on the latest version of `kind`, idle until a message
+        wakes it. Always under an idempotency key."""
+        started = await self.request(
+            "POST",
+            "/v1/agent-sessions",
+            json={"kind": kind, "title": title},
+            idempotency_key=idempotency_key or str(uuid4()),
+        )
+        return AgentSessionView.model_validate(started)
+
+    async def agent_session(self, session_id: UUID) -> AgentSessionView:
+        read = await self.request("GET", f"/v1/agent-sessions/{session_id}")
+        return AgentSessionView.model_validate(read)
+
+    async def send_message(
+        self, session_id: UUID, text: str, *, idempotency_key: str | None = None
+    ) -> StepView:
+        """The message as stored, durable when this returns; a retry under
+        the same key is the same step."""
+        said = await self.request(
+            "POST",
+            f"/v1/agent-sessions/{session_id}/messages",
+            json={"text": text},
+            idempotency_key=idempotency_key or str(uuid4()),
+        )
+        return StepView.model_validate(said)
+
+    async def send_control(
+        self,
+        session_id: UUID,
+        command: SessionControl,
+        *,
+        request_seq: int | None = None,
+        idempotency_key: str | None = None,
+    ) -> StepView:
+        """A control out of band; an interrupt names, by `request_seq`, the
+        tool request it stops."""
+        body: dict[str, Any] = {"command": command.value}
+        if request_seq is not None:
+            body["request_seq"] = request_seq
+        sent = await self.request(
+            "POST",
+            f"/v1/agent-sessions/{session_id}/controls",
+            json=body,
+            idempotency_key=idempotency_key or str(uuid4()),
+        )
+        return StepView.model_validate(sent)
+
+    async def decide_call(
+        self,
+        session_id: UUID,
+        request_seq: int,
+        *,
+        approve: bool,
+        note: str = "",
+        idempotency_key: str | None = None,
+    ) -> StepView:
+        """A decision on the tool call at `request_seq`, which the loop waits on."""
+        decided = await self.request(
+            "POST",
+            f"/v1/agent-sessions/{session_id}/calls/{request_seq}/decision",
+            json={"approve": approve, "note": note},
+            idempotency_key=idempotency_key or str(uuid4()),
+        )
+        return StepView.model_validate(decided)
+
+    async def agent_session_steps(
+        self, session_id: UUID, after_seq: int = 0, limit: int = LIMIT_MAX
+    ) -> StepPageView:
+        """One page of the history, strictly after `after_seq`."""
+        page = await self.request(
+            "GET",
+            f"/v1/agent-sessions/{session_id}/steps",
+            params={"after_seq": after_seq, "limit": limit},
+        )
+        return StepPageView.model_validate(page)
 
     # Events and the channel
 
