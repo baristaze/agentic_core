@@ -168,10 +168,12 @@ class AgentSessionsManagerInterface(ABC):
         its delete final, so an unmark that lands first keeps the session.
         Then its history goes, a batch of steps at most a call, and once the
         history is gone, its authority, its tree when it is the tree's last
-        session, and its row, all under the purge login. A session
-        marked within its retention, or never marked, is never taken: no
-        purge runs on demand. Returns how many sessions it took up, so a
-        whole batch says there may be more."""
+        session, what other namespaces hold of it, and its row, all under
+        the purge login. A session whose holdings cannot go yet stays
+        claimed for the next pass, and fails no other. A session marked
+        within its retention, or never marked, is never taken: no purge
+        runs on demand. Returns how many sessions it took up, so a whole
+        batch says there may be more."""
         ...
 
     @abstractmethod

@@ -1,6 +1,7 @@
 """The transport's twin runs no process and holds to what the real ones do:
 it fences a stale epoch, injects and redacts a secret, records how each
-command ended, and times a command out at its deadline."""
+command ended with its output sealed, purges its records, and times a
+command out at its deadline."""
 
 import asyncio
 from collections.abc import Mapping
@@ -14,11 +15,12 @@ from acme.infra.secrets.local import SecretsLocalImpl
 from acme.infra.transports import CommandSpec, SecretUse, SecretVia, StaleCommand
 from acme.infra.transports.broker import BrokerTwinImpl
 from acme.infra.transports.redaction import marker
-from acme.infra.transports.twin import TransportTwinImpl, TwinReply
+from acme.infra.transports.twin import RecordSealTwin, TransportTwinImpl, TwinReply
 from acme.infra.workspaces import EgressMode, EgressPolicy, IsolationMode, IsolationSpec
 from acme.infra.workspaces.twin import WorkspaceTwinImpl
 
 TOKEN = SecretUse(name="api_token", via=SecretVia.INJECTED, env="API_TOKEN")
+SEAL = RecordSealTwin().seal
 
 
 def command(*argv: str, epoch: int = 1, seconds: float = 5, **fields: object) -> CommandSpec:
@@ -49,13 +51,13 @@ async def test_the_twin_fences_injects_redacts_and_records(tmp_path: Path) -> No
         streamed.append(text)
 
     sent = command("call", epoch=2, secrets=(TOKEN,))
-    result = await transport.run(workspace, sent, sink)
+    result = await transport.run(workspace, sent, sink, seal=SEAL)
     assert result.stdout == f"token={marker('api_token')}" and streamed == [result.stdout]
-    assert await transport.outcome(workspace, sent.key, epoch=2) == result
+    assert await transport.outcome(workspace, sent.key, epoch=2, seal=SEAL) == result
     with pytest.raises(StaleCommand):
-        await transport.run(workspace, command("call", epoch=1))
+        await transport.run(workspace, command("call", epoch=1), seal=SEAL)
     with pytest.raises(StaleCommand):
-        await transport.outcome(workspace, sent.key, epoch=1)
+        await transport.outcome(workspace, sent.key, epoch=1, seal=SEAL)
 
 
 async def test_the_twin_times_a_command_out_at_its_deadline(tmp_path: Path) -> None:
@@ -66,5 +68,27 @@ async def test_the_twin_times_a_command_out_at_its_deadline(tmp_path: Path) -> N
     transport = TransportTwinImpl(SecretsLocalImpl(None), BrokerTwinImpl(), slow)
     spec = IsolationSpec(mode=IsolationMode.TWIN, egress=EgressPolicy(mode=EgressMode.NONE))
     workspace = await WorkspaceTwinImpl().prepare(new_id(), new_id(), spec)
-    result = await transport.run(workspace, command("slow", seconds=0.2))
+    result = await transport.run(workspace, command("slow", seconds=0.2), seal=SEAL)
     assert result.timed_out and result.exit_code is None
+
+
+async def test_the_twins_record_keeps_its_output_sealed_and_goes_when_purged() -> None:
+    async def prints(sent: CommandSpec, env: Mapping[str, str]) -> TwinReply:
+        return TwinReply(exit_code=4, stdout="the-build-log-line")
+
+    transport = TransportTwinImpl(SecretsLocalImpl(None), BrokerTwinImpl(), prints)
+    spec = IsolationSpec(mode=IsolationMode.TWIN, egress=EgressPolicy(mode=EgressMode.NONE))
+    workspace = await WorkspaceTwinImpl().prepare(new_id(), new_id(), spec)
+    sealing, sent = RecordSealTwin(), command("print")
+    result = await transport.run(workspace, sent, seal=sealing.seal)
+    kept = transport.records[(workspace.id, sent.key)].model_dump_json()
+    assert '"exit_code":4' in kept and "the-build-log-line" not in kept
+    assert await transport.outcome(workspace, sent.key, epoch=1, seal=sealing.seal) == result
+    with pytest.raises(ValueError, match="does not open"):
+        await transport.outcome(workspace, sent.key, epoch=1, seal=RecordSealTwin().seal)
+    sealing.revoke()
+    erased = await transport.outcome(workspace, sent.key, epoch=1, seal=sealing.seal)
+    assert erased == result.model_copy(update={"stdout": ""})
+    await transport.purge_records(workspace.id)
+    assert transport.records == {}
+    assert await transport.outcome(workspace, sent.key, epoch=1, seal=sealing.seal) is None

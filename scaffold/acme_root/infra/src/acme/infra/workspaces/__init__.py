@@ -133,9 +133,11 @@ class WorkspaceProviderInterface(ABC):
         ...
 
     @abstractmethod
-    async def purge(self, workspace: Workspace) -> None:
-        """Lets the instance and the files go. Purging one already gone does
-        nothing."""
+    async def purge(self, org_id: UUID, workspace_id: UUID) -> None:
+        """Lets the instance and the files of the workspace under
+        `workspace_id` go, found by the ids `prepare` names it by, so a purge
+        needs no workspace in hand. Purging one already gone, or never made,
+        does nothing; one this provider cannot remove is an error."""
         ...
 
     @abstractmethod

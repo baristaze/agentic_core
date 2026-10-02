@@ -26,7 +26,7 @@ from acme.infra.transports import (
     TransportInterface,
 )
 from acme.infra.transports.broker import BrokerNullImpl
-from acme.infra.transports.twin import TransportNullImpl
+from acme.infra.transports.twin import RecordSealTwin, TransportNullImpl
 from acme.infra.workspaces import (
     EgressMode,
     EgressPolicy,
@@ -59,6 +59,8 @@ from acme.om.models.prices import ModelPricesInterface
 from acme.om.root import build_managers
 from acme.om.steps.types.stream import TextPart
 from acme.om.storage.impl.memory import StorageMemoryImpl
+from acme.om.tools.impl.seal import RecordSealNullImpl
+from acme.om.tools.seal import RecordSealInterface
 from acme.om.windows.gate import CallGateInterface
 from acme.om.windows.hashes import PromptHashInterface
 from acme.om.windows.impl.gate import CallGateNullImpl
@@ -101,6 +103,11 @@ LOUD: list[tuple[object, object, Callable[[], Awaitable[Any]]]] = [
         lambda: ArtifactSealNullImpl().seal(CTX, uuid4(), uuid4(), b"a result"),
     ),
     (
+        RecordSealInterface,
+        RecordSealNullImpl(),
+        lambda: RecordSealNullImpl().seal(CTX, uuid4(), uuid4(), b"what it printed"),
+    ),
+    (
         KeyServiceInterface,
         KeyServiceNullImpl(),
         lambda: KeyServiceNullImpl().generate(CTX.org_id, uuid4(), 1),
@@ -111,6 +118,7 @@ LOUD: list[tuple[object, object, Callable[[], Awaitable[Any]]]] = [
         lambda: TransportNullImpl().run(
             ABSENT,
             CommandSpec(argv=("true",), key=uuid4(), epoch=1, deadline=utcnow(), max_output=1),
+            seal=RecordSealTwin().seal,
         ),
     ),
     (

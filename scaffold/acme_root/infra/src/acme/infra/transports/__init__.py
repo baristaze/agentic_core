@@ -10,6 +10,13 @@ on its own side: a command from a run that lost its claim is refused
 (`StaleCommand`). And its deadline, when the command's whole process tree
 ends, children and all.
 
+The record keeps what recovery decides by in the clear: the exit, whether
+the command timed out or was cut, and the secrets it used, by name. Its
+output is content, so it is kept sealed under the key of the session the
+command runs for, by the seal the engine hands over with the command
+(`RecordSeal`); the transport never holds that key. A workspace's records
+go when its session is purged (`purge_records`).
+
 A secret reaches a command by name, never by value (ADR 1003). A brokered
 one is attached outside the workspace by the credential broker, per
 destination, and the process never holds it. Only when a secret must enter
@@ -22,6 +29,7 @@ the command ends; the result names each secret it used, never a value."""
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from pathlib import PurePosixPath
@@ -42,6 +50,7 @@ __all__ = [
     "FileEntry",
     "OutputSink",
     "PathOutsideWorkspace",
+    "RecordSeal",
     "SecretUse",
     "SecretVia",
     "StaleCommand",
@@ -141,6 +150,23 @@ OutputSink = Callable[[str, str], Awaitable[None]]
 """Called with the stream (`stdout` or `stderr`) and redacted text as it
 arrives."""
 
+Sealing = Callable[[bytes], Awaitable[bytes | None]]
+"""Seals one command's output, or opens it: bytes in, bytes or None out."""
+
+
+@dataclass(frozen=True)
+class RecordSeal:
+    """How one command's output is sealed in its record, and opened again,
+    under the key of the session the command runs for: handed over by the
+    engine that sends the command, bound to it, so the transport never
+    holds the key. `seal` answers None when the session keeps no content at
+    rest, memory-only or revoked, and the record keeps the outcome without
+    its output. `open` answers None once the key the output was sealed
+    under is destroyed, and refuses a blob sealed for anything else."""
+
+    seal: Sealing
+    open: Sealing
+
 
 def relative_path(path: str) -> PurePosixPath:
     """A path inside a workspace, refused when it is absolute or climbs out."""
@@ -168,23 +194,38 @@ class TransportInterface(ABC):
 
     @abstractmethod
     async def run(
-        self, workspace: Workspace, command: CommandSpec, on_output: OutputSink | None = None
+        self,
+        workspace: Workspace,
+        command: CommandSpec,
+        on_output: OutputSink | None = None,
+        *,
+        seal: RecordSeal,
     ) -> CommandResult:
         """Runs the command, streaming its redacted output to `on_output`,
-        and records how it ended under its key. A non-zero exit is a result.
-        At the deadline the command's whole process tree ends, and the
-        result says it timed out; a run that is cancelled ends the tree
-        too. `StaleCommand` for an epoch below one this workspace has seen,
-        with nothing run."""
+        and records how it ended under its key, its output sealed by `seal`.
+        A non-zero exit is a result. At the deadline the command's whole
+        process tree ends, and the result says it timed out; a run that is
+        cancelled ends the tree too. `StaleCommand` for an epoch below one
+        this workspace has seen, with nothing run."""
         ...
 
     @abstractmethod
-    async def outcome(self, workspace: Workspace, key: UUID, epoch: int) -> CommandResult | None:
-        """How the command under `key` ended, as recorded; None when it has
-        no record: it never ran, or it was cut off before it ended. It
-        admits `epoch` first, as a command does, so once a new run has asked,
-        no command from the run it replaced runs here (`StaleCommand` for a
-        stale `epoch`)."""
+    async def outcome(
+        self, workspace: Workspace, key: UUID, epoch: int, *, seal: RecordSeal
+    ) -> CommandResult | None:
+        """How the command under `key` ended, as recorded, its output opened
+        by `seal`: empty when the record kept none, or the key it was sealed
+        under is gone. None when it has no record: it never ran, or it was
+        cut off before it ended. It admits `epoch` first, as a command does,
+        so once a new run has asked, no command from the run it replaced runs
+        here (`StaleCommand` for a stale `epoch`)."""
+        ...
+
+    @abstractmethod
+    async def purge_records(self, workspace_id: UUID) -> None:
+        """Removes what the transport keeps of the workspace beside it: how
+        each of its commands ended, and the epoch it fences at. A workspace
+        with none does nothing."""
         ...
 
     @abstractmethod

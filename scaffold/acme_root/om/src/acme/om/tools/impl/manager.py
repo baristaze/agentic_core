@@ -8,7 +8,7 @@ from uuid import UUID
 from pydantic import Field, ValidationError
 
 from acme.infra.exceptions import InfraException
-from acme.infra.transports import OutputSink, SecretUse, TransportInterface
+from acme.infra.transports import OutputSink, RecordSeal, SecretUse, TransportInterface
 from acme.infra.workspaces import (
     IsolationMode,
     IsolationSpec,
@@ -46,26 +46,28 @@ from acme.om.steps.types.header import (
 )
 from acme.om.steps.types.step import Actor, Step, StepType
 from acme.om.tenancy import TenancyManagerInterface
-from acme.om.tools.manager import ToolsManagerInterface
+from acme.om.tools.manager import KeyedHash, ToolsManagerInterface
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.rules import (
     CAPABILITY_MISSING,
     DEFAULT_CEILINGS,
+    INPUT_HASH,
     STALE_STATUS,
     approver_roles,
     bounded_json,
     call_deadline,
+    canonical_input,
     command_text,
     decide,
     engine_retries,
     infra_failure,
-    input_hash,
     job_deadline,
     reaches_outward,
     recovered_text,
     response,
     verdict,
 )
+from acme.om.tools.seal import RecordSealInterface
 from acme.om.tools.storage import ToolStorageInterface
 from acme.om.tools.tool import JobToolInterface, ToolInterface, ToolRuntime
 from acme.om.tools.types.call import Gate, GateOutcome, JobHandle, JobStarted, Verdict
@@ -109,9 +111,13 @@ class ToolsManagerImpl(ToolsManagerInterface):
         options: ToolsOptions,
         clock: Callable[[], datetime] = utcnow,
         *,
+        keyed_hash: KeyedHash,
+        record_seal: RecordSealInterface,
         attribution: AttributionManagerInterface,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
+        self._keyed_hash = keyed_hash
+        self._record_seal = record_seal
         self._sleep = sleep
         self._attribution = attribution
         self._storage = storage
@@ -190,6 +196,12 @@ class ToolsManagerImpl(ToolsManagerInterface):
 
     # A call.
 
+    async def input_hash(
+        self, ctx: TenantContext, session_id: UUID, call_input: Mapping[str, Any]
+    ) -> str:
+        ctx.require(Permission.WRITE)
+        return INPUT_HASH + await self._keyed_hash(ctx, session_id, canonical_input(call_input))
+
     async def gate(
         self,
         ctx: TenantContext,
@@ -203,7 +215,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         tree_deadline: datetime | None = None,
     ) -> Gate:
         ctx.require(Permission.WRITE)
-        resolved = self._resolve(registry, request, call_input)
+        resolved = await self._resolve(ctx, registry, request, call_input)
         if isinstance(resolved, Step):
             return Gate(outcome=GateOutcome.REFUSE, response=resolved)
         tool, parsed = resolved
@@ -276,7 +288,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         on_output: OutputSink | None = None,
     ) -> Step:
         ctx.require(Permission.WRITE)
-        resolved = self._resolve(registry, request, call_input)
+        resolved = await self._resolve(ctx, registry, request, call_input)
         if isinstance(resolved, Step):
             return resolved
         tool, parsed = resolved
@@ -347,7 +359,9 @@ class ToolsManagerImpl(ToolsManagerInterface):
         # Asking admits this run's epoch on the transport first, so the lost
         # run's command for this call can no longer start there.
         try:
-            recorded = await self._transport.outcome(workspace, request.id, epoch)
+            recorded = await self._transport.outcome(
+                workspace, request.id, epoch, seal=self._sealing(ctx, request)
+            )
         except InfraException as error:
             if error.http_status == STALE_STATUS:
                 raise StaleWriter(error.message) from error
@@ -375,7 +389,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         tree_deadline: datetime | None,
     ) -> JobHandle | Step:
         ctx.require(Permission.WRITE)
-        resolved = self._resolve(registry, request, call_input)
+        resolved = await self._resolve(ctx, registry, request, call_input)
         if isinstance(resolved, Step):
             return resolved
         tool, parsed = resolved
@@ -453,6 +467,12 @@ class ToolsManagerImpl(ToolsManagerInterface):
         (stored,) = await self._steps.append_inputs(ctx, session_id, [decision])
         return stored
 
+    async def purge_workspace(self, org_id: UUID, session_id: UUID) -> None:
+        # A session's workspace is prepared under the session's id. Its files
+        # go first: what still runs there ends with them.
+        await self._workspaces.purge(org_id, session_id)
+        await self._transport.purge_records(session_id)
+
     async def purge_tenant(self, ctx: TenantContext) -> int:
         ctx.require(Permission.WRITE)
         if not await self._tenancy.tenant_expired(ctx):
@@ -487,14 +507,18 @@ class ToolsManagerImpl(ToolsManagerInterface):
                 return later
             after = page.items[-1].seq
 
-    def _resolve(
-        self, registry: ToolRegistry, request: Step, call_input: Mapping[str, Any]
+    async def _resolve(
+        self,
+        ctx: TenantContext,
+        registry: ToolRegistry,
+        request: Step,
+        call_input: Mapping[str, Any],
     ) -> tuple[ToolInterface, ToolInput] | Step:
         """The tool and the typed input, or the response that refuses them: a
         name the registry does not hold, or an input its schema refuses. An
         input that is not the one the request recorded is never run."""
         header = _header(request)
-        if input_hash(call_input) != header.input_hash:
+        if await self.input_hash(ctx, request.session_id, call_input) != header.input_hash:
             raise ValidationFailed(f"the input given is not the one request {request.id} recorded")
         tool = registry.get(header.tool)
         if tool is None:
@@ -547,6 +571,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         return ToolRuntime(
             self._transport,
             workspace,
+            seal=self._sealing(ctx, request),
             key=request.id,
             epoch=epoch,
             deadline=deadline,
@@ -556,6 +581,15 @@ class ToolsManagerImpl(ToolsManagerInterface):
             on_output=on_output,
             read_only=read_only,
             answer_chars=self._options.max_output_chars,
+        )
+
+    def _sealing(self, ctx: TenantContext, request: Step) -> RecordSeal:
+        """The seal the call's command goes to the transport with: its
+        session's, bound to the call's key."""
+        session_id, key = request.session_id, request.id
+        return RecordSeal(
+            seal=lambda data: self._record_seal.seal(ctx, session_id, key, data),
+            open=lambda sealed: self._record_seal.open(ctx, session_id, key, sealed),
         )
 
     def _classify(self, error: Exception, tool: ToolInterface) -> tuple[ToolFailure, str]:
