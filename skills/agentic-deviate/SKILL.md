@@ -38,10 +38,11 @@ describe one, say which, and stop:
 
 1. Resolve the rule: find the lens in `../../lenses/` and the section
    it cites in `../../agentic_core_spec.md`, paths from this skill's
-   folder as `realpath` resolves it. Quote the principle verbatim. Read
-   the tag alone on the line under the heading that states the rule,
-   if any: a tag covers its own heading's text, never the subsections
-   under it. When the rule itself allows what the arguments describe,
+   folder as `realpath` resolves it. Quote the principle verbatim: the
+   lens's Principle, or the section's Principle box when no lens holds
+   the rule. Read the tag alone on the line under the heading that
+   states the rule, if any: a tag covers its own heading's text, never
+   the subsections under it. When the rule itself allows what the arguments describe,
    such as an `optional` section whose trigger has not arrived, there
    is nothing to record: say so, quote the words that allow it, and
    stop.
@@ -51,7 +52,8 @@ describe one, say which, and stop:
    one more than the highest numeric prefix present, whoever wrote that
    record (the guideline's, the engine's, and the project's own share
    the folder), zero-padded as the folder's records are
-   (`NNNN-<slug>.md`). Refuse to write a path that already exists.
+   (`NNNN-<slug>.md`, the slug the title's words in lowercase, joined
+   by hyphens). Refuse to write a path that already exists.
 3. Take the date from `date +%F`: the ADR records the day the decision
    is made, which is today, not the day of the last commit.
 4. Write the ADR with the template below, under `docs/adr/` only.
