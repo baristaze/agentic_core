@@ -69,9 +69,10 @@ without the agent owning a permission.
 **Look for.** Whether an agent appears as a principal or holds a grant;
 how an audit finds the agent behind a step.
 
-**Violation.** An agent principal or service account with permissions
-of its own; a tool call authorized on the agent's identity instead of a
-principal's; an agent's output that counts as a principal's input.
+**Violation.** The agent's own identity holding a permission or a
+grant; a tool call authorized on the agent's identity instead of a
+principal's; an agent's output that counts as a principal's input. (A
+service principal the tenant grants a steady kind is TRU-04.)
 
 **Severity.** high
 
