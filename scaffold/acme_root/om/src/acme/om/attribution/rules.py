@@ -47,13 +47,17 @@ def principal_authored(step: Step) -> bool:
 
 def trust_of(step: Step) -> Trust | None:
     """The tier of what a step tells a model. A principal's message, a
-    parent's message to its child, and the engine's notice that the world
-    changed instruct; every other input, a tool's output, and a summary are
-    data. None for a step a model does not read as content: its own
-    requests and responses, a control, and the other marks of a loop."""
+    parent's message to its child, and the engine's notices (a nudge, and
+    the notice that the world changed) instruct; every other input, a
+    tool's output, and a summary are data. None for a step a model does not
+    read as content: its own requests and responses, a control, and the
+    other marks of a loop. Only a run writes the engine's message, under its
+    epoch: the inbox refuses one (`steps.rules.batch_refusal`)."""
     if step.type is StepType.MESSAGE:
         from_parent = step.actor is Actor.AGENT and step.origin is Origin.PARENT
-        return Trust.INSTRUCTION if principal_authored(step) or from_parent else Trust.DATA
+        notice = step.actor is Actor.ENGINE
+        instructs = principal_authored(step) or from_parent or notice
+        return Trust.INSTRUCTION if instructs else Trust.DATA
     if step.type is StepType.ENVIRONMENT_CHANGED:
         return Trust.INSTRUCTION
     if step.type in DATA_TYPES:

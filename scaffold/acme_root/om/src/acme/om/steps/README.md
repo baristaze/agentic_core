@@ -27,11 +27,18 @@ This is one of the kinds of thing [Acme is made of](../../../../README.md).
   images, documents, the model's thinking, a tool's use and its result.
   An image or a document is held by reference; its bytes live in the
   store.
+- **Stream part**: a live piece of a step still being written (a word of
+  a model's answer, a fragment of a tool's input, a line a tool prints),
+  numbered, and naming the step it adds up to. A part is never kept: the
+  step is, once, whole, when its stream ends, and a stream that breaks
+  still ends in a step marked cut short.
 - **What a request read**: a model's request names the
   [window](../windows/README.md) it read (the model it was sized for, its
-  first step, the summary before it) and a hash of what it sent, keyed
-  by the session. A tool's answer too large to keep in a step names the
-  artifact that holds it whole, and keeps its head and its tail.
+  first step, the summary before it), a hash of what it sent, keyed by
+  the session, and the budget hold its worst case was reserved by. A
+  response names why the model stopped. A tool's answer too large to keep
+  in a step names the artifact that holds it whole, and keeps its head
+  and its tail.
 - **Cursor**: each session's last number, and the epoch of the run that
   holds it.
 
