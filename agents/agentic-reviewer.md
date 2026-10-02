@@ -23,8 +23,8 @@ Procedure (the same as the `agentic-review-<group>` skills):
 1. Read the lens file end to end before looking at any code.
 2. Establish the scope and list the files in it. A scope that names a
    range or a commit reads history, which may not be checked out: read
-   each file at that ref with `git show <ref>:<path>`, never from the
-   working tree. Any other scope reads the working tree, untracked
+   each file at the range's end or the commit with
+   `git show <ref>:<path>`, never from the working tree. Any other scope reads the working tree, untracked
    files included. Read changed files in full, plus the interface a
    class implements, the root that wires it, and the callers of a
    changed signature. When the scope resolves to no files, report

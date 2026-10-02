@@ -22,8 +22,8 @@ resolves it). Resolve the scope once, here, into a concrete
 description (the list of files, or the range or commit) and hand the
 same description to every reviewer so the nine reports cover the same
 ground. A range or a commit is handed over as the ref, with its list of
-files, and the reviewer reads each file at that ref, never from the
-working tree. An empty scope is reported as "nothing to review" and the
+files, and the reviewer reads each file at the range's end or the
+commit, never from the working tree. An empty scope is reported as "nothing to review" and the
 skill stops. `all` costs nine full reads of the repository, one per
 reviewer; a path or a range is the cheaper question whenever the change
 is narrower than the tree.
@@ -31,10 +31,13 @@ is narrower than the tree.
 ## Procedure
 
 1. Resolve the scope and write it down in one line.
-2. Resolve this skill's folder with `realpath`, and the paths from it to
-   absolute ones: the lens catalog is `../../lenses/` and the spec is
-   `../../agentic_core_spec.md`. Reviewers do not see this skill's
-   text, so pass them absolute paths.
+2. Take this skill's folder from the base directory the host names when
+   it loads the skill, and make the paths from it absolute: the lens
+   catalog is `../../lenses/` and the spec is
+   `../../agentic_core_spec.md`. Run no command to find the folder:
+   `realpath` is not pre-approved, so an unattended run would stop on a
+   prompt. Reviewers do not see this skill's text, so pass them
+   absolute paths.
 3. Where the agent can start subagents, launch nine reviewers at once,
    one per group, each with the scope line, the group name, the
    absolute path of its lens file (`<catalog>/<group>.md`), and the
@@ -43,8 +46,8 @@ is narrower than the tree.
    (`agentic-core:agentic-reviewer` when installed as the plugin). When
    no such agent is installed, give a general subagent the text of
    `../agentic-review-<group>/SKILL.md` with every path in it that
-   starts with `../` made absolute from that skill's folder as
-   `realpath` resolves it, first, since the subagent reads it from
+   starts with `../` made absolute from that skill's folder, which sits
+   beside this skill's folder, first, since the subagent reads it from
    elsewhere. Where the agent has no subagents, run the nine group
    procedures one after another in this session. The groups:
    - `agentic-review-steps`
