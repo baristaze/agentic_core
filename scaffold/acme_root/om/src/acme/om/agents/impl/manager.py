@@ -1,8 +1,9 @@
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
 from uuid import UUID
 
 from acme.om.agent_sessions import AgentSessionsManagerInterface
+from acme.om.agent_sessions.limits import deadline_park
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
 from acme.om.agents.gate import ResultGateInterface
 from acme.om.agents.manager import AgentsManagerInterface
@@ -17,7 +18,7 @@ from acme.om.attribution.types.authority import SessionAuthority
 from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
 from acme.om.base import Platform, derived_id, new_id, utcnow
 from acme.om.context import Permission, TenantContext
-from acme.om.exceptions import NotFound, TreeBoundReached, ValidationFailed
+from acme.om.exceptions import NotAuthorized, NotFound, TreeBoundReached, ValidationFailed
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.types.row import OutboxRow, versioned_row
 from acme.om.steps import StepsManagerInterface
@@ -25,6 +26,7 @@ from acme.om.steps.types.content import Content, TextBlock
 from acme.om.steps.types.header import ControlCommand, ControlHeader, InputHeader
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.tenancy import TenancyManagerInterface
+from acme.om.tools.rules import instruct_refusal
 
 CREATED = "agents.agent_tree.created"
 UPDATED = "agents.agent_tree.updated"
@@ -48,7 +50,10 @@ class AgentsManagerImpl(AgentsManagerInterface):
         relay: OutboxRelayInterface,
         options: AgentsOptions,
         clock: Callable[[], datetime] = utcnow,
+        *,
+        tool_classes: Mapping[str, str],
     ) -> None:
+        self._tool_classes = tool_classes
         self._storage = storage
         self._sessions = sessions
         self._steps = steps
@@ -63,6 +68,7 @@ class AgentsManagerImpl(AgentsManagerInterface):
     async def start_session(self, ctx: TenantContext, start: Start) -> AgentSession:
         ctx.require(Permission.WRITE)
         kind = self._kinds.latest(start.kind)
+        self._may_instruct(ctx, kind.tools)
         # The tree first: a session never stands without the tree it draws on.
         await self._create_tree(
             ctx, tree_for(kind, start.id, start.deadline, self._clock(), ctx.user_id)
@@ -72,17 +78,28 @@ class AgentsManagerImpl(AgentsManagerInterface):
         await self._open(ctx, created)
         return created
 
+    async def require_instructor(self, ctx: TenantContext, session_id: UUID) -> None:
+        ctx.require(Permission.WRITE)
+        session = await self._find(ctx, session_id)
+        if session is not None:
+            self._may_instruct(ctx, session.tools)
+
     async def spawn(self, ctx: TenantContext, parent_id: UUID, spawn: Spawn) -> AgentSession:
         ctx.require(Permission.WRITE)
         parent = await self._sessions.get_session(ctx, parent_id)
         child = await self._find(ctx, spawn.id)
         if child is not None and child.parent_id != parent_id:
             raise ValidationFailed(f"agent session {spawn.id} is not a child of {parent_id}")
-        if child is None:
+        if child is not None:
+            self._may_instruct(ctx, child.tools)
+        else:
             kind = self._kinds.latest(spawn.kind)
             if kind.result_tool is not None and kind.result_tool not in parent.tools:
                 # Its tools are cut to its parent's, so it could never submit.
                 raise ValidationFailed(f"agent session {parent_id} cannot grant {kind.result_tool}")
+            # Its objective instructs it: whoever spawns it may make every
+            # call it will offer, asked before anything is made.
+            self._may_instruct(ctx, [tool for tool in kind.tools if tool in parent.tools])
             tree = await self._tree(ctx, parent.root_id)
             refusal = tree_refusal(tree, parent.depth + 1)
             if refusal is not None:
@@ -131,28 +148,17 @@ class AgentsManagerImpl(AgentsManagerInterface):
         rows = (versioned_row(ctx, UPDATED, moved.id, moved.version),)
         await self._storage.write_tree(ctx.org_id, moved, tree.version, rows)
         await self._relay_all(ctx, rows)
+        if deadline is None or deadline > self._clock():
+            # The extension is the deadline park's unlock: a session of the
+            # tree that waits on it goes on, and its gates run again.
+            for member in (tree.id, *await self._below(ctx, tree.id)):
+                await self._sessions.wake_session(ctx, member, deadline_park())
         return moved
 
     async def cancel_children(self, ctx: TenantContext, session_id: UUID) -> tuple[UUID, ...]:
         ctx.require(Permission.WRITE)
-        reached: list[UUID] = []
-        parents = [session_id]
-        # Down the tree a level at a time; the tree's count bounds the walk.
-        while parents:
-            parent_id = parents.pop(0)
-            after: UUID | None = None
-            while True:
-                page = await self._sessions.get_children(
-                    ctx, parent_id, after, self._options.max_limit
-                )
-                for child in page.items:
-                    parents.append(child.id)
-                    if await self._cancel(ctx, child.id):
-                        reached.append(child.id)
-                if not page.has_more or not page.items:
-                    break
-                after = page.items[-1].id
-        return tuple(reached)
+        below = await self._below(ctx, session_id)
+        return tuple([child for child in below if await self._cancel(ctx, child)])
 
     async def hand_off(
         self, ctx: TenantContext, session_id: UUID, handoff: Handoff
@@ -206,6 +212,14 @@ class AgentsManagerImpl(AgentsManagerInterface):
         if not await self._tenancy.tenant_expired(ctx):
             return 0
         return await self._storage.purge_tenant(ctx.org_id, self._options.purge_batch)
+
+    def _may_instruct(self, ctx: TenantContext, tools: Iterable[str]) -> None:
+        """A registry is the tools the catalog holds of those named, and the
+        classes they offer are what its sender must be able to make."""
+        classes = [self._tool_classes[name] for name in tools if name in self._tool_classes]
+        refusal = instruct_refusal(ctx, classes)
+        if refusal is not None:
+            raise NotAuthorized(refusal)
 
     def _session(
         self,
@@ -304,6 +318,26 @@ class AgentsManagerImpl(AgentsManagerInterface):
         )
         await self._steps.append_inputs(ctx, session_id, [control])
         return True
+
+    async def _below(self, ctx: TenantContext, session_id: UUID) -> list[UUID]:
+        """Every session below `session_id`, children and theirs, a level at
+        a time; the tree's count bounds the walk."""
+        below: list[UUID] = []
+        parents = [session_id]
+        while parents:
+            parent_id = parents.pop(0)
+            after: UUID | None = None
+            while True:
+                page = await self._sessions.get_children(
+                    ctx, parent_id, after, self._options.max_limit
+                )
+                for child in page.items:
+                    parents.append(child.id)
+                    below.append(child.id)
+                if not page.has_more or not page.items:
+                    break
+                after = page.items[-1].id
+        return below
 
     async def _find(self, ctx: TenantContext, session_id: UUID) -> AgentSession | None:
         try:

@@ -53,6 +53,8 @@ thing [Acme is made of](../../../../README.md).
 
 - **The model's words decide nothing.** Policy reads the call's facts,
   never its explanation.
+- **A message buys no power.** A person starts or talks to an agent only
+  if the org lets them make every kind of call it has (ADR 1012).
 - **An approval is for one call.** A different input is a different call,
   and asks again.
 - **A secret never enters a step.** A tool names the secrets it may use.

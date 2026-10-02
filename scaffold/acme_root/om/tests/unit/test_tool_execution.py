@@ -11,7 +11,7 @@ import os
 import sys
 import time
 from collections.abc import Mapping
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -221,6 +221,39 @@ def test_a_calls_time_is_the_least_of_three() -> None:
     assert call_deadline(now, minute, hour, None) == now + minute
     assert call_deadline(now, hour, minute, None) == now + minute
     assert call_deadline(now, hour, hour, now + timedelta(seconds=5)) == now + timedelta(seconds=5)
+
+
+class Timed(PushBranch):
+    """Pushes a branch, and keeps the deadline each preflight is given."""
+
+    def __init__(self) -> None:
+        super().__init__({"feature": False})
+        self.deadlines: list[datetime] = []
+
+    async def preflight(
+        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
+    ) -> None:
+        self.deadlines.append(runtime.deadline)
+
+
+async def test_a_preflight_runs_by_the_trees_deadline(tmp_path: Path) -> None:
+    transport, _ = twin_transport(tmp_path)
+    tools = tools_over(transport)
+    ctx = context(Role.SERVICE, make_org())
+    timed = Timed()
+    workspace = Workspace.absent(ctx.org_id, new_id())
+    found = await put_call(tools.steps, ctx, "push_branch", {"branch": "feature"}, "integration")
+    soon = tools.clock.now + timedelta(seconds=5)
+    await tools.manager.gate(
+        ctx,
+        registry_of(timed),
+        KIND_DEFAULTS,
+        found.request,
+        found.call_input,
+        workspace,
+        tree_deadline=soon,
+    )
+    assert timed.deadlines == [soon], "never past the tree's deadline"
 
 
 async def test_a_non_zero_exit_is_a_result_and_not_a_failure(tmp_path: Path) -> None:

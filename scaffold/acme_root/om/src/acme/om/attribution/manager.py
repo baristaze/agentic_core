@@ -91,7 +91,8 @@ class AttributionManagerInterface(ABC):
     async def call_principal(self, ctx: TenantContext, session_id: UUID) -> Principal:
         """Whose authority the session's next tool call runs under: a steady
         session's fixed principal, or the speaker a delegated session's
-        latest model request recorded."""
+        latest model request recorded. A child's is the principal it
+        inherited, whoever speaks to it."""
         ...
 
     @abstractmethod
@@ -100,9 +101,9 @@ class AttributionManagerInterface(ABC):
     ) -> CallAuthority:
         """Asked for every tool call, before it runs, and before the next
         model request: a delegated call runs under the speaker the request
-        that led to it recorded, never a message that landed after it. The
-        call's principal is asked of the adopter's transition each time,
-        never once per loop,
+        that led to it recorded, never a message that landed after it, and a
+        child's under the principal it inherited. The call's principal is
+        asked of the adopter's transition each time, never once per loop,
         and the call runs under the context it answers with. A delegated
         call whose principal no longer holds is `AuthorityRevoked`, and is
         denied; a steady one is `PrincipalLapsed`, and waits until a person

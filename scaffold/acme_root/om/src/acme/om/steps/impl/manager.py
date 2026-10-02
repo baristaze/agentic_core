@@ -1,11 +1,11 @@
 from collections.abc import Sequence
 from uuid import UUID
 
-from acme.om.attribution.rules import principal_of, said_by
+from acme.om.attribution.rules import decided_by, instructs, principal_of, said_by
 from acme.om.base import Platform
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import ValidationFailed
-from acme.om.steps.manager import StepsManagerInterface
+from acme.om.steps.manager import InstructCheck, StepsManagerInterface
 from acme.om.steps.storage import StepStorageInterface
 from acme.om.steps.types.page import StepCursor, StepPage
 from acme.om.steps.types.step import Step
@@ -18,16 +18,24 @@ class StepsOptions(Platform):
     purge_batch: int = 1000  # steps one purge statement deletes at most
 
 
+async def no_registry(ctx: TenantContext, session_id: UUID) -> None:
+    """The check of a history no agent reads: no session over it offers a
+    tool, so anyone who may write it may speak in it."""
+
+
 class StepsManagerImpl(StepsManagerInterface):
     def __init__(
         self,
         storage: StepStorageInterface,
         tenancy: TenancyManagerInterface,
         options: StepsOptions,
+        *,
+        instructs: InstructCheck,
     ) -> None:
         self._storage = storage
         self._tenancy = tenancy
         self._options = options
+        self._instructs = instructs
 
     async def begin_run(self, ctx: TenantContext, session_id: UUID) -> int:
         ctx.require(Permission.WRITE)
@@ -38,16 +46,18 @@ class StepsManagerImpl(StepsManagerInterface):
     ) -> tuple[Step, ...]:
         ctx.require(Permission.WRITE)
         self._bound(steps)
-        said = [said_by(step, principal_of(ctx)) for step in steps]
-        return await self._storage.append_steps(ctx.org_id, session_id, epoch, said)
+        await self._asked(ctx, session_id, steps)
+        return await self._storage.append_steps(
+            ctx.org_id, session_id, epoch, self._said(ctx, steps)
+        )
 
     async def append_inputs(
         self, ctx: TenantContext, session_id: UUID, steps: Sequence[Step]
     ) -> tuple[Step, ...]:
         ctx.require(Permission.WRITE)
         self._bound(steps)
-        said = [said_by(step, principal_of(ctx)) for step in steps]
-        return await self._storage.append_inputs(ctx.org_id, session_id, said)
+        await self._asked(ctx, session_id, steps)
+        return await self._storage.append_inputs(ctx.org_id, session_id, self._said(ctx, steps))
 
     async def get_steps(
         self, ctx: TenantContext, session_id: UUID, after_seq: int, limit: int
@@ -76,6 +86,18 @@ class StepsManagerImpl(StepsManagerInterface):
             if await self._storage.purge_history(org_id, session_id, batch) < batch:
                 gone.append((org_id, session_id))
         return gone
+
+    async def _asked(self, ctx: TenantContext, session_id: UUID, steps: Sequence[Step]) -> None:
+        """An append that holds an instruction asks first whether its sender
+        may instruct the session, whichever append carries it."""
+        if any(instructs(step) for step in steps):
+            await self._instructs(ctx, session_id)
+
+    def _said(self, ctx: TenantContext, steps: Sequence[Step]) -> list[Step]:
+        """Each step in the name of the context that appends it: a principal's
+        message is its user's, and a decision its user's, in its role."""
+        speaker = principal_of(ctx)
+        return [decided_by(said_by(step, speaker), ctx.user_id, ctx.role) for step in steps]
 
     def _bound(self, steps: Sequence[Step]) -> None:
         if len(steps) > self._options.max_append:

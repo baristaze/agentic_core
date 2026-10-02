@@ -70,6 +70,14 @@ class ToolRuntime:
         self._commands = 0
         self.deadline = deadline
 
+    @property
+    def key(self) -> UUID:
+        """The call's idempotency key: the id of its request, the same on
+        every run that repeats the call. A tool that reaches a system of its
+        own, a server's tool or a job, passes it there, so a repeat after a
+        crash does once what the first did; a command carries it already."""
+        return self._key
+
     async def run(
         self,
         argv: tuple[str, ...],
@@ -165,9 +173,9 @@ class ToolInterface(ABC):
 
 class JobToolInterface(ToolInterface):
     """A tool in `job` mode. Its `run` starts work that outlives the run,
-    under the call's key and by the runtime's deadline, and answers
-    `JobStarted`; starting under a key that started before attaches to that
-    work, so a recovered run starts no second job. The work's completion
+    under the call's key (`ToolRuntime.key`) and by the runtime's deadline,
+    and answers `JobStarted`; starting under a key that started before
+    attaches to that work, so a recovered run starts no second job. The work's completion
     arrives as an event, and the response is written from it."""
 
     @abstractmethod

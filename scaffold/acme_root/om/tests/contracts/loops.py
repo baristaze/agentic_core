@@ -65,7 +65,9 @@ class Found(Platform):
 
 class Lookup(ToolInterface):
     """A read-only lookup that touches no workspace. It keeps who it ran as,
-    and holds its first call until `release` is set when `holds` is."""
+    and holds its first call until `release` is set when `holds` is. When
+    `remote` is, it reads its target from the system it acts on, an await
+    that suspends."""
 
     def __init__(
         self,
@@ -86,6 +88,7 @@ class Lookup(ToolInterface):
             interruptible=True,
         )
         self.holds = holds
+        self.remote = False
         self.started = asyncio.Event()
         self.release = asyncio.Event()
         self.ran_as: list[UUID] = []
@@ -95,6 +98,8 @@ class Lookup(ToolInterface):
         return self._spec
 
     async def target(self, ctx: TenantContext, call_input: ToolInput) -> Target:
+        if self.remote:
+            await asyncio.sleep(0)
         return Target()
 
     async def preflight(

@@ -18,6 +18,7 @@ from acme.integrations.model_providers.types import StopReason, Usage
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.attribution.types.principal import AgentRef, Principal
 from acme.om.base import Platform
+from acme.om.context import Role
 from acme.om.models.types.fill import FillSwitch
 from acme.om.steps.types.content import MAX_NAME, Stored
 
@@ -103,8 +104,9 @@ class InputHeader(Platform):
     wrote a message, the principal a child's spawn ran under for its
     parent's message, or the one the adopter's routing delivers an event
     under. `agent` names the agent that wrote it, when its actor is an
-    agent, and `untrusted` carries that agent's session's mark to the
-    session it reaches."""
+    agent. `untrusted` carries that agent's session's mark to the session
+    it reaches, and is set on any input that carries a file, which is data
+    whoever attached it (`steps.types.step.Step`)."""
 
     kind: Literal["input"] = "input"
     waking: bool | None = None
@@ -115,13 +117,18 @@ class InputHeader(Platform):
 
 class DecidedCall(Platform):
     """The tool call a person's approve or deny decides: its tool and its
-    input's hash, as its request recorded them, and who decided. The control
-    step references that request. An approval holds until `expires_at`; a
+    input's hash, as its request recorded them, and who decided, with the
+    role they held in the tenant then. The history writes both in the name
+    of the context that appends the decision (`attribution.rules.decided_by`),
+    and a decision counts only while the tenant's policy lets that role
+    decide the call's class (`tools.rules.decides`). The control step
+    references that request. An approval holds until `expires_at`; a
     denial holds for good and carries none."""
 
     tool: Stored = Field(min_length=1, max_length=MAX_NAME)
     input_hash: Stored = Field(min_length=1, max_length=MAX_NAME)
     decided_by: UUID
+    role: Role
     expires_at: datetime | None = None
 
 

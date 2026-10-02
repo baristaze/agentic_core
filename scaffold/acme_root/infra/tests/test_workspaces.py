@@ -7,6 +7,7 @@ ends what its commands left running there."""
 import asyncio
 import contextlib
 import os
+import re
 import signal
 from datetime import timedelta
 from pathlib import Path
@@ -14,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from acme.infra.base import new_id
+from acme.infra.docker import DockerReply
 from acme.infra.impl.configured import InfraConfiguredImpl
 from acme.infra.impl.settings import InfraSettings
 from acme.infra.workspaces import (
@@ -169,6 +171,58 @@ async def test_a_container_provider_refuses_what_it_cannot_hold_before_it_reache
     with pytest.raises(IsolationRefused):
         await provider.prepare(new_id(), new_id(), asked)
     assert calls == []
+
+
+class LocalDocker:
+    """Docker, faked for one container: `run` starts it with the labels it
+    names, `rm` removes it, and `inspect` renders its format over it as
+    Docker does. It keeps every command it is given."""
+
+    def __init__(self) -> None:
+        self.labels: dict[str, str] | None = None  # the running container's, when one runs
+        self.calls: list[tuple[str, ...]] = []
+
+    async def __call__(self, *args: str, **_: object) -> DockerReply:
+        self.calls.append(args)
+        if args[0] == "run":
+            pairs = [args[i + 1] for i, arg in enumerate(args) if arg == "--label"]
+            self.labels = dict(pair.split("=", 1) for pair in pairs)
+        elif args[0] == "rm":
+            self.labels = None
+        elif args[0] == "inspect":
+            if self.labels is None:
+                return DockerReply(1, b"", b"Error: No such object")
+            labels = self.labels
+            rendered = re.sub(
+                r'\{\{index \.Config\.Labels "([^"]+)"\}\}',
+                lambda found: labels.get(found.group(1), "<no value>"),
+                args[args.index("--format") + 1].replace("{{.State.Running}}", "true"),
+            )
+            return DockerReply(0, f"{rendered}\n".encode(), b"")
+        return DockerReply(0, b"", b"")
+
+
+async def test_a_running_container_is_reused_only_under_the_spec_it_was_started_to(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A session whose spec was tightened since its container started, from
+    open egress to none, never gets that container back: it is replaced,
+    and its files, in their volume, are kept."""
+    opened, closed = spec(IsolationMode.CONTAINER, OPEN), spec(IsolationMode.CONTAINER, NONE)
+    docker = LocalDocker()
+    monkeypatch.setattr("acme.infra.workspaces.container.docker", docker)
+    provider = WorkspaceContainerImpl("python:3.14-slim", timedelta(seconds=5))
+    org, workspace_id = new_id(), new_id()
+    await provider.prepare(org, workspace_id, opened)
+    docker.calls.clear()
+    await provider.prepare(org, workspace_id, opened)
+    assert [call[0] for call in docker.calls] == ["version", "inspect"], "the same spec reuses it"
+    docker.calls.clear()
+    await provider.prepare(org, workspace_id, closed)
+    assert [call[0] for call in docker.calls] == ["version", "inspect", "rm", "volume", "run"]
+    run = docker.calls[-1]
+    assert run[run.index("--network") + 1] == "none", "the new container holds the tighter spec"
+    assert not any(call[:2] == ("volume", "rm") for call in docker.calls), "its files stay"
 
 
 async def test_a_container_spec_with_no_docker_is_refused_and_never_swapped_for_a_directory(

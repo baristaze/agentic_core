@@ -5,8 +5,9 @@ never loops and never spends outside the gate, a recorded request
 re-renders to its prompt's hash, and a tool result over the bound is kept as
 an artifact the step holds the head, the tail, and the handle of."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import cast
 from uuid import UUID
@@ -190,16 +191,24 @@ class Engine:
     ctx: TenantContext
 
 
-def an_engine(tmp_path: Path, table: Sequence[RoleFill] = NARROWING) -> Engine:
+def an_engine(
+    tmp_path: Path,
+    table: Sequence[RoleFill] = NARROWING,
+    clock: Callable[[], datetime] | None = None,
+) -> Engine:
+    """The windows over a fill set the table resolves, on the wall's clock
+    unless `clock` is given."""
     storage = StorageMemoryImpl()
     infra = InfraLocalImpl(tmp_path)
     managers = build_managers(storage, infra)
+    clocked: dict[str, Callable[[], datetime]] = {} if clock is None else {"clock": clock}
     models = ModelsManagerImpl(
         storage.get_fill_set_storage(),
         managers.steps,
         managers.tenancy,
         ModelResolverTableImpl(Priced(), ResolverOptions(table=tuple(table))),
         ModelsOptions(),
+        **clocked,
     )
     providers = scripted_model_providers()
     gate, hashes = Gate(), PromptHashMemoryImpl()
@@ -220,6 +229,7 @@ def an_engine(tmp_path: Path, table: Sequence[RoleFill] = NARROWING) -> Engine:
         seal,
         CompactionPolicy(),
         WindowsOptions(page=7),
+        **clocked,
     )
     return Engine(
         managers.steps,
@@ -371,6 +381,22 @@ def test_an_objective_an_agent_handed_over_is_kept_by_the_summary_never_the_pinn
     assert "keep it in the summary" in prompt
 
 
+async def test_a_compaction_writes_at_the_engines_clock(tmp_path: Path) -> None:
+    """The clock is injected: a fill set, the summarizer's request and
+    reply, and the summary all take its time, never the wall's."""
+    at = AT + timedelta(days=30)
+    engine = an_engine(tmp_path, clock=lambda: at)
+    session = await a_session(engine, a_long_history())
+    engine.summarizer.add(a_summary())
+    await render_main(engine, session)
+    request, reply, summary = (await history_of(engine, session))[-3:]
+    assert summary.type is StepType.SUMMARY
+    assert {request.created_at, reply.created_at, summary.created_at} == {at}
+    assert isinstance(reply.header, ModelResponseHeader)
+    assert reply.header.stop_reason is StopReason.END_TURN
+    assert (await engine.models.get_fill_set(engine.ctx, session.id)).created_at == at
+
+
 async def test_a_compacted_window_does_not_compact_again(engine: Engine) -> None:
     session = await a_session(engine, a_long_history())
     engine.summarizer.add(a_summary())
@@ -437,6 +463,46 @@ async def test_a_switch_to_a_smaller_window_compacts_first(tmp_path: Path) -> No
         engine.ctx, session.id, session.epoch, session.loop_id, KIND
     )
     assert narrow.window.fill == NARROW.name and narrow.window.summary_id is not None
+
+
+async def test_a_switch_inside_a_tool_use_cycle_thinks_again_once_the_cycle_closes(
+    tmp_path: Path,
+) -> None:
+    """A model a switch brings in cannot replay the signed thinking of the
+    turn whose tool use it picks up, and a provider may refuse that turn
+    with thinking on: it runs with thinking off until it answers without a
+    tool."""
+    thinking = WIDE.model_copy(update={"thinking_budget": 1_024})
+    fallback = thinking.model_copy(update={"model": "claude-opus-5-5"})
+    table = (RoleFill(role=MAIN, fill=thinking, fallbacks=(fallback,)), *WIDENING[1:])
+    engine = an_engine(tmp_path, table)
+    history = History()
+    objective = history.message("Find why the robot drops the object.")
+    history.turn((objective,), "Reading the gripper log.", [("read_log", "released at 4.2 s")])
+    session = await a_session(engine, history)
+    assert (await render_main(engine, session)).call.thinking_budget == 1_024
+    await engine.models.switch_fill(
+        engine.ctx,
+        session.id,
+        session.epoch,
+        session.loop_id,
+        MAIN,
+        fallback,
+        SwitchReason.FALLBACK,
+    )
+    held = await render_main(engine, session)
+    assert held.window.fill == fallback.name and held.call.thinking_budget is None
+    later = History(session.id)
+    still = later.response(
+        await record(engine, session, held), "Reading the wrist log.", [("call_w", "read_log", {})]
+    )
+    later.result(later.call(still, "call_w"), "the wrist is fine")
+    await engine.steps.append_steps(engine.ctx, session.id, session.epoch, later.steps)
+    open_still = await render_main(engine, session)
+    assert open_still.call.thinking_budget is None, "the cycle is open still"
+    closed = later.response(await record(engine, session, open_still), "It releases early.")
+    await engine.steps.append_steps(engine.ctx, session.id, session.epoch, [closed])
+    assert (await render_main(engine, session)).call.thinking_budget == 1_024
 
 
 # A provider's overflow compacts once and retries once.
@@ -518,6 +584,7 @@ async def test_a_cut_summary_is_recorded_and_writes_no_summary(engine: Engine) -
     assert of_type(steps, StepType.SUMMARY) == []
     cut = steps[-1]
     assert isinstance(cut.header, ModelResponseHeader) and cut.header.truncated
+    assert cut.header.stop_reason is StopReason.OUTPUT_LIMIT, "why it stopped is kept"
     assert [billed for _, _, billed in engine.gate.settled] == [True]
 
 
@@ -558,6 +625,7 @@ async def test_a_refused_summary_is_recorded_and_the_window_is_read_as_it_is(
     steps = await history_of(engine, session)
     refused = steps[-1]
     assert isinstance(refused.header, ModelResponseHeader) and refused.as_text()
+    assert refused.header.stop_reason is StopReason.REFUSAL, "why it stopped is kept"
     assert of_type(steps, StepType.SUMMARY) == []
     again = await render_main(engine, session)
     assert again.call == first.call and again.prompt_hash == first.prompt_hash

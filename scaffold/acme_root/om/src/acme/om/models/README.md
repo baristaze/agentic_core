@@ -28,7 +28,9 @@ is one of the kinds of thing [Acme is made of](../../../../README.md).
 - **Switch.** A fill changes when its provider fails and a declared
   fallback takes over, when a model is retired or a better one comes, or
   when a policy says so. The history records the switch, naming both
-  fills, and the fill set takes its next version.
+  fills, and the fill set takes its next version. A switch in the middle
+  of the agent's tool calls runs with thinking off until the agent answers
+  without one, since a model cannot pick up another's thinking.
 - **Fall back.** The next declared fallback the session may run on, and
   no call has tried yet, takes the role. When none is left, the loop
   waits.

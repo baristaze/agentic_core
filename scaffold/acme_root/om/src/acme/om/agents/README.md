@@ -39,7 +39,8 @@ of](../../../../README.md).
 - **Start** a session on a kind. Its tree starts with it.
 - **Spawn** a sub-agent. It starts from a self-contained objective,
   never its parent's history, one level down the tree.
-- **Move the deadline** of a tree, for every session in it at once.
+- **Move the deadline** of a tree, for every session in it at once. A
+  session that waited on the old one goes on.
 - **Cancel.** Cancelling a parent cancels every session below it that is
   not idle, one about to begin its next loop included.
 - **Hand off.** The new session holds the objective and where it came

@@ -20,7 +20,7 @@ from acme.integrations.model_providers.calls import Finished, ModelCall, ModelRe
 from acme.integrations.model_providers.failures import ModelCallFailed
 from acme.integrations.model_providers.types import ErrorAnswer, ErrorKind, StopReason
 from acme.om.agent_sessions import AgentSessionsManagerInterface
-from acme.om.agent_sessions.limits import tally_loop, tripped
+from acme.om.agent_sessions.limits import Limit, Trip, tally_loop, tripped
 from acme.om.agent_sessions.rules import unlock_step
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
 from acme.om.agents import AgentsManagerInterface
@@ -312,13 +312,13 @@ class LoopManagerImpl(LoopManagerInterface):
                     if stopped is not None:
                         return stopped
                     continue
-            trip = tripped(
-                run.kind.limits,
-                tally_loop(history, run.loop_id),
-                now=self._clock(),
-                run_started_at=run.started_at,
-                deadline=run.deadline,
-            )
+            trip = self._tripped(run, history)
+            if trip is not None and trip.limit is Limit.DEADLINE:
+                # A person may have moved the deadline since this run read it,
+                # and the move unlocks only a park it finds: the run reads it
+                # again before it parks on it.
+                run.deadline = (await self._agents.tree_of(run.ctx, run.session_id)).deadline
+                trip = self._tripped(run, history)
             if trip is not None:
                 if trip.outcome is not None:
                     return await self._end(run, trip.outcome)
@@ -332,6 +332,15 @@ class LoopManagerImpl(LoopManagerInterface):
             stopped = await self._model_turn(run)
             if stopped is not None:
                 return stopped
+
+    def _tripped(self, run: _Run, history: Sequence[Step]) -> Trip | None:
+        return tripped(
+            run.kind.limits,
+            tally_loop(history, run.loop_id),
+            now=self._clock(),
+            run_started_at=run.started_at,
+            deadline=run.deadline,
+        )
 
     # A turn of the model.
 
@@ -647,6 +656,10 @@ class LoopManagerImpl(LoopManagerInterface):
                 use.input,
                 run.workspace,
                 holds_private=rules.holds_private(run.kind, run.registry),
+                # A fresh call's preflight keeps the tree's deadline. A call a
+                # lost run may have started is settled by its effect, which
+                # the transport's record answers whatever the time.
+                tree_deadline=run.deadline if fresh else None,
             )
         except PrincipalLapsed:
             if not fresh:
