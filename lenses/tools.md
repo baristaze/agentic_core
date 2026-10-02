@@ -37,7 +37,8 @@ TOL-02.)
 
 **Severity.** medium
 
-**Check.** review
+**Check.** `agentic-check` decides that every `ToolSpec` names its class,
+effect, timeout, interruptibility, and mode; the rest is judged.
 
 ## TOL-02 A tool's effect says what a repeat may do
 
@@ -275,7 +276,8 @@ value.
 
 **Severity.** high
 
-**Check.** review
+**Check.** `agentic-check` decides that no tool input, tool output, or step
+type declares a `SecretStr` or `SecretBytes` field; the rest is judged.
 
 ## TOL-12 Redaction stops accidents; scope and lifetime are the defense
 
@@ -326,7 +328,8 @@ run a command.
 
 **Severity.** high
 
-**Check.** review
+**Check.** `agentic-check` decides that a module defining a tool starts no
+process, opens no socket, and opens no file on its host; the rest is judged.
 
 ## TOL-14 Isolation is refused, never weakened
 

@@ -155,7 +155,8 @@ built inside the engine.
 
 **Severity.** medium
 
-**Check.** review
+**Check.** `agentic-check` decides that no engine constructor takes an
+interface with a default or as optional; the rest is judged.
 
 ## PRV-07 A null object may do nothing; it never pretends it did
 

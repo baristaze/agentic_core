@@ -174,7 +174,8 @@ steps.
 
 **Severity.** medium
 
-**Check.** review
+**Check.** `agentic-check` decides that no statement updates the steps table
+and that only a purge deletes from it; the rest is judged.
 
 ## STP-08 Five outcomes end a loop, and a park is none of them
 

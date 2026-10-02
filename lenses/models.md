@@ -32,7 +32,8 @@ hold is MOD-02.)
 
 **Severity.** medium
 
-**Check.** review
+**Check.** `agentic-check` decides that no model id is written outside the
+price table and the fills; the rest is judged.
 
 ## MOD-02 A switch is explicit, never silent
 
