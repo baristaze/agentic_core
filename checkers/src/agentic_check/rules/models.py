@@ -71,5 +71,6 @@ def no_model_at_a_call_site(project: Project) -> Iterator[Violation]:
                 yield Violation.at(
                     file.rel,
                     at,
-                    f"names the model {value!r}; a call names a model role, and only the price table and the fills name a model",
+                    f"names the model {value!r}; a call names a model role, and only the fills and the price table, "
+                    "the files `sites` lists, name a model",
                 )
