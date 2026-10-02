@@ -7,6 +7,8 @@ from uuid import UUID
 
 import pytest
 
+from acme.om.attribution.types.authority import AuthorityMode
+from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
 from acme.om.exceptions import StaleWriter, TenantMismatch, UniqueKeyTaken, ValidationFailed
 from acme.om.steps.storage import StepStorageInterface
@@ -42,7 +44,16 @@ this module that presents another tenant's. `test_storage_exceptions.py`
 holds the two sets to each other, so a new method arrives with its case."""
 
 
-def make_message(session_id: UUID, text: str = "the gripper drops the part") -> Step:
+def a_person() -> Principal:
+    return Principal(kind=PrincipalKind.PERSON, id=new_id())
+
+
+def make_message(
+    session_id: UUID,
+    text: str = "the gripper drops the part",
+    *,
+    principal: Principal | None = None,
+) -> Step:
     """A principal's message: the first step of its loop."""
     step_id = new_id()
     return Step(
@@ -53,12 +64,18 @@ def make_message(session_id: UUID, text: str = "the gripper drops the part") -> 
         type=StepType.MESSAGE,
         actor=Actor.PERSON,
         origin=Origin.PORTAL,
-        header=InputHeader(),
+        header=InputHeader(principal=principal or a_person()),
         content=Content(blocks=(TextBlock(text=text),)),
     )
 
 
-def make_request(session_id: UUID, loop_id: UUID, carried: tuple[UUID, ...] = ()) -> Step:
+def make_request(
+    session_id: UUID,
+    loop_id: UUID,
+    carried: tuple[UUID, ...] = (),
+    *,
+    spender: Principal | None = None,
+) -> Step:
     """A model request: it references what it carried, and copies nothing."""
     return Step(
         id=new_id(),
@@ -69,7 +86,7 @@ def make_request(session_id: UUID, loop_id: UUID, carried: tuple[UUID, ...] = ()
         actor=Actor.ENGINE,
         origin=Origin.ENGINE,
         refs=carried,
-        header=ModelRequestHeader(role="main"),
+        header=ModelRequestHeader(role="main", spender=spender or a_person()),
     )
 
 
@@ -95,17 +112,31 @@ def make_response(session_id: UUID, loop_id: UUID, request_id: UUID) -> Step:
     )
 
 
-def make_tool_request(session_id: UUID, loop_id: UUID, response_id: UUID) -> Step:
+def make_tool_request(
+    session_id: UUID,
+    loop_id: UUID,
+    response_id: UUID,
+    *,
+    principal: Principal | None = None,
+) -> Step:
+    """The agent's call of a tool, on a principal's authority."""
     return Step(
         id=new_id(),
         created_at=utcnow(),
         session_id=session_id,
         loop_id=loop_id,
         type=StepType.TOOL_REQUEST,
-        actor=Actor.ENGINE,
+        actor=Actor.AGENT,
         origin=Origin.ENGINE,
         refs=(response_id,),
-        header=ToolRequestHeader(tool="read_log", tool_use_id="call_1", input_hash="h:1"),
+        header=ToolRequestHeader(
+            tool="read_log",
+            tool_use_id="call_1",
+            input_hash="h:1",
+            principal=principal or a_person(),
+            authority=AuthorityMode.STEADY,
+            agent=AgentRef(kind="delivery", version=1, session_id=session_id),
+        ),
     )
 
 

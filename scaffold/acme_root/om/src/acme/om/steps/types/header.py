@@ -1,7 +1,11 @@
 """A step's header: its shape, typed per type, readable while its content is
 sealed. Each header names its `kind`, and a step holds the one its type
 fixes (`steps.types.step.HEADER_KINDS`). A header carries ids, names,
-counts, and flags, never what a person typed or a tool returned."""
+counts, and flags, never what a person typed or a tool returned.
+
+An input and a tool request name their principal, and a model request its
+spender: the attribution the audit reads, typed where the step is made, so
+no step is stored without it."""
 
 from datetime import datetime
 from enum import StrEnum
@@ -9,6 +13,8 @@ from typing import Annotated, Literal, Self
 
 from pydantic import Field, model_validator
 
+from acme.om.attribution.types.authority import AuthorityMode
+from acme.om.attribution.types.principal import AgentRef, Principal
 from acme.om.base import Platform
 from acme.om.steps.types.content import MAX_NAME
 
@@ -62,10 +68,20 @@ class Park(Platform):
 
 class InputHeader(Platform):
     """A `message` or an `event`. `waking` is set when the input arrives, by
-    the adopter's routing: a waking input starts a loop on an idle session."""
+    the adopter's routing: a waking input starts a loop on an idle session.
+
+    `principal` is the authority it arrives on: the person or program that
+    wrote a message, the principal a child's spawn ran under for its
+    parent's message, or the one the adopter's routing delivers an event
+    under. `agent` names the agent that wrote it, when its actor is an
+    agent, and `untrusted` carries that agent's session's mark to the
+    session it reaches."""
 
     kind: Literal["input"] = "input"
     waking: bool = True
+    principal: Principal
+    agent: AgentRef | None = None
+    untrusted: bool = False
 
 
 class ControlHeader(Platform):
@@ -79,6 +95,7 @@ class ModelRequestHeader(Platform):
 
     kind: Literal["model_request"] = "model_request"
     role: str = Field(min_length=1, max_length=MAX_NAME)
+    spender: Principal  # who pays for the call
 
 
 class ModelResponseHeader(Platform):
@@ -94,12 +111,17 @@ class ModelResponseHeader(Platform):
 class ToolRequestHeader(Platform):
     """One tool call, referencing the tool-use block of the response that
     asked for it (`tool_use_id`, with that response among the step's
-    `refs`) and carrying its input's hash, never its input."""
+    `refs`) and carrying its input's hash, never its input. The agent acts
+    (`agent`); the call runs under `principal`, whom `authority` chose and
+    the adopter's transition answered for on this call."""
 
     kind: Literal["tool_request"] = "tool_request"
     tool: str = Field(min_length=1, max_length=MAX_NAME)
     tool_use_id: str = Field(min_length=1, max_length=MAX_NAME)
     input_hash: str = Field(min_length=1, max_length=MAX_NAME)
+    principal: Principal
+    authority: AuthorityMode
+    agent: AgentRef
 
 
 class ToolResponseHeader(Platform):

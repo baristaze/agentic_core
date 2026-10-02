@@ -103,7 +103,30 @@ def malformed() -> list[tuple[str, dict[str, Any]]]:
     call = make_tool_request(SESSION, message.id, response.id)
     result = make_tool_response(SESSION, message.id, call.id)
     use = {"kind": "tool_use", "id": "c", "name": "read_log", "input": {}}
+    said = raw(message)["header"]
+    asked = raw(request)["header"]
+    called = raw(call)["header"]
+    agent = called["agent"]
     return [
+        (
+            "an input that names no principal",
+            raw(message, header={k: v for k, v in said.items() if k != "principal"}),
+        ),
+        (
+            "a model request that names no spender",
+            raw(request, header={k: v for k, v in asked.items() if k != "spender"}),
+        ),
+        (
+            "a tool request that names no principal",
+            raw(call, header={k: v for k, v in called.items() if k != "principal"}),
+        ),
+        ("a tool request the engine makes", raw(call, actor="engine")),
+        ("an agent's message that names no agent", raw(message, actor="agent")),
+        ("a person's message that names an agent", raw(message, header={**said, "agent": agent})),
+        (
+            "a tool request of another session's agent",
+            raw(call, header={**called, "agent": {**agent, "session_id": str(new_id())}}),
+        ),
         ("a block of no known kind", raw(message, content={"blocks": [{"kind": "audio"}]})),
         (
             "a block with a field no block has",
