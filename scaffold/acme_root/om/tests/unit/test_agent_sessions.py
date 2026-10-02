@@ -2,6 +2,7 @@
 agent sessions manager over the memory storage, with the history it reads
 appended through the steps manager."""
 
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -32,6 +33,7 @@ from acme.om.root import Managers, build_managers
 from acme.om.steps.types.header import (
     ControlCommand,
     ControlHeader,
+    DecidedCall,
     InputHeader,
     LoopEndedHeader,
     LoopOutcome,
@@ -64,7 +66,12 @@ def a_step(step_type: StepType, header: Any, seq: int = 0) -> Step:
 
 
 def control(command: ControlCommand) -> Step:
-    return a_step(StepType.CONTROL, ControlHeader(command=command))
+    """A control step; an approve or a deny names the call it decides."""
+    call = None
+    if command in (ControlCommand.APPROVE, ControlCommand.DENY):
+        expires = utcnow() + timedelta(hours=1) if command is ControlCommand.APPROVE else None
+        call = DecidedCall(tool="t", input_hash="h", decided_by=new_id(), expires_at=expires)
+    return a_step(StepType.CONTROL, ControlHeader(command=command, call=call))
 
 
 def parked_for(reason: ParkReason) -> Step:

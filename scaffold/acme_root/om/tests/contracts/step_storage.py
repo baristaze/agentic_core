@@ -123,7 +123,9 @@ def make_tool_request(session_id: UUID, loop_id: UUID, response_id: UUID) -> Ste
         actor=Actor.ENGINE,
         origin=Origin.ENGINE,
         refs=(response_id,),
-        header=ToolRequestHeader(tool="read_log", tool_use_id="call_1", input_hash="h:1"),
+        header=ToolRequestHeader(
+            tool="read_log", tool_use_id="call_1", input_hash="h:1", authorization_class="read"
+        ),
     )
 
 
