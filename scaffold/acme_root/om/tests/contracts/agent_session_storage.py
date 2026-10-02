@@ -14,7 +14,7 @@ from acme.om.exceptions import PreconditionFailed
 from acme.om.steps.types.header import Park, ParkReason
 
 CROSS_TENANT_CASES: frozenset[str] = frozenset(
-    {"create_session", "read_session", "read_sessions", "write_session"}
+    {"create_session", "purge_tenant", "read_session", "read_sessions", "write_session"}
 )
 """Every method of `AgentSessionStorageInterface` that takes a tenant has a
 case in this module that presents another tenant's."""
@@ -30,7 +30,7 @@ def make_session(*, parent: AgentSession | None = None) -> AgentSession:
         updated_at=now,
         created_by=actor,
         updated_by=actor,
-        title="the gripper drops the part",
+        title="the weekly report is missing a total",
         participants=(actor, new_id()),
         parent_id=None if parent is None else parent.id,
         root_id=session_id if parent is None else parent.root_id,
@@ -46,6 +46,8 @@ def parked(session: AgentSession, version: int) -> AgentSession:
                 reason=ParkReason.BUDGET, unlock="raise", retry_at=utcnow() + timedelta(hours=1)
             ),
             "status_seq": 7,
+            "pending_input": new_id(),
+            "delivering_request": new_id(),
             "version": version,
             "updated_at": utcnow(),
         }
@@ -66,6 +68,31 @@ class AgentSessionStorageContract:
         assert await storage.read_session(org, root.id) == root
         assert await storage.read_session(org, child.id) == child
         assert await storage.read_session(org, new_id()) is None
+
+    async def test_a_title_keeps_what_both_impls_store(
+        self, storage: AgentSessionStorageInterface
+    ) -> None:
+        org = new_id()
+        session = AgentSession.model_validate(
+            {**make_session().model_dump(), "title": f"a\x00b{chr(0xDFFF)}c"}
+        )
+        assert session.title == "a\ufffdb\ufffdc"
+        assert await storage.create_session(org, session, ())
+        assert await storage.read_session(org, session.id) == session
+
+    async def test_purge_tenant_takes_the_tenants_sessions_a_batch_at_a_time(
+        self, storage: AgentSessionStorageInterface
+    ) -> None:
+        gone, kept = new_id(), new_id()
+        for _ in range(3):
+            assert await storage.create_session(gone, make_session(), ())
+        stays = make_session()
+        assert await storage.create_session(kept, stays, ())
+        assert await storage.purge_tenant(gone, 2) == 2
+        assert await storage.purge_tenant(gone, 2) == 1
+        assert await storage.purge_tenant(gone, 2) == 0
+        assert await storage.read_sessions(gone, None, None, 10) == []
+        assert await storage.read_sessions(kept, None, None, 10) == [stays]
 
     async def test_create_reports_an_existing_id_and_changes_nothing(
         self, storage: AgentSessionStorageInterface

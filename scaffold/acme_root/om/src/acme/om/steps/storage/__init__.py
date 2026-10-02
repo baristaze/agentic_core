@@ -72,3 +72,10 @@ class StepStorageInterface(ABC):
         """The session's cursor row: its head and its epoch, both 0 when the
         session has none."""
         ...
+
+    @abstractmethod
+    async def count_tenant(self, org_id: UUID, limit: int) -> int:
+        """How many steps and cursor rows the tenant keeps, counted up to
+        `limit` and no further: what the sweep reads of a deleted tenant's
+        history, which it cannot delete."""
+        ...

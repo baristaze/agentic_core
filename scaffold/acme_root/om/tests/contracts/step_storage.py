@@ -35,14 +35,14 @@ from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from contracts.racing import race
 
 CROSS_TENANT_CASES: frozenset[str] = frozenset(
-    {"append_inputs", "append_steps", "begin_run", "read_cursor", "read_steps"}
+    {"append_inputs", "append_steps", "begin_run", "count_tenant", "read_cursor", "read_steps"}
 )
 """Every method of `StepStorageInterface` that takes a tenant has a case in
 this module that presents another tenant's. `test_storage_exceptions.py`
 holds the two sets to each other, so a new method arrives with its case."""
 
 
-def make_message(session_id: UUID, text: str = "the gripper drops the part") -> Step:
+def make_message(session_id: UUID, text: str = "the weekly report is missing a total") -> Step:
     """A principal's message: the first step of its loop."""
     step_id = new_id()
     return Step(
@@ -55,6 +55,22 @@ def make_message(session_id: UUID, text: str = "the gripper drops the part") -> 
         origin=Origin.PORTAL,
         header=InputHeader(),
         content=Content(blocks=(TextBlock(text=text),)),
+    )
+
+
+def make_event(session_id: UUID) -> Step:
+    """An event from outside, built with no word on whether it wakes."""
+    step_id = new_id()
+    return Step(
+        id=step_id,
+        created_at=utcnow(),
+        session_id=session_id,
+        loop_id=step_id,
+        type=StepType.EVENT,
+        actor=Actor.EXTERNAL,
+        origin=Origin.INTEGRATION,
+        header=InputHeader(),
+        content=Content(blocks=(TextBlock(text="the nightly import finished"),)),
     )
 
 
@@ -87,11 +103,13 @@ def make_response(session_id: UUID, loop_id: UUID, request_id: UUID) -> Step:
         header=ModelResponseHeader(),
         content=Content(
             blocks=(
-                TextBlock(text="reading the controller log"),
+                TextBlock(text="reading the import log"),
                 ToolUseBlock(id="call_1", name="read_log", input={"lines": [1, 200]}),
             )
         ),
-        children=Children(thinking=(ThinkingBlock(text="the release fires early"),)),
+        children=Children(
+            thinking=(ThinkingBlock(text="the total is summed before the import ends"),)
+        ),
     )
 
 
@@ -337,6 +355,66 @@ class StepStorageContract:
         (later,) = await storage.append_steps(org_a, session, epoch, [make_message(session)])
         assert later.seq == 2
         assert await storage.read_steps(org_a, session, 0, 10) == [step, later]
+
+    async def test_what_postgres_refuses_in_a_string_is_replaced_when_a_step_is_built(
+        self, storage: StepStorageInterface
+    ) -> None:
+        """A NUL and a lone surrogate, which jsonb and UTF-8 refuse, become
+        U+FFFD in every string a block holds, and a float JSON has no word
+        for becomes None, so both impls keep the step as it was built and
+        neither append fails."""
+        org, session = new_id(), new_id()
+        odd = f"a\x00b{chr(0xD800)}c"  # a NUL, and a lone surrogate
+        file = Attachment(id=new_id(), name=odd, media_type="text/plain", size=1, hash="k:1")
+        message = make_message(session).model_copy(
+            update={
+                "content": Content(blocks=(TextBlock(text=odd), ImageBlock(attachment_id=file.id))),
+                "children": Children(attachments=(file,)),
+            }
+        )
+        built = Step.model_validate(message.model_dump())
+        request = make_request(session, built.id, (built.id,))
+        response = Step.model_validate(
+            {
+                **make_response(session, built.id, request.id).model_dump(),
+                "content": {
+                    "blocks": [
+                        {
+                            "kind": "tool_use",
+                            "id": "call\x00",
+                            "name": "read_log",
+                            "input": {odd: [odd, float("nan")], "n": float("inf")},
+                        }
+                    ]
+                },
+                "children": {"thinking": [{"kind": "thinking", "text": odd}]},
+            }
+        )
+        clean = "a\ufffdb\ufffdc"
+        assert built.as_text() == clean and built.children.attachments[0].name == clean
+        (use,) = response.as_tool_uses()
+        assert use.id == "call\ufffd"
+        assert use.input == {clean: (clean, None), "n": None}
+        assert response.children.thinking[0].text == clean
+        epoch = await storage.begin_run(org, session)
+        appended = await storage.append_steps(org, session, epoch, [built, request, response])
+        assert [s.model_copy(update={"seq": 0}) for s in appended] == [built, request, response]
+        assert await storage.read_steps(org, session, 0, 10) == list(appended)
+
+    async def test_count_tenant_counts_the_history_and_the_cursors_up_to_the_limit(
+        self, storage: StepStorageInterface
+    ) -> None:
+        """What the sweep reads of a tenant: its steps and its cursor rows,
+        counted no further than asked, and nothing of another tenant."""
+        org, other, first, second = new_id(), new_id(), new_id(), new_id()
+        assert await storage.count_tenant(org, 10) == 0
+        await storage.append_inputs(org, first, [make_message(first), make_message(first)])
+        await storage.begin_run(org, second)
+        assert await storage.count_tenant(org, 10) == 4
+        assert await storage.count_tenant(org, 3) == 3
+        assert await storage.count_tenant(other, 10) == 0
+        await storage.append_inputs(other, first, [make_message(first)])
+        assert await storage.count_tenant(org, 10) == 4
 
     async def test_many_appends_never_share_or_skip_a_seq(
         self, storage: StepStorageInterface
