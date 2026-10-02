@@ -17,6 +17,7 @@ from pydantic import Field
 from acme.om.base import Created, Identifiable, Platform
 from acme.om.budgets.types.amount import Amount, Spend
 from acme.om.budgets.types.budget import MAX_KEY, BudgetScope
+from acme.om.steps.types.content import Stored
 
 MAX_SCOPES = 16
 """The scopes one call is charged to, at most: a session, its tree, the
@@ -32,7 +33,7 @@ class HoldRequest(Platform):
     exposure: Spend  # the worst case, from `budgets.rules.call_exposure` or `job_exposure`
     own: Amount | None = None  # the request's own amount, whose window is the request
     session_id: UUID | None = None  # the session the call serves, when one does
-    purpose: str = Field(min_length=1, max_length=MAX_KEY)  # a model role, or a job's kind
+    purpose: Stored = Field(min_length=1, max_length=MAX_KEY)  # a model role, or a job's kind
 
 
 class HoldLine(Platform):
@@ -52,7 +53,7 @@ class Hold(Identifiable, Created):
 
     spender_id: UUID
     session_id: UUID | None = None
-    purpose: str = Field(min_length=1, max_length=MAX_KEY)
+    purpose: Stored = Field(min_length=1, max_length=MAX_KEY)
     exposure: Spend
     own: Amount | None = None
     lines: tuple[HoldLine, ...] = ()

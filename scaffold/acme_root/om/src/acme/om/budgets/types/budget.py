@@ -14,6 +14,7 @@ from pydantic import Field, model_validator
 
 from acme.om.base import Identifiable, Platform, Trackable
 from acme.om.budgets.types.amount import Amount
+from acme.om.steps.types.content import Stored
 
 MAX_KEY = 200
 
@@ -32,7 +33,7 @@ class BudgetScope(Platform):
     gives it, such as a session's id or a project's name."""
 
     kind: BudgetScopeKind
-    key: str = Field(min_length=1, max_length=MAX_KEY)
+    key: Stored = Field(min_length=1, max_length=MAX_KEY)
 
 
 class WindowKind(StrEnum):
@@ -60,7 +61,7 @@ class Budget(Identifiable, Trackable):
     """Every change of the amount is a compare-and-set on it."""
 
     scope_kind: BudgetScopeKind
-    scope_key: str = Field(min_length=1, max_length=MAX_KEY)
+    scope_key: Stored = Field(min_length=1, max_length=MAX_KEY)
     window_kind: WindowKind
     window_seconds: int | None = Field(default=None, ge=1)
     cost_micros: int | None = Field(default=None, ge=0)

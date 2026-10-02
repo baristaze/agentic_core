@@ -145,8 +145,10 @@ class LedgerStoragePostgresImpl(PgStorageBase, LedgerStorageInterface):
                 # committed by now, and it is the one that counts.
                 first = await _settlement_row(db, org_id, hold.id)
                 if first is not None:
+                    # Read before the rollback, which expires the row.
+                    stored = to_model(first, Settlement)
                     await db.rollback()
-                    return to_model(first, Settlement)
+                    return stored
                 for line in hold.lines:
                     await db.execute(
                         _moved(org_id, line, held=hold.exposure, spent=settlement.spent)
