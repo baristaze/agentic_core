@@ -39,3 +39,10 @@ class FillSetStorageMemoryImpl(MemoryStorageBase, FillSetStorageInterface):
         if version is None:
             return versions[-1] if versions else None
         return next((f for f in versions if f.version == version), None)
+
+    async def purge_tenant(self, org_id: UUID, limit: int) -> int:
+        async with self._lock:
+            gone = [f.id for f in self._rows(self._fill_sets, org_id)][:limit]
+            for fill_set_id in gone:
+                del self._fill_sets[fill_set_id]
+            return len(gone)

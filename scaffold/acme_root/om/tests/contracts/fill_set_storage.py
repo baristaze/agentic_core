@@ -21,7 +21,7 @@ from acme.om.models.types.fill import (
     SwitchReason,
 )
 
-CROSS_TENANT_CASES: frozenset[str] = frozenset({"read_fill_set", "write_fill_set"})
+CROSS_TENANT_CASES: frozenset[str] = frozenset({"purge_tenant", "read_fill_set", "write_fill_set"})
 """Every method of `FillSetStorageInterface` that takes a tenant has a case
 in this module that presents another tenant's."""
 
@@ -113,6 +113,21 @@ class FillSetStorageContract:
         assert not await storage.write_fill_set(other, first)
         assert await storage.read_fill_set(other, session, None) is None
         assert await storage.read_fill_set(org, session, None) == first
+
+    async def test_purge_tenant_takes_the_tenants_versions_a_batch_at_a_time(
+        self, storage: FillSetStorageInterface
+    ) -> None:
+        gone, kept = new_id(), new_id()
+        session = new_id()
+        for version in (1, 2, 3):
+            assert await storage.write_fill_set(gone, make_fill_set(session, version))
+        stays = make_fill_set(session)
+        assert await storage.write_fill_set(kept, stays)
+        assert await storage.purge_tenant(gone, 2) == 2
+        assert await storage.purge_tenant(gone, 2) == 1
+        assert await storage.purge_tenant(gone, 2) == 0
+        assert await storage.read_fill_set(gone, session, None) is None
+        assert await storage.read_fill_set(kept, session, None) == stays
 
     async def test_read_fill_set_under_another_tenant_finds_nothing(
         self, storage: FillSetStorageInterface

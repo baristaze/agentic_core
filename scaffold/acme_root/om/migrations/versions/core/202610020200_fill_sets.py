@@ -1,5 +1,4 @@
-"""Every session's fill set, a row per version, with its fence, and kept to
-SELECT and INSERT for the serving logins.
+"""Every session's fill set, a row per version, with its fence.
 
 Revision ID: 202610020200
 Revises: 202610020100

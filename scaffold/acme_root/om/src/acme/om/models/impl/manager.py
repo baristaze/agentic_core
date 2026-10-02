@@ -1,7 +1,7 @@
 from collections.abc import Collection, Sequence
 from uuid import UUID
 
-from acme.om.base import new_id, utcnow
+from acme.om.base import Platform, new_id, utcnow
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import NotFound, PreconditionFailed, ValidationFailed
 from acme.om.models import rules
@@ -12,6 +12,11 @@ from acme.om.models.types.fill import Eligibility, Fill, FillSet, ModelRole, Swi
 from acme.om.steps import StepsManagerInterface
 from acme.om.steps.types.header import SwitchedHeader
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
+from acme.om.tenancy import TenancyManagerInterface
+
+
+class ModelsOptions(Platform):
+    purge_batch: int = 1000  # fill-set versions one purge statement deletes at most
 
 
 class ModelsManagerImpl(ModelsManagerInterface):
@@ -19,11 +24,15 @@ class ModelsManagerImpl(ModelsManagerInterface):
         self,
         storage: FillSetStorageInterface,
         steps: StepsManagerInterface,
+        tenancy: TenancyManagerInterface,
         resolver: ModelResolverInterface,
+        options: ModelsOptions,
     ) -> None:
         self._storage = storage
         self._steps = steps
+        self._tenancy = tenancy
         self._resolver = resolver
+        self._options = options
 
     async def resolve_fill_set(
         self,
@@ -121,6 +130,12 @@ class ModelsManagerImpl(ModelsManagerInterface):
                 f"step {step.id} announces version {version}, and the head is {head.version}"
             )
         return await self._record(ctx, head, step)
+
+    async def purge_tenant(self, ctx: TenantContext) -> int:
+        ctx.require(Permission.WRITE)
+        if not await self._tenancy.tenant_expired(ctx):
+            return 0
+        return await self._storage.purge_tenant(ctx.org_id, self._options.purge_batch)
 
     async def _head(self, ctx: TenantContext, session_id: UUID) -> FillSet:
         head = await self._storage.read_fill_set(ctx.org_id, session_id, None)

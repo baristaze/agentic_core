@@ -23,3 +23,9 @@ class FillSetStorageInterface(ABC):
         """One version of the session's fill set, or its latest when
         `version` is None; None when there is no such version."""
         ...
+
+    @abstractmethod
+    async def purge_tenant(self, org_id: UUID, limit: int) -> int:
+        """At most `limit` fill-set versions of a deleted tenant past its
+        retention; returns how many went."""
+        ...

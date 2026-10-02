@@ -10,9 +10,8 @@ from acme.om.storage.tables.base import Base, CreatedMixin, IdentifiableMixin
 
 class FillSets(IdentifiableMixin, CreatedMixin, Base):
     """Every version of every session's fill set, one row each, written
-    once. The serving logins hold SELECT and INSERT here and nothing more,
-    so no statement a process sends rewrites a version: a fill changes only
-    by a new one."""
+    once: the storage interface has no update, so a fill changes only by a
+    new version. A deleted tenant's rows go in the sweep's batches."""
 
     __tablename__ = "fill_sets"
     # A session's versions are read by number, the latest first: org_id

@@ -1,7 +1,8 @@
 -- Every version of every session's fill set: the model roles it resolves to
--- fills, one row a version. A switch writes the next version; nothing
--- rewrites one, so a fill changes only by a new version, announced by the
--- `switched` step its row names.
+-- fills, one row a version. A switch writes the next version and no
+-- statement rewrites one, so a fill changes only by a new version, announced
+-- by the `switched` step its row names. A deleted tenant's rows go with its
+-- sessions, in the sweep's batches.
 
 CREATE TABLE core.fill_sets (
     id uuid NOT NULL,
@@ -37,9 +38,3 @@ CREATE POLICY tenant_fence ON core.fill_sets
             AND current_user = 'acme_system'
         )
     );
-
--- A version is written once. The role's default privileges grant the
--- serving logins every DML statement on a new table; here they keep SELECT
--- and INSERT, so no statement a process sends rewrites a version.
-
-REVOKE UPDATE, DELETE ON core.fill_sets FROM acme_runtime, acme_system;

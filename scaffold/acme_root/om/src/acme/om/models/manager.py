@@ -83,3 +83,10 @@ class ModelsManagerInterface(ABC):
         version past the next, or a version another switch holds, is
         `PreconditionFailed`."""
         ...
+
+    @abstractmethod
+    async def purge_tenant(self, ctx: TenantContext) -> int:
+        """The sweep, for one tenant past its own retention: every fill-set
+        version, a batch at most a call. Any other tenant returns 0 and
+        reads nothing."""
+        ...

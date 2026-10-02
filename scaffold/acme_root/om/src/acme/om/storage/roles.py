@@ -35,7 +35,7 @@ TABLE_ROLES: dict[str, DatabaseRole] = {
     "fill_sets": DatabaseRole.CORE,
 }
 
-APPEND_ONLY_TABLES: frozenset[str] = frozenset({"steps", "fill_sets"})
+APPEND_ONLY_TABLES: frozenset[str] = frozenset({"steps"})
 """Tables whose rows are written once: the serving logins hold SELECT and
 INSERT on them and never UPDATE or DELETE. The migration that creates one
 takes the two back from the role's default privileges, and the login command

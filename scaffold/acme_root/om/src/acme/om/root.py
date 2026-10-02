@@ -20,7 +20,7 @@ from acme.om.idempotency import IdempotencyManagerInterface
 from acme.om.idempotency.impl.manager import IdempotencyManagerImpl, IdempotencyOptions
 from acme.om.media import MediaManagerInterface
 from acme.om.media.impl.manager import MediaManagerImpl, MediaOptions
-from acme.om.models.impl.manager import ModelsManagerImpl
+from acme.om.models.impl.manager import ModelsManagerImpl, ModelsOptions
 from acme.om.models.impl.resolver import ModelResolverTableImpl, ResolverOptions
 from acme.om.models.manager import ModelsManagerInterface
 from acme.om.orchestrations import OrchestrationsManagerInterface
@@ -120,6 +120,7 @@ def build_managers(
     orchestrations_options: OrchestrationsOptions | None = None,
     steps_options: StepsOptions | None = None,
     agent_sessions_options: AgentSessionsOptions | None = None,
+    models_options: ModelsOptions | None = None,
 ) -> Managers:
     """`integrations` is the root of the hosted services the managers front:
     the identity provider, which the tenancy manager signs people in and
@@ -188,7 +189,9 @@ def build_managers(
     models = ModelsManagerImpl(
         storage.get_fill_set_storage(),
         steps,
+        tenancy,
         ModelResolverTableImpl(PricingTableImpl(), ResolverOptions()),
+        models_options or ModelsOptions(),
     )
     idempotency = IdempotencyManagerImpl(
         storage.get_idempotency_storage(), idempotency_options or IdempotencyOptions()
