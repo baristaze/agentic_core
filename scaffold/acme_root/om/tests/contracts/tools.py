@@ -34,7 +34,7 @@ from acme.om.events.impl.manager import EventsManagerImpl, EventsOptions
 from acme.om.exceptions import ToolFailed
 from acme.om.outbox.impl.relay import OutboxRelayImpl
 from acme.om.steps import StepsManagerInterface
-from acme.om.steps.impl.manager import StepsManagerImpl, StepsOptions
+from acme.om.steps.impl.manager import StepsManagerImpl, StepsOptions, no_registry
 from acme.om.steps.types.content import Content, TextBlock, ToolUseBlock
 from acme.om.steps.types.header import ModelResponseHeader, ToolFailure, ToolResponseHeader
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
@@ -237,7 +237,9 @@ def tools_over(
 ) -> Tools:
     storage = StorageMemoryImpl()
     members = Members()  # pyright: ignore[reportAbstractUsage] (a partial double)
-    steps = StepsManagerImpl(storage.get_step_storage(), members, StepsOptions())
+    steps = StepsManagerImpl(
+        storage.get_step_storage(), members, StepsOptions(), instructs=no_registry
+    )
     events = EventsManagerImpl(storage.get_event_storage(), members, EventsOptions())
     relay = OutboxRelayImpl(
         storage.get_outbox_storage(), storage.get_event_storage(), TopicsMemoryImpl()

@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
 from uuid import UUID
 
@@ -17,7 +17,7 @@ from acme.om.attribution.types.authority import SessionAuthority
 from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
 from acme.om.base import Platform, derived_id, new_id, utcnow
 from acme.om.context import Permission, TenantContext
-from acme.om.exceptions import NotFound, TreeBoundReached, ValidationFailed
+from acme.om.exceptions import NotAuthorized, NotFound, TreeBoundReached, ValidationFailed
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.types.row import OutboxRow, versioned_row
 from acme.om.steps import StepsManagerInterface
@@ -25,6 +25,7 @@ from acme.om.steps.types.content import Content, TextBlock
 from acme.om.steps.types.header import ControlCommand, ControlHeader, InputHeader
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.tenancy import TenancyManagerInterface
+from acme.om.tools.rules import instruct_refusal
 
 CREATED = "agents.agent_tree.created"
 UPDATED = "agents.agent_tree.updated"
@@ -48,7 +49,10 @@ class AgentsManagerImpl(AgentsManagerInterface):
         relay: OutboxRelayInterface,
         options: AgentsOptions,
         clock: Callable[[], datetime] = utcnow,
+        *,
+        tool_classes: Mapping[str, str],
     ) -> None:
+        self._tool_classes = tool_classes
         self._storage = storage
         self._sessions = sessions
         self._steps = steps
@@ -63,6 +67,7 @@ class AgentsManagerImpl(AgentsManagerInterface):
     async def start_session(self, ctx: TenantContext, start: Start) -> AgentSession:
         ctx.require(Permission.WRITE)
         kind = self._kinds.latest(start.kind)
+        self._may_instruct(ctx, kind.tools)
         # The tree first: a session never stands without the tree it draws on.
         await self._create_tree(
             ctx, tree_for(kind, start.id, start.deadline, self._clock(), ctx.user_id)
@@ -71,6 +76,12 @@ class AgentsManagerImpl(AgentsManagerInterface):
         created = await self._sessions.create_session(ctx, session)
         await self._open(ctx, created)
         return created
+
+    async def require_instructor(self, ctx: TenantContext, session_id: UUID) -> None:
+        ctx.require(Permission.WRITE)
+        session = await self._find(ctx, session_id)
+        if session is not None:
+            self._may_instruct(ctx, session.tools)
 
     async def spawn(self, ctx: TenantContext, parent_id: UUID, spawn: Spawn) -> AgentSession:
         ctx.require(Permission.WRITE)
@@ -206,6 +217,14 @@ class AgentsManagerImpl(AgentsManagerInterface):
         if not await self._tenancy.tenant_expired(ctx):
             return 0
         return await self._storage.purge_tenant(ctx.org_id, self._options.purge_batch)
+
+    def _may_instruct(self, ctx: TenantContext, tools: Iterable[str]) -> None:
+        """A registry is the tools the catalog holds of those named, and the
+        classes they offer are what its sender must be able to make."""
+        classes = [self._tool_classes[name] for name in tools if name in self._tool_classes]
+        refusal = instruct_refusal(ctx, classes)
+        if refusal is not None:
+            raise NotAuthorized(refusal)
 
     def _session(
         self,

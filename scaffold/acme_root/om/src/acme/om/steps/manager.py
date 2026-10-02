@@ -15,12 +15,18 @@ written the same way, with the role that context holds
 (`attribution.rules.decided_by`)."""
 
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from uuid import UUID
 
 from acme.om.context import TenantContext
 from acme.om.steps.types.page import StepCursor, StepPage
 from acme.om.steps.types.step import Step
+
+InstructCheck = Callable[[TenantContext, UUID], Awaitable[None]]
+"""Refuses, with `NotAuthorized`, a context that may not instruct a session:
+one that lacks a permission a call the session's registry offers needs. The
+agents manager answers it, since a session's registry is its kind's; a root
+binds the two."""
 
 
 class StepsManagerInterface(ABC):
@@ -50,7 +56,9 @@ class StepsManagerInterface(ABC):
     ) -> tuple[Step, ...]:
         """The inbox's append: inputs and controls, durable when this
         returns, with no epoch. A step of any other type is
-        `ValidationFailed`."""
+        `ValidationFailed`. A principal's message from a context that may
+        not make every kind of call the session's registry offers is
+        `NotAuthorized` (`InstructCheck`), with nothing appended."""
         ...
 
     @abstractmethod

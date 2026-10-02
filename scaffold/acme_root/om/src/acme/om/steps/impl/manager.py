@@ -5,7 +5,7 @@ from acme.om.attribution.rules import decided_by, principal_authored, said_by
 from acme.om.base import Platform
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import ValidationFailed
-from acme.om.steps.manager import StepsManagerInterface
+from acme.om.steps.manager import InstructCheck, StepsManagerInterface
 from acme.om.steps.storage import StepStorageInterface
 from acme.om.steps.types.page import StepCursor, StepPage
 from acme.om.steps.types.step import Step
@@ -18,16 +18,24 @@ class StepsOptions(Platform):
     purge_batch: int = 1000  # steps one purge statement deletes at most
 
 
+async def no_registry(ctx: TenantContext, session_id: UUID) -> None:
+    """The check of a history no agent reads: no session over it offers a
+    tool, so anyone who may write it may speak in it."""
+
+
 class StepsManagerImpl(StepsManagerInterface):
     def __init__(
         self,
         storage: StepStorageInterface,
         tenancy: TenancyManagerInterface,
         options: StepsOptions,
+        *,
+        instructs: InstructCheck,
     ) -> None:
         self._storage = storage
         self._tenancy = tenancy
         self._options = options
+        self._instructs = instructs
 
     async def begin_run(self, ctx: TenantContext, session_id: UUID) -> int:
         ctx.require(Permission.WRITE)

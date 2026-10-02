@@ -329,6 +329,10 @@ def build_managers(
         private_history(storage, session_keys, StepStorageMemoryImpl()),
         tenancy,
         steps_options or StepsOptions(),
+        # Who may instruct a session is the agents' to answer, from its
+        # registry; they are built below on this manager, so the edge is
+        # bound at call time.
+        instructs=lambda ctx, session_id: managers.agents.require_instructor(ctx, session_id),
     )
     agent_sessions = AgentSessionsManagerImpl(
         storage.get_agent_session_storage(),
@@ -398,6 +402,7 @@ def build_managers(
         tenancy,
         outbox,
         agents_options or AgentsOptions(),
+        tool_classes={tool.spec.name: tool.spec.authorization_class for tool in tool_catalog},
     )
     # What a model request reads: rendered from the history, compacted by
     # the summarizer through the model providers, behind the gate, paid for

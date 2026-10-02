@@ -29,10 +29,17 @@ from acme.infra.workspaces import (
     Workspace,
 )
 from acme.om.base import new_id
-from acme.om.context import Role
+from acme.om.context import Permission, Role
 from acme.om.exceptions import NotAuthorized, PreconditionFailed
 from acme.om.steps.types.header import ToolFailure, ToolResponseHeader
-from acme.om.tools.rules import DEFAULT_CEILINGS, UNMATCHED, decide, reaches_outward
+from acme.om.tools.rules import (
+    DEFAULT_CEILINGS,
+    UNMATCHED,
+    decide,
+    instruct_refusal,
+    permissions_for,
+    reaches_outward,
+)
 from acme.om.tools.types.call import GateOutcome
 from acme.om.tools.types.policy import (
     ApproverRule,
@@ -312,3 +319,16 @@ async def test_a_call_that_runs_code_acts_outward_from_a_workspace_with_open_egr
         )
         is outward
     )
+
+
+def test_a_registry_asks_its_sender_for_every_permission_its_calls_need() -> None:
+    org = make_org()
+    member, admin = context(Role.MEMBER, org), context(Role.ADMIN, org)
+    assert permissions_for(["read"]) == {Permission.READ}
+    assert permissions_for(["execute", "lab_arm"]) == {Permission.WRITE}, "a domain class too"
+    assert permissions_for(["configuration"]) == {Permission.MANAGE_MEMBERS}
+    assert permissions_for(["credentials"]) == {Permission.MANAGE_KEYS}
+    assert instruct_refusal(member, ["read", "execute", "credentials"]) is None
+    assert instruct_refusal(member, ["configuration"]) is not None
+    assert instruct_refusal(admin, ["configuration", "credentials"]) is None
+    assert instruct_refusal(context(Role.VIEWER, org), ["read"]) is None

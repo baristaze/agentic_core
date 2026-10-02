@@ -32,7 +32,7 @@ from acme.om.exceptions import NotAuthorized, NotFound, PreconditionFailed, Vali
 from acme.om.outbox.storage.impl.memory import OutboxStorageMemoryImpl
 from acme.om.outbox.types.row import OutboxRow
 from acme.om.root import Managers, build_managers
-from acme.om.steps.impl.manager import StepsManagerImpl, StepsOptions
+from acme.om.steps.impl.manager import StepsManagerImpl, StepsOptions, no_registry
 from acme.om.steps.types.header import (
     ControlCommand,
     ControlHeader,
@@ -555,7 +555,10 @@ def purging(
     return AgentSessionsManagerImpl(
         sessions or storage.get_agent_session_storage(),
         StepsManagerImpl(
-            storage.get_step_storage(), managers.tenancy, StepsOptions(purge_batch=batch)
+            storage.get_step_storage(),
+            managers.tenancy,
+            StepsOptions(purge_batch=batch),
+            instructs=no_registry,
         ),
         managers.tenancy,
         managers.outbox,

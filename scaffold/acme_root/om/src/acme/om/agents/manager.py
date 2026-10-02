@@ -25,8 +25,18 @@ class AgentsManagerInterface(ABC):
     async def start_session(self, ctx: TenantContext, start: Start) -> AgentSession:
         """A root session on the latest version of its kind, run under the
         person who starts it, with its tree: the kind's bounds and one
-        deadline. An unknown kind is `UnknownAgentKind`. An id written
-        already answers the session as stored."""
+        deadline. An unknown kind is `UnknownAgentKind`, and a person who
+        lacks a permission a call its registry offers needs is
+        `NotAuthorized`, with nothing made. An id written already answers
+        the session as stored."""
+        ...
+
+    @abstractmethod
+    async def require_instructor(self, ctx: TenantContext, session_id: UUID) -> None:
+        """The inbox's check of a principal's message: `NotAuthorized` when
+        `ctx` lacks a permission a call the session's registry offers needs
+        (`tools.rules.instruct_refusal`). A session that is not there offers
+        nothing to check."""
         ...
 
     @abstractmethod
