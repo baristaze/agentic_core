@@ -79,6 +79,9 @@ class AgentsManagerImpl(AgentsManagerInterface):
             raise ValidationFailed(f"agent session {spawn.id} is not a child of {parent_id}")
         if child is None:
             kind = self._kinds.latest(spawn.kind)
+            if kind.result_tool is not None and kind.result_tool not in parent.tools:
+                # Its tools are cut to its parent's, so it could never submit.
+                raise ValidationFailed(f"agent session {parent_id} cannot grant {kind.result_tool}")
             tree = await self._tree(ctx, parent.root_id)
             refusal = tree_refusal(tree, parent.depth + 1)
             if refusal is not None:

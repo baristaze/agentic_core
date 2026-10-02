@@ -33,7 +33,8 @@ class AgentsManagerInterface(ABC):
     async def spawn(self, ctx: TenantContext, parent_id: UUID, spawn: Spawn) -> AgentSession:
         """A child of `parent_id`, one level down its tree, and its objective
         as its first input: a waking message from its parent. A tree past
-        its height or its count is `TreeBoundReached`, and nothing is made.
+        its height or its count is `TreeBoundReached`, and a kind whose
+        result tool its parent lacks is `ValidationFailed`: nothing is made.
         A spawn asked again under the same id answers the child it made."""
         ...
 
