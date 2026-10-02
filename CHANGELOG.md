@@ -8,9 +8,9 @@ number.
 ## 0.1.0 (2026-10-02)
 
 The engine's first release: its spec, the lenses and skills that apply
-it, the checker for the lenses a program can decide, and its scaffold,
-the guideline's at v0.48.0 taken whole, with the engine built in.
-Minor: every rule is added, and no released rule is reversed.
+it, and its scaffold, the guideline's at v0.48.0 taken whole, with the
+engine and its checker built in. Minor: every rule is added, and no
+released rule is reversed.
 
 ### Added
 
@@ -63,6 +63,8 @@ Minor: every rule is added, and no released rule is reversed.
 - A malformed tool use never runs, an output past its bound keeps each
   stream's head and tail, a repeatable call is retried once, and a
   workspace's stragglers end with it (#19).
-- A transport's record keeps a command's output sealed under its
-  session's key and goes with its purge, and a tool input's hash is
-  keyed by its session (#20).
+- A transport's records are sealed under their session's key and
+  purged with it, a purged session's workspace goes too, and a tool
+  input's hash is keyed per session (#20).
+- The engine's checker travels with the scaffold, so a copy runs it
+  in-tree and fetches nothing (#22).
