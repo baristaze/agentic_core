@@ -1,0 +1,356 @@
+"""A call that runs: through the transport, in its workspace, under its key
+and its run's epoch, by the least of three times, with each secret it uses
+audited by name before its command runs and redacted from everything it
+prints. Its failures carry their class and the advice the model reads."""
+
+import os
+import sys
+import time
+from datetime import timedelta
+from pathlib import Path
+from typing import Any
+
+import pytest
+from contracts.doubles import context
+from contracts.factories import make_org
+from contracts.tools import (
+    HOST_SPEC,
+    INJECTED_TOKEN,
+    KIND_DEFAULTS,
+    TWIN_SPEC,
+    Command,
+    PushBranch,
+    Tools,
+    echoing,
+    failure_of,
+    put_call,
+    registry_of,
+    result_text,
+    tools_over,
+    twin_transport,
+)
+
+from acme.infra.secrets.local import SecretsLocalImpl
+from acme.infra.transports.broker import BrokerTwinImpl
+from acme.infra.transports.local import DEFAULT_PATH, TransportLocalImpl
+from acme.infra.transports.redaction import forms, marker
+from acme.infra.workspaces import (
+    EgressMode,
+    EgressPolicy,
+    IsolationMode,
+    IsolationRefused,
+    IsolationSpec,
+    Workspace,
+)
+from acme.infra.workspaces.host import WorkspaceHostImpl
+from acme.om.base import new_id, utcnow
+from acme.om.context import Role, TenantContext
+from acme.om.exceptions import StaleWriter
+from acme.om.steps.types.header import ToolFailure
+from acme.om.tools.impl.manager import SECRET_USED, ToolsOptions
+from acme.om.tools.rules import ADVICE, call_deadline
+from acme.om.tools.types.tool import Effect
+
+SECRET = "ghs_9f8e7d6c5b4a3f2e1d0c-token"
+
+
+def on_the_host(tmp_path: Path, ctx: TenantContext, options: ToolsOptions | None = None) -> Tools:
+    """The tools manager over a directory on this host and real processes,
+    with the tenant's secret in its store."""
+    secrets = SecretsLocalImpl(None, {f"{ctx.org_id.hex}_api_token".upper(): SECRET})
+    python = Path(sys.executable).parent
+    transport = TransportLocalImpl(
+        tmp_path / "records", secrets, BrokerTwinImpl(), search_path=f"{python}:{DEFAULT_PATH}"
+    )
+    return tools_over(transport, WorkspaceHostImpl(tmp_path / "workspaces"), options)
+
+
+async def test_a_secret_is_audited_by_name_and_never_reaches_a_step_or_an_event(
+    tmp_path: Path,
+) -> None:
+    ctx = context(Role.SERVICE, make_org())
+    tools = on_the_host(tmp_path, ctx)
+    tool = Command("call_api", effect=Effect.IDEMPOTENT, secrets=(INJECTED_TOKEN,))
+    registry = registry_of(tool)
+    workspace = await tools.manager.prepare_workspace(ctx, new_id(), HOST_SPEC)
+    script = (
+        "import base64, os; t = os.environ['API_TOKEN']; "
+        "print(t); print(base64.b64encode(t.encode()).decode()); print(repr(t))"
+    )
+    found = await put_call(
+        tools.steps, ctx, "call_api", {"argv": ["python3", "-c", script]}, "execute"
+    )
+    parts: list[str] = []
+
+    async def sink(stream: str, text: str) -> None:
+        parts.append(text)
+
+    response = await tools.manager.execute(
+        ctx,
+        registry,
+        found.request,
+        found.call_input,
+        workspace,
+        epoch=found.epoch,
+        tree_deadline=None,
+        on_output=sink,
+    )
+    assert failure_of(response) is None
+    text = result_text(response)
+    assert text.count(marker("api_token")) == 3
+    events = await tools.events.get_events(ctx, 0, 100)
+    (audit,) = [event for event in events if event.kind == SECRET_USED]
+    assert audit.target_id == found.request.id
+    assert audit.payload["secret"] == "api_token" and audit.payload["tool"] == "call_api"
+    stored = [
+        step.model_dump_json()
+        for step in (await tools.steps.get_steps(ctx, found.session_id, 0, 100)).items
+    ]
+    for held in (
+        response.model_dump_json(),
+        *stored,
+        *(e.model_dump_json() for e in events),
+        *parts,
+    ):
+        for form in forms(SECRET):
+            assert form not in held
+
+
+async def test_the_whole_tree_ends_when_the_trees_deadline_comes_first(tmp_path: Path) -> None:
+    """The tool allows an hour; the tree has two seconds left. The call ends
+    then, with every process it started."""
+    ctx = context(Role.SERVICE, make_org())
+    tools = on_the_host(tmp_path, ctx)
+    registry = registry_of(Command("build", timeout=timedelta(hours=1)))
+    workspace = await tools.manager.prepare_workspace(ctx, new_id(), HOST_SPEC)
+    script = "sleep 600 & echo $! > child.pid; sh -c 'sleep 600' & echo $! >> child.pid; wait"
+    found = await put_call(tools.steps, ctx, "build", {"argv": ["sh", "-c", script]}, "execute")
+    started = utcnow()
+    response = await tools.manager.execute(
+        ctx,
+        registry,
+        found.request,
+        found.call_input,
+        workspace,
+        epoch=found.epoch,
+        tree_deadline=utcnow() + timedelta(seconds=2),
+    )
+    assert failure_of(response) is ToolFailure.TIMEOUT
+    assert ADVICE[ToolFailure.TIMEOUT] in result_text(response)
+    assert utcnow() - started < timedelta(seconds=8)
+    pids = (Path(workspace.location) / "child.pid").read_text().split()
+    assert len(pids) == 2
+    for pid in pids:
+        assert not _running(int(pid)), pid
+
+
+def _running(pid: int) -> bool:
+    for _ in range(30):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        time.sleep(0.1)
+    return True
+
+
+def test_a_calls_time_is_the_least_of_three() -> None:
+    now = utcnow()
+    hour, minute = timedelta(hours=1), timedelta(minutes=1)
+    assert call_deadline(now, minute, hour, None) == now + minute
+    assert call_deadline(now, hour, minute, None) == now + minute
+    assert call_deadline(now, hour, hour, now + timedelta(seconds=5)) == now + timedelta(seconds=5)
+
+
+async def test_a_non_zero_exit_is_a_result_and_not_a_failure(tmp_path: Path) -> None:
+    ctx = context(Role.SERVICE, make_org())
+    tools = on_the_host(tmp_path, ctx)
+    registry = registry_of(Command("run_tests"))
+    workspace = await tools.manager.prepare_workspace(ctx, new_id(), HOST_SPEC)
+    found = await put_call(
+        tools.steps, ctx, "run_tests", {"argv": ["sh", "-c", "echo 1 failed; exit 1"]}, "execute"
+    )
+    response = await tools.manager.execute(
+        ctx,
+        registry,
+        found.request,
+        found.call_input,
+        workspace,
+        epoch=found.epoch,
+        tree_deadline=None,
+    )
+    assert failure_of(response) is None and not response.as_tool_response().is_error
+    assert '"exit_code":1' in result_text(response) and "1 failed" in result_text(response)
+
+
+@pytest.mark.parametrize(
+    ("tool", "call_input", "failure", "says"),
+    [
+        ("no_such_tool", {"argv": ["true"]}, ToolFailure.INVALID_INPUT, "there is no tool named"),
+        ("run_command", {"argv": "not a list"}, ToolFailure.INVALID_INPUT, "argv"),
+        ("run_command", {"argv": ["true"], "sudo": True}, ToolFailure.INVALID_INPUT, "sudo"),
+    ],
+)
+async def test_a_call_the_tool_cannot_take_is_answered_with_its_class(
+    tmp_path: Path, tool: str, call_input: dict[str, Any], failure: ToolFailure, says: str
+) -> None:
+    transport, _ = twin_transport(tmp_path)
+    tools = tools_over(transport)
+    ctx = context(Role.SERVICE, make_org())
+    registry = registry_of(Command())
+    workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
+    found = await put_call(tools.steps, ctx, tool, call_input, "execute")
+    response = await tools.manager.execute(
+        ctx,
+        registry,
+        found.request,
+        found.call_input,
+        workspace,
+        epoch=found.epoch,
+        tree_deadline=None,
+    )
+    assert failure_of(response) is failure and says in result_text(response)
+    assert ADVICE[failure] in result_text(response)
+    assert transport.commands == []
+
+
+async def test_a_session_with_no_workspace_is_refused_loudly(tmp_path: Path) -> None:
+    transport, _ = twin_transport(tmp_path)
+    tools = tools_over(transport)
+    ctx = context(Role.SERVICE, make_org())
+    registry = registry_of(Command())
+    no_workspace = IsolationSpec(mode=IsolationMode.NONE, egress=EgressPolicy(mode=EgressMode.NONE))
+    absent = await tools.manager.prepare_workspace(ctx, new_id(), no_workspace)
+    assert absent == Workspace.absent(ctx.org_id, absent.id)
+    found = await put_call(tools.steps, ctx, "run_command", {"argv": ["ls"]}, "execute")
+    response = await tools.manager.execute(
+        ctx,
+        registry,
+        found.request,
+        found.call_input,
+        absent,
+        epoch=found.epoch,
+        tree_deadline=None,
+    )
+    assert failure_of(response) is ToolFailure.PERMANENT
+    assert "this agent has no workspace" in result_text(response)
+
+
+async def test_a_workspace_the_provider_cannot_meet_is_refused_and_none_is_given(
+    tmp_path: Path,
+) -> None:
+    transport, _ = twin_transport(tmp_path)
+    tools = tools_over(transport)
+    ctx = context(Role.SERVICE, make_org())
+    with pytest.raises(IsolationRefused):
+        await tools.manager.prepare_workspace(ctx, new_id(), HOST_SPEC)
+
+
+async def test_an_unsafe_tool_runs_one_command_a_call(tmp_path: Path) -> None:
+    transport, _ = twin_transport(tmp_path)
+    transport.handler = echoing()
+    tools = tools_over(transport)
+    ctx = context(Role.SERVICE, make_org())
+
+    class Twice(Command):
+        async def run(self, ctx: TenantContext, call_input: Any, runtime: Any) -> Any:
+            await runtime.run(("first",))
+            return await super().run(ctx, call_input, runtime)
+
+    registry = registry_of(Twice("deploy", effect=Effect.UNSAFE))
+    workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
+    found = await put_call(tools.steps, ctx, "deploy", {"argv": ["second"]}, "execute")
+    response = await tools.manager.execute(
+        ctx,
+        registry,
+        found.request,
+        found.call_input,
+        workspace,
+        epoch=found.epoch,
+        tree_deadline=None,
+    )
+    assert failure_of(response) is ToolFailure.PERMANENT
+    assert [command.argv for command in transport.commands] == [("first",)]
+
+
+async def test_a_secret_the_tool_does_not_declare_is_never_given(tmp_path: Path) -> None:
+    transport, _ = twin_transport(tmp_path)
+    tools = tools_over(transport)
+    ctx = context(Role.SERVICE, make_org())
+
+    class Greedy(Command):
+        async def run(self, ctx: TenantContext, call_input: Any, runtime: Any) -> Any:
+            return await runtime.run(("env",), secrets=("api_token",))
+
+    registry = registry_of(Greedy("look"))
+    workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
+    found = await put_call(tools.steps, ctx, "look", {"argv": ["env"]}, "execute")
+    response = await tools.manager.execute(
+        ctx,
+        registry,
+        found.request,
+        found.call_input,
+        workspace,
+        epoch=found.epoch,
+        tree_deadline=None,
+    )
+    assert failure_of(response) is ToolFailure.PERMANENT
+    assert transport.commands == []
+    assert [e for e in await tools.events.get_events(ctx, 0, 10) if e.kind == SECRET_USED] == []
+
+
+async def test_a_stale_run_is_refused_by_the_transport(tmp_path: Path) -> None:
+    transport, _ = twin_transport(tmp_path)
+    tools = tools_over(transport)
+    ctx = context(Role.SERVICE, make_org())
+    registry = registry_of(Command())
+    workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
+    found = await put_call(tools.steps, ctx, "run_command", {"argv": ["ls"]}, "execute")
+    later = await tools.steps.begin_run(ctx, found.session_id)
+    await tools.manager.execute(
+        ctx, registry, found.request, found.call_input, workspace, epoch=later, tree_deadline=None
+    )
+    with pytest.raises(StaleWriter):
+        await tools.manager.execute(
+            ctx,
+            registry,
+            found.request,
+            found.call_input,
+            workspace,
+            epoch=found.epoch,
+            tree_deadline=None,
+        )
+
+
+async def test_a_preflight_refuses_before_anyone_is_asked(tmp_path: Path) -> None:
+    transport, _ = twin_transport(tmp_path)
+    tools = tools_over(transport)
+    ctx = context(Role.SERVICE, make_org())
+    registry = registry_of(PushBranch({"feature": False}))
+    workspace = Workspace.absent(ctx.org_id, new_id())
+    found = await put_call(tools.steps, ctx, "push_branch", {"branch": "gone"}, "integration")
+    gate = await tools.manager.gate(
+        ctx, registry, KIND_DEFAULTS, found.request, found.call_input, workspace
+    )
+    assert gate.decision is None and gate.response is not None
+    assert failure_of(gate.response) is ToolFailure.INVALID_INPUT
+
+
+async def test_an_output_past_its_bound_is_cut_and_says_so(tmp_path: Path) -> None:
+    transport, _ = twin_transport(tmp_path)
+    transport.handler = echoing()
+    tools = tools_over(transport, options=ToolsOptions(max_output_chars=40))
+    ctx = context(Role.SERVICE, make_org())
+    registry = registry_of(Command())
+    workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
+    found = await put_call(tools.steps, ctx, "run_command", {"argv": ["x" * 500]}, "execute")
+    response = await tools.manager.execute(
+        ctx,
+        registry,
+        found.request,
+        found.call_input,
+        workspace,
+        epoch=found.epoch,
+        tree_deadline=None,
+    )
+    assert "[cut: 40 of" in result_text(response)

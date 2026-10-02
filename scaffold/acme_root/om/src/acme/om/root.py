@@ -34,6 +34,8 @@ from acme.om.tenancy.impl.operator import TenancyOperatorManagerImpl, TenancyOpe
 from acme.om.tenancy.impl.org import TenancyOrgManagerImpl
 from acme.om.tenancy.impl.sign_in import TenancySignInManagerImpl
 from acme.om.tenancy.storage import TenancyStorageInterface
+from acme.om.tools import ToolsManagerInterface
+from acme.om.tools.impl.manager import ToolsManagerImpl, ToolsOptions
 from acme.om.work import WorkManagerInterface, WorkOperatorManagerInterface
 from acme.om.work.impl.manager import WorkManagerImpl, WorkOptions
 from acme.om.work.impl.operator import WorkOperatorManagerImpl
@@ -52,6 +54,7 @@ class Managers:
     orchestrations: OrchestrationsManagerInterface
     steps: StepsManagerInterface
     agent_sessions: AgentSessionsManagerInterface
+    tools: ToolsManagerInterface
 
 
 def build_tenancy(
@@ -115,6 +118,7 @@ def build_managers(
     orchestrations_options: OrchestrationsOptions | None = None,
     steps_options: StepsOptions | None = None,
     agent_sessions_options: AgentSessionsOptions | None = None,
+    tools_options: ToolsOptions | None = None,
 ) -> Managers:
     """`integrations` is the root of the hosted services the managers front:
     the identity provider, which the tenancy manager signs people in and
@@ -178,6 +182,19 @@ def build_managers(
         outbox,
         agent_sessions_options or AgentSessionsOptions(),
     )
+    # Where the engine touches the world: the session's history for a
+    # person's decisions, the events for the audit of each secret a call
+    # uses, and the workspace and the transport infra chose.
+    tools = ToolsManagerImpl(
+        storage.get_tool_storage(),
+        steps,
+        tenancy,
+        events,
+        outbox,
+        infra.get_workspaces(),
+        infra.get_transport(),
+        tools_options or ToolsOptions(),
+    )
     idempotency = IdempotencyManagerImpl(
         storage.get_idempotency_storage(), idempotency_options or IdempotencyOptions()
     )
@@ -204,5 +221,6 @@ def build_managers(
         orchestrations=orchestrations,
         steps=steps,
         agent_sessions=agent_sessions,
+        tools=tools,
     )
     return managers

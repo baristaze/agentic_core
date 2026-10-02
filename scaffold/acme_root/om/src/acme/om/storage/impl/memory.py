@@ -17,6 +17,8 @@ from acme.om.steps.storage.impl.memory import StepStorageMemoryImpl
 from acme.om.storage.root import StorageInterface
 from acme.om.tenancy.storage import TenancyStorageInterface
 from acme.om.tenancy.storage.impl.memory import TenancyStorageMemoryImpl
+from acme.om.tools.storage import ToolStorageInterface
+from acme.om.tools.storage.impl.memory import ToolStorageMemoryImpl
 from acme.om.work.storage import WorkStorageInterface
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
 
@@ -35,6 +37,7 @@ class StorageMemoryImpl(StorageInterface):
         self._events = EventStorageMemoryImpl()
         self._steps = StepStorageMemoryImpl()
         self._agent_sessions = AgentSessionStorageMemoryImpl(self._outbox)
+        self._tools = ToolStorageMemoryImpl(self._outbox)
 
     def get_tenancy_storage(self) -> TenancyStorageInterface:
         return self._tenancy
@@ -62,6 +65,9 @@ class StorageMemoryImpl(StorageInterface):
 
     def get_agent_session_storage(self) -> AgentSessionStorageInterface:
         return self._agent_sessions
+
+    def get_tool_storage(self) -> ToolStorageInterface:
+        return self._tools
 
     async def healthcheck(self) -> bool:
         return True

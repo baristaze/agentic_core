@@ -62,6 +62,17 @@ model's request or response, a tool's request or response, a summary, or
 a mark of a loop's life. Steps are numbered with no gaps and written
 once; the history only grows.
 
+## Tools and who agrees to them
+
+A **tool** is one thing an agent can do, such as run a command or push a
+branch, with the kind of power it uses and whether doing it twice is
+harmless. An agent can do only what its kind's tools allow.
+
+A **tool policy** is an org's say over its agents' tools: which calls run
+on their own, which wait for a person, and which never run, and who may
+approve each kind. A person's yes or no to one call is a step of the
+session's history.
+
 ## What the platform writes for itself
 
 No person creates these and no screen shows them, but each belongs to
@@ -99,6 +110,8 @@ arrive twice, so the second copy gets the first one's answer.
 - An agent session's steps are its truth. Its status is read off them,
   and a change of it writes an outbox row like any other change. A
   session and its steps name their org.
+- A tool policy names its org, one each, and a person's decision on a
+  call lands in the session's history like any other step.
 
 ## One page per kind
 
@@ -106,6 +119,7 @@ arrive twice, so the second copy gets the first one's answer.
 - [Files](src/acme/om/media/README.md)
 - [Agent sessions](src/acme/om/agent_sessions/README.md)
 - [Steps](src/acme/om/steps/README.md)
+- [Tools](src/acme/om/tools/README.md)
 - [Events](src/acme/om/events/README.md)
 - [Outbox rows](src/acme/om/outbox/README.md)
 - [Work items](src/acme/om/work/README.md)
