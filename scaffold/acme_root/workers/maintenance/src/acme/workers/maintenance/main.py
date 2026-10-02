@@ -23,7 +23,11 @@ from acme.om.context import RequestContext
 from acme.om.orchestrations.types.orchestration import OrchestrationKind
 from acme.om.work.types.work_item import WorkKind
 from acme.workers.maintenance.accounts import DeleteAccountHandlerImpl, DeleteOrgHandlerImpl
-from acme.workers.maintenance.container import MEDIA_PURGE_BATCH, WorkerContainer
+from acme.workers.maintenance.container import (
+    AGENT_SESSION_PURGE_BATCH,
+    MEDIA_PURGE_BATCH,
+    WorkerContainer,
+)
 from acme.workers.maintenance.deliveries import (
     DeliveryConsumer,
     DeliveryOptions,
@@ -80,10 +84,10 @@ def build_loop(container: WorkerContainer, lane: str | None = None) -> WorkerLoo
             "tenancy": managers.tenancy.purge_tenant,
             "events": managers.events.purge_tenant,
             "orchestrations": managers.orchestrations.purge_tenant,
-            "agent_sessions": managers.agent_sessions.purge_tenant,
-            # Deletes nothing: it reports the history left, so a tenant whose
-            # steps remain is never marked purged.
+            # The history, then its sessions, both under the purge login: a
+            # tenant is marked purged only once a pass finds none of either.
             "steps": managers.steps.purge_tenant,
+            "agent_sessions": managers.agent_sessions.purge_tenant,
         },
         # Once a pass, across every tenant: each namespace's rows past their
         # retention.
@@ -95,9 +99,16 @@ def build_loop(container: WorkerContainer, lane: str | None = None) -> WorkerLoo
             # The trim: each tenant's floor moves with its events.
             "events": unstaged(managers.events.purge_across_tenants),
             "orchestrations": unstaged(managers.orchestrations.purge_across_tenants),
+            # A session marked deleted past its retention: claimed, then its
+            # history, then its row.
+            "agent_sessions": unstaged(managers.agent_sessions.purge_across_tenants),
         },
-        # The media purge's batch is its own: a whole one says there may be more.
-        across_batches={"media": MEDIA_PURGE_BATCH},
+        # The media and session purges' batches are their own: a whole one
+        # says there may be more.
+        across_batches={
+            "media": MEDIA_PURGE_BATCH,
+            "agent_sessions": AGENT_SESSION_PURGE_BATCH,
+        },
         # The platform's size, counted across tenants once an interval and
         # kept as the tally the operator plane reads instead of counting.
         tally=managers.tenancy_operator.tally_size,

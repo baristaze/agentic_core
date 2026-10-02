@@ -60,6 +60,9 @@ class MaintenanceSettings(StorageSettings, InfraSettings, IntegrationsSettings):
     socket_ticket_retention_hours: int = Field(default=24, gt=0)
     sign_in_delay_retention_hours: int = Field(default=720, gt=0)
     media_retention_days: int = Field(default=1, gt=0)
+    # How long an agent session marked deleted can be unmarked and keeps its
+    # shape before its purge takes it and its history (ADR 1010).
+    agent_session_retention_days: int = Field(default=30, gt=0)
     media_pending_expiry_hours: int = Field(default=24, gt=0)
     # How many days a living org's events are kept; the sweep trims what is
     # older, a batch per org per call. 0 keeps every event and never moves a

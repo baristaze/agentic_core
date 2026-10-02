@@ -83,10 +83,24 @@ class StepStorageMemoryImpl(MemoryStorageBase, StepStorageInterface):
         ]
         return sorted(newer, key=lambda step: step.seq)[:limit]
 
-    async def count_tenant(self, org_id: UUID, limit: int) -> int:
-        steps = len(self._rows(self._steps, org_id))
-        cursors = sum(1 for org, _ in self._cursors if org == org_id)
-        return min(steps + cursors, limit)
+    async def purge_history(self, org_id: UUID, session_id: UUID, limit: int) -> int:
+        async with self._lock:
+            gone = [s.id for s in self._rows(self._steps, org_id) if s.session_id == session_id]
+            for step_id in gone[:limit]:
+                del self._steps[step_id]
+            if len(gone) >= limit:
+                return limit
+            return len(gone) + (self._cursors.pop((org_id, session_id), None) is not None)
+
+    async def purge_tenant(self, org_id: UUID, limit: int) -> int:
+        async with self._lock:
+            gone = [s.id for s in self._rows(self._steps, org_id)][:limit]
+            for step_id in gone:
+                del self._steps[step_id]
+            cursors = [key for key in self._cursors if key[0] == org_id][: limit - len(gone)]
+            for key in cursors:
+                del self._cursors[key]
+            return len(gone) + len(cursors)
 
     async def read_cursor(self, org_id: UUID, session_id: UUID) -> StepCursor:
         return self._cursors.get((org_id, session_id), StepCursor())

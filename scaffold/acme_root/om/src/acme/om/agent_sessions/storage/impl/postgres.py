@@ -1,14 +1,16 @@
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Update, select, update
+from sqlalchemy import Update, delete, select, update
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.storage.tables.agent_sessions import AgentSessions
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
+from acme.om.base import EMPTY_UUID
 from acme.om.exceptions import PreconditionFailed
 from acme.om.outbox.storage.tables.outbox_rows import OutboxRows
 from acme.om.outbox.types.row import OutboxRow
-from acme.om.storage.impl.pg_base import PgStorageBase, delete_batch, deleted
+from acme.om.storage.impl.pg_base import PLAN_WITH_VALUES, PgStorageBase, deleted
 from acme.om.storage.utils.translation import to_model, to_row, to_values
 
 
@@ -46,7 +48,9 @@ class AgentSessionStoragePostgresImpl(PgStorageBase, AgentSessionStorageInterfac
     async def read_sessions(
         self, org_id: UUID, status: SessionStatus | None, after: UUID | None, limit: int
     ) -> list[AgentSession]:
-        stmt = select(AgentSessions).where(AgentSessions.org_id == org_id)
+        stmt = select(AgentSessions).where(
+            AgentSessions.org_id == org_id, AgentSessions.deleted_at.is_(None)
+        )
         if status is not None:
             stmt = stmt.where(AgentSessions.status == status.value)
         if after is not None:
@@ -75,9 +79,41 @@ class AgentSessionStoragePostgresImpl(PgStorageBase, AgentSessionStorageInterfac
                 db.add(to_row(outbox_row, OutboxRows, org_id=org_id))
             await db.commit()
 
+    async def read_purgeable(
+        self, deleted_before: datetime, limit: int
+    ) -> list[tuple[UUID, AgentSession]]:
+        # No order: the batch is any `limit` of the rows the partial index
+        # holds past the cut, so a backlog is never sorted to take a batch.
+        stmt = select(AgentSessions).where(AgentSessions.deleted_at < deleted_before).limit(limit)
+        # Every tenant's sessions past their cut, so the system scope, spelled
+        # here, planned with its values (ADR 0056).
+        async with self._session_for(stmt, org_id=EMPTY_UUID) as session:
+            await session.execute(PLAN_WITH_VALUES)
+            return [
+                (row.org_id, to_model(row, AgentSession))
+                for row in (await session.execute(stmt)).scalars()
+            ]
+
+    async def purge_session(self, org_id: UUID, session_id: UUID) -> bool:
+        stmt = delete(AgentSessions).where(
+            AgentSessions.org_id == org_id,
+            AgentSessions.id == session_id,
+            AgentSessions.purge_started_at.is_not(None),
+        )
+        async with self._purge_session_for(stmt, org_id=org_id) as session:
+            purged = deleted(await session.execute(stmt))
+            await session.commit()
+            return purged > 0
+
     async def purge_tenant(self, org_id: UUID, limit: int) -> int:
-        stmt = delete_batch(AgentSessions, AgentSessions.org_id == org_id, limit=limit)
-        async with self._session_for(stmt, org_id=org_id) as session:
+        # The purge login holds no UPDATE, so it locks no row to choose a
+        # batch: a sweep that picks a row another one is deleting waits for
+        # it, finds it gone, and counts nothing for it.
+        batch = select(AgentSessions.id).where(AgentSessions.org_id == org_id).limit(limit)
+        stmt = delete(AgentSessions).where(
+            AgentSessions.org_id == org_id, AgentSessions.id.in_(batch)
+        )
+        async with self._purge_session_for(stmt, org_id=org_id) as session:
             purged = deleted(await session.execute(stmt))
             await session.commit()
             return purged

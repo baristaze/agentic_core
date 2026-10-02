@@ -1,9 +1,10 @@
 """Storage of the steps swimlane: the history of every session, append-only,
 and each session's cursor row. Every operation takes org_id first.
 
-A step is written once. There is no update and no delete here, and the
-database holds the same: the serving logins may read and insert a step and
-nothing more (ADR 1002). `seq` is the one number storage assigns, from the
+A step is written once. There is no update here, and the one delete is the
+purge, which runs under the purge login, the one login that may delete a
+step; the serving logins may read and insert a step and nothing more (ADR
+1002, ADR 1010). `seq` is the one number storage assigns, from the
 session's cursor row, in the statement that writes the steps, because only
 the database can order commits. The same row holds the writer epoch, which
 fences every append a run makes."""
@@ -74,8 +75,15 @@ class StepStorageInterface(ABC):
         ...
 
     @abstractmethod
-    async def count_tenant(self, org_id: UUID, limit: int) -> int:
-        """How many steps and cursor rows the tenant keeps, counted up to
-        `limit` and no further: what the sweep reads of a deleted tenant's
-        history, which it cannot delete."""
+    async def purge_history(self, org_id: UUID, session_id: UUID, limit: int) -> int:
+        """Under the purge login: at most `limit` of the session's steps, and
+        its cursor row once none is left; returns how many rows went. Fewer
+        than `limit` says the history is gone."""
+        ...
+
+    @abstractmethod
+    async def purge_tenant(self, org_id: UUID, limit: int) -> int:
+        """Under the purge login: at most `limit` of the tenant's steps, and,
+        once none is left, of its cursor rows; returns how many rows went.
+        Fewer than `limit` says nothing of the tenant's history is left."""
         ...

@@ -44,6 +44,7 @@ from acme.om.media.types.file import File
 from acme.om.orchestrations.types.orchestration import OrchestrationKind, OrchestrationStatus
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.steps.types.header import InputHeader
+from acme.om.steps.types.page import StepCursor
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.tenancy.rules import hash_token, permissions_of
 from acme.om.tenancy.storage.impl.memory import TenancyStorageMemoryImpl
@@ -395,35 +396,70 @@ def a_message(session_id: UUID) -> Step:
     )
 
 
-async def test_a_deleted_tenant_is_never_marked_purged_while_its_history_remains(
-    tmp_path: Path,
+async def test_a_deleted_tenants_history_goes_and_it_is_marked_purged_only_after(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A tenant's agent sessions go with its other rows. Its steps cannot:
-    no serving login deletes one, so the steps' purge reports what is left,
-    and the tenant is never marked purged while any of it remains. A
-    tenant whose sessions kept no history is marked once they are gone."""
+    """A tenant's agent sessions, their steps, and their cursor rows go with
+    its other rows. While its history cannot go, here a purge that fails,
+    the tenant is never marked purged, however many passes run. The pass
+    that deletes the last of it leaves it unmarked too; the next pass, which
+    finds nothing, marks it."""
     container = build_container(tmp_path)
-    with_history, _ = await deleted_org(container, days_ago=40)
-    without_history, _ = await deleted_org(container, days_ago=40)
+    org_id, _ = await deleted_org(container, days_ago=40)
     sessions = container.storage.get_agent_session_storage()
-    steps = container.storage.get_step_storage()
-    for org_id in (with_history, without_history):
-        session = a_session()
-        assert await sessions.create_session(org_id, session, ())
-        if org_id == with_history:
-            await steps.append_inputs(org_id, session.id, [a_message(session.id)])
+    history = container.storage.get_step_storage()
+    session = a_session()
+    assert await sessions.create_session(org_id, session, ())
+    await history.append_inputs(org_id, session.id, [a_message(session.id) for _ in range(2)])
     loop = build_loop(container)
     tenancy = container.storage.get_tenancy_storage()
 
+    async def unreachable(org_id: UUID, limit: int) -> int:
+        raise RuntimeError("the purge login is unreachable")
+
+    monkeypatch.setattr(history, "purge_tenant", unreachable)
     for _ in range(3):
         await loop._sweep_once()  # pyright: ignore[reportPrivateUsage]
-    for org_id in (with_history, without_history):
-        assert await sessions.read_sessions(org_id, None, None, 10) == []
-    assert await steps.count_tenant(with_history, 10) == 2, "the step and its cursor stay"
-    kept = await tenancy.read_org(with_history)
+    assert await sessions.read_sessions(org_id, None, None, 10) == []
+    assert len(await history.read_steps(org_id, session.id, 0, 10)) == 2
+    kept = await tenancy.read_org(org_id)
     assert kept is not None and kept.purged_at is None, "its history remains"
-    marked = await tenancy.read_org(without_history)
+
+    monkeypatch.undo()
+    await loop._sweep_once()  # pyright: ignore[reportPrivateUsage]
+    assert await history.read_steps(org_id, session.id, 0, 10) == []
+    assert await history.read_cursor(org_id, session.id) == StepCursor()
+    taken = await tenancy.read_org(org_id)
+    assert taken is not None and taken.purged_at is None, "the pass that took the last of it"
+    await loop._sweep_once()  # pyright: ignore[reportPrivateUsage]
+    marked = await tenancy.read_org(org_id)
     assert marked is not None and marked.purged_at is not None, "nothing was left"
+
+
+async def test_the_sweep_purges_a_session_deleted_past_its_retention_and_no_other(
+    tmp_path: Path,
+) -> None:
+    """Once a pass, across tenants: a session marked deleted longer ago than
+    its retention goes with its history; one marked since, and one never
+    marked, stay with theirs."""
+    container = build_container(tmp_path)
+    org_id = (await sign_in(container)).org_id
+    sessions = container.storage.get_agent_session_storage()
+    history = container.storage.get_step_storage()
+    now = utcnow()
+    old, recent, live = a_session(), a_session(), a_session()
+    for session, deleted_at in ((old, now - timedelta(days=31)), (recent, now), (live, None)):
+        assert await sessions.create_session(org_id, session, ())
+        await history.append_inputs(org_id, session.id, [a_message(session.id)])
+        if deleted_at is not None:
+            marked = session.model_copy(update={"deleted_at": deleted_at, "version": 2})
+            await sessions.write_session(org_id, marked, 1, ())
+    await build_loop(container)._sweep_once()  # pyright: ignore[reportPrivateUsage]
+    assert await sessions.read_session(org_id, old.id) is None
+    assert await history.read_steps(org_id, old.id, 0, 10) == []
+    for session in (recent, live):
+        assert await sessions.read_session(org_id, session.id) is not None
+        assert len(await history.read_steps(org_id, session.id, 0, 10)) == 1
 
 
 async def test_a_pass_reads_no_org_row_to_ask_whether_a_tenant_expired(

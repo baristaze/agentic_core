@@ -60,7 +60,12 @@ the agent works, a loop waits on something, or nothing is open.
 A **step** is one event of a session's history: a message, a control, a
 model's request or response, a tool's request or response, a summary, or
 a mark of a loop's life. Steps are numbered with no gaps and written
-once; the history only grows.
+once; the history only grows, until its purge.
+
+A session marked **deleted** is hidden and can be restored. Once it has
+waited out its retention, the sweep **purges** it with its history, the
+one delete a history has, under a database login no serving process
+holds.
 
 ## What the platform writes for itself
 
