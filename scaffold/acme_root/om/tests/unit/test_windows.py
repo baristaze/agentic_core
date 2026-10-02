@@ -5,8 +5,9 @@ never loops and never spends outside the gate, a recorded request
 re-renders to its prompt's hash, and a tool result over the bound is kept as
 an artifact the step holds the head, the tail, and the handle of."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import cast
 from uuid import UUID
@@ -190,16 +191,24 @@ class Engine:
     ctx: TenantContext
 
 
-def an_engine(tmp_path: Path, table: Sequence[RoleFill] = NARROWING) -> Engine:
+def an_engine(
+    tmp_path: Path,
+    table: Sequence[RoleFill] = NARROWING,
+    clock: Callable[[], datetime] | None = None,
+) -> Engine:
+    """The windows over a fill set the table resolves, on the wall's clock
+    unless `clock` is given."""
     storage = StorageMemoryImpl()
     infra = InfraLocalImpl(tmp_path)
     managers = build_managers(storage, infra)
+    clocked: dict[str, Callable[[], datetime]] = {} if clock is None else {"clock": clock}
     models = ModelsManagerImpl(
         storage.get_fill_set_storage(),
         managers.steps,
         managers.tenancy,
         ModelResolverTableImpl(Priced(), ResolverOptions(table=tuple(table))),
         ModelsOptions(),
+        **clocked,
     )
     providers = scripted_model_providers()
     gate, hashes = Gate(), PromptHashMemoryImpl()
@@ -220,6 +229,7 @@ def an_engine(tmp_path: Path, table: Sequence[RoleFill] = NARROWING) -> Engine:
         seal,
         CompactionPolicy(),
         WindowsOptions(page=7),
+        **clocked,
     )
     return Engine(
         managers.steps,
@@ -328,6 +338,22 @@ async def test_a_window_near_its_limit_compacts_into_a_summary_that_references_i
     (asked,) = engine.summarizer.calls
     assert asked.model == SUMMARY_FILL.model and asked.messages[0].role == "user"
     assert all(b.kind == "text" and b.text.startswith("<data ") for b in asked.messages[0].blocks)
+
+
+async def test_a_compaction_writes_at_the_engines_clock(tmp_path: Path) -> None:
+    """The clock is injected: a fill set, the summarizer's request and
+    reply, and the summary all take its time, never the wall's."""
+    at = AT + timedelta(days=30)
+    engine = an_engine(tmp_path, clock=lambda: at)
+    session = await a_session(engine, a_long_history())
+    engine.summarizer.add(a_summary())
+    await render_main(engine, session)
+    request, reply, summary = (await history_of(engine, session))[-3:]
+    assert summary.type is StepType.SUMMARY
+    assert {request.created_at, reply.created_at, summary.created_at} == {at}
+    assert isinstance(reply.header, ModelResponseHeader)
+    assert reply.header.stop_reason is StopReason.END_TURN
+    assert (await engine.models.get_fill_set(engine.ctx, session.id)).created_at == at
 
 
 async def test_a_compacted_window_does_not_compact_again(engine: Engine) -> None:
@@ -517,6 +543,7 @@ async def test_a_cut_summary_is_recorded_and_writes_no_summary(engine: Engine) -
     assert of_type(steps, StepType.SUMMARY) == []
     cut = steps[-1]
     assert isinstance(cut.header, ModelResponseHeader) and cut.header.truncated
+    assert cut.header.stop_reason is StopReason.OUTPUT_LIMIT, "why it stopped is kept"
     assert [billed for _, _, billed in engine.gate.settled] == [True]
 
 
@@ -557,6 +584,7 @@ async def test_a_refused_summary_is_recorded_and_the_window_is_read_as_it_is(
     steps = await history_of(engine, session)
     refused = steps[-1]
     assert isinstance(refused.header, ModelResponseHeader) and refused.as_text()
+    assert refused.header.stop_reason is StopReason.REFUSAL, "why it stopped is kept"
     assert of_type(steps, StepType.SUMMARY) == []
     again = await render_main(engine, session)
     assert again.call == first.call and again.prompt_hash == first.prompt_hash

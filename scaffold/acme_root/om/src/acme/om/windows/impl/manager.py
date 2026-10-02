@@ -1,4 +1,5 @@
 from collections.abc import Callable, Sequence
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import Field
@@ -68,6 +69,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
         seal: ArtifactSealInterface,
         policy: CompactionPolicy,
         options: WindowsOptions,
+        clock: Callable[[], datetime] = utcnow,
     ) -> None:
         self._storage = storage
         self._steps = steps
@@ -85,6 +87,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
         # nowhere else; noise once the session's key is revoked.
         self._held: dict[tuple[UUID, UUID, UUID], bytes] = {}
         self._options = options
+        self._clock = clock
 
     async def render_request(
         self,
@@ -358,7 +361,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
             ctx, session_id, paid.spender, SUMMARIZER, summarizer, call
         )
         request = rules.request_step(
-            rendered, paid, session_id, loop_id, new_id(), utcnow(), hold_id=hold
+            rendered, paid, session_id, loop_id, new_id(), self._clock(), hold_id=hold
         )
         try:
             (request,) = await self._steps.append_steps(ctx, session_id, epoch, [request])
@@ -374,11 +377,11 @@ class WindowsManagerImpl(WindowsManagerInterface):
             await self._gate.settle(ctx, hold, None, billed=failed.partial is not None)
             if failed.partial is not None:
                 await self._steps.append_steps(
-                    ctx, session_id, epoch, [_response(request, failed.partial)]
+                    ctx, session_id, epoch, [_response(request, failed.partial, self._clock())]
                 )
             raise
         await self._gate.settle(ctx, hold, reply.usage, billed=True)
-        response = _response(request, reply)
+        response = _response(request, reply, self._clock())
         whole = (
             not reply.truncated
             and reply.stop_reason is StopReason.END_TURN
@@ -391,7 +394,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
             raise CompactionFailed(f"the summarizer's reply is not a whole summary ({why})")
         summary = Step(
             id=new_id(),
-            created_at=utcnow(),
+            created_at=self._clock(),
             session_id=session_id,
             loop_id=loop_id,
             type=StepType.SUMMARY,
@@ -420,18 +423,21 @@ def _drafted[T](render: Callable[[], T]) -> T:
         raise ValidationFailed(str(refused)) from refused
 
 
-def _response(request: Step, reply: ModelReply) -> Step:
-    """The summarizer's reply as its request's response, whole or cut."""
+def _response(request: Step, reply: ModelReply, at: datetime) -> Step:
+    """The summarizer's reply as its request's response, whole or cut, with
+    why the provider stopped."""
     return Step(
         id=new_id(),
-        created_at=utcnow(),
+        created_at=at,
         session_id=request.session_id,
         loop_id=request.loop_id,
         type=StepType.MODEL_RESPONSE,
         actor=Actor.MODEL,
         origin=Origin.ENGINE,
         responds_to=request.id,
-        header=ModelResponseHeader(truncated=reply.truncated, usage=reply.usage),
+        header=ModelResponseHeader(
+            truncated=reply.truncated, usage=reply.usage, stop_reason=reply.stop_reason
+        ),
         content=Content(blocks=reply.blocks),
         children=Children(thinking=reply.thinking),
     )

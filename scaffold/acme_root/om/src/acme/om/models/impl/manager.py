@@ -1,4 +1,4 @@
-from collections.abc import Collection, Sequence
+from collections.abc import Callable, Collection, Sequence
 from datetime import datetime
 from uuid import UUID
 
@@ -35,12 +35,14 @@ class ModelsManagerImpl(ModelsManagerInterface):
         tenancy: TenancyManagerInterface,
         resolver: ModelResolverInterface,
         options: ModelsOptions,
+        clock: Callable[[], datetime] = utcnow,
     ) -> None:
         self._storage = storage
         self._steps = steps
         self._tenancy = tenancy
         self._resolver = resolver
         self._options = options
+        self._clock = clock
 
     async def resolve_fill_set(
         self,
@@ -55,7 +57,7 @@ class ModelsManagerImpl(ModelsManagerInterface):
             return head
         first = FillSet(
             id=new_id(),
-            created_at=utcnow(),
+            created_at=self._clock(),
             session_id=session_id,
             version=1,
             roles=await self._resolver.resolve(ctx, roles, eligibility),
@@ -92,7 +94,7 @@ class ModelsManagerImpl(ModelsManagerInterface):
         fills = rules.fill_switch(head, role, to, reason)
         step = Step(
             id=new_id(),
-            created_at=utcnow(),
+            created_at=self._clock(),
             session_id=session_id,
             loop_id=loop_id,
             type=StepType.SWITCHED,
