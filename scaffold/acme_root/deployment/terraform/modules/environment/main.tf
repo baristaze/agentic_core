@@ -52,6 +52,8 @@ locals {
     ACME_SQS_QUEUE_PREFIX    = module.queue.prefix
     ACME_SECRETS_BACKEND     = "aws"
     ACME_SECRETS_NAME_PREFIX = module.secrets.application_prefix
+    ACME_KEYS_BACKEND        = "kms"
+    ACME_KMS_KEY_ID          = module.keys.alias_name
     ACME_AWS_REGION          = var.region
     ACME_LOG_JSON            = "true"
     ACME_DATABASE_POOL_SIZE  = tostring(var.database_pool_size)
@@ -101,6 +103,7 @@ locals {
     module.queue.policy_arn,
     module.buckets.policy_arn,
     module.secrets.policy_arn,
+    module.keys.policy_arn,
   ]
 }
 
@@ -171,6 +174,15 @@ module "buckets" {
   browser_origins = concat(["https://${var.app_domain_name}"], var.cors_origins)
   # Every key the media namespace writes is <org_id>/media/<purpose>/<id>.
   object_key_patterns = { "user-file-uploads" = "*/media/*" }
+}
+
+# The use of the key the session keys are wrapped under: what a step says
+# is sealed under a session's data key, and the data key is kept wrapped by
+# the account's key, which outlives this graph.
+module "keys" {
+  source = "../keys"
+
+  environment = var.environment
 }
 
 module "secrets" {

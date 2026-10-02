@@ -32,6 +32,8 @@ TABLE_ROLES: dict[str, DatabaseRole] = {
     "agent_sessions": DatabaseRole.CORE,
     "steps": DatabaseRole.ACTIVITY,
     "step_cursors": DatabaseRole.ACTIVITY,
+    "session_privacy": DatabaseRole.CORE,
+    "session_keys": DatabaseRole.CORE,
     "budgets": DatabaseRole.CORE,
     "budget_tallies": DatabaseRole.ACTIVITY,
     "budget_holds": DatabaseRole.ACTIVITY,

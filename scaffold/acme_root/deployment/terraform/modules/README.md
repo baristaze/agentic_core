@@ -19,7 +19,7 @@ folder:
 | Module | Declares |
 |--------|----------|
 | `environment` | One environment whole: every module below, wired. The only module a root calls |
-| `account` | An account before its first deploy: the registry, the state and artifacts buckets, the OIDC provider, the task boundary, the investigate role, the budget, the API's and the portal's hosted zones, the company site's certificate |
+| `account` | An account before its first deploy: the registry, the state and artifacts buckets, the OIDC provider, the task boundary, the investigate role, the budget, the API's and the portal's hosted zones, the company site's certificate, the KMS key the session keys are wrapped under |
 | `deploy_role` | A deploy role: its OIDC trust and its fences |
 | `investigate_role` | The read-only role an agent investigates under |
 | `network` | VPC, subnets, NAT, security groups |
@@ -28,6 +28,7 @@ folder:
 | `cache` | Valkey, encrypted in transit |
 | `queue` | One SQS queue and dead-letter queue per `acme.infra.queues.Queues` member |
 | `buckets` | One private versioned bucket per `acme.infra.buckets.Buckets` member |
+| `keys` | The policy that lets the task roles use the account's session key |
 | `secrets` | The five database URLs, the TOTP key, the edge secret, the error tracker's DSN, the WorkOS API key and webhook secret, the operator token secrets, the application secrets policy |
 | `load_balancer` | The API's load balancer: HTTPS, and HTTP redirects |
 | `static_site` | A private bucket behind CloudFront, under security headers; called for the portal and for the company site |

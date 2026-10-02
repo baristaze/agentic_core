@@ -90,6 +90,9 @@ def build_loop(container: WorkerContainer, lane: str | None = None) -> WorkerLoo
             # tenant is marked purged only once a pass finds none of either.
             "steps": managers.steps.purge_tenant,
             "agent_sessions": managers.agent_sessions.purge_tenant,
+            # Each session's key versions, then its privacy record: the
+            # content sealed under them is noise from the first batch.
+            "privacy": managers.privacy.purge_tenant,
             "budgets": managers.budgets.purge_tenant,
             # Deletes nothing: what a call held and spent stays, so a
             # tenant whose ledger remains is never marked purged.
