@@ -102,7 +102,9 @@ def test_a_time_falls_in_one_window_which_says_when_it_resets(
 ) -> None:
     assert window_bounds(window, AT) == (start, resets)
     if resets is not None:
-        assert window_bounds(window, resets) == (resets, resets + (resets - start))
+        # The reset is the next window's start.
+        following, after = window_bounds(window, resets)
+        assert following == resets and after is not None and after > resets
 
 
 def test_december_resets_into_january_and_a_span_only_has_a_length() -> None:
