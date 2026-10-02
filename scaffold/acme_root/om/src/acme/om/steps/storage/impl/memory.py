@@ -83,5 +83,10 @@ class StepStorageMemoryImpl(MemoryStorageBase, StepStorageInterface):
         ]
         return sorted(newer, key=lambda step: step.seq)[:limit]
 
+    async def count_tenant(self, org_id: UUID, limit: int) -> int:
+        steps = len(self._rows(self._steps, org_id))
+        cursors = sum(1 for org, _ in self._cursors if org == org_id)
+        return min(steps + cursors, limit)
+
     async def read_cursor(self, org_id: UUID, session_id: UUID) -> StepCursor:
         return self._cursors.get((org_id, session_id), StepCursor())

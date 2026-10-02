@@ -15,6 +15,7 @@ from uuid import UUID
 from pydantic import Field, model_validator
 
 from acme.om.base import Identifiable, Platform, Trackable
+from acme.om.steps.types.content import Stored
 from acme.om.steps.types.header import Park
 
 
@@ -31,12 +32,14 @@ class AgentSession(Identifiable, Trackable):
         "status",
         "park",
         "status_seq",
+        "pending_input",
+        "delivering_request",
         "archived_at",
         "version",
     )
     """The root follows the parent, and the rest is the projection's."""
 
-    title: str = Field(min_length=1, max_length=200)
+    title: Stored = Field(min_length=1, max_length=200)
     participants: tuple[UUID, ...] = ()  # the users the session is shared with
     parent_id: UUID | None = None  # the session that spawned this one
     root_id: UUID  # its tree's root; its own id when it has no parent
@@ -45,6 +48,11 @@ class AgentSession(Identifiable, Trackable):
     # The last seq the cached status has read: the projection goes on from
     # the step after it.
     status_seq: int = Field(default=0, ge=0)
+    # The last waking input no complete model response has delivered yet,
+    # and the model request that carries it, once one does: a loop that ends
+    # with an input still undelivered leaves the session pending.
+    pending_input: UUID | None = None
+    delivering_request: UUID | None = None
     # A flag, undone by a principal's message. An archived session records
     # what arrives and wakes for nothing else.
     archived_at: datetime | None = None

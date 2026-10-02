@@ -12,8 +12,9 @@ its type's shape is refused there and never stored: the header its type
 fixes, the blocks its type may hold, `responds_to` on a response alone, and
 an attachment's placeholder for every block that names one."""
 
+from collections.abc import Mapping
 from enum import StrEnum
-from typing import ClassVar, Self
+from typing import Any, ClassVar, Self
 from uuid import UUID
 
 from pydantic import Field, model_validator
@@ -28,7 +29,7 @@ from acme.om.steps.types.content import (
     ToolResultBlock,
     ToolUseBlock,
 )
-from acme.om.steps.types.header import StepHeader
+from acme.om.steps.types.header import InputHeader, StepHeader
 
 
 class StepFamily(StrEnum):
@@ -137,6 +138,11 @@ BLOCK_KINDS: dict[StepType, frozenset[str]] = {
 """The blocks each type's content may hold."""
 
 
+WAKES_BY_DEFAULT: dict[StepType, bool] = {StepType.MESSAGE: True, StepType.EVENT: False}
+"""Whether an input built with no `waking` wakes its session: a principal's
+message does, and an event from outside does not."""
+
+
 class Actor(StrEnum):
     """Who produced a step."""
 
@@ -177,6 +183,27 @@ class Step(Identifiable, Created):
     header: StepHeader
     content: Content = Content()
     children: Children = Children()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _an_input_wakes_by_its_type(cls, data: Any) -> Any:
+        """An input whose header leaves `waking` None takes its type's
+        default, so a stored input always says whether it woke."""
+        if not isinstance(data, Mapping):
+            return data
+        try:
+            wakes = WAKES_BY_DEFAULT.get(StepType(data.get("type")))
+        except ValueError:
+            return data  # the field's own validation names the type it refuses
+        header = data.get("header")
+        if wakes is None:
+            return data
+        if isinstance(header, InputHeader) and header.waking is None:
+            return {**data, "header": header.model_copy(update={"waking": wakes})}
+        if isinstance(header, Mapping) and header.get("kind") == "input":
+            if header.get("waking") is None:
+                return {**data, "header": {**header, "waking": wakes}}
+        return data
 
     @model_validator(mode="after")
     def _fits_its_type(self) -> Self:
