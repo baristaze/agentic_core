@@ -20,6 +20,7 @@ served to it. Exposure is by listing, never by folder.
 - [Files](om/src/acme/om/media/README.md): files as references, the bounded upload straight to the store, and the sweep
 - [Agent sessions](om/src/acme/om/agent_sessions/README.md): sessions as a series of loops over one history, and the status read off their steps
 - [Steps](om/src/acme/om/steps/README.md): the history, written once and numbered with no gaps, and the epoch that refuses a stale run
+- [Budgets](om/src/acme/om/budgets/README.md): what may be spent, the one gate every model call passes first, holds at the worst case, and their settlement
 - [Infrastructure](infra/README.md): cache, buckets, topics, queues, secrets, observability; what each promises and which twin runs where
 - [Integrations](integrations/README.md): the identity provider, its twin, the absent provider, and the webhook check
 - [The API process](services/api/README.md): the routes by area, the gateway's guarantees, the subcommands
