@@ -35,7 +35,13 @@ Rules:
   folders of the scaffold that show the rule, each a path in backticks
   that starts `scaffold/acme_root/` and exists, separated by a comma or
   `and`;
-- the Check field reads `review` while the review alone judges the lens;
+- the Check field reads `review` when the review alone judges the lens,
+  "`agentic-check` decides it." when the checker decides it whole, or
+  "`agentic-check` decides <part>; the rest is judged." when it decides a
+  part. It agrees both ways with the rules `checkers/src/agentic_check/rules/`
+  registers: a lens that names the checker has a rule of its id with the
+  same coverage (`full` or `partial`), and every rule decides a lens that
+  names it. The rules are read with `ast`, never imported;
 - an identifier a lens quotes stays in the section it cites. A section is
   the text under its `##` heading, its subsections, code, and agents-only
   blocks (`<!-- agents-only ... -->`) included, and no other HTML comment.
@@ -59,6 +65,7 @@ Exit status is non-zero when any rule fails. Standard library only.
 from __future__ import annotations
 
 import argparse
+import ast
 import re
 import sys
 from collections.abc import Sequence
@@ -68,6 +75,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SPEC = ROOT / "agentic_core_spec.md"
 LENSES = ROOT / "lenses"
 README = ROOT / "README.md"
+RULES = ROOT / "checkers" / "src" / "agentic_check" / "rules"
 
 FIELDS = ("Principle", "Source", "Look for", "Violation", "Severity")
 SHAPE = "Shape"
@@ -75,6 +83,9 @@ CHECK = "Check"
 ORDERS = ([*FIELDS, CHECK], [*FIELDS, SHAPE, CHECK])
 """The fields of a lens, in order: the five, then Shape when the lens has one, then Check."""
 CHECK_REVIEW = "review"
+CHECKER = "agentic-check"
+CHECK_FULL = f"`{CHECKER}` decides it."
+CHECK_PARTIAL = re.compile(rf"^`{CHECKER}` decides (.+); the rest is judged\.$")
 SEVERITIES = {"high", "medium", "low"}
 HEADING = re.compile(r"^## ([A-Z]{2,3})-(\d{2}) (.+)$")
 FIELD = re.compile(r"^\*\*(Principle|Source|Look for|Violation|Severity|Shape|Check)\.\*\*\s*(.*)$")
@@ -436,6 +447,31 @@ def lens_fields(lines: list[str], start: int, fenced: set[int]) -> tuple[list[tu
     return fields, j
 
 
+def coverage_of(value: str) -> str | None:
+    """What a Check line says the checker decides: `full`, `partial`, or None when it names no checker."""
+    if value == CHECK_FULL:
+        return "full"
+    return "partial" if CHECK_PARTIAL.match(value) else None
+
+
+def registered_rules() -> dict[str, tuple[str, str]]:
+    """Every `@rule("<ID>", coverage=...)` under the checker's rules package: id -> (coverage, file)."""
+    out: dict[str, tuple[str, str]] = {}
+    if not RULES.is_dir():
+        return out
+    for path in sorted(RULES.glob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"), filename=str(path))):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "rule"):
+                continue
+            if not node.args or not isinstance(node.args[0], ast.Constant) or not isinstance(node.args[0].value, str):
+                continue
+            coverage = next(
+                (k.value.value for k in node.keywords if k.arg == "coverage" and isinstance(k.value, ast.Constant)), None
+            )
+            out[node.args[0].value] = (str(coverage), path.relative_to(ROOT).as_posix())
+    return out
+
+
 def check_values(
     fields: list[tuple[str, str, int]],
     path: Path,
@@ -451,8 +487,11 @@ def check_values(
             check_source(value, path, ln, known, errors, labels)
         if name == SHAPE:
             check_shape(value, path, ln, errors)
-        if name == CHECK and value != CHECK_REVIEW:
-            errors.append(f"{path.name}:{ln}: Check reads '{value}'; it reads '{CHECK_REVIEW}' while the review judges the lens")
+        if name == CHECK and coverage_of(value) is None and value != CHECK_REVIEW:
+            errors.append(
+                f"{path.name}:{ln}: Check reads '{value}'; it reads '{CHECK_REVIEW}', '{CHECK_FULL}', "
+                f"or '`{CHECKER}` decides <the part>; the rest is judged.'"
+            )
         if name == "Principle" and len(value.split()) > MAX_PRINCIPLE_WORDS:
             errors.append(f"{path.name}:{ln}: Principle is {len(value.split())} words, limit {MAX_PRINCIPLE_WORDS}")
         if name in ("Look for", "Violation"):
@@ -469,8 +508,12 @@ def check_file(
     texts: dict[str, str],
     tagged: dict[Part, str],
     errors: list[str],
+    checks: dict[str, tuple[str, str]] | None = None,
 ) -> int:
-    """Check one lens file, whose lenses carry `prefix`; return its lens count."""
+    """Check one lens file, whose lenses carry `prefix`; return its lens count.
+
+    `checks` gathers each lens whose Check line names the checker: id -> (coverage, where).
+    """
     text = path.read_text(encoding="utf-8")
     lines = text.split("\n")
     for ln, line in enumerate(lines, start=1):
@@ -503,6 +546,10 @@ def check_file(
         check_identifiers(lens_id, fields, path, known, texts, errors)
         check_style(lens_id, fields, path, known, tagged, errors)
         check_values(fields, path, known, labels, errors)
+        for name, value, ln in fields:
+            coverage = coverage_of(value) if name == CHECK else None
+            if coverage is not None and checks is not None:
+                checks[lens_id] = (coverage, f"{path.name}:{ln}")
     if count == 0:
         errors.append(f"{path.name}: no lenses found")
     return count
@@ -528,9 +575,19 @@ def main(argv: Sequence[str] = ()) -> int:
         if NUMBERED.search(line):
             errors.append(f"README.md:{ln}: refers to a section by number")
     total = 0
+    checks: dict[str, tuple[str, str]] = {}
     for _group, (prefix, filename) in sorted(groups.items(), key=lambda g: g[1][1]):
         if filename in files:
-            total += check_file(files[filename], prefix, known, labels, texts, tagged, errors)
+            total += check_file(files[filename], prefix, known, labels, texts, tagged, errors, checks)
+    rules = registered_rules()
+    for lens_id, (coverage, where) in sorted(checks.items()):
+        if lens_id not in rules:
+            errors.append(f"{where}: {lens_id} says {CHECKER} decides it, and no rule of that id is registered")
+        elif rules[lens_id][0] != coverage:
+            errors.append(f"{where}: {lens_id}'s Check line says {coverage}, and its rule registers {rules[lens_id][0]}")
+    for rule_id, (_coverage, rel) in sorted(rules.items()):
+        if rule_id not in checks:
+            errors.append(f"{rel}: rule {rule_id} is registered, and lens {rule_id} has no Check line that names {CHECKER}")
     for path in (README, LENSES / "README.md"):
         if not path.exists():
             continue

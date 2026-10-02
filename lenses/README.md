@@ -85,13 +85,17 @@ Ids are the group prefix and two digits: `STP`, `WIN`, `MOD`, `TOL`,
   scaffold, `scaffold/acme_root/<path>` in backticks, that show the rule
   as code. A review reads the file and compares the code with it. A lens
   has one only where a scaffold file shows its rule plainly.
-- **Check** reads `review`: the review alone judges the lens. A checker
-  that decides a lens, or a part of one, writes that here, in the
-  guideline's two sentences, with the rule that decides it.
+- **Check** reads `review` when the review alone judges the lens. The
+  checker under `checkers/` decides what a program can decide without
+  guessing, by a rule with the lens's id, and says so here in the
+  guideline's two sentences: "`agentic-check` decides it." when it
+  decides the whole lens, and "`agentic-check` decides `<the part>`; the
+  rest is judged." when the review judges what it leaves.
 
 `make lenses` holds the format, a width of 80 columns, the citations,
-each Shape path, the Check line, and every identifier a lens quotes to
-the section it cites. That a lens stays inside its rule, stricter and
-never contrary, is held by review, not by a program.
+each Shape path, the Check line against the checker's rules, and every
+identifier a lens quotes to the section it cites. That a lens stays
+inside its rule, stricter and never contrary, is held by review, not by
+a program.
 
 [g-lenses]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/lenses/README.md

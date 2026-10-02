@@ -138,7 +138,7 @@ ASSISTANT = AgentKind(
 DELIVERY = AgentKind(
     name="delivery",
     version=1,
-    tools=("lookup", "submit"),
+    tools=("lookup", "submit", "send"),
     done_rule=DoneRule.RESULT_TOOL,
     result_tool="submit",
     max_nudges=3,
@@ -182,6 +182,7 @@ def tools() -> dict[str, Lookup]:
 
 @dataclass
 class Loop:
+    infra: InfraLocalImpl
     storage: StorageInterface
     managers: Managers
     loops: LoopManagerImpl
@@ -281,7 +282,7 @@ def loop_over(
         sleep,
     )
     owner = owner or context(Role.OWNER, make_org())
-    return Loop(storage, managers, loops, anthropic, openai, sink, clock, owner, catalog)
+    return Loop(infra, storage, managers, loops, anthropic, openai, sink, clock, owner, catalog)
 
 
 def reply(*blocks: TextBlock | ToolUseBlock, model: str = SONNET) -> ModelReply:

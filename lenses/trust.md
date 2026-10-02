@@ -34,6 +34,9 @@ plumbing that runs under a context of its own making.
 
 **Severity.** medium
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/context.py` and
+`scaffold/acme_root/om/src/acme/om/attribution/manager.py`
+
 **Check.** review
 
 ## TRU-02 Actor, principal, and spender are three answers
@@ -55,6 +58,9 @@ three.
 
 **Severity.** medium
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/attribution/types/principal.py`
+and `scaffold/acme_root/om/src/acme/om/steps/types/header.py`
+
 **Check.** review
 
 ## TRU-03 The agent acts and holds no authority
@@ -75,6 +81,9 @@ principal's; an agent's output that counts as a principal's input. (A
 service principal the tenant grants a steady kind is TRU-04.)
 
 **Severity.** high
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/attribution/types/principal.py`
+and `scaffold/acme_root/om/src/acme/om/attribution/rules.py`
 
 **Check.** review
 
@@ -100,6 +109,9 @@ re-check run under the system's context; a steady session that keeps
 running tools under a principal that lost its access.
 
 **Severity.** medium
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/attribution/types/authority.py`
+and `scaffold/acme_root/om/src/acme/om/attribution/impl/manager.py`
 
 **Check.** review
 
@@ -130,6 +142,9 @@ class.
 
 **Severity.** high
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/windows/rules.py` and
+`scaffold/acme_root/om/src/acme/om/attribution/rules.py`
+
 **Check.** review
 
 ## TRU-06 A marked session acting outward needs a person
@@ -158,6 +173,9 @@ past its allowlist unattended.
 
 **Severity.** high
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/attribution/rules.py` and
+`scaffold/acme_root/om/src/acme/om/agent_sessions/rules.py`
+
 **Check.** review
 
 ## TRU-07 The person who asked pays
@@ -179,6 +197,8 @@ that pays as anyone but its spawn's spender. (A call made when no one
 can be told to pay is BND-02.)
 
 **Severity.** medium
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/attribution/rules.py`
 
 **Check.** review
 
@@ -203,5 +223,7 @@ step with a growing list of tracking ids; a conventions version left
 unpinned; content captured in a span.
 
 **Severity.** medium
+
+**Shape.** `scaffold/acme_root/infra/src/acme/infra/observability.py`
 
 **Check.** review

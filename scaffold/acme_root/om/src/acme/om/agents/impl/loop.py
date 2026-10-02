@@ -28,7 +28,7 @@ from acme.om.agents.loop import LoopManagerInterface
 from acme.om.agents.rules import after_turn
 from acme.om.agents.sink import StreamSinkInterface
 from acme.om.agents.types.kind import AgentKind, AgentKindCatalog
-from acme.om.agents.types.result import Result, Turn, Verdict
+from acme.om.agents.types.result import Result, Turn
 from acme.om.agents.types.run import LoopRun, RunEnd
 from acme.om.attribution import AttributionManagerInterface
 from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
@@ -56,6 +56,7 @@ from acme.om.steps import StepsManagerInterface
 from acme.om.steps.rules import origin_of
 from acme.om.steps.types.content import Content, TextBlock, ToolUseBlock
 from acme.om.steps.types.header import (
+    AcceptedResult,
     ControlCommand,
     InputHeader,
     LoopOutcome,
@@ -64,6 +65,7 @@ from acme.om.steps.types.header import (
     Park,
     ParkReason,
     ToolFailure,
+    ToolResponseHeader,
 )
 from acme.om.steps.types.step import Actor, Step, StepType
 from acme.om.steps.types.stream import ToolOutputPart
@@ -123,6 +125,7 @@ class _Run:
     resumed: bool  # it resumed a park the loop wrote: the calls it held back never ran
     deadline: datetime | None = None
     workspace: Workspace | None = None
+    made: set[UUID] = field(default_factory=lambda: set[UUID]())  # tool requests it wrote
     failures: int = 0  # provider errors in a row
     tried: list[Fill] = field(default_factory=lambda: [])
     refused: RenderedRequest | None = None  # a request the provider refused as too long
@@ -139,7 +142,6 @@ class _Settled:
     asked: bool = False  # it waits for a person's decision
     cancelled: bool = False  # a cancel stopped it
     park: Park | None = None  # the loop cannot go on with it
-    verdict: Verdict | None = None  # the result it submitted was judged
 
 
 class LoopManagerImpl(LoopManagerInterface):
@@ -254,6 +256,11 @@ class LoopManagerImpl(LoopManagerInterface):
             return await self._end(run, LoopOutcome.ERRORED)
         try:
             return await self._drive(run, history)
+        except StaleWriter:
+            # The claim is another run's, or a person's who took the
+            # environment over: what it holds is theirs to release.
+            run.workspace = None
+            raise
         finally:
             await self._release(run)
 
@@ -264,6 +271,13 @@ class LoopManagerImpl(LoopManagerInterface):
         # by its effect.
         for request in rules.unanswered_requests(history, run.loop_id):
             await self._close_lost(run, request)
+        if not run.resumed:
+            # A call a lost run may have started is settled by its effect
+            # before anything else, a park included: once a run parks with a
+            # call open, the call is one it held back and never ran.
+            stopped = await self._recover_calls(run)
+            if stopped is not None:
+                return stopped
         while True:
             history = await self._history(run.ctx, run.session_id)
             loop = rules.OpenLoop(run.loop_id, run.start_seq, None)
@@ -279,6 +293,11 @@ class LoopManagerImpl(LoopManagerInterface):
                     if stopped is not None:
                         return stopped
                     continue
+                accepted = rules.accepted_outcome(history, response)
+                if accepted is not None:
+                    # The result gate accepted a result this turn submitted,
+                    # and every call of the turn is answered.
+                    return await self._end(run, accepted)
                 if not response.as_tool_uses() and not rules.judged(history, response):
                     stopped = await self._judge(run, history, response)
                     if stopped is not None:
@@ -334,13 +353,22 @@ class LoopManagerImpl(LoopManagerInterface):
         except PlatformException as refused:
             return await self._refused(run, refused)
         try:
-            await self._call(run, fill, rendered)
+            replied = await self._call(run, fill, rendered)
         except ModelCallFailed as failed:
             return await self._failed(run, fill, rendered, failed)
         except PlatformException as refused:
             return await self._refused(run, refused)
         run.failures, run.refused = 0, None
         run.tried.clear()
+        header = replied.header
+        if (
+            isinstance(header, ModelResponseHeader)
+            and header.stop_reason is StopReason.OUTPUT_LIMIT
+        ):
+            # Cut by its output bound: kept truncated and never acted on,
+            # and the model is told so, so the next request is not this one
+            # again.
+            await self._notice(run, rules.CUT)
         return None
 
     async def _refused(self, run: _Run, refused: PlatformException) -> LoopRun:
@@ -365,9 +393,7 @@ class LoopManagerImpl(LoopManagerInterface):
         persisted, the stream emitted as it arrives, and the response
         persisted before anything acts on it."""
         ctx, session_id = run.ctx, run.session_id
-        said = await self._attribution.attribute_request(
-            ctx, session_id, rendered.previous_request, rendered.read_through
-        )
+        said = rendered.attribution
         hold = await self._gate.authorize(ctx, session_id, said.spender, MAIN, fill, rendered.call)
         request = request_step(
             rendered, said, session_id, run.loop_id, new_id(), self._clock(), hold_id=hold
@@ -507,37 +533,60 @@ class LoopManagerImpl(LoopManagerInterface):
         each one gated, run or recovered, and answered, in the order the
         model made them. A call that waits for a person parks the loop once
         the others are answered."""
-        requests, made = await self._requests(run, response, calls)
+        requests = await self._requests(run, response, calls)
         asked = False
-        verdict: Verdict | None = None
         for use, request in requests:
-            # A call this run wrote, or one a park held back, never ran: it
-            # runs. Any other was in flight when a run was lost, and is
-            # settled by its effect.
-            fresh = request.id in made or run.resumed
-            settled = await self._settle_call(run, use, request, fresh=fresh)
+            settled = await self._settle_call(
+                run, use, request, fresh=self._never_ran(run, request)
+            )
             if settled.cancelled:
                 return await self._cancelled(run)
             if settled.park is not None:
                 return await self._park(run, settled.park)
             asked = asked or settled.asked
-            verdict = settled.verdict or verdict
         if asked:
             return await self._park(
                 run, Park(reason=ParkReason.PERSON, unlock=rules.APPROVAL_UNLOCK)
             )
-        if verdict is not None and verdict.outcome is not None:
-            return await self._end(run, verdict.outcome)
+        return None
+
+    def _never_ran(self, run: _Run, request: Step) -> bool:
+        """Whether no run may have started a call: this run wrote it, or a
+        park the loop wrote held it back. A run settles a lost run's calls
+        before it parks, so a call still open at such a park is one it
+        never started."""
+        return request.id in run.made or run.resumed
+
+    async def _recover_calls(self, run: _Run) -> LoopRun | None:
+        """The calls a lost run left open, each settled by its effect before
+        the loop does anything else: none of them is ever run as new. A call
+        that would wait for a person, or whose principal lapsed, is answered
+        as stopped with its outcome unknown, rather than parked open. A
+        cancel that waits answers them all so."""
+        history = await self._history(run.ctx, run.session_id)
+        response = rules.latest_response(history, run.loop_id)
+        if response is None:
+            return None
+        lost = [(use, request) for use, request in rules.open_calls(history, response) if request]
+        if not lost:
+            return None
+        loop = rules.OpenLoop(run.loop_id, run.start_seq, None)
+        if rules.asked(history, loop, ControlCommand.CANCEL) is not None:
+            return await self._cancelled(run)
+        for use, request in lost:
+            settled = await self._settle_call(run, use, request, fresh=False)
+            if settled.cancelled:
+                return await self._cancelled(run)
         return None
 
     async def _requests(
         self, run: _Run, response: Step, calls: Sequence[tuple[ToolUseBlock, Step | None]]
-    ) -> tuple[list[tuple[ToolUseBlock, Step]], set[UUID]]:
+    ) -> list[tuple[ToolUseBlock, Step]]:
         """The request of every call, writing those not yet written, in one
-        append, before any is decided; and the ids this run wrote."""
+        append, before any is decided; the run keeps the ids it wrote."""
         missing = [use for use, request in calls if request is None]
         if not missing:
-            return [(use, request) for use, request in calls if request is not None], set()
+            return [(use, request) for use, request in calls if request is not None]
         principal = await self._attribution.call_principal(run.ctx, run.session_id)
         agent = AgentRef(kind=run.kind.name, version=run.kind.version, session_id=run.session_id)
         now = self._clock()
@@ -556,8 +605,8 @@ class LoopManagerImpl(LoopManagerInterface):
         ]
         stored = await self._steps.append_steps(run.ctx, run.session_id, run.epoch, built)
         by_use = {_use_id(step): step for step in stored}
-        requests = [(use, request or by_use[use.id]) for use, request in calls]
-        return requests, {step.id for step in stored}
+        run.made.update(step.id for step in stored)
+        return [(use, request or by_use[use.id]) for use, request in calls]
 
     async def _settle_call(
         self, run: _Run, use: ToolUseBlock, request: Step, *, fresh: bool
@@ -575,11 +624,18 @@ class LoopManagerImpl(LoopManagerInterface):
                 holds_private=rules.holds_private(run.kind, run.registry),
             )
         except PrincipalLapsed:
+            if not fresh:
+                await self._answer(run, request, self._lost(request))
+                return _Settled()
             return _Settled(park=Park(reason=ParkReason.PERSON, unlock=rules.PRINCIPAL_UNLOCK))
         if gate.outcome is GateOutcome.REFUSE and gate.response is not None:
             await self._answer(run, request, gate.response)
             return _Settled()
         if gate.outcome is GateOutcome.ASK or gate.authority is None:
+            if not fresh:
+                # It may have run once; it never waits open for a second.
+                await self._answer(run, request, self._lost(request))
+                return _Settled()
             return _Settled(asked=True)
         if use.name == run.kind.result_tool:
             return await self._submit(run, request, use)
@@ -667,7 +723,8 @@ class LoopManagerImpl(LoopManagerInterface):
         """A result submitted through the kind's result tool: refused without
         evidence, else judged by the result gate. An accepted one ends the
         loop with the outcome it claims once every call is answered; a
-        refused one goes back to the model with the reason."""
+        refused one goes back to the model with the reason. The verdict is
+        kept in the answer's header, and the loop ends on it from there."""
         try:
             result = Result.model_validate(thaw_mapping(use.input))
         except ValidationError as refused:
@@ -686,18 +743,16 @@ class LoopManagerImpl(LoopManagerInterface):
             return _Settled()
         checked = "verified" if verdict.verified else "unverified"
         text = f"The result is accepted, {checked}: the loop ends {verdict.outcome.value}."
-        await self._answer(
-            run,
-            request,
-            response(
-                new_id(),
-                self._clock(),
-                request,
-                text,
-                limit=self._options.stopped_chars,
-            ),
+        answer = response(new_id(), self._clock(), request, text, limit=self._options.stopped_chars)
+        header = answer.header
+        assert isinstance(header, ToolResponseHeader)
+        verdicted = header.model_copy(
+            update={"accepted": AcceptedResult(outcome=verdict.outcome, verified=verdict.verified)}
         )
-        return _Settled(verdict=verdict)
+        # The verdict is a step: the loop ends on it once every call of the
+        # turn is answered, after a park or a lost run as well.
+        await self._answer(run, request, answer.model_copy(update={"header": verdicted}))
+        return _Settled()
 
     async def _answer(self, run: _Run, request: Step, answer: Step) -> None:
         """A call's response under the id this run gives it, kept whole as an
@@ -707,6 +762,10 @@ class LoopManagerImpl(LoopManagerInterface):
         own = answer.model_copy(update={"id": response_id(request, run.epoch)})
         bounded = await self._windows.bound_tool_response(run.ctx, run.session_id, own)
         await self._steps.append_steps(run.ctx, run.session_id, run.epoch, [bounded])
+
+    def _lost(self, request: Step) -> Step:
+        text = "a run that made this call was lost before it answered; whether it ran is unknown"
+        return self._stopped(request, text, ToolFailure.INTERRUPTED)
 
     def _stopped(self, request: Step, text: str, failure: ToolFailure) -> Step:
         return response(
@@ -754,22 +813,24 @@ class LoopManagerImpl(LoopManagerInterface):
         if response is not None:
             calls = rules.open_calls(history, response)
             if calls:
-                requests, _ = await self._requests(run, response, calls)
-                text = f"stopped by a principal's {ControlCommand.CANCEL.value} before it ran"
+                requests = await self._requests(run, response, calls)
                 answers = [
-                    self._stopped(request, text, ToolFailure.INTERRUPTED).model_copy(
+                    self._cancelled_call(run, request).model_copy(
                         update={"id": response_id(request, run.epoch)}
                     )
                     for _, request in requests
-                    if not any(
-                        step.responds_to == request.id
-                        for step in history
-                        if step.type is StepType.TOOL_RESPONSE
-                    )
                 ]
-                if answers:
-                    await self._steps.append_steps(run.ctx, run.session_id, run.epoch, answers)
+                await self._steps.append_steps(run.ctx, run.session_id, run.epoch, answers)
         return await self._end(run, LoopOutcome.CANCELLED)
+
+    def _cancelled_call(self, run: _Run, request: Step) -> Step:
+        """A cancel's answer to a call still open: stopped before it ran, or,
+        for one a lost run may have started, stopped with its outcome
+        unknown, so the model verifies before it calls again."""
+        if self._never_ran(run, request):
+            text = f"stopped by a principal's {ControlCommand.CANCEL.value} before it ran"
+            return self._stopped(request, text, ToolFailure.INTERRUPTED)
+        return self._lost(request)
 
     async def _end(self, run: _Run, outcome: LoopOutcome) -> LoopRun:
         step = rules.ended_step(new_id(), self._clock(), run.session_id, run.loop_id, outcome)

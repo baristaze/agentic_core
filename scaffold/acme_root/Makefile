@@ -46,8 +46,13 @@ SCRAPE_PORT ?= $(ACME_COLLECTOR_SCRAPE_PORT)
 # .python-version. Offline, point it at a checkout:
 # `make arch-check ARCH_CHECK="python3 ../swe_guidelines/checkers/arch_check.py"`.
 ARCH_CHECK ?= uvx --python "$(shell cat .python-version)" --from "git+https://github.com/baristaze/swe_guidelines@v0.48.0\#subdirectory=checkers" arch-check
+# The engine's static checker, at the engine release this project builds on,
+# on the project's Python. Offline, or on an engine not yet released, point it
+# at a checkout:
+# `make agentic-check AGENTIC_CHECK="python3 ../agentic_core/checkers/agentic_check.py"`.
+AGENTIC_CHECK ?= uvx --python "$(shell cat .python-version)" --from "git+https://github.com/baristaze/agentic_core@v0.0.0\#subdirectory=checkers" agentic-check
 
-.PHONY: help setup up down reset urls infra-up buckets devx-up stack-up infra-down infra-reset collector-scrape migrate seed migrate-check benchmark-boot check lint format-check typecheck arch-check test-unit test-integration test-telemetry test-live traffic openapi
+.PHONY: help setup up down reset urls infra-up buckets devx-up stack-up infra-down infra-reset collector-scrape migrate seed migrate-check benchmark-boot check lint format-check typecheck arch-check agentic-check test-unit test-integration test-telemetry test-live traffic openapi
 
 # This Makefile alone, never $(MAKEFILE_LIST): the includes above put
 # .env.example and .env in that list, and grep prefixes every match with the
@@ -196,7 +201,7 @@ migrate-check: ## Compare every role's ORM metadata with the migrated schema
 benchmark-boot: ## Time the imports and the construction of every root
 	uv run --package acme-api python scripts/benchmark_boot.py
 
-check: lint format-check typecheck arch-check test-unit ## The fast local gate
+check: lint format-check typecheck arch-check agentic-check test-unit ## The fast local gate
 	@if [ -d apps ]; then pnpm run lint && pnpm run typecheck && pnpm run test; fi
 
 lint: ## Ruff lint
@@ -210,6 +215,9 @@ typecheck: ## Pyright over every distribution and the scripts
 
 arch-check: ## The guideline's static checks, configured in pyproject.toml
 	$(ARCH_CHECK)
+
+agentic-check: ## The engine's static checks, configured in pyproject.toml
+	$(AGENTIC_CHECK)
 
 test-unit: ## Unit tests over the memory impls
 	uv run pytest -q -m "not integration and not e2e and not telemetry and not live"

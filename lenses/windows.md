@@ -32,6 +32,8 @@ invalidates the cached window.
 
 **Severity.** medium
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/windows/rules.py`
+
 **Check.** review
 
 ## WIN-02 A prompt's hash makes a cache regression a query
@@ -52,6 +54,9 @@ something other than the rendered prompt; no replay test, or one that
 re-renders without comparing hashes.
 
 **Severity.** medium
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/windows/rules.py` and
+`scaffold/acme_root/om/tests/unit/test_windows.py`
 
 **Check.** review
 
@@ -78,6 +83,9 @@ sized for a fill other than its request's.
 
 **Severity.** medium
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/windows/rules.py` and
+`scaffold/acme_root/om/src/acme/om/steps/types/header.py`
+
 **Check.** review
 
 ## WIN-04 A window holds references and sizes, never content
@@ -100,6 +108,8 @@ tokens counted locally from the first step when the provider reported a
 size; a snapshot that is the only record of a window's edges.
 
 **Severity.** medium
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/windows/types/window.py`
 
 **Check.** review
 
@@ -127,6 +137,9 @@ behind it; the plan rendered in the pinned zone.
 
 **Severity.** high
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/windows/rules.py` and
+`scaffold/acme_root/om/src/acme/om/windows/types/pinned.py`
+
 **Check.** review
 
 ## WIN-06 Compaction is the engine's, automatic and visible
@@ -148,6 +161,8 @@ leaves no step and no stream part; a policy fixed in the loop's code. (A
 summarizer call that skips the gate is BND-02.)
 
 **Severity.** medium
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/windows/impl/manager.py`
 
 **Check.** review
 
@@ -177,6 +192,9 @@ overflow retried more than once for one request, or never.
 
 **Severity.** medium
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/windows/rules.py` and
+`scaffold/acme_root/om/src/acme/om/windows/impl/manager.py`
+
 **Check.** review
 
 ## WIN-08 Large results are artifacts, read just in time
@@ -199,5 +217,8 @@ with no handle, so the rest cannot be read; a kind that loads whole
 documents or histories up front instead of a tool to fetch them.
 
 **Severity.** medium
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/windows/impl/manager.py` and
+`scaffold/acme_root/om/src/acme/om/windows/rules.py`
 
 **Check.** review

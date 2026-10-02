@@ -38,7 +38,9 @@ authority. The rest is read off the session and its
 - **Speak.** A message is written in the name of whoever appends it;
   nobody writes one in another's name.
 - **Pay.** A model call is paid by the person behind the latest message
-  a person or a program sent that the model reads in it. Anything else
+  a person or a program sent that the model reads in it, read from
+  exactly the messages the call delivers: one that lands after it was
+  rendered lends it nothing. Anything else
   that arrives (an outside event, another agent's message, the engine's
   own notes) never becomes the payer. When nobody can be named, nothing
   is spent.

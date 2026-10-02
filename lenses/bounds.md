@@ -31,6 +31,8 @@ missing.
 
 **Severity.** medium
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/budgets/types/budget.py`
+
 **Check.** review
 
 ## BND-02 Every model call and every spending job passes one gate first
@@ -57,6 +59,9 @@ after the call; a call made when the spender is unknown.
 
 **Severity.** high
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/budgets/gate.py` and
+`scaffold/acme_root/om/src/acme/om/windows/impl/manager.py`
+
 **Check.** review
 
 ## BND-03 The hold covers the worst case
@@ -81,6 +86,9 @@ thinking or a provider tool's fee left out; a job held for less than its
 rate times its deadline.
 
 **Severity.** high
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/budgets/rules.py` and
+`scaffold/acme_root/om/src/acme/om/budgets/types/exposure.py`
 
 **Check.** review
 
@@ -108,6 +116,9 @@ or an alarm.
 
 **Severity.** high
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/budgets/types/hold.py` and
+`scaffold/acme_root/integrations/src/acme/integrations/model_providers/types.py`
+
 **Check.** review
 
 ## BND-05 A refusal names every breach
@@ -129,6 +140,9 @@ no clearing action or no reset time; a gate that branches on prepay or
 postpay.
 
 **Severity.** medium
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/budgets/types/breach.py` and
+`scaffold/acme_root/om/src/acme/om/budgets/rules.py`
 
 **Check.** review
 
@@ -156,6 +170,9 @@ platform's.
 
 **Severity.** medium
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/budgets/types/amount.py` and
+`scaffold/acme_root/om/src/acme/om/budgets/pricing.py`
+
 **Check.** review
 
 ## BND-07 A guard parks, a bound ends the loop, a yield hands it on
@@ -182,6 +199,8 @@ yielding.
 
 **Severity.** medium
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_sessions/limits.py`
+
 **Check.** review
 
 ## BND-08 The step guard is never disabled
@@ -202,6 +221,8 @@ a count kept across loops; a guard that ends the loop instead of parking
 it.
 
 **Severity.** medium
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_sessions/limits.py`
 
 **Check.** review
 
@@ -226,6 +247,8 @@ a retry time on a park only a person can clear.
 
 **Severity.** medium
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/steps/types/header.py`
+
 **Check.** review
 
 ## BND-10 A park holds nothing, and a woken loop is not trusted
@@ -247,5 +270,7 @@ unlock happened; a resumed run that skips its gates. (A model call it
 makes without the budget gate is BND-02.)
 
 **Severity.** medium
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_sessions/manager.py`
 
 **Check.** review

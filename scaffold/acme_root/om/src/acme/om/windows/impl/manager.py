@@ -80,6 +80,9 @@ class WindowsManagerImpl(WindowsManagerInterface):
         self._hashes = hashes
         self._seal = seal
         self._policy = policy
+        # The artifacts of sessions that keep no content at rest, by tenant,
+        # session, and id: held while this runtime lives, and nowhere else.
+        self._held: dict[tuple[UUID, UUID, UUID], str] = {}
         self._options = options
 
     async def render_request(
@@ -169,27 +172,29 @@ class WindowsManagerImpl(WindowsManagerInterface):
         # writes the same artifact once.
         artifact_id = derived_id(step.id, step.created_at, "artifact")
         # Sealed like the step it came from. A session that keeps no content
-        # at rest keeps no artifact: its result stays whole in its step.
+        # at rest keeps its artifact in this runtime's memory alone, as it
+        # keeps its steps' content, and its step is bounded all the same.
         sealed = await self._seal.seal(ctx, session_id, artifact_id, whole.encode("utf-8"))
         if sealed is None:
-            return step
-        await self._buckets.put(
-            ctx.org_id,
-            BUCKET,
-            rules.artifact_key(session_id, artifact_id),
-            sealed,
-            CONTENT_TYPE,
-            deadline=ctx.deadline,
-        )
-        # The text first, then its record: a record always has its text.
-        artifact = Artifact(
-            id=artifact_id,
-            created_at=step.created_at,
-            session_id=session_id,
-            step_id=step.id,
-            characters=len(whole),
-        )
-        await self._storage.write_artifact(ctx.org_id, artifact)
+            self._held[(ctx.org_id, session_id, artifact_id)] = whole
+        else:
+            await self._buckets.put(
+                ctx.org_id,
+                BUCKET,
+                rules.artifact_key(session_id, artifact_id),
+                sealed,
+                CONTENT_TYPE,
+                deadline=ctx.deadline,
+            )
+            # The text first, then its record: a record always has its text.
+            artifact = Artifact(
+                id=artifact_id,
+                created_at=step.created_at,
+                session_id=session_id,
+                step_id=step.id,
+                characters=len(whole),
+            )
+            await self._storage.write_artifact(ctx.org_id, artifact)
         handle = ArtifactRef(id=artifact_id, characters=len(whole))
         bounded = ToolResultBlock(
             tool_use_id=result.tool_use_id, parts=parts, is_error=result.is_error
@@ -207,15 +212,9 @@ class WindowsManagerImpl(WindowsManagerInterface):
         self, ctx: TenantContext, session_id: UUID, artifact_id: UUID, offset: int, limit: int
     ) -> ArtifactPage:
         ctx.require(Permission.READ)
-        artifact = await self._storage.read_artifact(ctx.org_id, session_id, artifact_id)
-        if artifact is None:
-            raise NotFound(f"artifact {artifact_id} not found")
-        key = rules.artifact_key(session_id, artifact_id)
-        sealed = await self._buckets.get(ctx.org_id, BUCKET, key, deadline=ctx.deadline)
-        data = await self._seal.open(ctx, session_id, artifact_id, sealed)
-        if data is None:
-            raise KeyRevoked(f"the content of artifact {artifact_id} is erased with its key")
-        text = data.decode("utf-8")
+        text = self._held.get((ctx.org_id, session_id, artifact_id))
+        if text is None:
+            text = await self._kept(ctx, session_id, artifact_id)
         page, more = rules.artifact_page(text, offset, limit, self._policy)
         return ArtifactPage(
             artifact_id=artifact_id,
@@ -224,6 +223,19 @@ class WindowsManagerImpl(WindowsManagerInterface):
             characters=len(text),
             has_more=more,
         )
+
+    async def _kept(self, ctx: TenantContext, session_id: UUID, artifact_id: UUID) -> str:
+        """An artifact's text as the store keeps it, opened under its
+        session's key."""
+        artifact = await self._storage.read_artifact(ctx.org_id, session_id, artifact_id)
+        if artifact is None:
+            raise NotFound(f"artifact {artifact_id} not found")
+        key = rules.artifact_key(session_id, artifact_id)
+        sealed = await self._buckets.get(ctx.org_id, BUCKET, key, deadline=ctx.deadline)
+        data = await self._seal.open(ctx, session_id, artifact_id, sealed)
+        if data is None:
+            raise KeyRevoked(f"the content of artifact {artifact_id} is erased with its key")
+        return data.decode("utf-8")
 
     async def purge_artifacts(self, org_id: UUID, session_id: UUID) -> int:
         return await self._purge(org_id, session_id)
@@ -239,7 +251,10 @@ class WindowsManagerImpl(WindowsManagerInterface):
         object first, then the records, so a failure between the two leaves
         a record the next pass finds, never an object no record names. A
         tenant's purge takes one batch a call, as every sweep step does; a
-        session's takes them all, since its row goes once this returns."""
+        session's takes them all, since its row goes once this returns. What
+        this runtime holds in memory of them goes first."""
+        for held in [k for k in self._held if k[0] == org_id and session_id in (None, k[1])]:
+            del self._held[held]
         purged = 0
         while True:
             batch = await self._storage.read_artifacts(
@@ -270,16 +285,22 @@ class WindowsManagerImpl(WindowsManagerInterface):
         self, ctx: TenantContext, session_id: UUID, draft: rules.Draft, read: Sequence[Step]
     ) -> RenderedRequest:
         """The request over `read`, the steps it was rendered from, with its
-        prompt's keyed hash and the range attribution reads."""
+        prompt's keyed hash, and who spoke and who pays, read from exactly
+        the inputs it delivers: one read gives both, so an input that lands
+        after it is neither delivered nor credited."""
         value = rules.prompt_bytes(draft.call, draft.attachments)
+        delivers = set(draft.delivers)
+        delivered = {step.id: step.seq for step in read if step.id in delivers}
+        said = await self._attribution.attribute_request(
+            ctx, session_id, rules.latest_request_seq(read), delivered
+        )
         return RenderedRequest(
             call=draft.call,
             window=draft.window,
             delivers=draft.delivers,
             attachments=draft.attachments,
             prompt_hash=await self._hashes.keyed_hash(ctx, session_id, value),
-            previous_request=rules.latest_request_seq(read),
-            read_through=read[-1].seq if read else 0,
+            attribution=said,
         )
 
     async def _history(self, ctx: TenantContext, session_id: UUID) -> list[Step]:
@@ -327,15 +348,9 @@ class WindowsManagerImpl(WindowsManagerInterface):
         )
         draft = rules.Draft(call, window, (), ())
         rendered = await self._hashed(ctx, session_id, draft, steps)
-        # The summarizer delivers nothing. It makes room for the request it
-        # comes before, so it is paid for by whoever that request will name:
-        # attribution reads the inputs since the latest model request through
-        # the steps read here. The main request after it then reads its
-        # speaker from this one, and a principal whose message waits is
-        # neither dropped nor charged twice.
-        paid = await self._attribution.attribute_request(
-            ctx, session_id, rendered.previous_request, rendered.read_through
-        )
+        # The summarizer delivers nothing: it is paid for by the spender the
+        # latest model request named, as attribution answers for it.
+        paid = rendered.attribution
         hold = await self._gate.authorize(
             ctx, session_id, paid.spender, SUMMARIZER, summarizer, call
         )

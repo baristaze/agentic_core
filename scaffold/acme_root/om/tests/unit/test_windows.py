@@ -5,7 +5,7 @@ never loops and never spends outside the gate, a recorded request
 re-renders to its prompt's hash, and a tool result over the bound is kept as
 an artifact the step holds the head, the tail, and the handle of."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -22,8 +22,9 @@ from acme.integrations.model_providers.failures import ModelCallFailed
 from acme.integrations.model_providers.registry import scripted_model_providers
 from acme.integrations.model_providers.scripted import ModelProviderScriptedImpl, ScriptedFailure
 from acme.integrations.model_providers.types import ErrorKind, ProviderName, StopReason, Usage
+from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.attribution import AttributionManagerInterface
-from acme.om.attribution.types.authority import RequestAttribution
+from acme.om.attribution.types.authority import AuthorityMode, RequestAttribution
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
 from acme.om.context import Role, TenantContext
@@ -50,7 +51,7 @@ from acme.om.models.types.fill import (
 )
 from acme.om.privacy.impl.artifacts import ArtifactSealKeysImpl
 from acme.om.privacy.impl.keys import SessionKeysImpl
-from acme.om.root import build_managers
+from acme.om.root import Managers, build_managers
 from acme.om.steps import StepsManagerInterface
 from acme.om.steps.types.content import Content, TextBlock, ToolResultBlock
 from acme.om.steps.types.header import (
@@ -165,12 +166,12 @@ class Payer(AttributionManagerInterface):
     and any other method fails loudly as unimplemented."""
 
     def __init__(self) -> None:
-        self.asked: list[tuple[int, int]] = []
+        self.asked: list[tuple[int, tuple[UUID, ...]]] = []
 
     async def attribute_request(
-        self, ctx: TenantContext, session_id: UUID, after_seq: int, through_seq: int
+        self, ctx: TenantContext, session_id: UUID, after_seq: int, delivered: Mapping[UUID, int]
     ) -> RequestAttribution:
-        self.asked.append((after_seq, through_seq))
+        self.asked.append((after_seq, tuple(delivered)))
         return RequestAttribution(speaker=PAYER, spender=PAYER)
 
 
@@ -766,10 +767,30 @@ def test_a_step_that_names_an_artifact_holds_its_head_and_tail() -> None:
 # The root's own wiring.
 
 
+async def authorized(managers: Managers, ctx: TenantContext, session_id: UUID) -> None:
+    """A session of the caller's, with its authority: a render reads who
+    spoke and who pays from it."""
+    now = utcnow()
+    made = AgentSession(
+        id=session_id,
+        created_at=now,
+        updated_at=now,
+        created_by=ctx.user_id,
+        updated_by=ctx.user_id,
+        title="a render",
+        kind="investigator",
+        kind_version=1,
+        root_id=session_id,
+    )
+    await managers.agent_sessions.create_session(ctx, made)
+    await managers.attribution.open_authority(ctx, session_id, AuthorityMode.STEADY)
+
+
 async def test_a_root_hashes_a_prompt_under_the_sessions_key(tmp_path: Path) -> None:
     managers = build_managers(StorageMemoryImpl(), InfraLocalImpl(tmp_path), model_prices=Priced())
     ctx = context(Role.MEMBER)
     history = History()
+    await authorized(managers, ctx, history.session_id)
     history.message("Find it.")
     await managers.steps.append_inputs(ctx, history.session_id, history.steps)
     epoch = await managers.steps.begin_run(ctx, history.session_id)
@@ -784,6 +805,7 @@ async def test_a_root_hashes_a_prompt_under_the_sessions_key(tmp_path: Path) -> 
     ]
     assert first.prompt_hash == again.prompt_hash, "the same steps, the same hash"
     other = History()
+    await authorized(managers, ctx, other.session_id)
     other.message("Find it.")
     await managers.steps.append_inputs(ctx, other.session_id, other.steps)
     epoch = await managers.steps.begin_run(ctx, other.session_id)
@@ -806,6 +828,7 @@ async def test_a_root_with_the_nulls_wired_refuses_to_hash_or_spend(tmp_path: Pa
     )
     ctx = context(Role.MEMBER)
     history = History()
+    await authorized(managers, ctx, history.session_id)
     history.message("Find it.")
     await managers.steps.append_inputs(ctx, history.session_id, history.steps)
     epoch = await managers.steps.begin_run(ctx, history.session_id)

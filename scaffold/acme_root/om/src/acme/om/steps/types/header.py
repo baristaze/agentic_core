@@ -215,16 +215,33 @@ class ArtifactRef(Platform):
     characters: int = Field(gt=0)
 
 
+class AcceptedResult(Platform):
+    """A result the kind's result gate accepted: the outcome its loop ends
+    with, and whether a gate that knows the evidence judged it."""
+
+    outcome: LoopOutcome
+    verified: bool = False
+
+
 class ToolResponseHeader(Platform):
     """A result, or the class of the failure the call met. `interrupted`
     marks a call stopped before it answered, its outcome unknown, so the
     model verifies before it retries. `artifact` is the handle of a result
     above the size bound, whose head and tail are the first two parts of the
-    step's result."""
+    step's result. `accepted` is the verdict on a result submitted through
+    the kind's result tool, kept in the history so the loop ends on it even
+    after a park or a lost run."""
 
     kind: Literal["tool_response"] = "tool_response"
     failure: ToolFailure | None = None
     artifact: ArtifactRef | None = None
+    accepted: AcceptedResult | None = None
+
+    @model_validator(mode="after")
+    def _a_failure_accepts_nothing(self) -> Self:
+        if self.accepted is not None and self.failure is not None:
+            raise ValueError("an accepted result is no failure")
+        return self
 
     @property
     def interrupted(self) -> bool:

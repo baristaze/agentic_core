@@ -82,9 +82,11 @@ of](../../../../README.md).
   decided, and its answer before the next call.
 - **The history says where the loop is.** A run that finds a lost run's
   request with no response closes it and settles its hold in full. A
-  tool call a lost run left open is settled by what repeating it may do:
-  one that only reads, or is safe to repeat, runs again; one that is not
-  is never repeated, and its answer says its outcome is unknown.
+  tool call a lost run left open is settled, before anything else, by
+  what repeating it may do: one that only reads, or is safe to repeat,
+  runs again; one that is not is never repeated, and its answer says its
+  outcome is unknown. An accepted result is recorded in its answer, and
+  the loop ends on it from there.
 - **A stale run is refused.** Every step a run writes names its epoch,
   and each tool answer's id is the run's own, so a run that lost its
   claim stops at its next write (ADR 1009).
@@ -100,7 +102,10 @@ of](../../../../README.md).
   it left undelivered.
 - **A nudge is a step.** When a delivery agent's turn calls no tool, the
   engine's notice is written before the next request, so no request
-  holds two of the model's turns in a row.
+  holds two of the model's turns in a row. A reply cut by its output
+  bound is kept truncated, and the model is told so; a request sent again
+  unchanged counts toward the error streak.
+- **An interrupt stops the call it names,** and no other.
 - **Isolation is refused, never weakened.** A workspace that cannot meet
   the kind's spec ends the loop before its first model call.
 - **Emission never waits.** A part is handed to the carrier, and the

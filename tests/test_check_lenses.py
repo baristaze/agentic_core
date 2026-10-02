@@ -135,6 +135,7 @@ def lenses(tree: Tree, monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     monkeypatch.setattr(module, "SPEC", tree.root / "agentic_core_spec.md")
     monkeypatch.setattr(module, "LENSES", tree.root / "lenses")
     monkeypatch.setattr(module, "README", tree.root / "README.md")
+    monkeypatch.setattr(module, "RULES", tree.root / "checkers" / "src" / "agentic_check" / "rules")
     return module
 
 
@@ -231,11 +232,45 @@ def test_a_missing_check_line_fails(tree, lenses, capsys):
     assert "fields are" in out
 
 
-def test_a_check_line_other_than_review_fails(tree, lenses, capsys):
+def test_a_check_line_is_review_or_one_of_the_checkers_two_sentences(tree, lenses, capsys):
+    tree.edit("lenses/steps.md", "**Check.** review", "**Check.** a script decides it.")
+    code, out = run(lenses, capsys)
+    assert code == 1
+    assert "Check reads 'a script decides it.'" in out
+
+
+RULE = """from agentic_check.registry import rule
+
+
+@rule("STP-01", coverage="{coverage}", summary="One sentence.")
+def a_rule(project):
+    return []
+"""
+
+
+def test_a_check_line_that_names_the_checker_agrees_with_its_rule(tree, lenses, capsys):
     tree.edit("lenses/steps.md", "**Check.** review", "**Check.** `agentic-check` decides it.")
     code, out = run(lenses, capsys)
     assert code == 1
-    assert "Check reads '`agentic-check` decides it.'" in out
+    assert "STP-01 says agentic-check decides it, and no rule of that id is registered" in out
+    tree.write("checkers/src/agentic_check/rules/steps.py", RULE.format(coverage="partial"))
+    code, out = run(lenses, capsys)
+    assert code == 1
+    assert "STP-01's Check line says full, and its rule registers partial" in out
+    tree.write("checkers/src/agentic_check/rules/steps.py", RULE.format(coverage="full"))
+    assert lenses.main() == 0
+    capsys.readouterr()
+    partial = "**Check.** `agentic-check` decides that a response\npoints at its request; the rest is judged."
+    tree.edit("lenses/steps.md", "**Check.** `agentic-check` decides it.", partial)
+    tree.write("checkers/src/agentic_check/rules/steps.py", RULE.format(coverage="partial"))
+    assert lenses.main() == 0
+
+
+def test_a_registered_rule_needs_its_lens_to_name_the_checker(tree, lenses, capsys):
+    tree.write("checkers/src/agentic_check/rules/steps.py", RULE.format(coverage="full"))
+    code, out = run(lenses, capsys)
+    assert code == 1
+    assert "rule STP-01 is registered, and lens STP-01 has no Check line that names agentic-check" in out
 
 
 def test_fields_out_of_order_fail(tree, lenses, capsys):

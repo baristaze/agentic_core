@@ -57,6 +57,8 @@ nothing on the network.
 
 **Severity.** medium
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/root.py`
+
 **Check.** review
 
 ## STP-03 A request and its response are two steps
@@ -82,6 +84,9 @@ tool-use block instead of referencing it and carrying its input's hash.
 
 **Severity.** medium
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/steps/types/step.py` and
+`scaffold/acme_root/om/src/acme/om/steps/types/header.py`
+
 **Check.** review
 
 ## STP-04 The type answers questions, and content is one block model
@@ -105,6 +110,9 @@ class per provider, or a dictionary standing for a block; a provider's
 response object or raw token text passed out of the engine.
 
 **Severity.** medium
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/steps/types/step.py` and
+`scaffold/acme_root/om/src/acme/om/steps/types/content.py`
 
 **Check.** review
 
@@ -130,6 +138,9 @@ STP-11).
 
 **Severity.** medium
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/steps/storage/impl/postgres.py`
+and `scaffold/acme_root/om/src/acme/om/base.py`
+
 **Check.** review
 
 ## STP-06 A step holds placeholders; the bytes live in blob storage
@@ -154,6 +165,8 @@ different bytes.
 
 **Severity.** medium
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/steps/types/content.py`
+
 **Check.** review
 
 ## STP-07 A step is written once, and every grouping references it
@@ -174,7 +187,13 @@ steps.
 
 **Severity.** medium
 
-**Check.** review
+**Shape.**
+`scaffold/acme_root/om/migrations/sql/activity/202610020101_steps.up.sql` and
+`scaffold/acme_root/om/src/acme/om/steps/storage/__init__.py`
+
+**Check.** `agentic-check` decides that no SQLAlchemy statement or SQL text
+updates the steps table, and that none deletes from it outside a `purge`
+function; the rest is judged.
 
 ## STP-08 Five outcomes end a loop, and a park is none of them
 
@@ -196,6 +215,9 @@ that ends a loop `failed`; a `loop_ended` step written for a parked
 loop; a table of loops holding state the steps do not.
 
 **Severity.** medium
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/steps/types/header.py` and
+`scaffold/acme_root/om/src/acme/om/agent_sessions/limits.py`
 
 **Check.** review
 
@@ -224,6 +246,9 @@ named `Session`.
 
 **Severity.** medium
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_sessions/rules.py` and
+`scaffold/acme_root/om/src/acme/om/agent_sessions/types/agent_session.py`
+
 **Check.** review
 
 ## STP-10 Persist before you proceed
@@ -248,6 +273,8 @@ call made before its request is appended; a tool run from a response not
 yet persisted; an append fired without awaiting it.
 
 **Severity.** high
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/windows/impl/manager.py`
 
 **Check.** review
 
@@ -278,6 +305,9 @@ outcome recorded as a plain failure the model may simply retry.
 
 **Severity.** high
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/tools/impl/manager.py` and
+`scaffold/acme_root/om/src/acme/om/tools/types/tool.py`
+
 **Check.** review
 
 ## STP-12 A stale writer is refused, never trusted to stop
@@ -304,6 +334,9 @@ from a lower epoch.
 
 **Severity.** high
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/steps/storage/impl/postgres.py`
+and `scaffold/acme_root/infra/src/acme/infra/transports/records.py`
+
 **Check.** review
 
 ## STP-13 The history is the source of truth
@@ -329,6 +362,9 @@ compaction that deletes or rewrites the steps it summarizes.
 
 **Severity.** medium
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_sessions/rules.py` and
+`scaffold/acme_root/om/src/acme/om/steps/manager.py`
+
 **Check.** review
 
 ## STP-14 Each part lives in its role, and nothing crosses one
@@ -353,5 +389,8 @@ across two roles; a loop enqueued straight from the append instead of
 the session's outbox rows; an event per step.
 
 **Severity.** medium
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/storage/roles.py` and
+`scaffold/acme_root/om/src/acme/om/agent_sessions/impl/manager.py`
 
 **Check.** review
