@@ -45,7 +45,9 @@ def make_record(session_id: UUID, policy: StoragePolicy | None = None) -> Sessio
     )
 
 
-def make_key(session_id: UUID, version: int, wrapped_at_ago: timedelta = timedelta(0)) -> SessionKey:
+def make_key(
+    session_id: UUID, version: int, wrapped_at_ago: timedelta = timedelta(0)
+) -> SessionKey:
     now = utcnow()
     return SessionKey(
         id=new_id(),

@@ -36,9 +36,7 @@ class SessionKeysImpl(SessionKeysInterface):
             return await self._made(org_id, session_id, 1)
         return OpenKey(version=key.version, key=await self._unwrap(org_id, key))
 
-    async def opened(
-        self, org_id: UUID, session_id: UUID, versions: Set[int]
-    ) -> dict[int, bytes]:
+    async def opened(self, org_id: UUID, session_id: UUID, versions: Set[int]) -> dict[int, bytes]:
         if not versions:
             return {}
         ring = await self._storage.read_keys(org_id, session_id)
@@ -66,9 +64,7 @@ class SessionKeysImpl(SessionKeysInterface):
             key = (await self._made(org_id, session_id, 1)).key
         else:
             key = await self._unwrap(org_id, first)
-        return HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=HASH_KEY_INFO).derive(
-            key
-        )
+        return HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=HASH_KEY_INFO).derive(key)
 
     async def rewrap(self, org_id: UUID, before: datetime, limit: int) -> int:
         now = self._clock()
@@ -96,7 +92,9 @@ class SessionKeysImpl(SessionKeysInterface):
         that made the same version first wins, and its key is the one
         answered."""
         now = self._clock()
-        await self._storage.create_privacy(org_id, SessionPrivacy(id=new_id(), session_id=session_id, created_at=now))
+        await self._storage.create_privacy(
+            org_id, SessionPrivacy(id=new_id(), session_id=session_id, created_at=now)
+        )
         data = await self._service.generate(org_id, session_id, version)
         made = SessionKey(
             id=new_id(),

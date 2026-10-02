@@ -51,7 +51,9 @@ class PrivacyManagerImpl(PrivacyManagerInterface):
         ctx.require(Permission.READ)
         session = await self._sessions.get_session(ctx, session_id)
         stored = await self._storage.read_privacy(ctx.org_id, session_id)
-        return stored or SessionPrivacy(id=new_id(), session_id=session_id, created_at=session.created_at)
+        return stored or SessionPrivacy(
+            id=new_id(), session_id=session_id, created_at=session.created_at
+        )
 
     async def set_policy(
         self, ctx: TenantContext, session_id: UUID, policy: StoragePolicy

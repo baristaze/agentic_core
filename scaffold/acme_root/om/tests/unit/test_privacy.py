@@ -40,6 +40,15 @@ from acme.om.steps.types.content import Children, Content, ContentState
 from acme.om.steps.types.step import Step
 from acme.om.storage.impl.memory import StorageMemoryImpl
 
+SAID = (
+    "the weekly report is missing a total",
+    "reading the import log",
+    "the total is summed before the import ends",
+    "200 lines",
+    "plot.png",
+)
+"""What the loop the contract writes says, and no shape repeats."""
+
 MEMORY_ONLY = StoragePolicy(mode=StorageMode.MEMORY_ONLY, keep_shape=False)
 SHAPE_KEPT = StoragePolicy(mode=StorageMode.MEMORY_ONLY, keep_shape=True)
 
@@ -101,14 +110,8 @@ async def test_the_history_under_the_sealing_layer_holds_no_content_in_the_clear
     ] * len(said)
     assert all(step.children == Children() for step in stored)
     reader = in_the_clear(stored)
-    for text in (
-        "the gripper drops the part",
-        "reading the controller log",
-        "the release fires early",
-        "200 lines",
-        "plot.png",
-    ):
-        assert text not in reader
+    assert all(phrase in in_the_clear(loop) for phrase in SAID), "what the loop says"
+    assert not [phrase for phrase in SAID if phrase in reader]
     assert await storage.read_steps(org, session, 0, 10) == list(appended)
     ring = await privacy.read_keys(org, session)
     assert [key.version for key in ring.keys] == [1]
@@ -142,7 +145,11 @@ def test_a_sealed_step_opens_as_itself_alone() -> None:
     closed = sealed(org, step, 2, key)
     assert opened(org, closed, key) == step
     elsewhere = make_message(session).model_copy(update={"content": closed.content})
-    for org_id, other, k in ((new_id(), closed, key), (org, elsewhere, key), (org, closed, bytes(32))):
+    for org_id, other, k in (
+        (new_id(), closed, key),
+        (org, elsewhere, key),
+        (org, closed, bytes(32)),
+    ):
         with pytest.raises(ValueError, match="does not open"):
             opened(org_id, other, k)
 
@@ -208,7 +215,7 @@ async def test_a_revoked_key_leaves_every_steps_shape_and_none_of_its_content(
         else:
             assert step.content == Content()
     reader = in_the_clear(list(after))
-    assert "the gripper drops the part" not in reader and "plot.png" not in reader
+    assert not [phrase for phrase in SAID if phrase in reader]
 
     with pytest.raises(KeyRevoked):
         await managers.steps.append_inputs(ctx, session, [make_message(session)])

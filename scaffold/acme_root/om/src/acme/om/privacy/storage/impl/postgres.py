@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import CursorResult, Result, Select, select, update
+from sqlalchemy import CursorResult, Result, Select, Table, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 
@@ -108,7 +108,10 @@ class PrivacyStoragePostgresImpl(PgStorageBase, PrivacyStorageInterface):
                 await session.commit()
             except IntegrityError as error:
                 await session.rollback()
-                if violated_constraint(error) == SessionKeys.__table__.primary_key.name:
+                if (
+                    violated_constraint(error)
+                    == cast(Table, SessionKeys.__table__).primary_key.name
+                ):
                     raise TenantMismatch(f"session key {key.id} is not in {org_id}") from error
                 raise UniqueKeyTaken(f"session key {key.id} is taken") from error
             return stored

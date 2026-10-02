@@ -43,6 +43,7 @@ from acme.om.events.manager import audit_event
 from acme.om.media.types.file import File
 from acme.om.orchestrations.types.orchestration import OrchestrationKind, OrchestrationStatus
 from acme.om.outbox import OutboxRelayInterface
+from acme.om.privacy.types.session_privacy import SessionKey, SessionPrivacy
 from acme.om.steps.types.header import InputHeader
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.tenancy.rules import hash_token, permissions_of
@@ -424,6 +425,43 @@ async def test_a_deleted_tenant_is_never_marked_purged_while_its_history_remains
     assert kept is not None and kept.purged_at is None, "its history remains"
     marked = await tenancy.read_org(without_history)
     assert marked is not None and marked.purged_at is not None, "nothing was left"
+
+
+async def test_a_deleted_tenants_session_keys_go_with_it_and_never_hold_its_mark(
+    tmp_path: Path,
+) -> None:
+    """A deleted tenant's privacy records and the versions of its session
+    keys go with its other rows, and once they are gone they hold nothing
+    back: a tenant whose sessions kept no history is marked purged."""
+    container = build_container(tmp_path)
+    org_id, _ = await deleted_org(container, days_ago=40)
+    privacy = container.storage.get_privacy_storage()
+    sessions = [new_id() for _ in range(3)]
+    for session_id in sessions:
+        await privacy.create_privacy(
+            org_id,
+            SessionPrivacy(id=new_id(), session_id=session_id, created_at=utcnow()),
+        )
+        await privacy.add_key(
+            org_id,
+            SessionKey(
+                id=new_id(),
+                created_at=utcnow(),
+                session_id=session_id,
+                version=1,
+                wrapped=b"wrapped",
+                wrapping="memory:1",
+                wrapped_at=utcnow(),
+            ),
+        )
+    loop = build_loop(container)
+    for _ in range(3):
+        await loop._sweep_once()  # pyright: ignore[reportPrivateUsage]
+    assert await privacy.purge_tenant(org_id, 100) == 0, "nothing of it is left"
+    for session_id in sessions:
+        assert (await privacy.read_keys(org_id, session_id)).keys == ()
+    marked = await container.storage.get_tenancy_storage().read_org(org_id)
+    assert marked is not None and marked.purged_at is not None
 
 
 async def test_a_pass_reads_no_org_row_to_ask_whether_a_tenant_expired(

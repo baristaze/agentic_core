@@ -76,7 +76,9 @@ class StepStorageRoutedImpl(StepStorageInterface):
         the sealed route. A transient session keeps nothing at rest."""
         return await self._sealed.count_tenant(org_id, limit)
 
-    async def _route(self, org_id: UUID, session_id: UUID, *, writing: bool) -> StepStorageInterface:
+    async def _route(
+        self, org_id: UUID, session_id: UUID, *, writing: bool
+    ) -> StepStorageInterface:
         """The impl the session's policy names. A write fixes the default
         policy on a session with none; a read of one with none reads it as
         sealed and keeps nothing, since its policy may still be chosen."""
@@ -84,7 +86,8 @@ class StepStorageRoutedImpl(StepStorageInterface):
         if policy is None:
             if writing:
                 record = await self._policies.create_privacy(
-                    org_id, SessionPrivacy(id=new_id(), session_id=session_id, created_at=self._clock())
+                    org_id,
+                    SessionPrivacy(id=new_id(), session_id=session_id, created_at=self._clock()),
                 )
             else:
                 record = await self._policies.read_privacy(org_id, session_id)
