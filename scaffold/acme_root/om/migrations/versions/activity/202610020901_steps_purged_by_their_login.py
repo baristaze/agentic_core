@@ -1,14 +1,14 @@
 """The purge login's reach on the history and its cursor rows.
 
 Revision ID: 202610020901
-Revises: 202610020101
+Revises: 202610020401
 """
 
 from acme.om.storage.migrate import run_sql
 from acme.om.storage.roles import DatabaseRole
 
 revision = "202610020901"
-down_revision = "202610020101"
+down_revision = "202610020401"
 branch_labels = None
 depends_on = None
 
