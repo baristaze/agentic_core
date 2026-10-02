@@ -30,6 +30,10 @@ for "names a session in a few words".
   has no adapter for is added first with
   `agentic-scaffold-provider-adapter`.
 - `--max-output` stays below `--window`, the model's context window.
+  `--effort`, `--max-output`, and `--window` hold for the fill and each
+  fallback. What they leave out, a fill takes from a fill of the same
+  model in `DEFAULT_TABLE`; with none, from the provider's documented
+  limits for that model.
   `--schema` names the schema of an answer in a shape, and only then is
   the fill's output a schema.
 
@@ -40,16 +44,17 @@ The shape is the rows of `MAIN` and `SUMMARIZER`.
 | File | Change |
 |------|--------|
 | `om/src/<name>/om/models/types/fill.py` | `<ROLE>`, a `ModelRole` beside `MAIN` and `SUMMARIZER`, with a docstring naming its task |
-| `om/src/<name>/om/models/impl/resolver.py` | a `RoleFill` in `DEFAULT_TABLE`: the fill and its fallbacks |
-| `om/src/<name>/om/budgets/impl/pricing.py` | a row in `LIST_PRICES` for each model the row names that has none, and the table's next version |
+| `om/src/<name>/om/models/impl/resolver.py` | a `RoleFill` in `DEFAULT_TABLE`: the fill and its fallbacks; the table's docstring names the roles it holds |
+| `om/src/<name>/om/budgets/impl/pricing.py` (a model with no row) | its row in `LIST_PRICES`, and the table's next version |
 | `om/tests/unit/test_budgets.py` (a new row) | the model in `ADAPTER_MODELS`, and the table's version |
 | `om/tests/unit/test_models.py` | the role's cases |
 | `om/src/<name>/om/models/README.md` | the role, in the product's language, beside the agent's own turns and the summary |
 
 ## Procedure
 
-1. A call names the role, never a model. A call site renders the role's
-   request with `render_request` of the windows manager, `role=<ROLE>`:
+1. A call names the role, never a model. Its call site is the
+   product's code for the task, which this skill does not write: it
+   renders the role's request with `render_request` of the windows manager, `role=<ROLE>`:
    a side role reads a suffix of the history sized to its own fill. The
    session resolves the role among its roles (`resolve_fill_set` of the
    models manager), once, and keeps it.
@@ -60,11 +65,10 @@ The shape is the rows of `MAIN` and `SUMMARIZER`.
    helper in that file, or a helper of its own in their shape for a
    provider that has none. A row's `as_of` is the day it was read, and a
    new reading is a new version of the table.
-3. The tests hold: the role resolves from `DEFAULT_TABLE` to its fill
-   and its fallbacks, in order, priced as `EVERY_DEFAULT` prices them in
-   `om/tests/unit/test_models.py`; under an eligibility a fill misses,
-   only the fills that meet it remain; and the list table prices every
-   model the table names.
+3. The tests, in `om/tests/unit/test_models.py`, hold: the role
+   resolves from `DEFAULT_TABLE` to its fill and its fallbacks, in
+   order, priced as `EVERY_DEFAULT` prices them; and the list table,
+   `LIST_PRICES`, prices every model the table names.
 
 Then the gate, `make check`, as After writing in the conventions
 runs it.
