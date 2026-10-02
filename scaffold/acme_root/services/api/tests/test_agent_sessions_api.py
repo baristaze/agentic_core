@@ -1,8 +1,9 @@
 """Agent sessions over the live app, in memory: a session started on a kind,
 spoken to, steered, and read a page at a time; a retried send kept once;
-the routes each role may call; and the tenant boundary on every route that
-names a session. The loop is the session runner's and never runs here: a
-send lands the work that asks for it."""
+the routes each role may call; a history whose key is revoked, read as its
+shape; and the tenant boundary on every route that names a session. The
+loop is the session runner's and never runs here: a send lands the work
+that asks for it."""
 
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,12 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 from api_support import add_member, build_container, seed_request, sign_in_as
+from contracts.step_storage import (
+    make_request,
+    make_response,
+    make_tool_request,
+    make_tool_response,
+)
 
 from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
 from acme.om.attribution.types.authority import AuthorityMode
@@ -140,6 +147,42 @@ async def test_an_interrupt_names_a_tool_request_the_session_holds(
 
     assert (bare.status_code, named.status_code) == (422, 422)
     assert no_call.status_code == 404, "the step at 1 is a message, not a tool request"
+
+
+async def test_a_history_whose_key_is_revoked_reads_as_its_shape_alone(
+    client: httpx.AsyncClient, owner: dict[str, str], container: AppContainer
+) -> None:
+    """Revoking a session's key leaves each step's content absent: the history
+    still reads, every step in its place, saying nothing."""
+    session = await start(client, owner)
+    path = f"/v1/agent-sessions/{session['id']}"
+    said = await client.post(f"{path}/messages", headers=created(owner), json={"text": "go"})
+    assert said.status_code == 201, said.text
+    managers = container.managers
+    ctx = await managers.tenancy.authenticate(
+        seed_request(), owner["Authorization"].removeprefix("Bearer ")
+    )
+    sid, loop_id = UUID(session["id"]), UUID(said.json()["loop_id"])
+    request = make_request(sid, loop_id, (UUID(said.json()["id"]),))
+    response = make_response(sid, loop_id, request.id)
+    call = make_tool_request(sid, loop_id, response.id)
+    answer = make_tool_response(sid, loop_id, call.id)
+    epoch = await managers.steps.begin_run(ctx, sid)
+    await managers.steps.append_steps(ctx, sid, epoch, [request, response, call, answer])
+    await managers.privacy.revoke_key(ctx, sid)
+
+    read = await client.get(f"{path}/steps", headers=owner)
+
+    assert read.status_code == 200, read.text
+    items = read.json()["items"]
+    assert [step["type"] for step in items] == [
+        "message",
+        "model_request",
+        "model_response",
+        "tool_request",
+        "tool_response",
+    ]
+    assert {step["text"] for step in items} == {""}
 
 
 async def test_a_kind_the_product_does_not_run_starts_nothing(

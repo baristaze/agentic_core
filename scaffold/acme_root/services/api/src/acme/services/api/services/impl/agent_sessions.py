@@ -56,7 +56,10 @@ def session_view(session: AgentSession) -> AgentSessionView:
 
 def text_of(step: Step) -> str:
     """What a step says: a tool response's text parts, any other step's
-    text blocks."""
+    text blocks. A step whose content is gone, its session's key revoked,
+    says nothing: a hole in a known place, whose shape alone stays."""
+    if not step.content.is_plain():
+        return ""
     if step.type is StepType.TOOL_RESPONSE:
         parts = step.as_tool_response().parts
         return "\n".join(part.text for part in parts if isinstance(part, TextBlock))
