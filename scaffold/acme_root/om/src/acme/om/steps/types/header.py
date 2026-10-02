@@ -14,7 +14,7 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
-from acme.integrations.model_providers.types import Usage
+from acme.integrations.model_providers.types import StopReason, Usage
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.attribution.types.principal import AgentRef, Principal
 from acme.om.base import Platform
@@ -156,7 +156,10 @@ class ModelRequestHeader(Platform):
     session, so a cache regression is a query and a replay is checked by it.
     `speaker` is the principal behind the latest principal-authored input
     the model has received, this request's included: the person a delegated
-    call it leads to runs under. `spender` pays for the call."""
+    call it leads to runs under. `spender` pays for the call. `hold_id` is
+    the budget hold the call's worst case was reserved by before the
+    request was written, so a run that finds the request unanswered after
+    a crash settles that hold rather than leaving it held."""
 
     kind: Literal["model_request"] = "model_request"
     role: Stored = Field(min_length=1, max_length=MAX_NAME)
@@ -167,17 +170,22 @@ class ModelRequestHeader(Platform):
     left_edge: int = Field(ge=1)
     summary_id: UUID | None = None
     prompt_hash: Stored = Field(min_length=1, max_length=MAX_NAME)
+    hold_id: UUID | None = None
 
 
 class ModelResponseHeader(Platform):
     """A response saved once, whole, when its stream ends. `truncated` marks
-    a stream that broke, holding what arrived; `abandoned` marks the close a
-    new run writes for a request that never got its response."""
+    a stream that broke, or a reply cut by its output bound, holding what
+    arrived; `abandoned` marks the close of a request that never got its
+    response, written by the run that saw its call fail or by a new run
+    that found it open. `stop_reason` is why the provider stopped, when it
+    said."""
 
     kind: Literal["model_response"] = "model_response"
     truncated: bool = False
     abandoned: bool = False
     usage: Usage | None = None  # what the provider reported the call used
+    stop_reason: StopReason | None = None
 
 
 class ToolRequestHeader(Platform):

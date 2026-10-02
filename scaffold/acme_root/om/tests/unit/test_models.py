@@ -13,6 +13,7 @@ from contracts.step_storage import make_message
 from acme.infra.impl.local import InfraLocalImpl
 from acme.integrations.model_providers.types import Effort, ProviderName
 from acme.om.base import new_id
+from acme.om.budgets.impl.pricing import PricingTableImpl
 from acme.om.context import RequestContext, Role, TenantContext
 from acme.om.exceptions import (
     NotAuthorized,
@@ -25,7 +26,7 @@ from acme.om.exceptions import (
 )
 from acme.om.models import rules
 from acme.om.models.impl.manager import ModelsManagerImpl, ModelsOptions
-from acme.om.models.impl.prices import ModelPricesNullImpl
+from acme.om.models.impl.prices import ModelPricesFromPricingImpl, ModelPricesNullImpl
 from acme.om.models.impl.resolver import (
     DEFAULT_TABLE,
     ModelResolverTableImpl,
@@ -116,11 +117,18 @@ async def test_the_resolver_refuses_a_model_with_no_price_row() -> None:
         ModelResolverTableImpl(prices, ResolverOptions(table=(*TABLE, TABLE[0])))
 
 
-async def test_a_root_that_wired_no_prices_resolves_nothing(tmp_path: Path) -> None:
-    bare = build_managers(StorageMemoryImpl(), InfraLocalImpl(tmp_path))
+async def test_a_root_resolves_only_what_the_list_table_prices(tmp_path: Path) -> None:
+    rooted = build_managers(StorageMemoryImpl(), InfraLocalImpl(tmp_path))
     ctx = context(Role.MEMBER)
+    fills = await rooted.models.resolve_fill_set(ctx, new_id(), [MAIN, SUMMARIZER], Eligibility())
+    assert [r.role for r in fills.roles] == [MAIN, SUMMARIZER], "the default table, all priced"
+    unlisted_fill = SONNET.model_copy(update={"model": "a-model-the-list-does-not-hold"})
+    unlisted = ModelResolverTableImpl(
+        ModelPricesFromPricingImpl(PricingTableImpl()),
+        ResolverOptions(table=(RoleFill(role=MAIN, fill=unlisted_fill),)),
+    )
     with pytest.raises(UnpricedModel):
-        await bare.models.resolve_fill_set(ctx, new_id(), [MAIN], Eligibility())
+        await unlisted.resolve(ctx, [MAIN], Eligibility())
     resolver = ModelResolverTableImpl(ModelPricesNullImpl(), ResolverOptions())
     with pytest.raises(UnpricedModel):
         await resolver.resolve(ctx, [SUMMARIZER], Eligibility())
