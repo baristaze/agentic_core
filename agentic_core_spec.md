@@ -1472,7 +1472,6 @@ Decisions][g-adr]).
 |---|---|
 | ASY-13 (Infrastructure, Secrets) | When a credential cannot be brokered, a short-lived, scoped secret is injected into the one tool process that needs it, from a stripped environment, redacted everywhere, and audited by name. |
 | STO-32, STO-34 (Naming Entities; Database Roles) | Step content holds personal values in free text. It is sealed per session, and its erasure is revoking the session's key, never redaction in place. |
-| STO-10 (The Storage Layer, Storage Root) | The engine alone ships memory impls of its storage, with contract cases. A platform has the guideline's Postgres machinery, and this row does not travel to it. |
 
 ## The Repository
 
@@ -1517,40 +1516,29 @@ recovery.
 
 `agentic_core` adopts the guideline the way every copy of its scaffold
 does ([Upgrade a copy of the scaffold][g-adopting]). Its `scaffold`
-branch holds the guideline's scaffold, rendered under its name, and main
-merges it. The cut is main's next commit, with the ADR that records it,
-so the guideline's next release still arrives by a merge and a file main
-deleted stays deleted.
+branch holds the guideline's `scaffold/` folder unchanged, and main
+merges it, so the guideline's next release arrives by a merge.
 
-The cut keeps what an embedded engine needs to run and be tested in one
-process: the base chain and identifiers, the context, the exception
-shapes, idempotency, the storage interfaces with their memory impls and
-contract cases, the infrastructure interfaces with their local impls
-(cache, buckets, topics, secrets), and the breaker. It drops what makes a
-deployed system: the network layer and the gateway, workers, apps and
-clients, deployment and operations, cloud impls, the settings and the
-app container, the identity plane, and the work, outbox, and
-orchestration namespaces, which a platform's render brings back.
+Nothing is cut: the scaffold is taken whole, Postgres storage and the
+infrastructure impls included, and an adopter drops what it does not
+need.
 
 ### Being Adopted
 
 Each `agentic_core` release pins the guideline release it was built on.
-A platform's base is one render of both scaffolds, the guideline's and
-the engine's over it, at that pinned release, written by the engine's own
-base script with a trailer for each source. `agentic-upgrade-scaffold`,
-the guideline's `arch-upgrade-scaffold` taught the engine's layer, moves
-that base one engine release at a time, by a merge, so one move upgrades
-both foundations. A platform moves by `agentic-upgrade-scaffold`, never
-by `arch-upgrade-scaffold`, whose guideline-only render would delete the
-engine's layer.
+A platform's base is one render of the engine's scaffold, which holds
+the guideline's at that pinned release. A platform moves by
+`agentic-upgrade-scaffold`, which runs the guideline's
+`arch-upgrade-scaffold` from the source its base records, the engine, so
+one move upgrades both foundations.
 
 ## What This Spec Does Not Cover
 
 Wire formats and schemas; default values (thresholds, timeouts, guard
 sizes), which belong to each system; the prompts of any agent kind;
-persisted storage impls, which belong to platforms; the erasure of one
-person inside a shared session's content, beyond revoking its key; and a
-threat model, which each system writes for its own tools and data.
+the erasure of one person inside a shared session's content, beyond
+revoking its key; and a threat model, which each system writes for its
+own tools and data.
 
 ## Next: The Platform
 
@@ -1558,38 +1546,38 @@ threat model, which each system writes for its own tools and data.
 closed-loop, distributed platform: runners and hosts, placement,
 stations, evidence, trust across a customer's wall, and money.
 
-[g]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md
-[g-read]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#how-to-read-this
-[g-interfaces]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#interfaces
-[g-impls]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#multiple-impls-per-interface
-[g-decoration]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#composition-by-decoration
-[g-stages]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#stages
-[g-scopes]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#scopes
-[g-naming]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#naming-entities
-[g-immut]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#immutability
-[g-ids]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#identifiers
-[g-namespaces]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#namespaces-as-swimlanes
-[g-roles]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#database-roles
-[g-infra]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#infrastructure
-[g-cache]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#cache
-[g-secrets]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#secrets
-[g-gateway]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#the-gateway
-[g-calls]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#direction-of-calls
-[g-realtime]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#realtime-at-the-edge
-[g-lro]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#long-running-orchestrations
-[g-workq]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#the-work-queue
-[g-worker]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#shape-of-a-worker
-[g-twins]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#twins-for-external-services
-[g-refuses]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#what-a-process-refuses
-[g-ops]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#operations
-[g-handoff]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#correlation-across-a-handoff
-[g-exceptions]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#exceptions
-[g-adr]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#records-of-decisions
-[g-tests]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#tests
-[g-resilience]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/architecture.md#resilience-by-design
-[g-lenses]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/lenses/README.md
-[g-adopting]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/docs/adopting.md#upgrade-a-copy-of-the-scaffold
-[g-adr-0039]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/scaffold/acme_root/docs/adr/0039-long-running-work-is-a-record-a-guard-parks-and-a-bound-fails.md
+[g]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md
+[g-read]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#how-to-read-this
+[g-interfaces]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#interfaces
+[g-impls]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#multiple-impls-per-interface
+[g-decoration]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#composition-by-decoration
+[g-stages]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#stages
+[g-scopes]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#scopes
+[g-naming]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#naming-entities
+[g-immut]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#immutability
+[g-ids]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#identifiers
+[g-namespaces]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#namespaces-as-swimlanes
+[g-roles]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#database-roles
+[g-infra]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#infrastructure
+[g-cache]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#cache
+[g-secrets]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#secrets
+[g-gateway]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#the-gateway
+[g-calls]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#direction-of-calls
+[g-realtime]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#realtime-at-the-edge
+[g-lro]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#long-running-orchestrations
+[g-workq]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#the-work-queue
+[g-worker]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#shape-of-a-worker
+[g-twins]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#twins-for-external-services
+[g-refuses]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#what-a-process-refuses
+[g-ops]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#operations
+[g-handoff]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#correlation-across-a-handoff
+[g-exceptions]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#exceptions
+[g-adr]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#records-of-decisions
+[g-tests]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#tests
+[g-resilience]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#resilience-by-design
+[g-lenses]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/lenses/README.md
+[g-adopting]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/docs/adopting.md#upgrade-a-copy-of-the-scaffold
+[g-adr-0039]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/scaffold/acme_root/docs/adr/0039-long-running-work-is-a-record-a-guard-parks-and-a-bound-fails.md
 [d]: https://github.com/baristaze/distro_gentic/blob/main/distro_gentic_spec.md
 [d-money]: https://github.com/baristaze/distro_gentic/blob/main/distro_gentic_spec.md#money
 [d-evidence]: https://github.com/baristaze/distro_gentic/blob/main/distro_gentic_spec.md#evidence
