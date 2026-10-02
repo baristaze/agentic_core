@@ -33,6 +33,12 @@ MAX_NAME = 200
 """The longest tool name or tool-use id a block carries: a name a model
 writes is bounded before it is stored."""
 
+UNPARSED = "_unparsed"
+"""The one key of a tool use's input when what the model finished writing
+for it is not a JSON object: it holds that text as the model wrote it. No
+tool's schema has the key, so the call is answered as invalid input, which
+the model reads and corrects, and it never runs."""
+
 REPLACEMENT = "\ufffd"
 LONE_SURROGATE = re.compile(r"[\ud800-\udfff]")
 """A surrogate code point in a Python string is always a lone one: a pair is

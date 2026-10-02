@@ -33,6 +33,7 @@ from acme.integrations.model_providers.calls import (
     ToolUseDelta,
 )
 from acme.integrations.model_providers.content import (
+    UNPARSED,
     DocumentBlock,
     ImageBlock,
     TextBlock,
@@ -190,7 +191,25 @@ async def test_an_unknown_stop_reason_is_recorded_as_truncated() -> None:
 async def test_a_malformed_tool_use_is_dropped_and_never_runs(
     fragments: list[str], name: str
 ) -> None:
-    events = [
+    _, folded = await fold(sse(*tool_use_events(fragments, name, "max_tokens")))
+    reply = folded.reply()
+    assert reply.blocks == () and reply.truncated
+    assert reply.dropped and reply.dropped[0].what.startswith("tool use")
+
+
+@pytest.mark.parametrize("written", ['{"path": "/var/lo', "[1, 2]", "not json"])
+async def test_a_finished_tool_use_that_is_no_object_is_kept_as_written(written: str) -> None:
+    """The model stopped for its call, so it reads why the call never ran:
+    the input is kept under its one key, for the gate to refuse."""
+    _, folded = await fold(sse(*tool_use_events([written], "read_log", "tool_use")))
+    reply = folded.reply()
+    assert reply.blocks == (ToolUseBlock(id="toolu_9", name="read_log", input={UNPARSED: written}),)
+    assert reply.stop_reason is StopReason.TOOL_USE and not reply.truncated
+    assert reply.dropped == ()
+
+
+def tool_use_events(fragments: list[str], name: str, stop: str) -> list[dict[str, Any]]:
+    return [
         START,
         {
             "type": "content_block_start",
@@ -206,13 +225,9 @@ async def test_a_malformed_tool_use_is_dropped_and_never_runs(
             for f in fragments
         ),
         {"type": "content_block_stop", "index": 0},
-        ended("max_tokens"),
+        ended(stop),
         STOP,
     ]
-    _, folded = await fold(sse(*events))
-    reply = folded.reply()
-    assert reply.blocks == () and reply.truncated
-    assert reply.dropped and reply.dropped[0].what.startswith("tool use")
 
 
 async def test_an_error_inside_the_stream_fails_with_its_kind_and_what_arrived() -> None:
