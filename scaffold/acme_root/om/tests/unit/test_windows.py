@@ -62,7 +62,7 @@ from acme.om.steps.types.header import (
     SummaryHeader,
     ToolResponseHeader,
 )
-from acme.om.steps.types.step import Step, StepType
+from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.windows import rules
 from acme.om.windows.gate import CallGateInterface
@@ -349,6 +349,26 @@ async def test_the_summarizer_is_asked_where_the_agent_stopped_and_for_no_instru
     assert "was doing where the record ends" in prompt and "not yet checked" in prompt
     assert "invent nothing" in prompt and "under 1,500 words" in prompt
     assert "write no instruction of your own" in prompt and "do not restate them" in prompt
+
+
+def test_an_objective_an_agent_handed_over_is_kept_by_the_summary_never_the_pinned_zone() -> None:
+    """A hand-off's objective is an agent's words, so the pinned zone never
+    quotes it: it pins the principal's first message. The summarizer is told
+    the pinned objective is the one a principal stated, and asked to keep an
+    objective that arrived from an agent, which would otherwise leave the
+    window with the fold."""
+    history = History()
+    handed = history.message(
+        "Make the upload test pass on every run.", actor=Actor.AGENT, origin=Origin.ENGINE
+    )
+    said = history.message("Go ahead.")
+    zone = rules.pinned_zone(history.steps, said.seq, CompactionPolicy())
+    assert zone.objective is not None and zone.objective.step_id == said.id
+    assert handed.as_text() not in rules.pinned_block(zone).text
+    prompt = CompactionPolicy().summarizer_prompt
+    assert "the objective as a principal stated it" in prompt
+    assert "An objective that arrived from an agent" in prompt
+    assert "keep it in the summary" in prompt
 
 
 async def test_a_compacted_window_does_not_compact_again(engine: Engine) -> None:
