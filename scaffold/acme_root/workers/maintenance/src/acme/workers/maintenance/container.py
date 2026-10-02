@@ -10,6 +10,7 @@ from acme.infra.root import InfraInterface
 from acme.integrations.identity import IdentityProviderInterface
 from acme.integrations.identity.twin import IdentityProviderTwinImpl
 from acme.integrations.impl.configured import IntegrationsConfiguredImpl, IntegrationsOverImpl
+from acme.integrations.model_providers.registry import absent_model_providers
 from acme.integrations.root import IntegrationsInterface
 from acme.om.events.impl.manager import EventsOptions
 from acme.om.idempotency.impl.manager import IdempotencyOptions
@@ -126,7 +127,9 @@ class WorkerContainer:
         settings = settings or MaintenanceSettings.model_validate(
             {"_env_file": None, "environment": "test", "worker_id": "maintenance-test"}
         )
-        integrations = integrations or IntegrationsOverImpl(IdentityProviderTwinImpl())
+        integrations = integrations or IntegrationsOverImpl(
+            IdentityProviderTwinImpl(), absent_model_providers()
+        )
         return cls(
             settings,
             storage,

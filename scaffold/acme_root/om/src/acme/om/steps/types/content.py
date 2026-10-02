@@ -1,82 +1,28 @@
 """What a step says: one provider-neutral block model, and the children that
 belong to a step without being its main content.
 
-A block is one of text, image, document, thinking, tool use, and tool
-result, told apart by its `kind`. A provider adapter builds blocks from
-what a model returns, so every block is validated as it is built: a block
-of an unknown kind, a field of the wrong type, or a field no block has is
-refused there, and nothing past it reads a loose dictionary. An image or a
-document is a reference to an attachment, never its bytes: the step holds
-the attachment's placeholder among its children, and the bytes live in
-blob storage."""
+The blocks are the provider boundary's own (ADR 1005): text, image,
+document, thinking, tool use, and tool result, told apart by their `kind`
+and validated as they are built, so nothing past an adapter reads a loose
+dictionary. There is no second content type. An image or a document is a
+reference to an attachment, never its bytes: the step holds the
+attachment's placeholder among its children, and the bytes live in blob
+storage."""
 
-from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import Field
 
-from acme.om.base import FrozenMapping, Platform
-
-MAX_NAME = 200
-"""The longest tool name or tool-use id a block carries: a name a model
-writes is bounded before it is stored."""
-
-
-class TextBlock(Platform):
-    kind: Literal["text"] = "text"
-    text: str
-
-
-class ImageBlock(Platform):
-    """An image, by the id of its attachment among the step's children."""
-
-    kind: Literal["image"] = "image"
-    attachment_id: UUID
-
-
-class DocumentBlock(Platform):
-    """A document, by the id of its attachment among the step's children."""
-
-    kind: Literal["document"] = "document"
-    attachment_id: UUID
-
-
-class ThinkingBlock(Platform):
-    """The model's thinking: a child of the response that thought it, never
-    its main content."""
-
-    kind: Literal["thinking"] = "thinking"
-    text: str
-
-
-class ToolUseBlock(Platform):
-    """A model's call of a tool: the id the model gave the call, the tool's
-    name, and its input. A `tool_request` step references this block by the
-    response that holds it and this id; it never copies it."""
-
-    kind: Literal["tool_use"] = "tool_use"
-    id: str = Field(min_length=1, max_length=MAX_NAME)
-    name: str = Field(min_length=1, max_length=MAX_NAME)
-    input: FrozenMapping = Field(default_factory=dict, validate_default=True)
-
-
-ResultPart = Annotated[TextBlock | ImageBlock | DocumentBlock, Field(discriminator="kind")]
-"""What a tool's result may hold."""
-
-
-class ToolResultBlock(Platform):
-    """What a tool returned for one tool use, or the failure it met."""
-
-    kind: Literal["tool_result"] = "tool_result"
-    tool_use_id: str = Field(min_length=1, max_length=MAX_NAME)
-    parts: tuple[ResultPart, ...] = ()
-    is_error: bool = False
-
-
-Block = Annotated[
-    TextBlock | ImageBlock | DocumentBlock | ThinkingBlock | ToolUseBlock | ToolResultBlock,
-    Field(discriminator="kind"),
-]
+from acme.integrations.model_providers.content import MAX_NAME as MAX_NAME
+from acme.integrations.model_providers.content import Block as Block
+from acme.integrations.model_providers.content import DocumentBlock as DocumentBlock
+from acme.integrations.model_providers.content import ImageBlock as ImageBlock
+from acme.integrations.model_providers.content import ResultPart as ResultPart
+from acme.integrations.model_providers.content import TextBlock as TextBlock
+from acme.integrations.model_providers.content import ThinkingBlock as ThinkingBlock
+from acme.integrations.model_providers.content import ToolResultBlock as ToolResultBlock
+from acme.integrations.model_providers.content import ToolUseBlock as ToolUseBlock
+from acme.om.base import Platform
 
 
 class Content(Platform):
