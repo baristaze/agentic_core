@@ -62,10 +62,20 @@ class StepsManagerInterface(ABC):
 
     @abstractmethod
     async def purge_tenant(self, ctx: TenantContext) -> int:
-        """The sweep, for one tenant past its own retention. No serving login
-        may delete a step (ADR 1002), so it deletes nothing: it answers how
-        many steps and cursor rows the tenant still keeps, fewer than a
-        whole batch, so the sweep never marks the tenant purged while its
-        history remains and does not call again in the same pass. Any other
-        tenant returns 0 and reads nothing."""
+        """The sweep, for one tenant past its own retention: its steps, a
+        batch at most a call, then its cursor rows, under the purge login,
+        since no serving login may delete a step (ADR 1002, ADR 1010). Any
+        other tenant returns 0 and reads nothing."""
+        ...
+
+    @abstractmethod
+    async def purge_histories(
+        self, sessions: Sequence[tuple[UUID, UUID]]
+    ) -> list[tuple[UUID, UUID]]:
+        """Platform-internal: the sweep's, for no principal: for each
+        session, named with its tenant, a batch of its steps at most, then
+        its cursor row once none is left, under the purge login. It holds no retention
+        of its own: only the agent sessions' purge calls it, with sessions it
+        has claimed past theirs (`AgentSessionsManagerInterface.purge_across_tenants`).
+        Returns the sessions whose history is gone."""
         ...

@@ -96,6 +96,7 @@ LOCAL_DEFAULT_SERVES_THE_CLOUD = {
     "sign_in_delay_retention_hours": "one retention everywhere",
     "media_retention_days": "one retention everywhere",
     "media_pending_expiry_hours": "one retention everywhere",
+    "agent_session_retention_days": "one retention everywhere",
     "event_retention_days": "one retention everywhere, set in code (ADR 0040)",
 }
 
@@ -181,6 +182,7 @@ BOUNDED = (
     "sign_in_delay_retention_hours",
     "media_retention_days",
     "media_pending_expiry_hours",
+    "agent_session_retention_days",
 )
 
 

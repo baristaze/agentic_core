@@ -25,7 +25,7 @@ from acme.om.events.storage.tables.events import Events
 from acme.om.idempotency.storage.impl.postgres import IdempotencyStoragePostgresImpl
 from acme.om.idempotency.storage.tables.idempotency_records import IdempotencyRecords
 from acme.om.storage.impl.pg_base import LoginSessions, set_scope
-from acme.om.storage.logins import MIGRATION_LOGIN, RUNTIME_LOGIN, SYSTEM_LOGIN
+from acme.om.storage.logins import MIGRATION_LOGIN, PURGE_LOGIN, RUNTIME_LOGIN, SYSTEM_LOGIN
 from acme.om.storage.roles import DatabaseRole, role_for
 from acme.om.storage.scopes import (
     POLICY_NAME,
@@ -59,9 +59,10 @@ async def test_no_login_is_a_superuser_or_bypasses_rls(
     """The test that makes the fence real and not a claim. A superuser walks
     past every policy, and so does a role with BYPASSRLS; on either, every
     assertion below would pass against a database that fences nothing. Each
-    of the three logins is asked on a live connection of its own."""
+    of the four logins is asked on a live connection of its own."""
     seen: set[str] = set()
-    for factories in (pg_sessions, pg_sessions.system):
+    assert pg_sessions.purge is not None
+    for factories in (pg_sessions, pg_sessions.system, pg_sessions.purge):
         for role in DatabaseRole:
             async with factories[role]() as session:
                 found = (await session.execute(WHO)).one()
@@ -73,10 +74,10 @@ async def test_no_login_is_a_superuser_or_bypasses_rls(
         seen.add(found.rolname)
         assert not found.rolsuper, f"{found.rolname} is a superuser"
         assert not found.rolbypassrls, f"{found.rolname} carries BYPASSRLS"
-    assert seen == {RUNTIME_LOGIN, SYSTEM_LOGIN, MIGRATION_LOGIN}
+    assert seen == {RUNTIME_LOGIN, SYSTEM_LOGIN, PURGE_LOGIN, MIGRATION_LOGIN}
 
 
-async def test_the_runtime_and_the_system_logins_own_nothing(pg_sessions: Sessions) -> None:
+async def test_the_runtime_system_and_purge_logins_own_nothing(pg_sessions: Sessions) -> None:
     """Only an owner can drop a policy, turn FORCE off, or alter a table, so a
     login that owns nothing cannot, whatever statement reaches it. The role
     schemas and every table in them are the migration login's."""
@@ -86,11 +87,12 @@ async def test_the_runtime_and_the_system_logins_own_nothing(pg_sessions: Sessio
                 text(
                     "SELECT pg_get_userbyid(c.relowner) AS owner, n.nspname, c.relname"
                     " FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace"
-                    " WHERE pg_get_userbyid(c.relowner) IN (:runtime, :system)"
+                    " WHERE pg_get_userbyid(c.relowner) IN (:runtime, :system, :purge)"
                     " UNION ALL SELECT pg_get_userbyid(nspowner), nspname, ''"
-                    " FROM pg_namespace WHERE pg_get_userbyid(nspowner) IN (:runtime, :system)"
+                    " FROM pg_namespace"
+                    " WHERE pg_get_userbyid(nspowner) IN (:runtime, :system, :purge)"
                 ),
-                {"runtime": RUNTIME_LOGIN, "system": SYSTEM_LOGIN},
+                {"runtime": RUNTIME_LOGIN, "system": SYSTEM_LOGIN, "purge": PURGE_LOGIN},
             )
         ).all()
         assert owned == [], f"owned by a serving login: {owned}"

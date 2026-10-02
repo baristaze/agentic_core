@@ -35,7 +35,15 @@ from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from contracts.racing import race
 
 CROSS_TENANT_CASES: frozenset[str] = frozenset(
-    {"append_inputs", "append_steps", "begin_run", "count_tenant", "read_cursor", "read_steps"}
+    {
+        "append_inputs",
+        "append_steps",
+        "begin_run",
+        "purge_history",
+        "purge_tenant",
+        "read_cursor",
+        "read_steps",
+    }
 )
 """Every method of `StepStorageInterface` that takes a tenant has a case in
 this module that presents another tenant's. `test_storage_exceptions.py`
@@ -403,20 +411,46 @@ class StepStorageContract:
         assert [s.model_copy(update={"seq": 0}) for s in appended] == [built, request, response]
         assert await storage.read_steps(org, session, 0, 10) == list(appended)
 
-    async def test_count_tenant_counts_the_history_and_the_cursors_up_to_the_limit(
+    async def test_purge_history_takes_one_sessions_steps_a_batch_at_a_time_then_its_cursor(
         self, storage: StepStorageInterface
     ) -> None:
-        """What the sweep reads of a tenant: its steps and its cursor rows,
-        counted no further than asked, and nothing of another tenant."""
+        """The purge of one session's history: a batch of its steps at most
+        a call, then its cursor row once none is left, and fewer than the
+        batch once the history is gone. Its tenant's other sessions, and
+        another tenant's session under the same id, keep theirs."""
+        org, other, session, beside = new_id(), new_id(), new_id(), new_id()
+        await storage.append_inputs(org, session, [make_message(session) for _ in range(3)])
+        (kept,) = await storage.append_inputs(org, beside, [make_message(beside)])
+        (theirs,) = await storage.append_inputs(other, session, [make_message(session)])
+        assert await storage.purge_history(org, session, 2) == 2
+        assert await storage.read_cursor(org, session) == StepCursor(head=3, epoch=0)
+        assert await storage.purge_history(org, session, 2) == 2, "the last step and the cursor"
+        assert await storage.purge_history(org, session, 2) == 0
+        assert await storage.read_steps(org, session, 0, 10) == []
+        assert await storage.read_cursor(org, session) == StepCursor()
+        assert await storage.read_steps(org, beside, 0, 10) == [kept]
+        assert await storage.read_steps(other, session, 0, 10) == [theirs]
+        assert await storage.read_cursor(other, session) == StepCursor(head=1, epoch=0)
+
+    async def test_purge_tenant_takes_the_tenants_steps_then_its_cursors(
+        self, storage: StepStorageInterface
+    ) -> None:
+        """The purge of a tenant's history: its steps a batch at most a call,
+        then its cursor rows once no step is left, a session with a cursor
+        and no step among them, and nothing of another tenant."""
         org, other, first, second = new_id(), new_id(), new_id(), new_id()
-        assert await storage.count_tenant(org, 10) == 0
-        await storage.append_inputs(org, first, [make_message(first), make_message(first)])
+        await storage.append_inputs(org, first, [make_message(first) for _ in range(3)])
         await storage.begin_run(org, second)
-        assert await storage.count_tenant(org, 10) == 4
-        assert await storage.count_tenant(org, 3) == 3
-        assert await storage.count_tenant(other, 10) == 0
-        await storage.append_inputs(other, first, [make_message(first)])
-        assert await storage.count_tenant(org, 10) == 4
+        (theirs,) = await storage.append_inputs(other, first, [make_message(first)])
+        assert await storage.purge_tenant(org, 2) == 2
+        assert await storage.purge_tenant(org, 2) == 2, "the last step and one cursor"
+        assert await storage.purge_tenant(org, 2) == 1
+        assert await storage.purge_tenant(org, 2) == 0
+        assert await storage.read_steps(org, first, 0, 10) == []
+        assert await storage.read_cursor(org, first) == StepCursor()
+        assert await storage.read_cursor(org, second) == StepCursor()
+        assert await storage.read_steps(other, first, 0, 10) == [theirs]
+        assert await storage.read_cursor(other, first) == StepCursor(head=1, epoch=0)
 
     async def test_many_appends_never_share_or_skip_a_seq(
         self, storage: StepStorageInterface

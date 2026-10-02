@@ -48,7 +48,7 @@ make test-integration  # the storage contracts over Postgres
 
 `scripts/dev.sh` runs the API, the worker, and the portal on the host
 with hot reload. A variable exported in the shell wins over `.env`, so
-a second checkout points the four `ACME_DATABASE_*` URLs at a
+a second checkout points the five `ACME_DATABASE_*` URLs at a
 database of its own. [deployment/local/README.md](deployment/local/README.md)
 works on one service at a time.
 

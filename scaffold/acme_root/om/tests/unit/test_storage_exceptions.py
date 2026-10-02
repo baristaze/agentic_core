@@ -92,6 +92,9 @@ STORAGE_EXCEPTIONS: frozenset[tuple[str, str]] = frozenset(
         ("IdempotencyStorageInterface", "purge_records"),
         ("MediaStorageInterface", "read_purgeable"),
         ("MediaStorageInterface", "purge_files_across_tenants"),
+        # The sessions marked deleted past their retention, each named with
+        # its tenant: the claim and the deletes that follow run under it.
+        ("AgentSessionStorageInterface", "read_purgeable"),
         ("EventStorageInterface", "trim"),
         ("OrchestrationsStorageInterface", "purge_settled"),
         # The sweep's gauges: one read each across every tenant's rows.
@@ -150,6 +153,10 @@ MANAGER_EXCEPTIONS: frozenset[tuple[str, str]] = frozenset(
         ("IdempotencyManagerInterface", "purge_across_tenants"),
         ("EventsManagerInterface", "purge_across_tenants"),
         ("OrchestrationsManagerInterface", "purge_across_tenants"),
+        ("AgentSessionsManagerInterface", "purge_across_tenants"),
+        # And the history of each session that purge has claimed, named with
+        # its tenant: bookkeeping of the same step, for no principal.
+        ("StepsManagerInterface", "purge_histories"),
         # The sweep's gauges of the queue, read across tenants like the purge.
         ("WorkManagerInterface", "oldest_ready_age"),
         ("WorkManagerInterface", "failed_within"),
