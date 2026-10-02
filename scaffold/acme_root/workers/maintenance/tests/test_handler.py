@@ -34,7 +34,10 @@ def test_every_kind_is_asked_for_by_a_permission_as_wide_as_its_handler(tmp_path
     authorization at enqueue covers the whole run."""
     loop = build_loop(build_container(tmp_path))
     handlers = loop._handlers  # pyright: ignore[reportPrivateUsage] (the worker's own table)
-    assert set(handlers) == set(WorkKind) == set(WORK_ENQUEUE_PERMISSIONS)
+    # The loop's work is the session runner's, whose own suite holds its
+    # handler to the same rule.
+    assert set(handlers) == set(WorkKind) - {WorkKind.LOOP}
+    assert set(WorkKind) == set(WORK_ENQUEUE_PERMISSIONS)
     for kind, handler in handlers.items():
         asking = WORK_ENQUEUE_PERMISSIONS[kind]
         requires = type(handler).REQUIRES

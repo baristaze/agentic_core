@@ -23,6 +23,7 @@ Terraform. Nothing is clicked into place in either.
 |-------|-------------------|--------------------------|
 | The API | the `api` container, or a host process (`scripts/dev.sh`) | a container service behind a load balancer |
 | The maintenance worker | the `maintenance` container, or a host process | a container service that rolls one task at a time, since it holds leases |
+| The session runner | a host process (`scripts/dev.sh`) | none yet: it comes with the first environment that runs a session's loop ([ADR 1011](../docs/adr/1011-a-sessions-loop-runs-in-a-worker-of-its-own.md)) |
 | The portal | nginx in a container, or Vite on the host; each forwards `/v1` to the API | a private bucket behind CloudFront, which serves `/v1` from the load balancer too |
 | The company site | Vite on the host | the portal's module, called with the site's parameters |
 | Postgres | one container, one schema per database role | a managed instance |
