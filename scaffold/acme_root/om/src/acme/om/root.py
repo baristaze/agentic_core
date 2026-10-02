@@ -75,6 +75,7 @@ from acme.om.tenancy.impl.sign_in import TenancySignInManagerImpl
 from acme.om.tenancy.storage import TenancyStorageInterface
 from acme.om.tools import ToolsManagerInterface
 from acme.om.tools.impl.manager import ToolsManagerImpl, ToolsOptions
+from acme.om.tools.seal import RecordSealInterface
 from acme.om.tools.tool import ToolInterface
 from acme.om.windows import WindowsManagerInterface
 from acme.om.windows.gate import CallGateInterface
@@ -230,6 +231,7 @@ def build_managers(
     call_gate: CallGateInterface | None = None,
     prompt_hash: PromptHashInterface | None = None,
     artifact_seal: ArtifactSealInterface | None = None,
+    record_seal: RecordSealInterface | None = None,
     compaction_policy: CompactionPolicy | None = None,
     agents_options: AgentsOptions | None = None,
     attribution_options: AttributionOptions | None = None,
@@ -264,7 +266,8 @@ def build_managers(
     the gate over the ledger; outside `environment` `local`, a quiet null
     gate or ledger is refused at boot (`UnsafeConfiguration`).
     `artifact_seal` is what seals an artifact's text under its session's
-    key; None wires the privacy namespace's seal over the session keys.
+    key, and `record_seal` what seals a command's output in its transport's
+    record; None wires the privacy namespace's seal over the session keys.
     `compaction_policy` None keeps the default policy.
 
     Three are the adopter's for its agents: `agent_kinds`, every version of
@@ -445,9 +448,7 @@ def build_managers(
         infra.get_transport(),
         tools_options or ToolsOptions(),
         keyed_hash=privacy.keyed_hash,
-        record_seals=lambda org_id, session_id: RecordSealKeysImpl(
-            session_keys, storage.get_privacy_storage(), org_id, session_id
-        ),
+        record_seal=record_seal or RecordSealKeysImpl(session_keys, storage.get_privacy_storage()),
         attribution=attribution,
     )
     idempotency = IdempotencyManagerImpl(

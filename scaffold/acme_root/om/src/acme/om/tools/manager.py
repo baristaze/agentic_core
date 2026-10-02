@@ -19,7 +19,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from acme.infra.transports import OutputSink, RecordSealInterface
+from acme.infra.transports import OutputSink
 from acme.infra.workspaces import IsolationSpec, Workspace
 from acme.om.context import TenantContext
 from acme.om.steps.types.step import Step
@@ -27,14 +27,9 @@ from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.types.call import Gate, JobHandle
 from acme.om.tools.types.policy import PolicyLayer, ToolPolicy
 
-
 KeyedHash = Callable[[TenantContext, UUID, bytes], Awaitable[str]]
 """A hash of a value keyed by its session: the privacy namespace's, which the
 root wires."""
-
-RecordSeals = Callable[[UUID, UUID], RecordSealInterface]
-"""The seal of one session's commands in their transport's records, by the
-tenant and the session: the privacy namespace's, which the root wires."""
 
 
 class ToolsManagerInterface(ABC):

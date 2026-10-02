@@ -5,7 +5,7 @@ on this host reads them after a crash, and two processes on one host fence
 each other through the same file.
 
 A record keeps the outcome in the clear, what recovery decides by, and the
-output sealed by the seal its command came with (`RecordSealInterface`).
+output sealed by the seal its command came with (`RecordSeal`).
 The twin keeps its records in memory, in the same form."""
 
 import base64
@@ -18,7 +18,7 @@ from pathlib import Path
 from uuid import UUID
 
 from acme.infra.base import InfraModel
-from acme.infra.transports import CommandResult, RecordSealInterface, StaleCommand
+from acme.infra.transports import CommandResult, RecordSeal, StaleCommand
 
 log = logging.getLogger(__name__)
 
@@ -36,13 +36,13 @@ class CommandRecord(InfraModel):
     output: str | None = None
 
 
-async def sealed_record(result: CommandResult, seal: RecordSealInterface) -> CommandRecord:
+async def sealed_record(result: CommandResult, seal: RecordSeal) -> CommandRecord:
     """The record of `result`, its output sealed. A seal that fails costs the
     record its output, never the result of a command that ran: recovery
     then reads how the command ended without what it printed."""
     plain = json.dumps({"stdout": result.stdout, "stderr": result.stderr}).encode()
     try:
-        blob = await seal.seal(result.key, plain)
+        blob = await seal.seal(plain)
     except Exception:
         log.warning("command %s is recorded without its output", result.key, exc_info=True)
         blob = None
@@ -56,7 +56,7 @@ async def sealed_record(result: CommandResult, seal: RecordSealInterface) -> Com
     )
 
 
-async def opened_result(record: CommandRecord, seal: RecordSealInterface) -> CommandResult:
+async def opened_result(record: CommandRecord, seal: RecordSeal) -> CommandResult:
     """How the command ended, its output opened by `seal`; an empty output
     when the record kept none, or the key it was sealed under is gone."""
     result = CommandResult(
@@ -68,7 +68,7 @@ async def opened_result(record: CommandRecord, seal: RecordSealInterface) -> Com
     )
     if record.output is None:
         return result
-    plain = await seal.open(record.key, base64.urlsafe_b64decode(record.output.encode()))
+    plain = await seal.open(base64.urlsafe_b64decode(record.output.encode()))
     if plain is None:
         return result
     output = json.loads(plain)

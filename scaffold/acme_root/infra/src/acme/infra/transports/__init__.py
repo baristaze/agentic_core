@@ -14,8 +14,8 @@ The record keeps what recovery decides by in the clear: the exit, whether
 the command timed out or was cut, and the secrets it used, by name. Its
 output is content, so it is kept sealed under the key of the session the
 command runs for, by the seal the engine hands over with the command
-(`RecordSealInterface`); the transport never holds that key. A workspace's
-records go when its session is purged (`purge_records`).
+(`RecordSeal`); the transport never holds that key. A workspace's records
+go when its session is purged (`purge_records`).
 
 A secret reaches a command by name, never by value (ADR 1003). A brokered
 one is attached outside the workspace by the credential broker, per
@@ -29,6 +29,7 @@ the command ends; the result names each secret it used, never a value."""
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from pathlib import PurePosixPath
@@ -49,7 +50,7 @@ __all__ = [
     "FileEntry",
     "OutputSink",
     "PathOutsideWorkspace",
-    "RecordSealInterface",
+    "RecordSeal",
     "SecretUse",
     "SecretVia",
     "StaleCommand",
@@ -149,6 +150,22 @@ OutputSink = Callable[[str, str], Awaitable[None]]
 """Called with the stream (`stdout` or `stderr`) and redacted text as it
 arrives."""
 
+Sealing = Callable[[bytes], Awaitable[bytes | None]]
+
+
+@dataclass(frozen=True)
+class RecordSeal:
+    """How one command's output is sealed in its record, and opened again,
+    under the key of the session the command runs for: handed over by the
+    engine that sends the command, bound to it, so the transport never
+    holds the key. `seal` answers None when the session keeps no content at
+    rest, memory-only or revoked, and the record keeps the outcome without
+    its output. `open` answers None once the key the output was sealed
+    under is destroyed, and refuses a blob sealed for anything else."""
+
+    seal: Sealing
+    open: Sealing
+
 
 def relative_path(path: str) -> PurePosixPath:
     """A path inside a workspace, refused when it is absolute or climbs out."""
@@ -169,29 +186,6 @@ def require_mode(workspace: Workspace, mode: IsolationMode, transport: str) -> N
         )
 
 
-class RecordSealInterface(ABC):
-    """The seal of a command's output in its transport's record, made for one
-    session by the engine that sends the session's commands. The output is
-    content, so it is kept sealed under the session's key, which the
-    transport never holds."""
-
-    @abstractmethod
-    async def seal(self, key: UUID, data: bytes) -> bytes | None:
-        """`data` sealed for the command under `key` and bound to it, so a
-        blob copied to another command opens nothing. None when the session
-        keeps no content at rest: it is memory-only, or its key is revoked.
-        The record then keeps the outcome without its output."""
-        ...
-
-    @abstractmethod
-    async def open(self, key: UUID, sealed: bytes) -> bytes | None:
-        """The plain bytes of a blob `seal` made for the command under `key`;
-        None once the version of the key it was sealed under is destroyed,
-        and the output with it. A blob no seal made for this command is
-        refused, never read as anything."""
-        ...
-
-
 class TransportInterface(ABC):
     """Every operation refuses a workspace of a mode this transport does not
     serve, the absent workspace of a session that has none among them, with
@@ -204,7 +198,7 @@ class TransportInterface(ABC):
         command: CommandSpec,
         on_output: OutputSink | None = None,
         *,
-        seal: RecordSealInterface,
+        seal: RecordSeal,
     ) -> CommandResult:
         """Runs the command, streaming its redacted output to `on_output`,
         and records how it ended under its key, its output sealed by `seal`.
@@ -216,7 +210,7 @@ class TransportInterface(ABC):
 
     @abstractmethod
     async def outcome(
-        self, workspace: Workspace, key: UUID, epoch: int, *, seal: RecordSealInterface
+        self, workspace: Workspace, key: UUID, epoch: int, *, seal: RecordSeal
     ) -> CommandResult | None:
         """How the command under `key` ended, as recorded, its output opened
         by `seal`: empty when the record kept none, or the key it was sealed

@@ -21,7 +21,7 @@ from acme.infra.transports import (
     CommandSpec,
     FileEntry,
     OutputSink,
-    RecordSealInterface,
+    RecordSeal,
     SecretUse,
     TransportInterface,
 )
@@ -50,7 +50,7 @@ class ToolRuntime:
         transport: TransportInterface,
         workspace: Workspace,
         *,
-        seal: RecordSealInterface,
+        seal: RecordSeal,
         key: UUID,
         epoch: int,
         deadline: datetime,

@@ -14,7 +14,7 @@ from acme.infra.transports import (
     CredentialBrokerInterface,
     FileEntry,
     OutputSink,
-    RecordSealInterface,
+    RecordSeal,
     TransportInterface,
     relative_path,
     require_mode,
@@ -104,7 +104,7 @@ class TransportContainerImpl(TransportInterface):
         command: CommandSpec,
         on_output: OutputSink | None = None,
         *,
-        seal: RecordSealInterface,
+        seal: RecordSeal,
     ) -> CommandResult:
         name = self._container(workspace)
         await asyncio.to_thread(self._book.admit, workspace.id, command.epoch)
@@ -149,7 +149,7 @@ class TransportContainerImpl(TransportInterface):
         return result
 
     async def outcome(
-        self, workspace: Workspace, key: UUID, epoch: int, *, seal: RecordSealInterface
+        self, workspace: Workspace, key: UUID, epoch: int, *, seal: RecordSeal
     ) -> CommandResult | None:
         self._container(workspace)
         await asyncio.to_thread(self._book.admit, workspace.id, epoch)

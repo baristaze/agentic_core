@@ -12,7 +12,7 @@ from acme.infra.transports import (
     FileEntry,
     OutputSink,
     PathOutsideWorkspace,
-    RecordSealInterface,
+    RecordSeal,
     TransportInterface,
     relative_path,
     require_mode,
@@ -53,7 +53,7 @@ class TransportLocalImpl(TransportInterface):
         command: CommandSpec,
         on_output: OutputSink | None = None,
         *,
-        seal: RecordSealInterface,
+        seal: RecordSeal,
     ) -> CommandResult:
         root = self._root(workspace)
         await asyncio.to_thread(self._book.admit, workspace.id, command.epoch)
@@ -104,7 +104,7 @@ class TransportLocalImpl(TransportInterface):
         return result
 
     async def outcome(
-        self, workspace: Workspace, key: UUID, epoch: int, *, seal: RecordSealInterface
+        self, workspace: Workspace, key: UUID, epoch: int, *, seal: RecordSeal
     ) -> CommandResult | None:
         self._root(workspace)
         await asyncio.to_thread(self._book.admit, workspace.id, epoch)

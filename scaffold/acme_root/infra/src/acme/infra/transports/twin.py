@@ -17,7 +17,7 @@ from acme.infra.transports import (
     CredentialBrokerInterface,
     FileEntry,
     OutputSink,
-    RecordSealInterface,
+    RecordSeal,
     StaleCommand,
     TransportInterface,
     relative_path,
@@ -73,7 +73,7 @@ class TransportTwinImpl(TransportInterface):
         command: CommandSpec,
         on_output: OutputSink | None = None,
         *,
-        seal: RecordSealInterface,
+        seal: RecordSeal,
     ) -> CommandResult:
         self._serve(workspace)
         self._admit(workspace.id, command.epoch)
@@ -109,7 +109,7 @@ class TransportTwinImpl(TransportInterface):
         return result
 
     async def outcome(
-        self, workspace: Workspace, key: UUID, epoch: int, *, seal: RecordSealInterface
+        self, workspace: Workspace, key: UUID, epoch: int, *, seal: RecordSeal
     ) -> CommandResult | None:
         self._serve(workspace)
         self._admit(workspace.id, epoch)
@@ -175,12 +175,12 @@ class TransportNullImpl(TransportInterface):
         command: CommandSpec,
         on_output: OutputSink | None = None,
         *,
-        seal: RecordSealInterface,
+        seal: RecordSeal,
     ) -> CommandResult:
         raise CapabilityMissing("this agent has no workspace")
 
     async def outcome(
-        self, workspace: Workspace, key: UUID, epoch: int, *, seal: RecordSealInterface
+        self, workspace: Workspace, key: UUID, epoch: int, *, seal: RecordSeal
     ) -> CommandResult | None:
         raise CapabilityMissing("this agent has no workspace")
 
@@ -211,28 +211,29 @@ class TransportNullImpl(TransportInterface):
 NONCE_BYTES = 12
 
 
-class RecordSealTwinImpl(RecordSealInterface):
+class RecordSealTwin:
     """A session's seal as a test holds one: AES-GCM under a key in memory,
-    bound to the command, which `revoke` destroys, as revoking a session's
-    key does."""
+    which `revoke` destroys, as revoking a session's key does. `seal` is what
+    a command goes with."""
 
     def __init__(self) -> None:
         self._key: bytes | None = AESGCM.generate_key(bit_length=256)
+        self.seal = RecordSeal(seal=self._sealed, open=self._opened)
 
     def revoke(self) -> None:
         self._key = None
 
-    async def seal(self, key: UUID, data: bytes) -> bytes | None:
+    async def _sealed(self, data: bytes) -> bytes | None:
         if self._key is None:
             return None
         nonce = os.urandom(NONCE_BYTES)
-        return nonce + AESGCM(self._key).encrypt(nonce, data, key.bytes)
+        return nonce + AESGCM(self._key).encrypt(nonce, data, None)
 
-    async def open(self, key: UUID, sealed: bytes) -> bytes | None:
+    async def _opened(self, sealed: bytes) -> bytes | None:
         if self._key is None:
             return None
         nonce, body = sealed[:NONCE_BYTES], sealed[NONCE_BYTES:]
         try:
-            return AESGCM(self._key).decrypt(nonce, body, key.bytes)
+            return AESGCM(self._key).decrypt(nonce, body, None)
         except InvalidTag:
-            raise ValueError(f"the record of command {key} does not open under this seal") from None
+            raise ValueError("the record does not open under this seal") from None

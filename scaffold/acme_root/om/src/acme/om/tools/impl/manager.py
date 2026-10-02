@@ -8,7 +8,7 @@ from uuid import UUID
 from pydantic import Field, ValidationError
 
 from acme.infra.exceptions import InfraException
-from acme.infra.transports import OutputSink, SecretUse, TransportInterface
+from acme.infra.transports import OutputSink, RecordSeal, SecretUse, TransportInterface
 from acme.infra.workspaces import (
     IsolationMode,
     IsolationSpec,
@@ -46,7 +46,7 @@ from acme.om.steps.types.header import (
 )
 from acme.om.steps.types.step import Actor, Step, StepType
 from acme.om.tenancy import TenancyManagerInterface
-from acme.om.tools.manager import KeyedHash, RecordSeals, ToolsManagerInterface
+from acme.om.tools.manager import KeyedHash, ToolsManagerInterface
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.rules import (
     CAPABILITY_MISSING,
@@ -67,6 +67,7 @@ from acme.om.tools.rules import (
     response,
     verdict,
 )
+from acme.om.tools.seal import RecordSealInterface
 from acme.om.tools.storage import ToolStorageInterface
 from acme.om.tools.tool import JobToolInterface, ToolInterface, ToolRuntime
 from acme.om.tools.types.call import Gate, GateOutcome, JobHandle, JobStarted, Verdict
@@ -111,12 +112,12 @@ class ToolsManagerImpl(ToolsManagerInterface):
         clock: Callable[[], datetime] = utcnow,
         *,
         keyed_hash: KeyedHash,
-        record_seals: RecordSeals,
+        record_seal: RecordSealInterface,
         attribution: AttributionManagerInterface,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self._keyed_hash = keyed_hash
-        self._record_seals = record_seals
+        self._record_seal = record_seal
         self._sleep = sleep
         self._attribution = attribution
         self._storage = storage
@@ -357,9 +358,10 @@ class ToolsManagerImpl(ToolsManagerInterface):
             )
         # Asking admits this run's epoch on the transport first, so the lost
         # run's command for this call can no longer start there.
-        seal = self._record_seals(ctx.org_id, request.session_id)
         try:
-            recorded = await self._transport.outcome(workspace, request.id, epoch, seal=seal)
+            recorded = await self._transport.outcome(
+                workspace, request.id, epoch, seal=self._sealing(ctx, request)
+            )
         except InfraException as error:
             if error.http_status == STALE_STATUS:
                 raise StaleWriter(error.message) from error
@@ -567,7 +569,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         return ToolRuntime(
             self._transport,
             workspace,
-            seal=self._record_seals(ctx.org_id, request.session_id),
+            seal=self._sealing(ctx, request),
             key=request.id,
             epoch=epoch,
             deadline=deadline,
@@ -577,6 +579,15 @@ class ToolsManagerImpl(ToolsManagerInterface):
             on_output=on_output,
             read_only=read_only,
             answer_chars=self._options.max_output_chars,
+        )
+
+    def _sealing(self, ctx: TenantContext, request: Step) -> RecordSeal:
+        """The seal the call's command goes to the transport with: its
+        session's, bound to the call's key."""
+        session_id, key = request.session_id, request.id
+        return RecordSeal(
+            seal=lambda data: self._record_seal.seal(ctx, session_id, key, data),
+            open=lambda sealed: self._record_seal.open(ctx, session_id, key, sealed),
         )
 
     def _classify(self, error: Exception, tool: ToolInterface) -> tuple[ToolFailure, str]:
