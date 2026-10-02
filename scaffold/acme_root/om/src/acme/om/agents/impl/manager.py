@@ -24,6 +24,7 @@ from acme.om.steps import StepsManagerInterface
 from acme.om.steps.types.content import Content, TextBlock
 from acme.om.steps.types.header import ControlCommand, ControlHeader, InputHeader
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
+from acme.om.tenancy import TenancyManagerInterface
 
 CREATED = "agents.agent_tree.created"
 UPDATED = "agents.agent_tree.updated"
@@ -31,6 +32,7 @@ UPDATED = "agents.agent_tree.updated"
 
 class AgentsOptions(Platform):
     max_limit: int = 50  # children one read of the cascade holds
+    purge_batch: int = 1000  # trees one purge statement deletes at most
 
 
 class AgentsManagerImpl(AgentsManagerInterface):
@@ -42,6 +44,7 @@ class AgentsManagerImpl(AgentsManagerInterface):
         attribution: AttributionManagerInterface,
         gate: ResultGateInterface,
         kinds: AgentKindCatalog,
+        tenancy: TenancyManagerInterface,
         relay: OutboxRelayInterface,
         options: AgentsOptions,
         clock: Callable[[], datetime] = utcnow,
@@ -52,6 +55,7 @@ class AgentsManagerImpl(AgentsManagerInterface):
         self._attribution = attribution
         self._gate = gate
         self._kinds = kinds
+        self._tenancy = tenancy
         self._relay = relay
         self._options = options
         self._clock = clock
@@ -190,6 +194,12 @@ class AgentsManagerImpl(AgentsManagerInterface):
         if refusal is not None:
             return Verdict(accepted=False, reason=refusal)
         return await self._gate.check(ctx, session_id, result)
+
+    async def purge_tenant(self, ctx: TenantContext) -> int:
+        ctx.require(Permission.WRITE)
+        if not await self._tenancy.tenant_expired(ctx):
+            return 0
+        return await self._storage.purge_tenant(ctx.org_id, self._options.purge_batch)
 
     def _session(
         self,

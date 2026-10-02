@@ -123,6 +123,7 @@ def build_managers(
     orchestrations_options: OrchestrationsOptions | None = None,
     steps_options: StepsOptions | None = None,
     agent_sessions_options: AgentSessionsOptions | None = None,
+    agents_options: AgentsOptions | None = None,
     agent_kinds: tuple[AgentKind, ...] = (),
     principal_context: PrincipalContext | None = None,
     result_gate: ResultGateInterface | None = None,
@@ -206,8 +207,9 @@ def build_managers(
         attribution,
         result_gate or ResultGateNullImpl(),
         AgentKindCatalog(kinds=agent_kinds),
+        tenancy,
         outbox,
-        AgentsOptions(),
+        agents_options or AgentsOptions(),
     )
     idempotency = IdempotencyManagerImpl(
         storage.get_idempotency_storage(), idempotency_options or IdempotencyOptions()

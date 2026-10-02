@@ -47,3 +47,10 @@ class AgentTreeStorageMemoryImpl(MemoryStorageBase, AgentTreeStorageInterface):
                     f"agent tree {tree.id} is no longer at version {expected_version}"
                 )
             self._put(self._trees, org_id, tree, outbox_rows)
+
+    async def purge_tenant(self, org_id: UUID, limit: int) -> int:
+        async with self._lock:
+            gone = [t.id for t in self._rows(self._trees, org_id)][:limit]
+            for tree_id in gone:
+                del self._trees[tree_id]
+            return len(gone)

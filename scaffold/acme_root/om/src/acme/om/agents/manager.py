@@ -79,3 +79,10 @@ class AgentsManagerInterface(ABC):
         any gate looks; the rest is the injected gate's to accept or
         refuse."""
         ...
+
+    @abstractmethod
+    async def purge_tenant(self, ctx: TenantContext) -> int:
+        """The sweep, for one tenant past its own retention: every tree, a
+        batch at most a call. Any other tenant returns 0 and reads
+        nothing."""
+        ...
