@@ -136,14 +136,21 @@ async def test_a_sealed_artifact_opens_only_as_itself(roots: Roots) -> None:
         await seal.open(roots.ctx, other, artifact, blob)
 
 
-async def test_a_memory_only_session_keeps_no_artifact(roots: Roots) -> None:
+async def test_a_memory_only_session_bounds_its_result_and_holds_it_in_memory_alone(
+    roots: Roots,
+) -> None:
     session = await roots.session()
     policy = StoragePolicy(mode=StorageMode.MEMORY_ONLY, keep_shape=False)
     await roots.managers.privacy.set_policy(roots.ctx, session, policy)
-    result, _ = a_large_result(session)
-    assert await roots.managers.windows.bound_tool_response(roots.ctx, session, result) is result
+    artifact, text = await kept(roots, session)
     keys = await roots.infra.get_buckets().list(roots.ctx.org_id, Buckets.ARTIFACTS, "", 10)
     assert keys == [], "nothing it said is at rest, sealed or not"
+    windows = roots.storage.get_window_storage()
+    assert await windows.read_artifact(roots.ctx.org_id, session, artifact.id) is None
+    assert await read_whole(roots, session, artifact) == text, "this runtime holds it whole"
+    assert await roots.managers.windows.purge_artifacts(roots.ctx.org_id, session) == 0
+    with pytest.raises(NotFound):
+        await roots.managers.windows.get_artifact(roots.ctx, session, artifact.id, 0, 10)
 
 
 async def test_an_artifact_goes_with_its_sessions_history(roots: Roots) -> None:
