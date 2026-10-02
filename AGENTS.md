@@ -62,7 +62,10 @@ it.
   `acme`, built on the guideline's scaffold. Its ADRs are numbered from
   1001, so they never meet the guideline's. Its skills sit in
   `.agents/skills/`, and its `.claude/skills` is a link to them;
-  `scripts/check_skills.py` holds their frontmatter and the link.
+  `scripts/check_skills.py` holds their frontmatter and the link. The
+  `scaffold` branch holds the guideline's `scaffold/` folder unchanged,
+  and main merges each release with a merge commit, never a squash
+  (`arch-upgrade-scaffold`).
 - `checkers/` holds the checker for the lenses a program can decide.
 - `.claude-plugin/` holds the plugin and marketplace manifests; the
   repository root is the plugin, `agentic-core`. `plugin.json` carries
@@ -101,8 +104,18 @@ each part is held from the change that adds it.
 ## Validate
 
 ```bash
-make check                          # everything CI runs
+make check                          # the root gates
 claude plugin validate . --strict   # the manifests (when claude is installed)
+```
+
+The scaffold's gates run in a copy of it, as CI's `scaffold` job runs
+them. A copy named `agentic` runs its stack as the compose project
+`agentic`, on the ports its `.env.example` names:
+
+```bash
+python3 scaffold/new.py ../agentic && cd ../agentic
+make setup && make check            # the copy's fast gate
+cp .env.example .env && make infra-up migrate migrate-check test-integration
 ```
 
 `.github/pins/` holds every tool version the Makefile and CI run.
