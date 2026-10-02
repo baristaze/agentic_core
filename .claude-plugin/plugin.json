@@ -1,0 +1,13 @@
+{
+  "name": "agentic-core",
+  "version": "0.0.0",
+  "description": "The agentic engine's spec with lens-based review skills and scaffolding skills, in the shape of the Software Design and Architecture Guidelines",
+  "author": {
+    "name": "Baris Taze",
+    "url": "https://github.com/baristaze"
+  },
+  "homepage": "https://github.com/baristaze/agentic_core",
+  "repository": "https://github.com/baristaze/agentic_core",
+  "license": "Apache-2.0",
+  "keywords": ["agents", "engine", "architecture", "review", "scaffold", "python"]
+}

@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "description": "The npm tools make and CI run, at the versions they run. The Makefile and the workflow read each pin from this file, so a release moves in one place. Nothing installs it.",
+  "devDependencies": {
+    "@anthropic-ai/claude-code": "2.1.283",
+    "markdownlint-cli2": "0.23.2"
+  }
+}

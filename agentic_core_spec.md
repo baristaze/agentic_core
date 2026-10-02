@@ -103,9 +103,9 @@ kinds and sub-agents, budgets and bounds, parking, privacy, and testing.
 
 **Out of scope:** general software design, which is the guideline's;
 running a fleet (runners, hosts, placement, billing, integrations),
-which is [`distro_gentic`](distro_gentic_spec.md)'s; and a product's
+which is [`distro_gentic`][d]'s; and a product's
 prompts, tools, and agent kinds, which are the product's, such as
-[`rodeo`](robot_dev_agentic_platform_spec.md).
+`rodeo`.
 
 ```mermaid
 flowchart BT
@@ -670,7 +670,7 @@ provider that fails fast needs another guard: an **outage signal**, an
 interface keyed by provider and credential, which parks a session at
 once while the provider is known to be failing. One process needs none,
 and its null object never signals; a fleet shares one ([`distro_gentic`
-Money](distro_gentic_spec.md#money)).
+Money][d-money]).
 
 ## Tools
 
@@ -1228,7 +1228,7 @@ prices from one source, and every model a resolver can pick has a price
 of its own. A model priced by a default row turns every figure built on
 it into a guess, the budgets that bind on it included. Abstract units
 and charges are the platform's ([`distro_gentic`
-Money](distro_gentic_spec.md#money)).
+Money][d-money]).
 
 ### The Tenant's Own Key
 
@@ -1433,7 +1433,7 @@ success. The key service has no quiet null; a test uses its memory impl.
   recovery, deadlines, and parking testable.
 
 Judging an agent kind's behavior is the platform's job ([`distro_gentic`
-Evidence](distro_gentic_spec.md#evidence)); the engine makes it
+Evidence][d-evidence]); the engine makes it
 reproducible.
 
 ## The Object Model
@@ -1554,7 +1554,7 @@ threat model, which each system writes for its own tools and data.
 
 ## Next: The Platform
 
-[`distro_gentic`](distro_gentic_spec.md) embeds this engine in a
+[`distro_gentic`][d] embeds this engine in a
 closed-loop, distributed platform: runners and hosts, placement,
 stations, evidence, trust across a customer's wall, and money.
 
@@ -1590,3 +1590,6 @@ stations, evidence, trust across a customer's wall, and money.
 [g-lenses]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/lenses/README.md
 [g-adopting]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/docs/adopting.md#upgrade-a-copy-of-the-scaffold
 [g-adr-0039]: https://github.com/baristaze/swe_guidelines/blob/v0.47.0/scaffold/acme_root/docs/adr/0039-long-running-work-is-a-record-a-guard-parks-and-a-bound-fails.md
+[d]: https://github.com/baristaze/distro_gentic/blob/main/distro_gentic_spec.md
+[d-money]: https://github.com/baristaze/distro_gentic/blob/main/distro_gentic_spec.md#money
+[d-evidence]: https://github.com/baristaze/distro_gentic/blob/main/distro_gentic_spec.md#evidence

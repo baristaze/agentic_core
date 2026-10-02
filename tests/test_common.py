@@ -1,0 +1,185 @@
+"""scripts/_common.py: the heading and anchor rule every script shares."""
+
+import pytest
+
+from _common import anchors, commented_lines, fenced_lines, heading_lines, headings, markdown_files, slug
+
+SCRIPTS = [
+    "check_agents",
+    "check_links",
+    "check_skills",
+    "check_version",
+    "gen_toc",
+]
+
+
+@pytest.mark.parametrize("name", SCRIPTS)
+def test_every_script_refuses_an_unknown_argument(repo, name):
+    with pytest.raises(SystemExit) as exit_:
+        repo.script(name).main(["--chekc"])
+    assert exit_.value.code == 2
+
+
+def test_slug_lowercases_drops_punctuation_and_hyphenates():
+    assert slug("The Storage Layer") == "the-storage-layer"
+    assert slug("Local: Docker Compose") == "local-docker-compose"
+    assert slug("`TenantContext` and *friends*") == "tenantcontext-and-friends"
+    assert slug("  Park vs. fail  ") == "park-vs-fail"
+
+
+def test_slug_keeps_underscores_the_way_github_does():
+    assert slug("CTX-13 The system scope is EMPTY_UUID") == "ctx-13-the-system-scope-is-empty_uuid"
+    assert slug("`snake_case` heading") == "snake_case-heading"
+
+
+# Each heading beside the anchor github-slugger 2.0.0, the package GitHub's
+# anchors follow, gives for the heading's rendered text. The anchors come
+# from running the package, not from reading it:
+#
+#     npm install github-slugger@2.0.0
+#     # run.mjs
+#     import { slug } from "github-slugger";
+#     console.log(slug(process.argv[2]));
+#
+# `node run.mjs "<text>"` takes the rendered text: the link syntax, the
+# backticks, the emphasis markers, and a closing `#` sequence already gone.
+GITHUB_SLUGGER = [
+    # each space is a hyphen, so a run of spaces is a run of hyphens
+    ("Park  vs fail", "park--vs-fail"),
+    ("Two   spaces and a tab\there", "two---spaces-and-a-tabhere"),
+    ("`code` - dash", "code---dash"),
+    # a link keeps its text
+    ("See [the lenses](lenses/README.md#groups)", "see-the-lenses"),
+    ("[Cache](#cache) and friends", "cache-and-friends"),
+    # a closing sequence of `#` is not part of the heading
+    ("Tables ##", "tables"),
+    ("Use C #", "use-c"),
+    ("C++ and C#", "c-and-c"),
+    # underscores stay
+    ("CTX-13 The system scope is EMPTY_UUID", "ctx-13-the-system-scope-is-empty_uuid"),
+    ("`snake_case` heading", "snake_case-heading"),
+    # underscores inside a code span are text, never emphasis
+    ("The `__init__` module", "the-__init__-module"),
+    ("`_private` and `__dunder__`", "_private-and-__dunder__"),
+    # inline code and emphasis keep their text
+    ("`TenantContext` and *friends*", "tenantcontext-and-friends"),
+    ("the _emph_ word", "the-emph-word"),
+    ("**Bold** and __strong__", "bold-and-strong"),
+    ("Glob `*`", "glob-"),
+    ("a_b_c stays", "a_b_c-stays"),
+    # punctuation drops out
+    ("What's new?", "whats-new"),
+    ("Tables (and more)", "tables-and-more"),
+    ("Local: Docker Compose", "local-docker-compose"),
+    ("Park vs. fail", "park-vs-fail"),
+    ("A/B, C & D!", "ab-c--d"),
+    ("100% done", "100-done"),
+    # letters outside ASCII stay, lowercased
+    ("Émigré café", "émigré-café"),
+    ("Straße und Größe", "straße-und-größe"),
+    ("日本語 見出し", "日本語-見出し"),
+    ("naïve — em dash", "naïve--em-dash"),
+]
+
+
+@pytest.mark.parametrize(("heading", "anchor"), GITHUB_SLUGGER)
+def test_anchor_matches_github_slugger(heading, anchor):
+    [(_level, _title, found)] = anchors(f"## {heading}\n")
+    assert found == anchor
+
+
+def test_closing_hashes_are_not_part_of_the_heading():
+    text = "## Tables ##\n\n### Use C# #\n\n## C#\n"
+    assert headings(text) == [(2, "Tables"), (3, "Use C#"), (2, "C#")]
+    assert [a for _, _, a in anchors(text)] == ["tables", "use-c", "c"]
+
+
+def test_markdown_files_reach_every_depth_and_skip_caches(repo):
+    for rel in [
+        "docs/sub/deep/x.md",
+        "node_modules/pkg/README.md",
+        "docs/node_modules/pkg/README.md",
+        ".pytest_cache/README.md",
+        ".venv/lib/README.md",
+        ".git/x.md",
+        ".claude/worktrees/agent-1/agentic_core_spec.md",
+        "docs/notes.txt",
+    ]:
+        repo.write(rel, "# X\n")
+    found = {p.relative_to(repo.root).as_posix() for p in markdown_files(repo.root)}
+    assert "docs/sub/deep/x.md" in found
+    assert not {f for f in found if f.split("/")[0] in {"node_modules", ".pytest_cache", ".venv", ".git", ".claude"}}
+    assert "docs/node_modules/pkg/README.md" not in found
+    assert "docs/notes.txt" not in found
+
+
+def test_the_scaffolds_skills_are_markdown_of_the_repository_read_once(repo):
+    repo.write("scaffold/acme_root/.agents/skills/ops-watch/SKILL.md", "# ops-watch\n")
+    link = repo.root / "scaffold/acme_root/.claude/skills"
+    link.parent.mkdir(parents=True)
+    link.symlink_to("../.agents/skills")
+    repo.write(".claude/skills/ops-watch/SKILL.md", "# ops-watch\n")
+    repo.write("docs/.claude/notes.md", "# Notes\n")
+    found = {p.relative_to(repo.root).as_posix() for p in markdown_files(repo.root)}
+    assert "scaffold/acme_root/.agents/skills/ops-watch/SKILL.md" in found  # a copy runs it, so it is published
+    assert "scaffold/acme_root/.claude/skills/ops-watch/SKILL.md" not in found  # the same file, through the link
+    assert ".claude/skills/ops-watch/SKILL.md" not in found
+    assert "docs/.claude/notes.md" not in found
+
+
+def test_heading_lines_give_each_heading_its_line():
+    text = "# One\n\n```\n# not a heading\n```\n\n## Two ##\n"
+    assert heading_lines(text) == [(0, 1, "One"), (6, 2, "Two")]
+
+
+def test_headings_skip_fenced_code_and_keep_levels():
+    text = "# One\n\n```\n# not a heading\n```\n\n## Two\n\n### Three  \n"
+    assert headings(text) == [(1, "One"), (2, "Two"), (3, "Three")]
+
+
+def test_anchors_number_repeats_the_way_github_does():
+    text = "## Principles\n\n## Tables\n\n## Principles\n\n## Principles\n"
+    assert [a for _, _, a in anchors(text)] == [
+        "principles",
+        "tables",
+        "principles-1",
+        "principles-2",
+    ]
+
+
+def test_a_heading_inside_a_tilde_or_long_fence_is_not_a_heading():
+    text = "# Top\n\n~~~\n# not a heading\n~~~\n\n````md\n```\n# still code\n```\n````\n\n## After\n"
+    assert headings(text) == [(1, "Top"), (2, "After")]
+
+
+def test_a_repeat_skips_a_numbered_anchor_an_earlier_heading_took():
+    text = "## Foo\n\n## Foo\n\n## Foo 1\n"
+    assert [a for _, _, a in anchors(text)] == ["foo", "foo-1", "foo-1-1"]
+    text = "## Foo 1\n\n## Foo\n\n## Foo\n"
+    assert [a for _, _, a in anchors(text)] == ["foo-1", "foo", "foo-2"]
+
+
+def test_fenced_lines_mark_every_line_of_a_fence_of_either_kind():
+    text = "a\n~~~\nb\n~~~\nc\n````md\n```\nd\n````\ne"
+    assert fenced_lines(text) == [False, True, True, True, False, True, True, True, True, False]
+
+
+def test_a_heading_inside_an_html_comment_is_not_a_heading():
+    text = "## A\n\n<!-- agents-only\n## hidden\n-->\n\n<!-- one line -->\n## B\n\n<!--\n### also hidden -->\n"
+    assert headings(text) == [(2, "A"), (2, "B")]
+
+
+def test_commented_lines_tell_an_agents_only_block_from_any_other_comment():
+    text = "a\n<!-- agents-only\nb\n-->\nc\n<!-- toc -->\n```\n<!-- code, not a comment\n```\nd"
+    assert commented_lines(text) == [
+        None,
+        "agents-only",
+        "agents-only",
+        "agents-only",
+        None,
+        "comment",
+        None,
+        None,
+        None,
+        None,
+    ]
