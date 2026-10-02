@@ -9,6 +9,10 @@ from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx
+from pydantic import SecretStr
+
+from acme.integrations.model_providers.failures import ModelCallFailed
+from acme.integrations.model_providers.types import ErrorKind
 
 MAX_MESSAGE = 500
 """The longest provider message a failure carries, for the log."""
@@ -81,6 +85,20 @@ def retry_after(headers: httpx.Headers, now: datetime | None = None) -> float | 
     if when.tzinfo is None:
         when = when.replace(tzinfo=UTC)
     return max(0.0, (when - (now or datetime.now(UTC))).total_seconds())
+
+
+def key_for(provider: str, credential: SecretStr | None, platform: SecretStr | None) -> SecretStr:
+    """The key a call runs on: its own credential when it carries one, the
+    platform's only when it carries none. An empty credential is refused,
+    never taken for a missing one, so a call meant for a tenant's key never
+    runs on the platform's."""
+    if credential is not None:
+        if not credential.get_secret_value().strip():
+            raise ModelCallFailed(ErrorKind.CREDENTIAL, f"the call's own {provider} key is empty")
+        return credential
+    if platform is None or not platform.get_secret_value().strip():
+        raise ModelCallFailed(ErrorKind.CREDENTIAL, f"no {provider} key for this call")
+    return platform
 
 
 def clipped(message: str) -> str:

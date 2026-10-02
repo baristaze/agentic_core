@@ -25,6 +25,7 @@ from acme.integrations.model_providers.content import TextBlock as TextBlock
 from acme.integrations.model_providers.content import ThinkingBlock as ThinkingBlock
 from acme.integrations.model_providers.content import ToolResultBlock as ToolResultBlock
 from acme.integrations.model_providers.content import ToolUseBlock as ToolUseBlock
+from acme.integrations.model_providers.content import in_turn_order as in_turn_order
 from acme.integrations.model_providers.content import storable as storable
 from acme.integrations.model_providers.content import storable_value as storable_value
 from acme.om.base import Platform

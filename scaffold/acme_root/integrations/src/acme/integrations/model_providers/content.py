@@ -20,7 +20,7 @@ neither append fails on what a model wrote."""
 
 import math
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -104,7 +104,12 @@ class ThinkingBlock(InfraModel):
     its main content. `signature` is the provider's proof of it, opaque to
     the engine, and a block replays only with it, to the model that thought
     it. A `redacted` block holds no readable text, only its signature. `ref`
-    is the provider's own id for the block, where its replay needs one."""
+    is the provider's own id for the block, where its replay needs one.
+
+    `at` is its place in the turn: how many of the turn's main blocks came
+    before it. A provider refuses a turn whose thinking moved, so the place
+    is kept with the block and the turn is replayed in it
+    (`in_turn_order`)."""
 
     kind: Literal["thinking"] = "thinking"
     text: Stored = ""
@@ -112,6 +117,7 @@ class ThinkingBlock(InfraModel):
     source: ThinkingSource | None = None
     redacted: bool = False
     ref: Stored | None = Field(default=None, max_length=MAX_NAME)
+    at: int | None = Field(default=None, ge=0)
 
     def replays_to(self, provider: ProviderName, model: str) -> bool:
         """Whether a request to `model` of `provider` may carry this block."""
@@ -151,3 +157,21 @@ Block = Annotated[
 
 ReplyBlock = Annotated[TextBlock | ToolUseBlock, Field(discriminator="kind")]
 """What a response's main content holds; its thinking is a child."""
+
+
+def in_turn_order(blocks: Sequence[Block]) -> tuple[Block, ...]:
+    """A turn's blocks in the order its provider sent them. A thinking block
+    that names its place (`at`) goes before the main block of that number,
+    or after the last when the number is past it; every other block keeps
+    the order it is given in, a thinking block with no place included."""
+    main = sum(1 for block in blocks if not isinstance(block, ThinkingBlock))
+    keyed: list[tuple[tuple[int, int, int], Block]] = []
+    seen = 0
+    for seq, block in enumerate(blocks):
+        if isinstance(block, ThinkingBlock):
+            place = seen if block.at is None else min(block.at, main)
+            keyed.append(((place, 0, seq), block))
+        else:
+            keyed.append(((seen, 1, seq), block))
+            seen += 1
+    return tuple(block for _, block in sorted(keyed, key=lambda pair: pair[0]))

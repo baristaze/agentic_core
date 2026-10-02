@@ -67,6 +67,8 @@ Each adapter:
   events back into it, and names what does not survive (`Dropped`):
   thinking another model thought, a cache marker the provider cannot
   read, a block of a kind the engine does not hold;
+- keeps each thinking block's place in its turn, and replays a turn in
+  the order the provider sent it;
 - records why a response stopped, and marks one cut by its bound or by a
   broken stream as truncated, never whole;
 - reads usage into disjoint classes: input, cache read, cache write,
