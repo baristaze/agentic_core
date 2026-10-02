@@ -36,6 +36,7 @@ from acme.workers.maintenance.orchestrations import (
     OrchestrationHandlerImpl,
     WakeParkedHandlerImpl,
 )
+from acme.workers.maintenance.sessions import WakeSessionHandlerImpl, WakeSessionsHandlerImpl
 from acme.workers.maintenance.settings import MaintenanceSettings
 
 log = logging.getLogger(__name__)
@@ -87,6 +88,10 @@ def build_loop(container: WorkerContainer, lane: str | None = None) -> WorkerLoo
             # Deletes nothing: it reports the history left, so a tenant whose
             # steps remain is never marked purged.
             "steps": managers.steps.purge_tenant,
+            "budgets": managers.budgets.purge_tenant,
+            # Deletes nothing either: what a call held and spent stays, so a
+            # tenant whose ledger remains is never marked purged.
+            "ledger": managers.budgets.purge_ledger,
         },
         # Once a pass, across every tenant: each namespace's rows past their
         # retention.
@@ -117,6 +122,8 @@ def build_loop(container: WorkerContainer, lane: str | None = None) -> WorkerLoo
             WorkKind.DELETE_ORG: DeleteOrgHandlerImpl(
                 managers.tenancy, container.identity_provider
             ),
+            WorkKind.WAKE_SESSION: WakeSessionHandlerImpl(managers.agent_sessions),
+            WorkKind.WAKE_SESSIONS: WakeSessionsHandlerImpl(managers.agent_sessions),
         },
         topics=container.infra.get_topics(),
         liveness=container.infra.get_cache(CacheScope.WORKER_LIVENESS),

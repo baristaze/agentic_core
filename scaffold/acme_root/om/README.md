@@ -73,6 +73,19 @@ Every step says who produced it. A message and a tool call say on whose
 a person of the org, never the agent. A session that has read outside
 data carries an **untrusted mark**, and passes it on.
 
+## Budgets
+
+A **budget** says how much may be spent, in money at list price, in
+tokens, or both, by a session, a tree of sessions, a person, a project,
+a team, or the whole org, over its life or per hour, day, week, or
+month.
+
+Before every call to a model, an agent asks the **gate**. The gate
+either sets aside the most the call could cost, a **hold**, or refuses
+and says which budgets are in the way and when each resets. A refused
+loop waits, never fails, until the budget is raised or resets. After
+the call, the hold is settled at what the call really cost.
+
 ## Models
 
 A **model role** is a job an agent session hands a model: the agent's
@@ -122,6 +135,9 @@ arrive twice, so the second copy gets the first one's answer.
 - A sub-agent holds no more than the session above it: fewer tools or
   the same, the same person's authority, and the same budget and
   deadline as the whole tree. A tree names its org, as its sessions do.
+- Every model call passes the gate first, charged to the scopes it
+  serves: its session, its tree, the person who pays, a project, a team,
+  or the org. A budget, its holds, and their settlements name their org.
 
 ## One page per kind
 
@@ -131,7 +147,7 @@ arrive twice, so the second copy gets the first one's answer.
 - [Steps](src/acme/om/steps/README.md)
 - [Agents](src/acme/om/agents/README.md)
 - [Attribution](src/acme/om/attribution/README.md)
-
+- [Budgets](src/acme/om/budgets/README.md)
 - [Models](src/acme/om/models/README.md)
 - [Events](src/acme/om/events/README.md)
 - [Outbox rows](src/acme/om/outbox/README.md)

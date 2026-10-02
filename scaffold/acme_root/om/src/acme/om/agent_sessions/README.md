@@ -19,7 +19,13 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
   while the agent works, `parked` while a loop waits on something, and
   `idle` when no loop is open.
 - **Park**: why a parked loop waits, what clears it, and when it tries
-  again by itself.
+  again by itself. A park only a person clears (a question, a hand-over,
+  a pause) has no time to try again.
+- **Limits**: what keeps a loop from running forever. A deadline the
+  whole tree shares and a step guard, which counts model calls in one
+  loop, park it for a person; a streak of tool errors or of identical
+  calls, and too many turns that neither go on nor finish, end it
+  `inconclusive`; a run that has run long hands its loop to the next run.
 - **Archived**: a flag a person sets on an idle session.
 
 ## What can happen
@@ -30,6 +36,10 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
 - **Work.** Once the agent writes a step, the session is running.
 - **Park.** A loop that cannot go on yet parks; what clears it makes the
   session pending again, for the agent to take up.
+- **Wake by itself.** A park with a time to try again is woken at that
+  time from the work queue, and a raised budget wakes every session
+  parked on a budget. A woken session is pending; the run that takes it
+  up writes a `resumed` step and asks its gates again.
 - **End a loop.** The session goes idle, and the next input that wakes
   it starts the next loop over the same history.
 - **Archive.** An archived session keeps what arrives and wakes for
@@ -40,6 +50,11 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
 
 - **A session never ends.** A loop ends; the session waits for its next
   input.
+- **"Not now" is not "failed".** A park writes no outcome, and a limit
+  that no raise cures ends the loop `inconclusive`, never `failed`, and
+  never the session.
+- **The step guard is never off.** Every loop starts it afresh, and a
+  person's look after it parks starts it again.
 - **The status follows the steps.** It is read off the history, can be
   rebuilt from it at any time, and is never set by hand.
 - **A change of status, and the end of a loop, are announced.** A step

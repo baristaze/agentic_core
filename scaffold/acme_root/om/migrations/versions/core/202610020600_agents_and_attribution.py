@@ -2,14 +2,14 @@
 the session authorities, with their fences.
 
 Revision ID: 202610020600
-Revises: 202610020200
+Revises: 202610020400
 """
 
 from acme.om.storage.migrate import run_sql
 from acme.om.storage.roles import DatabaseRole
 
 revision = "202610020600"
-down_revision = "202610020200"
+down_revision = "202610020400"
 branch_labels = None
 depends_on = None
 

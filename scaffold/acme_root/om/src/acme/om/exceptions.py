@@ -324,6 +324,16 @@ class TreeBoundReached(AgentsException, Conflict):
     code = "tree_bound_reached"
 
 
+class BudgetsException(PlatformException): ...
+
+
+class SpenderUnknown(BudgetsException, NotAuthorized):
+    """A call or a job whose payer the engine cannot tell. The gate fails
+    closed for spend: nothing is held and nothing is spent."""
+
+    code = "spender_unknown"
+
+
 class ModelsException(PlatformException): ...
 
 

@@ -8,6 +8,9 @@ from acme.om.agents import AgentsManagerInterface
 from acme.om.agents.storage import AgentStorageInterface
 from acme.om.attribution import AttributionManagerInterface
 from acme.om.attribution.storage import AttributionStorageInterface
+from acme.om.budgets import BudgetGateInterface, BudgetsManagerInterface
+from acme.om.budgets.pricing import PricingInterface
+from acme.om.budgets.storage import BudgetStorageInterface, LedgerStorageInterface
 from acme.om.events import EventsManagerInterface
 from acme.om.events.storage import EventStorageInterface
 from acme.om.idempotency import IdempotencyManagerInterface
@@ -53,6 +56,8 @@ async def test_memory_root_serves_every_storage() -> None:
     assert isinstance(root.get_agent_session_storage(), AgentSessionStorageInterface)
     assert isinstance(root.get_agent_storage(), AgentStorageInterface)
     assert isinstance(root.get_attribution_storage(), AttributionStorageInterface)
+    assert isinstance(root.get_budget_storage(), BudgetStorageInterface)
+    assert isinstance(root.get_ledger_storage(), LedgerStorageInterface)
     assert isinstance(root.get_fill_set_storage(), FillSetStorageInterface)
     assert await root.healthcheck() is True
     await root.close()
@@ -121,6 +126,9 @@ def test_business_root_has_a_field_per_manager(tmp_path: Path) -> None:
     assert isinstance(managers.agent_sessions, AgentSessionsManagerInterface)
     assert isinstance(managers.attribution, AttributionManagerInterface)
     assert isinstance(managers.agents, AgentsManagerInterface)
+    assert isinstance(managers.budgets, BudgetsManagerInterface)
+    assert isinstance(managers.budget_gate, BudgetGateInterface)
+    assert isinstance(managers.pricing, PricingInterface)
     assert isinstance(managers.models, ModelsManagerInterface)
 
 

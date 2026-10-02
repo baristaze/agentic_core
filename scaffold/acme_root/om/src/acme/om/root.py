@@ -23,6 +23,11 @@ from acme.om.attribution.impl.manager import (
     no_principal_context,
 )
 from acme.om.base import utcnow
+from acme.om.budgets import BudgetGateInterface, BudgetsManagerInterface
+from acme.om.budgets.impl.gate import BudgetGateImpl, BudgetGateOptions
+from acme.om.budgets.impl.manager import BudgetsManagerImpl, BudgetsOptions
+from acme.om.budgets.impl.pricing import PricingTableImpl
+from acme.om.budgets.pricing import PricingInterface
 from acme.om.events import EventsManagerInterface
 from acme.om.events.impl.manager import EventsManagerImpl, EventsOptions
 from acme.om.idempotency import IdempotencyManagerInterface
@@ -67,6 +72,9 @@ class Managers:
     orchestrations: OrchestrationsManagerInterface
     steps: StepsManagerInterface
     agent_sessions: AgentSessionsManagerInterface
+    budgets: BudgetsManagerInterface
+    budget_gate: BudgetGateInterface
+    pricing: PricingInterface
     models: ModelsManagerInterface
     attribution: AttributionManagerInterface
     agents: AgentsManagerInterface
@@ -133,6 +141,7 @@ def build_managers(
     orchestrations_options: OrchestrationsOptions | None = None,
     steps_options: StepsOptions | None = None,
     agent_sessions_options: AgentSessionsOptions | None = None,
+    budgets_options: BudgetsOptions | None = None,
     models_options: ModelsOptions | None = None,
     model_prices: ModelPricesInterface | None = None,
     agents_options: AgentsOptions | None = None,
@@ -214,6 +223,17 @@ def build_managers(
         outbox,
         agent_sessions_options or AgentSessionsOptions(),
     )
+    # The gate reads the budgets of a call's scopes and holds on the ledger.
+    budgets = BudgetsManagerImpl(
+        storage.get_budget_storage(),
+        storage.get_ledger_storage(),
+        tenancy,
+        outbox,
+        budgets_options or BudgetsOptions(),
+    )
+    budget_gate = BudgetGateImpl(
+        storage.get_budget_storage(), storage.get_ledger_storage(), BudgetGateOptions()
+    )
     # A session's fills. The resolver refuses a model with no price row,
     # so a root that wires no prices resolves nothing.
     models = ModelsManagerImpl(
@@ -269,6 +289,10 @@ def build_managers(
         orchestrations=orchestrations,
         steps=steps,
         agent_sessions=agent_sessions,
+        budgets=budgets,
+        budget_gate=budget_gate,
+        # The one source of prices: the list table.
+        pricing=PricingTableImpl(),
         models=models,
         attribution=attribution,
         agents=agents,

@@ -15,6 +15,11 @@ from acme.om.agents.storage import AgentStorageInterface
 from acme.om.agents.storage.impl.postgres import AgentStoragePostgresImpl
 from acme.om.attribution.storage import AttributionStorageInterface
 from acme.om.attribution.storage.impl.postgres import AttributionStoragePostgresImpl
+from acme.om.budgets.storage import BudgetStorageInterface, LedgerStorageInterface
+from acme.om.budgets.storage.impl.postgres import (
+    BudgetStoragePostgresImpl,
+    LedgerStoragePostgresImpl,
+)
 from acme.om.events.storage import EventStorageInterface
 from acme.om.events.storage.impl.postgres import EventStoragePostgresImpl
 from acme.om.idempotency.storage import IdempotencyStorageInterface
@@ -152,6 +157,9 @@ class StoragePostgresImpl(StorageInterface):
         self._agent_sessions = AgentSessionStoragePostgresImpl(sessions)
         self._agents = AgentStoragePostgresImpl(sessions)
         self._attribution = AttributionStoragePostgresImpl(sessions)
+
+        self._budgets = BudgetStoragePostgresImpl(sessions)
+        self._ledger = LedgerStoragePostgresImpl(sessions)
         self._fill_sets = FillSetStoragePostgresImpl(sessions)
 
     def get_tenancy_storage(self) -> TenancyStorageInterface:
@@ -186,6 +194,12 @@ class StoragePostgresImpl(StorageInterface):
 
     def get_attribution_storage(self) -> AttributionStorageInterface:
         return self._attribution
+
+    def get_budget_storage(self) -> BudgetStorageInterface:
+        return self._budgets
+
+    def get_ledger_storage(self) -> LedgerStorageInterface:
+        return self._ledger
 
     def get_fill_set_storage(self) -> FillSetStorageInterface:
         return self._fill_sets

@@ -2201,7 +2201,9 @@
           "ORCHESTRATION",
           "WAKE_PARKED",
           "DELETE_ACCOUNT",
-          "DELETE_ORG"
+          "DELETE_ORG",
+          "WAKE_SESSION",
+          "WAKE_SESSIONS"
         ],
         "title": "WorkKind",
         "type": "string"

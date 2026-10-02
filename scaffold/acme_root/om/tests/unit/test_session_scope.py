@@ -33,6 +33,8 @@ IMPL_INTERFACES: dict[str, str] = {
     "AgentSessionStoragePostgresImpl": "AgentSessionStorageInterface",
     "AgentStoragePostgresImpl": "AgentStorageInterface",
     "AttributionStoragePostgresImpl": "AttributionStorageInterface",
+    "BudgetStoragePostgresImpl": "BudgetStorageInterface",
+    "LedgerStoragePostgresImpl": "LedgerStorageInterface",
     "FillSetStoragePostgresImpl": "FillSetStorageInterface",
 }
 """Which interface each Postgres impl answers, so a method found in the source

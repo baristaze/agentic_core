@@ -15,6 +15,7 @@ from acme.om.agent_sessions.types.agent_session import (
     SessionStatus,
 )
 from acme.om.context import TenantContext
+from acme.om.steps.types.header import Park, ParkReason
 
 
 class AgentSessionsManagerInterface(ABC):
@@ -74,6 +75,40 @@ class AgentSessionsManagerInterface(ABC):
         row that announces a change of status or the end of a loop. A writer
         that got there first is read again and the fold goes on from it.
         With nothing new, the session is answered as it is."""
+        ...
+
+    @abstractmethod
+    async def park(
+        self, ctx: TenantContext, session_id: UUID, epoch: int, loop_id: UUID, park: Park
+    ) -> AgentSession:
+        """A run's loop parks: a `parked` step carrying the park is appended
+        under the run's epoch (`StaleWriter` once another run holds the
+        session), and the status follows it. A park with a retry time lands,
+        with the session's write, the work that wakes it at that time."""
+        ...
+
+    @abstractmethod
+    async def resume(
+        self, ctx: TenantContext, session_id: UUID, epoch: int, loop_id: UUID
+    ) -> AgentSession:
+        """A new run takes up a loop whose unlock happened: a `resumed` step
+        is appended under the run's epoch, and the session is running. The
+        run's gates run again before its next call: a woken loop is not
+        trusted."""
+        ...
+
+    @abstractmethod
+    async def wake_session(self, ctx: TenantContext, session_id: UUID, park: Park) -> AgentSession:
+        """A park's retry time came: a session still parked on exactly `park`
+        is unlocked by an `unlock` control the engine writes, and is pending
+        for a run to take up. A session that moved on is answered as it is."""
+        ...
+
+    @abstractmethod
+    async def wake_parked(self, ctx: TenantContext, reason: ParkReason) -> int:
+        """The reason the org's sessions parked for is gone, as when a budget
+        is raised: every session parked for it is unlocked, and each one's
+        gates run again when it resumes. Returns how many."""
         ...
 
     @abstractmethod
