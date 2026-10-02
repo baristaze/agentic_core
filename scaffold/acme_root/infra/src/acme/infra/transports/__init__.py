@@ -151,6 +151,7 @@ OutputSink = Callable[[str, str], Awaitable[None]]
 arrives."""
 
 Sealing = Callable[[bytes], Awaitable[bytes | None]]
+"""Seals one command's output, or opens it: bytes in, bytes or None out."""
 
 
 @dataclass(frozen=True)
