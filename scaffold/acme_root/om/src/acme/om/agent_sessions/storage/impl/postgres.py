@@ -8,7 +8,7 @@ from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStat
 from acme.om.exceptions import PreconditionFailed
 from acme.om.outbox.storage.tables.outbox_rows import OutboxRows
 from acme.om.outbox.types.row import OutboxRow
-from acme.om.storage.impl.pg_base import PgStorageBase
+from acme.om.storage.impl.pg_base import PgStorageBase, delete_batch, deleted
 from acme.om.storage.utils.translation import to_model, to_row, to_values
 
 
@@ -74,3 +74,10 @@ class AgentSessionStoragePostgresImpl(PgStorageBase, AgentSessionStorageInterfac
             for outbox_row in outbox_rows:
                 db.add(to_row(outbox_row, OutboxRows, org_id=org_id))
             await db.commit()
+
+    async def purge_tenant(self, org_id: UUID, limit: int) -> int:
+        stmt = delete_batch(AgentSessions, AgentSessions.org_id == org_id, limit=limit)
+        async with self._session_for(stmt, org_id=org_id) as session:
+            purged = deleted(await session.execute(stmt))
+            await session.commit()
+            return purged

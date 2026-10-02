@@ -10,7 +10,13 @@ import pytest
 from contracts.agent_session_storage import make_session
 from contracts.doubles import context
 from contracts.factories import make_org
-from contracts.step_storage import make_message, make_parked, make_request, make_response
+from contracts.step_storage import (
+    make_event,
+    make_message,
+    make_parked,
+    make_request,
+    make_response,
+)
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.om.agent_sessions.impl.manager import AgentSessionsManagerImpl, AgentSessionsOptions
@@ -18,7 +24,7 @@ from acme.om.agent_sessions.rules import Projection, after_step, announces, proj
 from acme.om.agent_sessions.storage.impl.memory import AgentSessionStorageMemoryImpl
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
 from acme.om.base import new_id, utcnow
-from acme.om.context import Role, TenantContext
+from acme.om.context import AppContext, AppType, RequestContext, Role, TenantContext
 from acme.om.exceptions import NotAuthorized, NotFound, PreconditionFailed, ValidationFailed
 from acme.om.outbox.storage.impl.memory import OutboxStorageMemoryImpl
 from acme.om.outbox.types.row import OutboxRow
@@ -30,6 +36,7 @@ from acme.om.steps.types.header import (
     LoopEndedHeader,
     LoopOutcome,
     MarkHeader,
+    ModelResponseHeader,
     Park,
     ParkedHeader,
     ParkReason,
@@ -39,6 +46,7 @@ from acme.om.storage.impl.memory import StorageMemoryImpl
 
 SESSION = new_id()
 LOOP = new_id()
+APP = AppContext(type=AppType.PORTAL, version="portal@test")
 
 
 def a_step(step_type: StepType, header: Any, seq: int = 0) -> Step:
@@ -78,10 +86,63 @@ def parked_state(reason: ParkReason) -> Projection:
 def test_an_input_that_wakes_starts_a_loop_on_an_idle_session_and_no_other() -> None:
     message = make_message(SESSION)
     quiet = a_step(StepType.EVENT, InputHeader(waking=False))
-    assert after_step(IDLE, message) == PENDING
+    woken = after_step(IDLE, message)
+    assert (woken.status, woken.pending_input) == (SessionStatus.PENDING, message.id)
     assert after_step(IDLE, quiet) == IDLE
-    assert after_step(RUNNING, message) == RUNNING
+    assert after_step(RUNNING, message).status is SessionStatus.RUNNING
     assert after_step(parked_state(ParkReason.BUDGET), message).status is SessionStatus.PARKED
+
+
+def test_an_event_built_with_no_word_on_waking_leaves_an_idle_session_idle() -> None:
+    """A principal's message wakes by default, and an event from outside
+    does not."""
+    event = make_event(SESSION)
+    assert isinstance(event.header, InputHeader) and event.header.waking is False
+    assert after_step(IDLE, event) == IDLE
+    assert after_step(IDLE, a_step(StepType.EVENT, InputHeader())) == IDLE
+    assert after_step(IDLE, a_step(StepType.MESSAGE, InputHeader())).status is (
+        SessionStatus.PENDING
+    )
+
+
+def fold(steps: list[Step]) -> Projection:
+    state = IDLE
+    for step in steps:
+        state = after_step(state, step)
+    return state
+
+
+def response_to(request: Step, *, truncated: bool = False, abandoned: bool = False) -> Step:
+    header = ModelResponseHeader(truncated=truncated, abandoned=abandoned)
+    return make_response(SESSION, LOOP, request.id).model_copy(update={"header": header})
+
+
+def loop_ended() -> Step:
+    return a_step(StepType.LOOP_ENDED, LoopEndedHeader(outcome=LoopOutcome.SUCCEEDED))
+
+
+def test_a_loop_that_ends_with_a_waking_input_undelivered_leaves_the_session_pending() -> None:
+    """An input stays pending until a model request that references it has a
+    complete response. One that arrives after the last request is still
+    waiting when the loop ends, so the session is pending, not idle."""
+    first = make_message(SESSION)
+    request = make_request(SESSION, first.id, (first.id,))
+    answered = response_to(request)
+    late = make_message(SESSION, "and the monthly one?")
+    assert fold([first, request, answered, loop_ended()]).status is SessionStatus.IDLE
+    waiting = fold([first, request, answered, late, loop_ended()])
+    assert (waiting.status, waiting.pending_input) == (SessionStatus.PENDING, late.id)
+    carried = make_request(SESSION, first.id, (late.id,))
+    delivered = fold([first, request, answered, late, carried, response_to(carried), loop_ended()])
+    assert (delivered.status, delivered.pending_input) == (SessionStatus.IDLE, None)
+    other = make_request(SESSION, first.id, (first.id,))
+    passed_by = fold([first, request, answered, late, other, response_to(other), loop_ended()])
+    assert passed_by.status is SessionStatus.PENDING, "a request that does not carry it"
+    for cut_short in (response_to(request, truncated=True), response_to(request, abandoned=True)):
+        cut = fold([first, request, cut_short, loop_ended()])
+        assert cut.status is SessionStatus.PENDING, cut_short.header
+    quiet = fold([first, request, answered, make_event(SESSION), loop_ended()])
+    assert quiet.status is SessionStatus.IDLE, "an input that does not wake waits quietly"
 
 
 def test_a_run_holds_the_loop_until_it_parks_or_ends() -> None:
@@ -123,7 +184,8 @@ def test_an_archived_session_records_events_and_a_message_unarchives_it() -> Non
     archived = Projection(SessionStatus.IDLE, None, archived=True)
     event = a_step(StepType.EVENT, InputHeader(waking=True))
     assert after_step(archived, event) == archived
-    assert after_step(archived, make_message(SESSION)) == PENDING
+    back = after_step(archived, make_message(SESSION))
+    assert (back.status, back.archived) == (SessionStatus.PENDING, False)
 
 
 # The projection over a history.
@@ -138,7 +200,7 @@ def a_history() -> list[Step]:
         control(ControlCommand.APPROVE),
         a_step(StepType.RESUMED, MarkHeader()),
         a_step(StepType.LOOP_ENDED, LoopEndedHeader(outcome=LoopOutcome.SUCCEEDED)),
-        make_message(SESSION, "and the second arm?"),
+        make_message(SESSION, "and the monthly one?"),
     ]
     return [step.model_copy(update={"seq": n}) for n, step in enumerate(steps, start=1)]
 
@@ -269,6 +331,46 @@ async def test_the_status_follows_the_history_and_announces_each_change(
     assert (await sessions.get_sessions(ctx, SessionStatus.PARKED, None, 10)).items == (held,)
 
 
+async def test_an_input_still_undelivered_when_a_loop_ends_is_kept_across_projections(
+    managers: Managers,
+) -> None:
+    ctx = context(Role.MEMBER)
+    sid = (await managers.agent_sessions.create_session(ctx, make_session())).id
+    steps, sessions = managers.steps, managers.agent_sessions
+    (first,) = await steps.append_inputs(ctx, sid, [make_message(sid)])
+    epoch = await steps.begin_run(ctx, sid)
+    request = make_request(sid, first.id, (first.id,))
+    await steps.append_steps(ctx, sid, epoch, [request, make_response(sid, first.id, request.id)])
+    (late,) = await steps.append_inputs(ctx, sid, [make_message(sid, "and the monthly one?")])
+    running = await sessions.project_status(ctx, sid)
+    assert (running.status, running.pending_input) == (SessionStatus.RUNNING, late.id)
+    ended = Step.model_validate(
+        {
+            **loop_ended().model_dump(),
+            "session_id": sid,
+            "loop_id": first.id,
+        }
+    )
+    await steps.append_steps(ctx, sid, epoch, [ended])
+    after = await sessions.project_status(ctx, sid)
+    assert (after.status, after.pending_input) == (SessionStatus.PENDING, late.id)
+
+
+async def test_the_sweep_purges_no_living_tenants_sessions_or_history(managers: Managers) -> None:
+    owner, _ = await managers.tenancy.bootstrap(
+        RequestContext(request_id=new_id(), app=APP),
+        "Ajax",
+        f"ajax-{new_id().hex[-8:]}",
+        f"a-{new_id().hex[-8:]}@x.test",
+        "Ann",
+    )
+    session = await managers.agent_sessions.create_session(owner, make_session())
+    await managers.steps.append_inputs(owner, session.id, [make_message(session.id)])
+    assert await managers.agent_sessions.purge_tenant(owner) == 0
+    assert await managers.steps.purge_tenant(owner) == 0
+    assert await managers.agent_sessions.get_session(owner, session.id) == session
+
+
 async def test_a_long_history_is_folded_a_batch_at_a_time(managers: Managers) -> None:
     ctx = context(Role.MEMBER)
     sid = (await managers.agent_sessions.create_session(ctx, make_session())).id
@@ -313,7 +415,11 @@ async def test_a_projection_behind_another_writer_reads_again_and_folds_on(
     assert isinstance(outbox, OutboxStorageMemoryImpl)
     overtaken = Overtaken(outbox)
     sessions = AgentSessionsManagerImpl(
-        overtaken, managers.steps, managers.outbox, AgentSessionsOptions(project_attempts=2)
+        overtaken,
+        managers.steps,
+        managers.tenancy,
+        managers.outbox,
+        AgentSessionsOptions(project_attempts=2),
     )
     ctx = context(Role.MEMBER)
     created = await sessions.create_session(ctx, make_session())
@@ -336,8 +442,7 @@ async def test_only_an_idle_session_is_archived_and_a_message_brings_it_back(
     archived = await managers.agent_sessions.archive_session(ctx, sid)
     assert archived.archived_at is not None and archived.version == 2
     assert await managers.agent_sessions.archive_session(ctx, sid) == archived
-    event = make_message(sid).model_copy(update={"type": StepType.EVENT})
-    await managers.steps.append_inputs(ctx, sid, [event])
+    await managers.steps.append_inputs(ctx, sid, [make_event(sid)])
     quiet = await managers.agent_sessions.project_status(ctx, sid)
     assert quiet.archived_at is not None and quiet.status is SessionStatus.IDLE
     await managers.steps.append_inputs(ctx, sid, [make_message(sid)])

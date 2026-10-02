@@ -70,6 +70,12 @@ class StepStorageRoutedImpl(StepStorageInterface):
         route = await self._route(org_id, session_id, writing=False)
         return await route.read_cursor(org_id, session_id)
 
+    async def count_tenant(self, org_id: UUID, limit: int) -> int:
+        """What the tenant keeps at rest: the history its sealed sessions and
+        its memory-only sessions that keep their shape share, read through
+        the sealed route. A transient session keeps nothing at rest."""
+        return await self._sealed.count_tenant(org_id, limit)
+
     async def _route(self, org_id: UUID, session_id: UUID, *, writing: bool) -> StepStorageInterface:
         """The impl the session's policy names. A write fixes the default
         policy on a session with none; a read of one with none reads it as

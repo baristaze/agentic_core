@@ -47,6 +47,9 @@ class StepStorageShapeOnlyImpl(StepStorageInterface):
     async def read_cursor(self, org_id: UUID, session_id: UUID) -> StepCursor:
         return await self._shapes.read_cursor(org_id, session_id)
 
+    async def count_tenant(self, org_id: UUID, limit: int) -> int:
+        return await self._shapes.count_tenant(org_id, limit)
+
     def _kept(
         self, org_id: UUID, steps: Sequence[Step], stored: Sequence[Step]
     ) -> tuple[Step, ...]:

@@ -8,16 +8,24 @@ from acme.om.steps.manager import StepsManagerInterface
 from acme.om.steps.storage import StepStorageInterface
 from acme.om.steps.types.page import StepCursor, StepPage
 from acme.om.steps.types.step import Step
+from acme.om.tenancy import TenancyManagerInterface
 
 
 class StepsOptions(Platform):
     max_limit: int = 200  # steps one page holds at most
     max_append: int = 100  # steps one append writes at most
+    purge_batch: int = 1000  # the sweep's batch, which a report of what is left stays under
 
 
 class StepsManagerImpl(StepsManagerInterface):
-    def __init__(self, storage: StepStorageInterface, options: StepsOptions) -> None:
+    def __init__(
+        self,
+        storage: StepStorageInterface,
+        tenancy: TenancyManagerInterface,
+        options: StepsOptions,
+    ) -> None:
         self._storage = storage
+        self._tenancy = tenancy
         self._options = options
 
     async def begin_run(self, ctx: TenantContext, session_id: UUID) -> int:
@@ -49,6 +57,12 @@ class StepsManagerImpl(StepsManagerInterface):
     async def get_cursor(self, ctx: TenantContext, session_id: UUID) -> StepCursor:
         ctx.require(Permission.READ)
         return await self._storage.read_cursor(ctx.org_id, session_id)
+
+    async def purge_tenant(self, ctx: TenantContext) -> int:
+        ctx.require(Permission.WRITE)
+        if not await self._tenancy.tenant_expired(ctx):
+            return 0
+        return await self._storage.count_tenant(ctx.org_id, max(1, self._options.purge_batch - 1))
 
     def _bound(self, steps: Sequence[Step]) -> None:
         if len(steps) > self._options.max_append:

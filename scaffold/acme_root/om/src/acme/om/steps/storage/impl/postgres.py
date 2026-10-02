@@ -271,6 +271,22 @@ class StepStoragePostgresImpl(PgStorageBase, StepStorageInterface):
         async with self._session_for(stmt, org_id=org_id) as session:
             return [to_model(row, Step) for row in (await session.execute(stmt)).scalars()]
 
+    async def count_tenant(self, org_id: UUID, limit: int) -> int:
+        # Each count stops at the limit, on the index that org_id leads.
+        steps = select(Steps.id).where(Steps.org_id == org_id).limit(limit).subquery()
+        cursors = (
+            select(StepCursors.session_id)
+            .where(StepCursors.org_id == org_id)
+            .limit(limit)
+            .subquery()
+        )
+        stmt = select(
+            select(func.count()).select_from(steps).scalar_subquery()
+            + select(func.count()).select_from(cursors).scalar_subquery()
+        )
+        async with self._session_for(Steps, org_id=org_id) as session:
+            return min(int((await session.execute(stmt)).scalar_one()), limit)
+
     async def read_cursor(self, org_id: UUID, session_id: UUID) -> StepCursor:
         stmt = select(StepCursors.head, StepCursors.epoch).where(
             StepCursors.org_id == org_id, StepCursors.session_id == session_id
