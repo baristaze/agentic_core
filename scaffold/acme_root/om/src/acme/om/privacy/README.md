@@ -51,7 +51,9 @@ of](../../../../README.md).
 - **A hash in the shape is keyed by the session**, so once the key is
   revoked a hash confirms nothing about what it stood for.
 - **A memory-only session leaves nothing it said at rest**, sealed or
-  not. It keeps no artifact: a large result stays whole in its step.
+  not. Its artifact is sealed like any other and held in the memory of
+  the runtime that holds the session, so revoking its key erases it there
+  too.
 - **Every record and key belongs to one org.** Another org that names a
   session finds nothing of it.
 

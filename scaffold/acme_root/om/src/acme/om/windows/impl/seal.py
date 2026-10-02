@@ -2,7 +2,7 @@ from uuid import UUID
 
 from acme.om.context import TenantContext
 from acme.om.exceptions import Unavailable
-from acme.om.windows.seal import ArtifactSealInterface
+from acme.om.windows.seal import ArtifactSealInterface, SealedArtifact
 
 
 class ArtifactSealNullImpl(ArtifactSealInterface):
@@ -12,7 +12,7 @@ class ArtifactSealNullImpl(ArtifactSealInterface):
 
     async def seal(
         self, ctx: TenantContext, session_id: UUID, artifact_id: UUID, data: bytes
-    ) -> bytes | None:
+    ) -> SealedArtifact:
         raise Unavailable("no key service is wired, so no artifact is kept")
 
     async def open(

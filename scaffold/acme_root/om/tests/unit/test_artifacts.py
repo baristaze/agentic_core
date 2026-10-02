@@ -124,8 +124,9 @@ async def test_a_sealed_artifact_opens_only_as_itself(roots: Roots) -> None:
     keys = SessionKeysImpl(roots.storage.get_privacy_storage(), roots.infra.get_keys())
     seal = ArtifactSealKeysImpl(keys, roots.storage.get_privacy_storage())
     session, artifact = await roots.session(), new_id()
-    blob = await seal.seal(roots.ctx, session, artifact, b"what the tool printed")
-    assert blob is not None
+    sealed = await seal.seal(roots.ctx, session, artifact, b"what the tool printed")
+    assert sealed.at_rest and b"what the tool printed" not in sealed.blob
+    blob = sealed.blob
     assert await seal.open(roots.ctx, session, artifact, blob) == b"what the tool printed"
     with pytest.raises(ValueError, match="does not open"):
         await seal.open(roots.ctx, session, new_id(), blob)
@@ -151,6 +152,18 @@ async def test_a_memory_only_session_bounds_its_result_and_holds_it_in_memory_al
     assert await roots.managers.windows.purge_artifacts(roots.ctx.org_id, session) == 0
     with pytest.raises(NotFound):
         await roots.managers.windows.get_artifact(roots.ctx, session, artifact.id, 0, 10)
+
+
+async def test_a_memory_only_artifact_is_erased_with_its_sessions_key(roots: Roots) -> None:
+    session = await roots.session()
+    policy = StoragePolicy(mode=StorageMode.MEMORY_ONLY, keep_shape=False)
+    await roots.managers.privacy.set_policy(roots.ctx, session, policy)
+    artifact, text = await kept(roots, session)
+    assert await read_whole(roots, session, artifact) == text
+    await roots.managers.privacy.revoke_key(roots.ctx, session)
+    for _ in range(2):
+        with pytest.raises(KeyRevoked):
+            await roots.managers.windows.get_artifact(roots.ctx, session, artifact.id, 0, 10)
 
 
 async def test_an_artifact_goes_with_its_sessions_history(roots: Roots) -> None:
