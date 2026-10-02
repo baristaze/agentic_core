@@ -1,8 +1,9 @@
 # Agents
 
-The kinds of agent a product offers, and how sessions relate: sub-agents
-in a tree, and work handed from one kind to another. This is one of the
-kinds of thing [Acme is made of](../../../../README.md).
+The kinds of agent a product offers, the loop every one of them runs,
+and how sessions relate: sub-agents in a tree, and work handed from one
+kind to another. This is one of the kinds of thing [Acme is made
+of](../../../../README.md).
 
 ## What it holds
 
@@ -22,6 +23,16 @@ kinds of thing [Acme is made of](../../../../README.md).
   deadline every session in it shares. Its budget is the top session's.
 - **Hand-off**: work one kind passes to another, as a new session of its
   own.
+- **Loop**: what an agent does from what woke its session to how the
+  loop ended. The model chooses; the loop does. It has no record of its
+  own: it is a span of the session's [steps](../steps/README.md), its id
+  is its first step's, and a closing step names its outcome.
+- **Run**: one stretch of a loop in one process. A run takes the
+  session's next writer epoch before it reads anything, so a run that
+  lost its claim can write nothing more.
+- **Stream part**: a live piece of what a step will hold, numbered and
+  naming its step, handed to a carrier for whoever watches and never
+  kept.
 
 ## What can happen
 
@@ -34,6 +45,23 @@ kinds of thing [Acme is made of](../../../../README.md).
 - **Hand off.** The new session holds the objective and where it came
   from, and starts only when its person speaks to it.
 - **Submit** a result through the gate.
+- **Run** a loop. A run takes up the loop an input woke, or one a park
+  let go. It prepares the session's workspace first, renders a request,
+  passes the budget gate, writes the request, calls the model, and
+  writes the response. Then it runs each tool call the model asked for,
+  through policy and the transport, writing each request before it is
+  decided and each answer before the next call.
+- **End, park, or yield.** A loop ends on the kind's done rule, a bound,
+  a principal's cancel, or an error no park can clear. It parks when it
+  cannot go on yet, holding no workspace while it waits. A run whose time
+  is up yields, and the next run goes on.
+- **Steer.** A message that lands while the loop runs is delivered by its
+  next request. A cancel or a pause cuts in between steps, and a cancel
+  or an interrupt stops a running tool.
+- **Take over.** A person takes the session's environment to work by
+  hand: the running run is fenced, and the loop parks. Giving it back
+  tells the model a person worked there, and their account arrives as
+  their message.
 
 ## The rules
 
@@ -49,11 +77,43 @@ kinds of thing [Acme is made of](../../../../README.md).
   wrote is data in the new session.
 - **Every tree belongs to one org,** and goes when the last of its
   sessions is purged, or with the org's sessions when the org is.
+- **Persist before you proceed.** A request is written before its call,
+  a response before anything acts on it, a tool's request before it is
+  decided, and its answer before the next call.
+- **The history says where the loop is.** A run that finds a lost run's
+  request with no response closes it and settles its hold in full. A
+  tool call a lost run left open is settled by what repeating it may do:
+  one that only reads, or is safe to repeat, runs again; one that is not
+  is never repeated, and its answer says its outcome is unknown.
+- **A stale run is refused.** Every step a run writes names its epoch,
+  and each tool answer's id is the run's own, so a run that lost its
+  claim stops at its next write (ADR 1009).
+- **Every model call passes the gate first,** and records who spoke and
+  who pays as [attribution](../attribution/README.md) answers.
+- **A provider error is handled by its kind.** One worth retrying is
+  retried in the process, never sooner than the provider asks. Then the
+  provider is known to be failing for that key: every session parks on
+  it until its retry time, and this one falls back to its next declared
+  fallback when it has one.
+- **A stopped loop never restarts itself.** A loop that ended in an
+  error, or that a principal cancelled, starts no new loop on an input
+  it left undelivered.
+- **A nudge is a step.** When a delivery agent's turn calls no tool, the
+  engine's notice is written before the next request, so no request
+  holds two of the model's turns in a row.
+- **Isolation is refused, never weakened.** A workspace that cannot meet
+  the kind's spec ends the loop before its first model call.
+- **Emission never waits.** A part is handed to the carrier, and the
+  loop goes on.
 
 ## How another namespace composes it
 
-The agent's loop reads a session's kind to know when its loop is done,
-passes a submitted result through the gate, and calls spawn and
-hand-off from the tools that offer them. Each session is an [agent
-session](../agent_sessions/README.md); what it may do and who pays is
-[attribution](../attribution/README.md)'s.
+The loop reads and writes through every engine namespace: the session's
+status and parks, its steps, its fill set, the window a request reads,
+the budget gate, policy and the transport, and attribution. It reads a
+session's kind to know when its loop is done and passes a submitted
+result through the gate; spawn and hand-off are called from the tools
+that offer them. A process that runs sessions calls the loop's one
+operation with the session and its context; nothing else drives a loop.
+Each session is an [agent session](../agent_sessions/README.md); what it
+may do and who pays is [attribution](../attribution/README.md)'s.
