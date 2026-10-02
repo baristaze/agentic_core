@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -36,7 +36,7 @@ from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.types.row import OutboxRow, versioned_row
 from acme.om.steps import StepsManagerInterface
 from acme.om.steps.rules import origin_of
-from acme.om.steps.types.content import Content, TextBlock
+from acme.om.steps.types.content import UNPARSED, Content, TextBlock
 from acme.om.steps.types.header import (
     ControlCommand,
     ControlHeader,
@@ -54,10 +54,12 @@ from acme.om.tools.rules import (
     INPUT_HASH,
     STALE_STATUS,
     approver_roles,
+    bounded_json,
     call_deadline,
     canonical_input,
     command_text,
     decide,
+    engine_retries,
     infra_failure,
     job_deadline,
     reaches_outward,
@@ -90,6 +92,9 @@ class ToolsOptions(Platform):
     # before it is cut: the transport ends a command's tree at the deadline
     # itself, and returns what the command printed.
     grace: timedelta = timedelta(seconds=5)
+    # How long the engine waits before it runs again, once, a call of a tool
+    # a repeat cannot harm that failed in a way that may pass on its own.
+    retry_wait: timedelta = timedelta(seconds=2)
 
 
 class ToolsManagerImpl(ToolsManagerInterface):
@@ -108,9 +113,11 @@ class ToolsManagerImpl(ToolsManagerInterface):
         keyed_hash: KeyedHash,
         record_seals: RecordSeals,
         attribution: AttributionManagerInterface,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self._keyed_hash = keyed_hash
         self._record_seals = record_seals
+        self._sleep = sleep
         self._attribution = attribution
         self._storage = storage
         self._steps = steps
@@ -289,17 +296,39 @@ class ToolsManagerImpl(ToolsManagerInterface):
         deadline = call_deadline(
             self._clock(), tool.spec.timeout, self._options.engine_limit, tree_deadline
         )
-        runtime = self._runtime(ctx, request, tool, workspace, epoch, deadline, on_output)
-        try:
-            async with asyncio.timeout(self._seconds_until(deadline + self._options.grace)):
-                output = await tool.run(ctx, parsed, runtime)
-        except Exception as error:
-            failure, detail = self._classify(error, tool)
-            return self._answer(request, detail, failure)
+        retried = False
+        while True:
+            runtime = self._runtime(ctx, request, tool, workspace, epoch, deadline, on_output)
+            try:
+                async with asyncio.timeout(self._seconds_until(deadline + self._options.grace)):
+                    output = await tool.run(ctx, parsed, runtime)
+            except Exception as error:
+                failure, detail = self._classify(error, tool)
+                # A failure that may pass on its own, of a tool a repeat cannot
+                # harm, is run again once, after a short wait, while the
+                # call's time allows it; the model reads that it was.
+                wait = self._options.retry_wait
+                if (
+                    not retried
+                    and engine_retries(failure, tool.spec.effect)
+                    and self._clock() + wait < deadline
+                ):
+                    retried = True
+                    await self._sleep(wait.total_seconds())
+                    continue
+                if retried:
+                    detail = f"{detail} (the engine ran it again once, and it failed again)"
+                return self._answer(request, detail, failure)
+            break
         if not isinstance(output, tool.spec.output_model):
             detail = f"{tool.spec.name} answered {type(output).__name__}, not its output type"
             return self._answer(request, detail, ToolFailure.PERMANENT)
-        return self._answer(request, output.model_dump_json())
+        text = output.model_dump_json()
+        limit = self._options.max_output_chars
+        if len(text) > limit:
+            # Each of its strings keeps its own end, never only the last's.
+            text = bounded_json(output.model_dump(mode="json"), limit)
+        return self._answer(request, text)
 
     async def recover(
         self,
@@ -341,9 +370,10 @@ class ToolsManagerImpl(ToolsManagerInterface):
         if recorded is None:
             detail = "the run that made this call was lost before the call answered"
             return self._answer(request, detail, ToolFailure.INTERRUPTED)
+        limit = self._options.max_output_chars
         if recorded.timed_out:
-            return self._answer(request, command_text(recorded), ToolFailure.TIMEOUT)
-        return self._answer(request, recovered_text(recorded))
+            return self._answer(request, command_text(recorded, limit), ToolFailure.TIMEOUT)
+        return self._answer(request, recovered_text(recorded, limit))
 
     async def start_job(
         self,
@@ -491,6 +521,13 @@ class ToolsManagerImpl(ToolsManagerInterface):
             names = ", ".join(t.spec.name for t in registry.tools()) or "none"
             detail = f"there is no tool named {header.tool!r}; the tools are: {names}"
             return self._answer(request, detail, ToolFailure.INVALID_INPUT)
+        if UNPARSED in call_input:
+            # What the model wrote for the input is not a JSON object.
+            detail = (
+                "the input is not one JSON object, so the call never ran; write the "
+                "whole input as one JSON object that fits the tool's schema"
+            )
+            return self._answer(request, detail, ToolFailure.INVALID_INPUT)
         try:
             return tool, tool.spec.input_model.model_validate(thaw_mapping(call_input))
         except ValidationError as error:
@@ -539,6 +576,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
             audit=audit,
             on_output=on_output,
             read_only=read_only,
+            answer_chars=self._options.max_output_chars,
         )
 
     def _classify(self, error: Exception, tool: ToolInterface) -> tuple[ToolFailure, str]:

@@ -112,7 +112,8 @@ class CommandSpec(InfraModel):
     key: UUID  # the id of the tool request it serves
     epoch: int = Field(ge=0)  # the writer epoch of the run that sends it
     deadline: datetime  # when its whole process tree ends
-    max_output: int = Field(default=1_000_000, gt=0)  # characters kept of each stream
+    # The characters kept of each stream; past them, its head and its tail.
+    max_output: int = Field(default=1_000_000, gt=0)
 
     @model_validator(mode="after")
     def _one_name_one_variable(self) -> Self:
@@ -134,7 +135,7 @@ class CommandResult(InfraModel):
     stdout: str = ""
     stderr: str = ""
     timed_out: bool = False
-    truncated: bool = False  # an output past the command's bound was cut
+    truncated: bool = False  # an output past the command's bound was cut in its middle
     secrets: tuple[str, ...] = ()
 
 

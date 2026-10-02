@@ -126,8 +126,10 @@ class ToolsManagerInterface(ABC):
         the run's epoch, and answers it with its response step: a result, or
         a failure with its class. Its time is the least of its tool's
         timeout, the engine's limit, and what is left before the tree's
-        deadline, and its whole process tree ends then. Each secret it uses
-        is audited by name before its command runs. `StaleWriter` when the
+        deadline, and its whole process tree ends then. A `transient` failure
+        of a `read_only` or `idempotent` tool is run again once, after the
+        options' wait, while that time allows. Each secret it uses is
+        audited by name before its command runs. `StaleWriter` when the
         transport refuses the run's epoch."""
         ...
 

@@ -24,6 +24,7 @@ from acme.infra.transports import (
     require_mode,
 )
 from acme.infra.transports.injection import injected
+from acme.infra.transports.processes import bound_text
 from acme.infra.transports.records import CommandRecord, opened_result, sealed_record
 from acme.infra.workspaces import IsolationMode, Workspace
 
@@ -92,12 +93,14 @@ class TransportTwinImpl(TransportInterface):
                     for stream, text in (("stdout", stdout), ("stderr", stderr)):
                         if text and on_output is not None:
                             await on_output(stream, text)
+                    kept_out, cut_out = bound_text(stdout, command.max_output)
+                    kept_err, cut_err = bound_text(stderr, command.max_output)
                     result = CommandResult(
                         key=command.key,
                         exit_code=reply.exit_code,
-                        stdout=stdout[: command.max_output],
-                        stderr=stderr[: command.max_output],
-                        truncated=max(len(stdout), len(stderr)) > command.max_output,
+                        stdout=kept_out,
+                        stderr=kept_err,
+                        truncated=cut_out or cut_err,
                         secrets=injection.names,
                     )
                 else:

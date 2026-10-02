@@ -32,6 +32,7 @@ from acme.integrations.model_providers.calls import (
 )
 from acme.integrations.model_providers.content import (
     MAX_NAME,
+    UNPARSED,
     DocumentBlock,
     ImageBlock,
     ReplyBlock,
@@ -91,22 +92,26 @@ def _user_part(call: ModelCall, block: TextBlock | ImageBlock | DocumentBlock) -
     return {"type": "input_file", "filename": name, "file_data": url}
 
 
-def _tool_output(result: ToolResultBlock, dropped: list[Dropped]) -> dict[str, Any]:
-    texts = [part.text for part in result.parts if isinstance(part, TextBlock)]
-    for part in result.parts:
-        if not isinstance(part, TextBlock):
-            dropped.append(
-                _dropped(f"{part.kind} in a tool result", "the provider reads text there alone")
-            )
+def _tool_output(
+    call: ModelCall, result: ToolResultBlock, dropped: list[Dropped]
+) -> dict[str, Any]:
+    """A tool's result: its text as one string, or, when it holds an image or
+    a document, each part in its order, a file as data, as a user turn
+    carries one."""
+    output: str | list[dict[str, Any]]
+    if all(isinstance(part, TextBlock) for part in result.parts):
+        output = "\n".join(part.text for part in result.parts if isinstance(part, TextBlock))
+    else:
+        output = [
+            _user_part(call, part)
+            for part in result.parts
+            if not (isinstance(part, TextBlock) and not part.text)
+        ]
     if result.is_error:
         dropped.append(
             _dropped("a tool result's error flag", "the provider has none; its text says it")
         )
-    return {
-        "type": "function_call_output",
-        "call_id": result.tool_use_id,
-        "output": "\n".join(texts),
-    }
+    return {"type": "function_call_output", "call_id": result.tool_use_id, "output": output}
 
 
 def _user_items(call: ModelCall, message: Message, dropped: list[Dropped]) -> list[dict[str, Any]]:
@@ -115,7 +120,7 @@ def _user_items(call: ModelCall, message: Message, dropped: list[Dropped]) -> li
     parts: list[dict[str, Any]] = []
     for block in message.blocks:
         if isinstance(block, ToolResultBlock):
-            items.append(_tool_output(block, dropped))
+            items.append(_tool_output(call, block, dropped))
         elif isinstance(block, ThinkingBlock | ToolUseBlock):
             dropped.append(_dropped(block.kind.replace("_", " "), "a user turn carries none"))
         else:
@@ -351,10 +356,11 @@ class OpenAIReply:
         return []
 
     def _items_out(
-        self, items: list[Any]
+        self, items: list[Any], *, finished: bool
     ) -> tuple[list[ReplyBlock], list[ThinkingBlock], bool, bool]:
         """The blocks and the thinking of the response's items, whether a tool
-        was called, and whether the model refused."""
+        was called, and whether the model refused. `finished` is whether the
+        response completed, which its calls did with it."""
         blocks: list[ReplyBlock] = []
         thinking: list[ThinkingBlock] = []
         called = refused = False
@@ -372,7 +378,7 @@ class OpenAIReply:
                     else:
                         self._drop(f"message part {part_kind}", "the engine holds no such part")
             elif kind == "function_call":
-                tool_use = self._tool_use(item)
+                tool_use = self._tool_use(item, finished=finished)
                 if tool_use is not None:
                     called = True
                     blocks.append(tool_use)
@@ -393,16 +399,22 @@ class OpenAIReply:
                 self._drop(f"output item {kind}", "the engine holds no such item")
         return blocks, thinking, called, refused
 
-    def _tool_use(self, item: Any) -> ToolUseBlock | None:
+    def _tool_use(self, item: Any, *, finished: bool) -> ToolUseBlock | None:
+        """A call's block. Arguments that are not a JSON object are kept as
+        the model wrote them when the response completed, so the call is
+        refused as invalid input the model reads; in a response that did
+        not, they are dropped, and the call never runs either way."""
         call_id = str(field(item, "call_id") or "")
+        raw = str(field(item, "arguments") or "")
         try:
-            value = json.loads(str(field(item, "arguments") or "") or "{}")
+            value = json.loads(raw or "{}")
         except ValueError:
-            self._drop(f"tool use {call_id}", "its input is not whole JSON, so it never runs")
-            return None
+            value = None
         if not isinstance(value, dict):
-            self._drop(f"tool use {call_id}", "its input is not an object")
-            return None
+            if not finished:
+                self._drop(f"tool use {call_id}", "its input is no whole object, so it never runs")
+                return None
+            value = {UNPARSED: raw}
         try:
             return ToolUseBlock(id=call_id, name=str(field(item, "name") or ""), input=value)
         except ValidationError:
@@ -432,7 +444,9 @@ class OpenAIReply:
         )
 
     def _reply(self, items: list[Any], usage: Any, stop: StopReason | None) -> ModelReply:
-        blocks, thinking, called, refused = self._items_out(items)
+        blocks, thinking, called, refused = self._items_out(
+            items, finished=stop is StopReason.END_TURN
+        )
         if stop is StopReason.END_TURN:
             stop = StopReason.TOOL_USE if called else StopReason.REFUSAL if refused else stop
         return ModelReply(

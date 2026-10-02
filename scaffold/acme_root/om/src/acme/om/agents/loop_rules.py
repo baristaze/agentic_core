@@ -1,7 +1,8 @@
 """Pure rules of a loop: which loop a session has open, what of it is still
 unanswered, which controls ask something of it, how long a provider's
-error is waited on, and the steps the engine writes of its own. Values in,
-values out; no clock, no storage.
+error is waited on, when a call that keeps failing earns a notice, and the
+steps the engine writes of its own. Values in, values out; no clock, no
+storage.
 
 A loop's history is read the same way by the run that writes it and by a
 run that takes it up after a crash, so the loop never needs to remember
@@ -67,6 +68,14 @@ HANDED_BACK = (
     "as you last saw it. Their account follows as their message."
 )
 """The engine's notice when a person gives the environment back."""
+
+REPEATED = (
+    "The call {tool} failed {count} times in a row with the same input, and "
+    "the same call will fail the same way again. Read its last error, then "
+    "change the input, use another tool, or check what you assumed first."
+)
+"""The engine's notice when the model repeats a call that keeps failing.
+The error streak still bounds the loop; the notice comes first."""
 
 APPROVAL_UNLOCK = "approval"
 SPENDER_UNLOCK = "spender"
@@ -242,14 +251,47 @@ def stops_call(steps: Sequence[Step], request: Step, interruptible: bool) -> Con
     return None
 
 
-def retry_wait(retry_after: float | None, attempt: int, base: timedelta) -> timedelta:
+def retry_wait(
+    retry_after: float | None, attempt: int, base: timedelta, jitter: float
+) -> timedelta:
     """How long the loop waits before it asks a provider again: a backoff
-    that doubles with each attempt, and never less than the provider's own
-    retry-after."""
-    backoff = base * (2**attempt)
+    that doubles with each attempt, half of it fixed and half drawn from
+    `jitter`, a number in [0, 1), so sessions that failed together do not
+    ask again together; and never less than the provider's own
+    retry-after. The fixed half keeps the growth."""
+    full = base * (2**attempt)
+    backoff = full / 2 + (full / 2) * jitter
     if retry_after is None:
         return backoff
     return max(backoff, timedelta(seconds=retry_after))
+
+
+def repeated_failure(steps: Sequence[Step], loop_id: UUID, every: int) -> str | None:
+    """The notice the loop writes when its latest tool answers are the same
+    call failing `every` times in a row, or a multiple of it, and no notice
+    of the engine's followed the latest of them yet; else None. The same
+    call is the same tool with the same input, by its hash."""
+    calls: dict[UUID, tuple[str, str]] = {}
+    last: tuple[str, str] | None = None
+    count = answered_at = noticed_at = 0
+    for step in steps:
+        if step.loop_id != loop_id:
+            continue
+        header = step.header
+        call = calls.get(step.responds_to) if step.responds_to is not None else None
+        if isinstance(header, ToolRequestHeader):
+            calls[step.id] = (header.tool, header.input_hash)
+        elif step.type is StepType.TOOL_RESPONSE and call is not None:
+            if step.as_tool_response().is_error:
+                count, last = (count + 1 if call == last else 1), call
+            else:
+                count, last = 0, None
+            answered_at = step.seq
+        elif step.type is StepType.MESSAGE and step.actor is Actor.ENGINE:
+            noticed_at = step.seq
+    if last is None or count % every or noticed_at > answered_at:
+        return None
+    return REPEATED.format(tool=last[0], count=count)
 
 
 def holds_private(kind: AgentKind, registry: ToolRegistry) -> bool:
