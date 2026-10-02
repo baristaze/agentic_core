@@ -50,7 +50,7 @@ ARCH_CHECK ?= uvx --python "$(shell cat .python-version)" --from "git+https://gi
 # on the project's Python. Offline, or on an engine not yet released, point it
 # at a checkout:
 # `make agentic-check AGENTIC_CHECK="python3 ../agentic_core/checkers/agentic_check.py"`.
-AGENTIC_CHECK ?= uvx --python "$(shell cat .python-version)" --from "git+https://github.com/baristaze/agentic_core@v0.0.0\#subdirectory=checkers" agentic-check
+AGENTIC_CHECK ?= uvx --python "$(shell cat .python-version)" --from "git+https://github.com/baristaze/agentic_core@v0.1.0\#subdirectory=checkers" agentic-check
 
 .PHONY: help setup up down reset urls infra-up buckets devx-up stack-up infra-down infra-reset collector-scrape migrate seed migrate-check benchmark-boot check lint format-check typecheck arch-check agentic-check test-unit test-integration test-telemetry test-live traffic openapi
 

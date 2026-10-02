@@ -5,7 +5,7 @@
 
 [project]
 name = "agentic-core-check"
-version = "0.0.0"
+version = "0.1.0"
 description = "Static checks for the lenses of the agentic_core spec."
 readme = "README.md"
 license = "Apache-2.0"

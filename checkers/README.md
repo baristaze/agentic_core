@@ -18,7 +18,7 @@ imports it. It needs Python 3.11 or later and nothing else.
 A project pins the engine release it builds on:
 
 ```bash
-uvx --python 3.14 --from "git+https://github.com/baristaze/agentic_core@v0.0.0#subdirectory=checkers" agentic-check
+uvx --python 3.14 --from "git+https://github.com/baristaze/agentic_core@v0.1.0#subdirectory=checkers" agentic-check
 ```
 
 `--python` names the Python the project pins in `.python-version`. On
