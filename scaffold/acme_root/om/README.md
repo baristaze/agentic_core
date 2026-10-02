@@ -50,6 +50,18 @@ A **file** is a record of something an org keeps in the object store:
 its name, type, size, who uploaded it, and why. The bytes live in the
 store, never in the record.
 
+## Agent sessions and their history
+
+An **agent session** is a conversation with an agent. It never ends: it
+is a series of **loops**, each running from what woke the session to how
+the loop ended, over one history. Its status says whether an input waits,
+the agent works, a loop waits on something, or nothing is open.
+
+A **step** is one event of a session's history: a message, a control, a
+model's request or response, a tool's request or response, a summary, or
+a mark of a loop's life. Steps are numbered with no gaps and written
+once; the history only grows.
+
 ## What the platform writes for itself
 
 No person creates these and no screen shows them, but each belongs to
@@ -84,11 +96,16 @@ arrive twice, so the second copy gets the first one's answer.
 - A work item, an orchestration, an idempotency record, an event, and
   an outbox row each name their org, so the fence between orgs holds
   for them too.
+- An agent session's steps are its truth. Its status is read off them,
+  and a change of it writes an outbox row like any other change. A
+  session and its steps name their org.
 
 ## One page per kind
 
 - [Orgs, identities, users, memberships, and credentials](src/acme/om/tenancy/README.md)
 - [Files](src/acme/om/media/README.md)
+- [Agent sessions](src/acme/om/agent_sessions/README.md)
+- [Steps](src/acme/om/steps/README.md)
 - [Events](src/acme/om/events/README.md)
 - [Outbox rows](src/acme/om/outbox/README.md)
 - [Work items](src/acme/om/work/README.md)
