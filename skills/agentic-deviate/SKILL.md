@@ -85,17 +85,18 @@ describe one, say which, and stop:
    lens when it reads "decides it", and only the part it names when it
    ends "the rest is judged". The rule's docstring says exactly what it
    reads: the function under `@rule("<LENS-ID>"` in
-   `../../checkers/src/agentic_check/rules/<group>.py`, the group the
-   lens's file names. Read it, and give an entry only when the deviating
-   code is what it reads, in the modules it reads. A deviation in a
-   judged part, or under a lens whose `Check` line reads `review`, gets
-   no entry: the checker reports nothing there, and an entry that
-   matches no finding is itself a finding that fails the gate. The ADR,
-   the Deviations row, and the citation beside the code are its record.
-   For a deviation in the part the checker decides, the ADR alone does
-   not pass the gate: give it the entry that names the ADR, in the shape
-   `../../checkers/README.md` shows (Exceptions), whose rule id is the
-   lens id. A whole rule turned off is a
+   `../../scaffold/acme_root/checkers/src/acme/agentic_check/rules/<group>.py`,
+   the group the lens's file names. Read it, and give an entry only
+   when the deviating code is what it reads, in the modules it reads. A
+   deviation in a judged part, or under a lens whose `Check` line reads
+   `review`, gets no entry: the checker reports nothing there, and an
+   entry that matches no finding is itself a finding that fails the
+   gate. The ADR, the Deviations row, and the citation beside the code
+   are its record. For a deviation in the part the checker decides, the
+   ADR alone does not pass the gate: give it the entry that names the
+   ADR, in the shape `../../scaffold/acme_root/checkers/README.md` shows
+   (Exceptions), whose rule id is the lens id. A whole rule turned off
+   is a
    `[[tool.agentic-check.disable]]` entry with `rule`, `adr` (the ADR's
    path), and `reason`. A rule broken in some files is a
    `[[tool.agentic-check.exception]]` entry with `rule`, `path`, `adr`,

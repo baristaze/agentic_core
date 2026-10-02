@@ -2,7 +2,7 @@
 
 This repository holds one spec (`agentic_core_spec.md`), the parts that
 make its rules checkable and runnable (`lenses/`, `skills/`, `agents/`,
-`scaffold/`, `checkers/`), and the scripts that keep them consistent
+`scaffold/`), and the scripts that keep them consistent
 (`scripts/`, `Makefile`). It adopts the [Software Design and
 Architecture Guidelines](https://github.com/baristaze/swe_guidelines),
 *the guideline*, and has its shape. Each script's docstring states what
@@ -66,10 +66,14 @@ it.
   `scaffold` branch holds the guideline's `scaffold/` folder unchanged,
   and main merges each release with a merge commit, never a squash
   (`arch-upgrade-scaffold`).
-- `checkers/` holds `agentic-check`, the checker for the lenses a
-  program can decide, in the shape of the guideline's `arch-check`: its
-  own distribution, configured in the scaffold's `pyproject.toml` and
-  run by its `make check`. Its tests are `tests/test_agentic_check_*.py`.
+- `scaffold/acme_root/checkers/` holds `agentic-check`, the checker for
+  the lenses a program can decide, in the shape of the guideline's
+  `arch-check`: a workspace member of the scaffold, so every copy
+  carries it under its own name, configured in the scaffold's
+  `pyproject.toml` and run in-tree by its `make check`. Its own tests
+  sit beside it, and the root `make test` runs them;
+  `tests/test_agentic_check.py` holds its catalog to `lenses/` and the
+  spec, and the scaffold clean under it.
 - `.claude-plugin/` holds the plugin and marketplace manifests; the
   repository root is the plugin, `agentic-core`. `plugin.json` carries
   the one release version, and `scripts/check_version.py` holds every
@@ -114,12 +118,11 @@ claude plugin validate . --strict   # the manifests (when claude is installed)
 The scaffold's gates run in a copy of it, as CI's `scaffold` job runs
 them. A copy named `agentic` runs its stack as the compose project
 `agentic`, on the ports its `.env.example` names. Its `agentic-check`
-runs at the engine release the copy pins; `AGENTIC_CHECK` runs this
-checkout's instead, as CI does:
+is the one the copy carries, so nothing is fetched:
 
 ```bash
 python3 scaffold/new.py ../agentic && cd ../agentic
-make setup && make check AGENTIC_CHECK="uv run --no-project --python $(cat .python-version) python $OLDPWD/checkers/agentic_check.py"
+make setup && make check
 cp .env.example .env && make infra-up migrate migrate-check test-integration
 ```
 

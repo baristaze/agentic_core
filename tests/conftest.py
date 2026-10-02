@@ -17,10 +17,12 @@ SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-# The engine's static checker is importable from its source tree, so
-# `test_agentic_check_*.py` reads `agentic_check` without installing it.
-# It needs Python 3.11 (`tomllib`); those modules skip themselves on 3.10.
-CHECKERS = Path(__file__).resolve().parent.parent / "checkers" / "src"
+# The engine's static checker is importable from the scaffold's source
+# tree, so `test_agentic_check.py` and the checker's own tests, which
+# `make test` runs beside these, read `acme.agentic_check` without
+# installing it. It needs Python 3.11 (`tomllib`); those modules skip
+# themselves on 3.10.
+CHECKERS = Path(__file__).resolve().parent.parent / "scaffold" / "acme_root" / "checkers" / "src"
 if str(CHECKERS) not in sys.path:
     sys.path.insert(0, str(CHECKERS))
 

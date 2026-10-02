@@ -38,9 +38,10 @@ Rules:
 - the Check field reads `review` when the review alone judges the lens,
   "`agentic-check` decides it." when the checker decides it whole, or
   "`agentic-check` decides <part>; the rest is judged." when it decides a
-  part. It agrees both ways with the rules `checkers/src/agentic_check/rules/`
-  registers: a lens that names the checker has a rule of its id with the
-  same coverage (`full` or `partial`), and every rule decides a lens that
+  part. It agrees both ways with the rules the scaffold's checker
+  registers, in `scaffold/acme_root/checkers/src/acme/agentic_check/rules/`:
+  a lens that names the checker has a rule of its id with the same
+  coverage (`full` or `partial`), and every rule decides a lens that
   names it. The rules are read with `ast`, never imported;
 - an identifier a lens quotes stays in the section it cites. A section is
   the text under its `##` heading, its subsections, code, and agents-only
@@ -75,7 +76,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SPEC = ROOT / "agentic_core_spec.md"
 LENSES = ROOT / "lenses"
 README = ROOT / "README.md"
-RULES = ROOT / "checkers" / "src" / "agentic_check" / "rules"
+RULES = ROOT / "scaffold" / "acme_root" / "checkers" / "src" / "acme" / "agentic_check" / "rules"
 
 FIELDS = ("Principle", "Source", "Look for", "Violation", "Severity")
 SHAPE = "Shape"
