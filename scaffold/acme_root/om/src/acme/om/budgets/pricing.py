@@ -1,27 +1,34 @@
-"""What the gate reads of a model's price: list rates, in millionths of the
-reference currency per million tokens, the long-context tiers that raise
-them, and the fee of each tool the provider runs itself.
+"""Pricing: what a model's usage costs at list price, whoever pays, from one
+source. Rates are in millionths of the reference currency per million
+tokens, so every figure built on them is a whole number.
 
-One source supplies prices, and every model a resolver can pick has a row of
-its own: a model priced by a default row turns every figure built on it,
-the budgets that bind on it included, into a guess. `PriceSource` is the
-narrow seam the engine reads a row through."""
+Every model a resolver can pick has a row of its own. A model priced by a
+default row turns every figure built on it, the budgets that bind on it
+included, into a guess, so there is no default row: a model with none has
+no price. The one source is the versioned list table
+(`budgets.impl.pricing`)."""
 
-from typing import Protocol, Self
+from abc import ABC, abstractmethod
+from datetime import date
+from typing import Self
 
 from pydantic import Field, model_validator
 
 from acme.om.base import FrozenMapping, Platform
+from acme.om.budgets.types.budget import MAX_KEY
 
 
 class Rates(Platform):
-    """List rates per million tokens. Thinking is billed at the output rate
-    unless the model names one of its own."""
+    """List rates per million tokens. A cache write is the provider's short
+    cache; a provider that also keeps a longer-lived cache names its write
+    rate. Thinking is billed at the output rate unless the model names one
+    of its own."""
 
     input: int = Field(ge=0)
     cache_write: int = Field(ge=0)
     cache_read: int = Field(ge=0)
     output: int = Field(ge=0)
+    cache_write_long: int | None = Field(default=None, ge=0)
     thinking: int | None = Field(default=None, ge=0)
 
 
@@ -47,9 +54,32 @@ class ModelPrice(Platform):
         return self
 
 
-class PriceSource(Protocol):
+class PriceRow(Platform):
+    """One model's price, as its provider lists it on the date the row was read."""
+
+    provider: str = Field(min_length=1, max_length=MAX_KEY)
+    model: str = Field(min_length=1, max_length=MAX_KEY)
+    price: ModelPrice
+    as_of: date
+
+
+class PriceTable(Platform):
+    """The list prices of one reading: its version, and a row per model."""
+
+    version: str = Field(min_length=1, max_length=MAX_KEY)
+    rows: tuple[PriceRow, ...]
+
+    @model_validator(mode="after")
+    def _one_row_a_model(self) -> Self:
+        keys = [(row.provider, row.model) for row in self.rows]
+        if len(set(keys)) != len(keys):
+            raise ValueError("a model has one row in a price table")
+        return self
+
+
+class PricingInterface(ABC):
+    @abstractmethod
     def price_of(self, provider: str, model: str) -> ModelPrice | None:
-        """The model's row, or None when the source has none. None is never
-        a default row's price: the gate refuses a call whose cost it cannot
-        bound on every line that bounds cost."""
+        """The model's price, or None when the table has no row for it:
+        never a default row's."""
         ...

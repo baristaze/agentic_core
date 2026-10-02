@@ -26,6 +26,11 @@ thing [Acme is made of](../../../../README.md).
 - **Settlement**: how a hold closes, once the call is over.
 - **Ledger**: the holds, the settlements, and a tally per budget and
   window of what is held and what was spent.
+- **Price**: a model's list rates, from one versioned table: input,
+  output, a cache read, a cache write, a longer-lived cache's write where
+  the provider keeps one, the rates past a long-context threshold, and
+  the fee of each tool the provider runs itself. A model with no row has
+  no price; there is no default row.
 
 ## What can happen
 
@@ -61,7 +66,7 @@ thing [Acme is made of](../../../../README.md).
 The loop asks the gate before each model call and each spending job,
 with the scopes the call is charged to and its worst case
 (`rules.call_exposure`, `rules.job_exposure`, over a price read through
-`pricing.PriceSource`). A refusal parks the loop on the budget
+`pricing.PricingInterface`). A refusal parks the loop on the budget
 (`rules.budget_park`) in [the agent sessions](../agent_sessions/README.md),
 which wake it at the reset or on a raise. The ledger keeps its own
 tables (ADR 1006).

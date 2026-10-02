@@ -22,6 +22,14 @@ class PromptCount(StrEnum):
     UPPER_BOUND = "upper_bound"  # a bound proven to be at least the provider's count
 
 
+class CacheWrite(StrEnum):
+    """Whether a request writes the provider's prompt cache, and which."""
+
+    NONE = "none"
+    SHORT = "short"  # the provider's default cache
+    LONG = "long"  # a longer-lived cache, which some providers bill higher
+
+
 class PromptSize(Platform):
     tokens: int = Field(ge=0)
     counted_by: PromptCount
@@ -29,7 +37,7 @@ class PromptSize(Platform):
 
 class CallShape(Platform):
     prompt: PromptSize
-    writes_cache: bool = False  # the request writes the provider's prompt cache
+    cache: CacheWrite = CacheWrite.NONE  # the prompt cache the request writes
     output_bound: int = Field(ge=1)  # the most output tokens the request allows
     thinking_outside: int = Field(default=0, ge=0)  # thinking billed beyond the output bound
     provider_tools: FrozenMapping = Field(default_factory=dict, validate_default=True)

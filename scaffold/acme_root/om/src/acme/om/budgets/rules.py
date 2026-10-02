@@ -11,7 +11,7 @@ from acme.om.budgets.pricing import ModelPrice, Rates
 from acme.om.budgets.types.amount import NOTHING, Amount, AmountUnit, Spend
 from acme.om.budgets.types.breach import Breach, BreachAction, Refusal
 from acme.om.budgets.types.budget import Budget, BudgetWindow, WindowKind
-from acme.om.budgets.types.exposure import CallShape
+from acme.om.budgets.types.exposure import CacheWrite, CallShape
 from acme.om.budgets.types.hold import (
     Bill,
     Billed,
@@ -109,31 +109,44 @@ def _highest(price: ModelPrice, prompt_tokens: int) -> Rates:
     base rates and every tier the prompt passes. A tier raises the output
     rate too, so each rate is taken at its highest across them."""
     applying = [price.rates, *(t.rates for t in price.tiers if prompt_tokens > t.above)]
+    long_writes = [r.cache_write_long for r in applying]
     return Rates(
         input=max(r.input for r in applying),
         cache_write=max(r.cache_write for r in applying),
         cache_read=max(r.cache_read for r in applying),
         output=max(r.output for r in applying),
+        # A long cache's write has a rate only where every rate that can
+        # apply names one.
+        cache_write_long=None if None in long_writes else max(w or 0 for w in long_writes),
         thinking=max(r.output if r.thinking is None else r.thinking for r in applying),
     )
 
 
 def call_exposure(shape: CallShape, price: ModelPrice | None) -> Spend:
     """A model call's worst case: every prompt token at the highest input rate
-    that can apply (the cache write when the request writes cache, the tier
-    the prompt can pass), the whole output bound at the highest rate a token
+    that can apply (the write of the cache the request writes, the tier the
+    prompt can pass), the whole output bound at the highest rate a token
     inside it can be billed at (text, or thinking the bound holds), thinking
     billed outside that bound at the highest thinking rate, and each provider
     tool's fee times the most calls it may make. Its tokens are the
-    prompt, the output bound, and the thinking beyond it. With no price, or a
-    provider tool the price names no fee for, the cost is unknown."""
+    prompt, the output bound, and the thinking beyond it. With no price, a
+    long cache the price names no write for, or a provider tool it names no
+    fee for, the cost is unknown."""
     tokens = shape.prompt.tokens + shape.output_bound + shape.thinking_outside
     if price is None:
         return Spend(cost_micros=None, tokens=tokens)
     if any(name not in price.tool_fees for name in shape.provider_tools):
         return Spend(cost_micros=None, tokens=tokens)
     rates = _highest(price, shape.prompt.tokens)
-    input_rate = max(rates.input, rates.cache_write) if shape.writes_cache else rates.input
+    match shape.cache:
+        case CacheWrite.NONE:
+            input_rate = rates.input
+        case CacheWrite.SHORT:
+            input_rate = max(rates.input, rates.cache_write)
+        case CacheWrite.LONG:
+            if rates.cache_write_long is None:
+                return Spend(cost_micros=None, tokens=tokens)
+            input_rate = max(rates.input, rates.cache_write_long)
     thinking_rate = rates.output if rates.thinking is None else rates.thinking
     cost = (
         _ceil(shape.prompt.tokens, input_rate)

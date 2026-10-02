@@ -16,6 +16,8 @@ from acme.om.base import utcnow
 from acme.om.budgets import BudgetGateInterface, BudgetsManagerInterface
 from acme.om.budgets.impl.gate import BudgetGateImpl, BudgetGateOptions
 from acme.om.budgets.impl.manager import BudgetsManagerImpl, BudgetsOptions
+from acme.om.budgets.impl.pricing import PricingTableImpl
+from acme.om.budgets.pricing import PricingInterface
 from acme.om.events import EventsManagerInterface
 from acme.om.events.impl.manager import EventsManagerImpl, EventsOptions
 from acme.om.idempotency import IdempotencyManagerInterface
@@ -57,6 +59,7 @@ class Managers:
     agent_sessions: AgentSessionsManagerInterface
     budgets: BudgetsManagerInterface
     budget_gate: BudgetGateInterface
+    pricing: PricingInterface
 
 
 def build_tenancy(
@@ -120,6 +123,7 @@ def build_managers(
     orchestrations_options: OrchestrationsOptions | None = None,
     steps_options: StepsOptions | None = None,
     agent_sessions_options: AgentSessionsOptions | None = None,
+    budgets_options: BudgetsOptions | None = None,
 ) -> Managers:
     """`integrations` is the root of the hosted services the managers front:
     the identity provider, which the tenancy manager signs people in and
@@ -185,7 +189,11 @@ def build_managers(
     )
     # The gate reads the budgets of a call's scopes and holds on the ledger.
     budgets = BudgetsManagerImpl(
-        storage.get_budget_storage(), storage.get_ledger_storage(), outbox, BudgetsOptions()
+        storage.get_budget_storage(),
+        storage.get_ledger_storage(),
+        tenancy,
+        outbox,
+        budgets_options or BudgetsOptions(),
     )
     budget_gate = BudgetGateImpl(
         storage.get_budget_storage(), storage.get_ledger_storage(), BudgetGateOptions()
@@ -218,5 +226,7 @@ def build_managers(
         agent_sessions=agent_sessions,
         budgets=budgets,
         budget_gate=budget_gate,
+        # The one source of prices: the list table.
+        pricing=PricingTableImpl(),
     )
     return managers

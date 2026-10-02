@@ -16,7 +16,7 @@ from acme.om.agent_sessions.types.agent_session import SessionStatus
 from acme.om.budgets.types.amount import AmountUnit
 from acme.om.budgets.types.breach import BreachAction
 from acme.om.budgets.types.budget import BudgetScopeKind, WindowKind
-from acme.om.budgets.types.exposure import PromptCount
+from acme.om.budgets.types.exposure import CacheWrite, PromptCount
 from acme.om.budgets.types.hold import NotBilledProof
 from acme.om.context import (
     AppType,
@@ -66,6 +66,7 @@ ENUMS = [
     AmountUnit,
     BreachAction,
     PromptCount,
+    CacheWrite,
     NotBilledProof,
     Limit,
     LimitKind,

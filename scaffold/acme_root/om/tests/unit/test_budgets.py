@@ -17,7 +17,8 @@ from pydantic import ValidationError
 from acme.infra.impl.local import InfraLocalImpl
 from acme.om.base import new_id, utcnow
 from acme.om.budgets.impl.gate import BudgetGateImpl, BudgetGateOptions
-from acme.om.budgets.pricing import ModelPrice, PriceTier, Rates
+from acme.om.budgets.impl.pricing import LIST_PRICES, PricingTableImpl
+from acme.om.budgets.pricing import ModelPrice, PriceTable, PriceTier, Rates
 from acme.om.budgets.rules import (
     EPOCH,
     OWN_AMOUNT_UNLOCK,
@@ -38,7 +39,7 @@ from acme.om.budgets.types.budget import (
     BudgetWindow,
     WindowKind,
 )
-from acme.om.budgets.types.exposure import CallShape, PromptCount, PromptSize
+from acme.om.budgets.types.exposure import CacheWrite, CallShape, PromptCount, PromptSize
 from acme.om.budgets.types.hold import (
     Billed,
     BillUnknown,
@@ -123,7 +124,13 @@ def test_december_resets_into_january_and_a_span_only_has_a_length() -> None:
 # The worst case, over a price table.
 
 MILLION = 1_000_000
-BASE = Rates(input=3 * MILLION, cache_write=3_750_000, cache_read=300_000, output=15 * MILLION)
+BASE = Rates(
+    input=3 * MILLION,
+    cache_write=3_750_000,
+    cache_write_long=6 * MILLION,
+    cache_read=300_000,
+    output=15 * MILLION,
+)
 LONG = Rates(input=6 * MILLION, cache_write=7_500_000, cache_read=600_000, output=22_500_000)
 
 PRICES: dict[str, ModelPrice] = {
@@ -142,21 +149,22 @@ PRICES: dict[str, ModelPrice] = {
     "free": ModelPrice(rates=Rates(input=0, cache_write=0, cache_read=0, output=0)),
 }
 """Rates in millionths per million tokens: `plain` is 3 in, 3.75 to write the
-cache, 15 out; past 200k prompt tokens `long` doubles its input and raises
-its output by half; `thinker` bills thinking at a rate of its own."""
+short cache and 6 the long one, 15 out; past 200k prompt tokens `long`
+doubles its input and raises its output by half, and names no long cache;
+`thinker` bills thinking at a rate of its own."""
 
 
 def shape(
     prompt: int,
     output: int,
     *,
-    cache: bool = False,
+    cache: CacheWrite = CacheWrite.NONE,
     thinking: int = 0,
     tools: dict[str, int] | None = None,
 ) -> CallShape:
     return CallShape(
         prompt=PromptSize(tokens=prompt, counted_by=PromptCount.PROVIDER),
-        writes_cache=cache,
+        cache=cache,
         output_bound=output,
         thinking_outside=thinking,
         provider_tools=tools or {},
@@ -168,12 +176,13 @@ def shape(
     [
         # 10k in at 3, 1k out at 15.
         ("plain", shape(10_000, 1_000), 30_000 + 15_000),
-        # A request that writes the cache: every prompt token at the write rate.
-        ("plain", shape(10_000, 1_000, cache=True), 37_500 + 15_000),
+        # A request that writes a cache: every prompt token at that cache's write.
+        ("plain", shape(10_000, 1_000, cache=CacheWrite.SHORT), 37_500 + 15_000),
+        ("plain", shape(10_000, 1_000, cache=CacheWrite.LONG), 60_000 + 15_000),
         # Below the tier, the base rates; past it, the tier's, the output's too.
         ("long", shape(150_000, 4_000), 450_000 + 60_000),
         ("long", shape(250_000, 4_000), 1_500_000 + 90_000),
-        ("long", shape(250_000, 4_000, cache=True), 1_875_000 + 90_000),
+        ("long", shape(250_000, 4_000, cache=CacheWrite.SHORT), 1_875_000 + 90_000),
         # Thinking at its own rate, inside the output bound and outside it.
         ("thinker", shape(1_000, 2_000, thinking=8_000), 1_250 + 24_000 + 96_000),
         # The provider's own tool: its fee times the most calls it may make.
@@ -187,39 +196,101 @@ def test_the_hold_covers_the_worst_case(model: str, call: CallShape, cost: int) 
     assert exposure.tokens == call.prompt.tokens + call.output_bound + call.thinking_outside
 
 
-def billed_at(price: ModelPrice, prompt: tuple[int, int, int], output: int, thinking: int) -> int:
+def billed_at(
+    price: ModelPrice, cache: CacheWrite, prompt: tuple[int, int, int], output: int, thinking: int
+) -> int:
     """What a usage costs at the rates that apply to it: the prompt split into
-    plain, cache read, and cache write tokens."""
+    plain, cache read, and cache write tokens, the writes at the rate of the
+    cache the request wrote."""
     plain, read, written = prompt
     tiers = [t for t in price.tiers if sum(prompt) > t.above]
     rates = tiers[-1].rates if tiers else price.rates
+    write = rates.cache_write_long if cache is CacheWrite.LONG else rates.cache_write
     per_token = (
         plain * rates.input
         + read * rates.cache_read
-        + written * rates.cache_write
+        + written * (write or 0)
         + output * rates.output
         + thinking * (rates.output if rates.thinking is None else rates.thinking)
     )
     return -(-per_token // MILLION)
 
 
-@pytest.mark.parametrize("model", ["plain", "long", "thinker"])
-def test_no_usage_the_shape_allows_costs_more_than_its_hold(model: str) -> None:
+@pytest.mark.parametrize(
+    ("provider", "model"),
+    [("table", "plain"), ("table", "long"), ("table", "thinker")]
+    + [(row.provider, row.model) for row in LIST_PRICES.rows],
+)
+def test_no_usage_the_shape_allows_costs_more_than_its_hold(provider: str, model: str) -> None:
     """Whatever mix of plain, cached, and written prompt tokens the provider
     reports, and whatever output and thinking up to their bounds, the usage
-    costs no more than the hold."""
-    price = PRICES[model]
-    for size, cache in product((1_000, 199_999, 200_001, 300_000), (False, True)):
+    costs no more than the hold: over the rows above and every row of the
+    list table."""
+    price = PRICES[model] if provider == "table" else PricingTableImpl().price_of(provider, model)
+    assert price is not None
+    for size, cache in product((1_000, 199_999, 200_001, 300_000), CacheWrite):
         call = shape(size, 4_000, cache=cache, thinking=2_000)
         hold = call_exposure(call, price).cost_micros
-        assert hold is not None
-        splits = [(size, 0, 0), (0, size, 0)] + (
-            [(0, 0, size), (size // 2, 0, size - size // 2)] if cache else []
-        )
+        if hold is None:
+            continue  # no rate for that cache: the gate refuses it where cost binds
+        splits = [(size, 0, 0), (0, size, 0)]
+        if cache is not CacheWrite.NONE:
+            splits += [(0, 0, size), (size // 2, 0, size - size // 2)]
         # The output bound written as text or as thinking, and thinking beyond it.
         turns = [(0, 0), (4_000, 0), (4_000, 2_000), (0, 6_000)]
         for prompt, (output, thinking) in product(splits, turns):
-            assert billed_at(price, prompt, output, thinking) <= hold, (model, size, prompt)
+            billed = billed_at(price, cache, prompt, output, thinking)
+            assert billed <= hold, (model, size, cache, prompt)
+
+
+ADAPTER_MODELS = [
+    ("anthropic", "claude-opus-5-5"),
+    ("anthropic", "claude-sonnet-5-5"),
+    ("anthropic", "claude-haiku-4-5"),
+    ("anthropic", "claude-haiku-4-5-20251001"),
+    ("openai", "gpt-6-astra"),
+    ("openai", "gpt-6.1-sol"),
+    ("openai", "gpt-6-luna"),
+]
+
+
+def test_the_list_table_prices_every_model_the_adapters_name_and_no_other() -> None:
+    pricing = PricingTableImpl()
+    assert {(row.provider, row.model) for row in LIST_PRICES.rows} == set(ADAPTER_MODELS)
+    assert LIST_PRICES.version == "2026-10-02"
+    for provider, model in ADAPTER_MODELS:
+        assert pricing.price_of(provider, model) is not None, model
+    # No default row: an unlisted model, or a listed one under another provider, has no price.
+    assert pricing.price_of("anthropic", "claude-unlisted") is None
+    assert pricing.price_of("openai", "claude-opus-5-5") is None
+    twice = LIST_PRICES.rows[0]
+    with pytest.raises(ValidationError, match="one row"):
+        PriceTable(version="x", rows=(twice, twice))
+
+
+@pytest.mark.parametrize(
+    ("provider", "model", "call", "cost"),
+    [
+        # 100k prompt written to the hour's cache at 8, 8k out at 20.
+        ("anthropic", "claude-opus-5-5", shape(100_000, 8_000, cache=CacheWrite.LONG), 960_000),
+        ("anthropic", "claude-haiku-4-5", shape(10_000, 1_000, cache=CacheWrite.SHORT), 17_500),
+        # Past 272k prompt tokens: the long rates, a cache write at 5, 10k out at 15.
+        ("openai", "gpt-6.1-sol", shape(300_000, 10_000, cache=CacheWrite.SHORT), 1_650_000),
+        # Below the threshold, the short rates, and three searches at 10 per 1,000.
+        (
+            "openai",
+            "gpt-6-astra",
+            shape(270_000, 1_000, tools={"web_search": 3}),
+            2_700_000 + 50_000 + 30_000,
+        ),
+        # The provider keeps no longer cache: its write has no rate.
+        ("openai", "gpt-6-luna", shape(1_000, 1_000, cache=CacheWrite.LONG), None),
+    ],
+)
+def test_the_hold_over_the_list_table(
+    provider: str, model: str, call: CallShape, cost: int | None
+) -> None:
+    assert call_exposure(call, PricingTableImpl().price_of(provider, model)).cost_micros == cost
 
 
 def test_with_no_price_the_cost_is_unknown_and_the_tokens_still_count() -> None:

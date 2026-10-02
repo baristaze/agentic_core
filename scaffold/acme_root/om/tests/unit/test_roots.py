@@ -5,6 +5,7 @@ from acme.integrations.impl.configured import absent_integrations
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.budgets import BudgetGateInterface, BudgetsManagerInterface
+from acme.om.budgets.pricing import PricingInterface
 from acme.om.budgets.storage import BudgetStorageInterface, LedgerStorageInterface
 from acme.om.events import EventsManagerInterface
 from acme.om.events.storage import EventStorageInterface
@@ -116,6 +117,7 @@ def test_business_root_has_a_field_per_manager(tmp_path: Path) -> None:
     assert isinstance(managers.agent_sessions, AgentSessionsManagerInterface)
     assert isinstance(managers.budgets, BudgetsManagerInterface)
     assert isinstance(managers.budget_gate, BudgetGateInterface)
+    assert isinstance(managers.pricing, PricingInterface)
 
 
 def test_the_tenancy_manager_carries_each_delegate(tmp_path: Path) -> None:
