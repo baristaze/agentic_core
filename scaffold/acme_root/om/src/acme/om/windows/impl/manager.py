@@ -80,9 +80,10 @@ class WindowsManagerImpl(WindowsManagerInterface):
         self._hashes = hashes
         self._seal = seal
         self._policy = policy
-        # The artifacts of sessions that keep no content at rest, by tenant,
-        # session, and id: held while this runtime lives, and nowhere else.
-        self._held: dict[tuple[UUID, UUID, UUID], str] = {}
+        # The sealed artifacts of sessions that keep no content at rest, by
+        # tenant, session, and id: held while this runtime lives, and
+        # nowhere else; noise once the session's key is revoked.
+        self._held: dict[tuple[UUID, UUID, UUID], bytes] = {}
         self._options = options
 
     async def render_request(
@@ -175,14 +176,14 @@ class WindowsManagerImpl(WindowsManagerInterface):
         # at rest keeps its artifact in this runtime's memory alone, as it
         # keeps its steps' content, and its step is bounded all the same.
         sealed = await self._seal.seal(ctx, session_id, artifact_id, whole.encode("utf-8"))
-        if sealed is None:
-            self._held[(ctx.org_id, session_id, artifact_id)] = whole
+        if not sealed.at_rest:
+            self._held[(ctx.org_id, session_id, artifact_id)] = sealed.blob
         else:
             await self._buckets.put(
                 ctx.org_id,
                 BUCKET,
                 rules.artifact_key(session_id, artifact_id),
-                sealed,
+                sealed.blob,
                 CONTENT_TYPE,
                 deadline=ctx.deadline,
             )
@@ -212,9 +213,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
         self, ctx: TenantContext, session_id: UUID, artifact_id: UUID, offset: int, limit: int
     ) -> ArtifactPage:
         ctx.require(Permission.READ)
-        text = self._held.get((ctx.org_id, session_id, artifact_id))
-        if text is None:
-            text = await self._kept(ctx, session_id, artifact_id)
+        text = await self._kept(ctx, session_id, artifact_id)
         page, more = rules.artifact_page(text, offset, limit, self._policy)
         return ArtifactPage(
             artifact_id=artifact_id,
@@ -225,13 +224,17 @@ class WindowsManagerImpl(WindowsManagerInterface):
         )
 
     async def _kept(self, ctx: TenantContext, session_id: UUID, artifact_id: UUID) -> str:
-        """An artifact's text as the store keeps it, opened under its
-        session's key."""
-        artifact = await self._storage.read_artifact(ctx.org_id, session_id, artifact_id)
-        if artifact is None:
-            raise NotFound(f"artifact {artifact_id} not found")
-        key = rules.artifact_key(session_id, artifact_id)
-        sealed = await self._buckets.get(ctx.org_id, BUCKET, key, deadline=ctx.deadline)
+        """An artifact's text, held in this runtime's memory or kept in the
+        store, opened under its session's key. Once the key is revoked it is
+        noise wherever it is, and every read of it is refused."""
+        held = (ctx.org_id, session_id, artifact_id)
+        sealed = self._held.get(held)
+        if sealed is None:
+            artifact = await self._storage.read_artifact(ctx.org_id, session_id, artifact_id)
+            if artifact is None:
+                raise NotFound(f"artifact {artifact_id} not found")
+            key = rules.artifact_key(session_id, artifact_id)
+            sealed = await self._buckets.get(ctx.org_id, BUCKET, key, deadline=ctx.deadline)
         data = await self._seal.open(ctx, session_id, artifact_id, sealed)
         if data is None:
             raise KeyRevoked(f"the content of artifact {artifact_id} is erased with its key")

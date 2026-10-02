@@ -21,7 +21,7 @@ from contracts.loops import (
     said,
     use,
 )
-from contracts.step_storage import make_request
+from contracts.step_storage import make_request, make_response
 
 from acme.infra.workspaces import EgressMode, EgressPolicy, IsolationMode, IsolationSpec
 from acme.integrations.model_providers.calls import ModelCall
@@ -677,23 +677,43 @@ async def test_a_reply_cut_by_its_output_limit_is_never_sent_again_unchanged(
     assert isinstance(kept, ModelResponseHeader) and kept.truncated
 
 
-def test_a_request_sent_again_unchanged_counts_toward_the_error_streak() -> None:
+def exchange(session_id: UUID, loop_id: UUID, seq: int, *, answered: bool) -> tuple[Step, Step]:
+    """One unchanged main request and its response: whole when the provider
+    answered it, abandoned when its call failed."""
+    request = make_request(session_id, loop_id, ()).model_copy(update={"seq": seq})
+    header = (
+        ModelResponseHeader(stop_reason=StopReason.END_TURN)
+        if answered
+        else ModelResponseHeader(abandoned=True)
+    )
+    response = make_response(session_id, loop_id, request.id).model_copy(
+        update={"seq": seq + 1, "header": header}
+    )
+    return request, response
+
+
+def streak_of(steps: list[Step], loop_id: UUID, limits: Limits) -> Limit | None:
+    now = utcnow()
+    trip = tripped(limits, tally_loop(steps, loop_id), now=now, run_started_at=now, deadline=None)
+    return None if trip is None else trip.limit
+
+
+def test_a_request_the_provider_answered_and_sent_again_unchanged_counts_toward_the_streak() -> (
+    None
+):
     session_id, loop_id = new_id(), new_id()
     limits = Limits(error_streak=3)
-    steps = [
-        make_request(session_id, loop_id, ()).model_copy(update={"seq": seq}) for seq in range(1, 4)
+    answered = [
+        step for seq in range(1, 9, 2) for step in exchange(session_id, loop_id, seq, answered=True)
     ]
-    now = utcnow()
-    assert (
-        tripped(limits, tally_loop(steps[:3], loop_id), now=now, run_started_at=now, deadline=None)
-        is None
-    )
-    again = make_request(session_id, loop_id, ()).model_copy(update={"seq": 4})
-    trip = tripped(
-        limits, tally_loop([*steps, again], loop_id), now=now, run_started_at=now, deadline=None
-    )
-    assert trip is not None and trip.limit is Limit.ERROR_STREAK
-    assert trip.outcome is LoopOutcome.INCONCLUSIVE
+    assert streak_of(answered[:6], loop_id, limits) is None
+    assert streak_of(answered, loop_id, limits) is Limit.ERROR_STREAK, "the fourth, unchanged"
+    retried = [
+        step
+        for seq in range(1, 21, 2)
+        for step in exchange(session_id, loop_id, seq, answered=False)
+    ]
+    assert streak_of(retried, loop_id, limits) is None, "a retry after a provider error is none"
 
 
 async def test_a_message_that_lands_after_the_render_is_neither_delivered_nor_credited(
@@ -827,3 +847,24 @@ async def test_an_accepted_result_ends_the_loop_from_the_history_after_a_park(
     assert ended.outcome is LoopOutcome.SUCCEEDED
     assert len(loop.anthropic.calls) == 1, "no model call after the accepted result"
     assert loop.tools["send"].ran_as == [loop.owner.user_id]
+
+
+async def test_a_provider_outage_that_outlasts_its_retries_parks_again_and_never_trips_the_streak(
+    tmp_path: Path,
+) -> None:
+    loop = loop_over(tmp_path)
+    session_id = await loop.start()
+    await loop.say(session_id, "What is the total?")
+    overloaded = ScriptedFailure(kind=ErrorKind.OVERLOADED, retry_after=2)
+    loop.anthropic.add(*[overloaded] * 40)
+    loop.openai.add(*[overloaded] * 40)
+    ends: list[RunEnd] = []
+    for _ in range(6):
+        run = await loop.loops.run(loop.owner, session_id)
+        ends.append(run.end)
+        assert run.park is not None and run.park.retry_at is not None, run
+        assert run.park.reason is ParkReason.PROVIDER
+        loop.clock.now = run.park.retry_at
+        await loop.managers.agent_sessions.wake_session(loop.owner, session_id, run.park)
+
+    assert ends == [RunEnd.PARKED] * 6, "it waits on the provider, and ends nothing"

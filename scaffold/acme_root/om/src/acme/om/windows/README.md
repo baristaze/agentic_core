@@ -45,8 +45,9 @@ reads, sized for the model that reads it.
   window compacts and the request is sent again, once.
 - **Keep a large result.** A tool result above the size bound is kept as
   an artifact before its step is written. A session that keeps no
-  content at rest keeps its artifact in the memory of the runtime that
-  holds the session, and nowhere else; its step is bounded all the same.
+  content at rest keeps its artifact, sealed, in the memory of the
+  runtime that holds the session, and nowhere else; its step is bounded
+  all the same, and revoking its key erases it there too.
 - **Read an artifact**, a page at a time, opened with the session's key.
 - **Erase.** Revoking the session's key leaves the artifact's record and
   turns its text to noise; a read of it is refused.
