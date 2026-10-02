@@ -14,6 +14,7 @@ ALTER TABLE core.agent_sessions
     ADD COLUMN speaker jsonb,
     ADD COLUMN untrusted boolean NOT NULL;
 CREATE INDEX ix_agent_sessions_org_id_parent_id_id ON core.agent_sessions (org_id, parent_id, id);
+CREATE INDEX ix_agent_sessions_org_id_root_id ON core.agent_sessions (org_id, root_id);
 
 -- A tree: a root session and its sub-agents, one row keyed by the root's
 -- id, holding what the whole tree shares. A spawn takes a slot in one
@@ -94,3 +95,11 @@ CREATE POLICY tenant_fence ON core.session_authorities
             AND current_user = 'acme_system'
         )
     );
+
+-- A session's purge takes its authority, and its tree once it was the tree's
+-- last session, under the purge login, within the tenant the fence admits
+-- (ADR 1010). The purge login reads and deletes these two tables and nothing
+-- else of them.
+
+GRANT SELECT, DELETE ON core.session_authorities TO acme_purge;
+GRANT SELECT, DELETE ON core.agent_trees TO acme_purge;

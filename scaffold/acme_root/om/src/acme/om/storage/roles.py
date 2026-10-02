@@ -49,9 +49,11 @@ INSERT on them and never UPDATE or DELETE. The migration that creates one
 takes the two back from the role's default privileges, and the login command
 takes them back again after each grant it makes (ADR 1002, ADR 1006)."""
 
-PURGED_TABLES: frozenset[str] = frozenset({"agent_sessions", "steps", "step_cursors"})
-"""The tables the purge login reaches: a session and its history, which no
-serving login may delete. It holds SELECT and DELETE on them and nothing
+PURGED_TABLES: frozenset[str] = frozenset(
+    {"agent_sessions", "steps", "step_cursors", "session_authorities", "agent_trees"}
+)
+"""The tables the purge login reaches: a session, its history, its authority,
+and its tree, which go together when the session is purged. It holds SELECT and DELETE on them and nothing
 else, granted by the migrations that admit it and again by the login
 command, and the tenant fence admits it within the tenant its transaction
 names and never under the system scope (ADR 1010)."""

@@ -4,6 +4,7 @@ hands back one frozen object with a field per manager."""
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from uuid import UUID
 
 from acme.infra.cache import CacheInterface, CacheScope
 from acme.infra.root import InfraInterface
@@ -88,6 +89,16 @@ class Managers:
     models: ModelsManagerInterface
     attribution: AttributionManagerInterface
     agents: AgentsManagerInterface
+
+
+async def purge_held(
+    managers: Managers, org_id: UUID, session_id: UUID, tree_id: UUID | None
+) -> None:
+    """What attribution and the agents hold of a session the sweep purges:
+    its authority, and its tree when it was the tree's last session."""
+    await managers.attribution.purge_authority(org_id, session_id)
+    if tree_id is not None:
+        await managers.agents.purge_tree(org_id, tree_id)
 
 
 def build_tenancy(
@@ -254,6 +265,12 @@ def build_managers(
         tenancy,
         outbox,
         agent_sessions_options or AgentSessionsOptions(),
+        # What attribution and the agents hold of a purged session goes with
+        # it. Both are built below on this manager, so the edge is bound at
+        # call time.
+        purged=lambda org_id, session_id, tree_id: purge_held(
+            managers, org_id, session_id, tree_id
+        ),
     )
     privacy = PrivacyManagerImpl(
         storage.get_privacy_storage(),

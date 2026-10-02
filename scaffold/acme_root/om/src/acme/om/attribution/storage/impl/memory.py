@@ -39,6 +39,13 @@ class AttributionStorageMemoryImpl(MemoryStorageBase, AttributionStorageInterfac
                 )
             self._put(self._authorities, org_id, authority, outbox_rows)
 
+    async def purge_authority(self, org_id: UUID, session_id: UUID) -> bool:
+        async with self._lock:
+            if self._get(self._authorities, org_id, session_id) is None:
+                return False
+            del self._authorities[session_id]
+            return True
+
     async def purge_tenant(self, org_id: UUID, limit: int) -> int:
         async with self._lock:
             gone = [a.id for a in self._rows(self._authorities, org_id)][:limit]

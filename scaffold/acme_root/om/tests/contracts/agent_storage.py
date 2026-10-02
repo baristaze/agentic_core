@@ -15,7 +15,7 @@ from acme.om.exceptions import PreconditionFailed
 from contracts.racing import race
 
 CROSS_TENANT_CASES: frozenset[str] = frozenset(
-    {"create_tree", "purge_tenant", "read_tree", "take_slot", "write_tree"}
+    {"create_tree", "purge_tenant", "purge_tree", "read_tree", "take_slot", "write_tree"}
 )
 """Every method of `AgentStorageInterface` that takes a tenant has a case
 in this module that presents another tenant's."""
@@ -137,6 +137,20 @@ class AgentStorageContract:
         with pytest.raises(PreconditionFailed):
             await storage.write_tree(org_b, moved(tree, version=2), 1, ())
         assert await storage.read_tree(org_a, tree.id) == tree
+
+    async def test_purge_tree_takes_one_tree_and_no_other(
+        self, storage: AgentStorageInterface
+    ) -> None:
+        org, other = new_id(), new_id()
+        purged, kept = make_tree(), make_tree()
+        for tree in (purged, kept):
+            assert await storage.create_tree(org, tree, ())
+        assert not await storage.purge_tree(other, purged.id), "another tenant's"
+        assert await storage.read_tree(org, purged.id) == purged
+        assert await storage.purge_tree(org, purged.id)
+        assert await storage.read_tree(org, purged.id) is None
+        assert not await storage.purge_tree(org, purged.id), "gone already"
+        assert await storage.read_tree(org, kept.id) == kept
 
     async def test_purge_tenant_takes_the_tenants_trees_a_batch_at_a_time(
         self, storage: AgentStorageInterface

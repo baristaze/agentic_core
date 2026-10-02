@@ -48,6 +48,13 @@ class AgentStorageMemoryImpl(MemoryStorageBase, AgentStorageInterface):
                 )
             self._put(self._trees, org_id, tree, outbox_rows)
 
+    async def purge_tree(self, org_id: UUID, tree_id: UUID) -> bool:
+        async with self._lock:
+            if self._get(self._trees, org_id, tree_id) is None:
+                return False
+            del self._trees[tree_id]
+            return True
+
     async def purge_tenant(self, org_id: UUID, limit: int) -> int:
         async with self._lock:
             gone = [t.id for t in self._rows(self._trees, org_id)][:limit]

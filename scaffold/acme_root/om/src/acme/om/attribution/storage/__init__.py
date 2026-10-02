@@ -36,6 +36,12 @@ class AttributionStorageInterface(ABC):
         ...
 
     @abstractmethod
+    async def purge_authority(self, org_id: UUID, session_id: UUID) -> bool:
+        """Deletes a purged session's authority, under the purge login; False,
+        with nothing deleted, for another tenant's or one gone already."""
+        ...
+
+    @abstractmethod
     async def purge_tenant(self, org_id: UUID, limit: int) -> int:
         """At most `limit` authorities of a deleted tenant past its
         retention; returns how many went."""

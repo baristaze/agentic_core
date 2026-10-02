@@ -7,6 +7,7 @@ that announces a change. That write may be late or lost, so it reads the
 steps from where it last stopped and is always rebuildable from them."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from uuid import UUID
 
 from acme.om.agent_sessions.types.agent_session import (
@@ -16,6 +17,12 @@ from acme.om.agent_sessions.types.agent_session import (
 )
 from acme.om.context import TenantContext
 from acme.om.steps.types.header import Park, ParkReason
+
+SessionPurged = Callable[[UUID, UUID, UUID | None], Awaitable[None]]
+"""What other namespaces hold of a session, purged before its row: given its
+tenant, its id, and its tree's id when no other session of the tree is
+left, and None otherwise. The root binds it to attribution's and the agents'
+purges, which run under the purge login in that tenant."""
 
 
 class AgentSessionsManagerInterface(ABC):
@@ -143,8 +150,9 @@ class AgentSessionsManagerInterface(ABC):
         tenant and no principal: the sessions marked deleted longer ago than
         the retention, a batch at most a call. Each is claimed first, by a compare-and-set that makes
         its delete final, so an unmark that lands first keeps the session.
-        Then its history goes, a batch of steps at most a call, and its row
-        once the history is gone, both under the purge login. A session
+        Then its history goes, a batch of steps at most a call, and once the
+        history is gone, its authority, its tree when it is the tree's last
+        session, and its row, all under the purge login. A session
         marked within its retention, or never marked, is never taken: no
         purge runs on demand. Returns how many sessions it took up, so a
         whole batch says there may be more."""

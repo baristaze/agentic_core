@@ -13,7 +13,7 @@ from acme.om.base import new_id, utcnow
 from acme.om.exceptions import PreconditionFailed
 
 CROSS_TENANT_CASES: frozenset[str] = frozenset(
-    {"create_authority", "purge_tenant", "read_authority", "write_authority"}
+    {"create_authority", "purge_authority", "purge_tenant", "read_authority", "write_authority"}
 )
 """Every method of `AttributionStorageInterface` that takes a tenant has a
 case in this module that presents another tenant's."""
@@ -94,6 +94,20 @@ class AttributionStorageContract:
         with pytest.raises(PreconditionFailed):
             await storage.write_authority(org_b, taken_over(authority, version=2), 1, ())
         assert await storage.read_authority(org_a, authority.id) == authority
+
+    async def test_purge_authority_takes_one_session_and_no_other(
+        self, storage: AttributionStorageInterface
+    ) -> None:
+        org, other = new_id(), new_id()
+        purged, kept = make_authority(), make_authority()
+        for authority in (purged, kept):
+            assert await storage.create_authority(org, authority, ())
+        assert not await storage.purge_authority(other, purged.id), "another tenant's"
+        assert await storage.read_authority(org, purged.id) == purged
+        assert await storage.purge_authority(org, purged.id)
+        assert await storage.read_authority(org, purged.id) is None
+        assert not await storage.purge_authority(org, purged.id), "gone already"
+        assert await storage.read_authority(org, kept.id) == kept
 
     async def test_purge_tenant_takes_the_tenants_authorities_a_batch_at_a_time(
         self, storage: AttributionStorageInterface

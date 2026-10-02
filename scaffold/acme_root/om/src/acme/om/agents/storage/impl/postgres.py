@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import Update, select, update
+from sqlalchemy import Update, delete, select, update
 
 from acme.om.agents.storage import AgentStorageInterface
 from acme.om.agents.storage.tables.agent_trees import AgentTrees
@@ -84,6 +84,13 @@ class AgentStoragePostgresImpl(PgStorageBase, AgentStorageInterface):
             for outbox_row in outbox_rows:
                 db.add(to_row(outbox_row, OutboxRows, org_id=org_id))
             await db.commit()
+
+    async def purge_tree(self, org_id: UUID, tree_id: UUID) -> bool:
+        stmt = delete(AgentTrees).where(AgentTrees.org_id == org_id, AgentTrees.id == tree_id)
+        async with self._purge_session_for(stmt, org_id=org_id) as session:
+            purged = deleted(await session.execute(stmt))
+            await session.commit()
+            return purged > 0
 
     async def purge_tenant(self, org_id: UUID, limit: int) -> int:
         stmt = delete_batch(AgentTrees, AgentTrees.org_id == org_id, limit=limit)

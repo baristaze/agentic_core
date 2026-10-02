@@ -22,6 +22,7 @@ CROSS_TENANT_CASES: frozenset[str] = frozenset(
         "read_children",
         "read_session",
         "read_sessions",
+        "tree_holds_others",
         "write_session",
     }
 )
@@ -202,6 +203,19 @@ class AgentSessionStorageContract:
         found = await storage.read_purgeable(now - timedelta(days=30), 10)
         assert {(org, session.id): session for org, session in found} == due
         assert len(await storage.read_purgeable(now - timedelta(days=30), 2)) == 2
+
+    async def test_tree_holds_others_answers_for_its_tree_and_tenant_alone(
+        self, storage: AgentSessionStorageInterface
+    ) -> None:
+        org, other = new_id(), new_id()
+        root, alone = make_session(), make_session()
+        child = make_session(parent=root)
+        for session in (root, child, alone):
+            assert await storage.create_session(org, session, ())
+        assert await storage.tree_holds_others(org, root.id, root.id), "its child"
+        assert await storage.tree_holds_others(org, root.id, child.id), "its root"
+        assert not await storage.tree_holds_others(org, alone.id, alone.id)
+        assert not await storage.tree_holds_others(other, root.id, root.id), "another tenant's"
 
     async def test_purge_session_deletes_a_claimed_session_alone(
         self, storage: AgentSessionStorageInterface

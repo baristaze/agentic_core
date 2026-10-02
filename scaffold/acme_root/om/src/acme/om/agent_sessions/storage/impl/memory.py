@@ -73,6 +73,11 @@ class AgentSessionStorageMemoryImpl(MemoryStorageBase, AgentSessionStorageInterf
             if s.deleted_at is not None and s.deleted_at < deleted_before
         ][:limit]
 
+    async def tree_holds_others(self, org_id: UUID, root_id: UUID, session_id: UUID) -> bool:
+        return any(
+            s.root_id == root_id and s.id != session_id for s in self._rows(self._sessions, org_id)
+        )
+
     async def purge_session(self, org_id: UUID, session_id: UUID) -> bool:
         async with self._lock:
             found = self._get(self._sessions, org_id, session_id)

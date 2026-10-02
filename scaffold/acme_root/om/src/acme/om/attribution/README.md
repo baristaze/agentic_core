@@ -67,8 +67,9 @@ authority. The rest is read off the session and its
 - **The mark never clears.**
 - **No authority, no action.** A session with no authority runs no tool
   call and spends nothing.
-- **Every authority belongs to one org,** and goes with the org's
-  sessions when the org is purged.
+- **Every authority belongs to one org,** and goes with its session
+  when the session is purged, and with the org's sessions when the org
+  is.
 
 ## How another namespace composes it
 

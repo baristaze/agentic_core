@@ -66,6 +66,12 @@ class AgentSessionStorageInterface(ABC):
         ...
 
     @abstractmethod
+    async def tree_holds_others(self, org_id: UUID, root_id: UUID, session_id: UUID) -> bool:
+        """Whether the tree `root_id` holds a session besides `session_id`,
+        marked deleted or not."""
+        ...
+
+    @abstractmethod
     async def purge_session(self, org_id: UUID, session_id: UUID) -> bool:
         """Deletes the session's row when it is claimed for its purge, under
         the purge login; False, with nothing deleted, for a session that is

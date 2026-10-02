@@ -47,8 +47,8 @@ kinds of thing [Acme is made of](../../../../README.md).
   own.
 - **The agent that hands work over cannot steer it.** The objective it
   wrote is data in the new session.
-- **Every tree belongs to one org,** and goes with the org's sessions
-  when the org is purged.
+- **Every tree belongs to one org,** and goes when the last of its
+  sessions is purged, or with the org's sessions when the org is.
 
 ## How another namespace composes it
 

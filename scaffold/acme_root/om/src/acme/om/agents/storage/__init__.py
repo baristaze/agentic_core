@@ -42,6 +42,13 @@ class AgentStorageInterface(ABC):
         ...
 
     @abstractmethod
+    async def purge_tree(self, org_id: UUID, tree_id: UUID) -> bool:
+        """Deletes a tree whose last session is purged, under the purge
+        login; False, with nothing deleted, for another tenant's or one gone
+        already."""
+        ...
+
+    @abstractmethod
     async def purge_tenant(self, org_id: UUID, limit: int) -> int:
         """At most `limit` trees of a deleted tenant past its retention;
         returns how many went."""

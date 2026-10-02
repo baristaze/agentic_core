@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Update, delete, select, update
+from sqlalchemy import Update, delete, exists, select, update
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.storage.tables.agent_sessions import AgentSessions
@@ -105,6 +105,17 @@ class AgentSessionStoragePostgresImpl(PgStorageBase, AgentSessionStorageInterfac
                 (row.org_id, to_model(row, AgentSession))
                 for row in (await session.execute(stmt)).scalars()
             ]
+
+    async def tree_holds_others(self, org_id: UUID, root_id: UUID, session_id: UUID) -> bool:
+        stmt = select(
+            exists().where(
+                AgentSessions.org_id == org_id,
+                AgentSessions.root_id == root_id,
+                AgentSessions.id != session_id,
+            )
+        )
+        async with self._session_for(stmt, org_id=org_id) as session:
+            return bool((await session.execute(stmt)).scalar_one())
 
     async def purge_session(self, org_id: UUID, session_id: UUID) -> bool:
         stmt = delete(AgentSessions).where(

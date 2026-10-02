@@ -198,6 +198,9 @@ class AgentsManagerImpl(AgentsManagerInterface):
             return Verdict(accepted=False, reason=refusal)
         return await self._gate.check(ctx, session_id, result)
 
+    async def purge_tree(self, org_id: UUID, tree_id: UUID) -> bool:
+        return await self._storage.purge_tree(org_id, tree_id)
+
     async def purge_tenant(self, ctx: TenantContext) -> int:
         ctx.require(Permission.WRITE)
         if not await self._tenancy.tenant_expired(ctx):

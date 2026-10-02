@@ -385,6 +385,10 @@ async def test_a_long_history_is_folded_a_batch_at_a_time(managers: Managers) ->
     assert projected_session.status is SessionStatus.PENDING
 
 
+async def nothing_held(org_id: UUID, session_id: UUID, tree_id: UUID | None) -> None:
+    """A session that no other namespace holds anything of."""
+
+
 class Overtaken(AgentSessionStorageMemoryImpl):
     """A session storage another writer reaches first, `jumps` times: it
     moves the stored version just before each of those writes lands."""
@@ -424,6 +428,7 @@ async def test_a_projection_behind_another_writer_reads_again_and_folds_on(
         managers.tenancy,
         managers.outbox,
         AgentSessionsOptions(project_attempts=2),
+        purged=nothing_held,
     )
     ctx = context(Role.MEMBER)
     created = await sessions.create_session(ctx, make_session())
@@ -548,6 +553,7 @@ def purging(
         managers.outbox,
         AgentSessionsOptions(retention=timedelta(days=30)),
         clock=clock,
+        purged=nothing_held,
     )
 
 

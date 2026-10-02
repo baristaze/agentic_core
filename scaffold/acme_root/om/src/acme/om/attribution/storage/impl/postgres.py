@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import Update, select, update
+from sqlalchemy import Update, delete, select, update
 
 from acme.om.attribution.storage import AttributionStorageInterface
 from acme.om.attribution.storage.tables.session_authorities import SessionAuthorities
@@ -62,6 +62,15 @@ class AttributionStoragePostgresImpl(PgStorageBase, AttributionStorageInterface)
             for outbox_row in outbox_rows:
                 db.add(to_row(outbox_row, OutboxRows, org_id=org_id))
             await db.commit()
+
+    async def purge_authority(self, org_id: UUID, session_id: UUID) -> bool:
+        stmt = delete(SessionAuthorities).where(
+            SessionAuthorities.org_id == org_id, SessionAuthorities.id == session_id
+        )
+        async with self._purge_session_for(stmt, org_id=org_id) as session:
+            purged = deleted(await session.execute(stmt))
+            await session.commit()
+            return purged > 0
 
     async def purge_tenant(self, org_id: UUID, limit: int) -> int:
         stmt = delete_batch(SessionAuthorities, SessionAuthorities.org_id == org_id, limit=limit)

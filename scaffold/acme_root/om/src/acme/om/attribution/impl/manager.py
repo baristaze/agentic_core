@@ -207,6 +207,9 @@ class AttributionManagerImpl(AttributionManagerInterface):
             needs_person=needs_person(marked=marked, reach=reach),
         )
 
+    async def purge_authority(self, org_id: UUID, session_id: UUID) -> bool:
+        return await self._storage.purge_authority(org_id, session_id)
+
     async def purge_tenant(self, ctx: TenantContext) -> int:
         ctx.require(Permission.WRITE)
         if not await self._tenancy.tenant_expired(ctx):

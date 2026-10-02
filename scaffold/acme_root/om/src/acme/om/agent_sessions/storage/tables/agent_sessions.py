@@ -20,6 +20,8 @@ class AgentSessions(IdentifiableMixin, TrackableMixin, SoftDeletableMixin, Base)
         Index("ix_agent_sessions_org_id_status_id", "org_id", "status", "id"),
         # A parent's children by id: the cancel that cascades reads them.
         Index("ix_agent_sessions_org_id_parent_id_id", "org_id", "parent_id", "id"),
+        # A tree's sessions: a purge asks whether any is left besides its own.
+        Index("ix_agent_sessions_org_id_root_id", "org_id", "root_id"),
         # The sweep's read across tenants: the deleted sessions by their
         # delete, the one column their retention counts from.
         Index(

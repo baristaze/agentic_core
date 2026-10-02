@@ -106,6 +106,13 @@ class AttributionManagerInterface(ABC):
         ...
 
     @abstractmethod
+    async def purge_authority(self, org_id: UUID, session_id: UUID) -> bool:
+        """Platform-internal: the authority of a session the sweep has
+        claimed for its purge goes before its row, under the purge login, in
+        the tenant named; for no principal. False when none was left."""
+        ...
+
+    @abstractmethod
     async def purge_tenant(self, ctx: TenantContext) -> int:
         """The sweep, for one tenant past its own retention: every
         authority, a batch at most a call. Any other tenant returns 0 and

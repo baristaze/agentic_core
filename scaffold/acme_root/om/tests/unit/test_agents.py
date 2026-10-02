@@ -15,6 +15,7 @@ from contracts.step_storage import make_message, make_parked, make_request, make
 from pydantic import ValidationError
 
 from acme.infra.impl.local import InfraLocalImpl
+from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
 from acme.om.agents import ResultGateInterface
 from acme.om.agents.rules import after_turn, claim_refusal, tree_refusal
@@ -29,6 +30,7 @@ from acme.om.base import new_id, utcnow
 from acme.om.context import Role, TenantContext
 from acme.om.exceptions import (
     NotAuthorized,
+    NotFound,
     TreeBoundReached,
     UnknownAgentKind,
     ValidationFailed,
@@ -446,3 +448,34 @@ async def test_a_viewer_reads_a_tree_and_spawns_nothing(managers: Managers) -> N
         await managers.agents.cancel_children(viewer, root.id)
     with pytest.raises(NotAuthorized):
         await managers.agents.set_deadline(viewer, root.id, None)
+
+
+async def test_a_purged_session_leaves_no_authority_or_tree_behind(tmp_path: Path) -> None:
+    """The sweep's purge of a session takes its authority with it, and its
+    tree once no session of the tree is left: a root purged before its child
+    leaves the tree to the child. A sibling tree's rows stay."""
+    storage = StorageMemoryImpl()
+    managers = build_managers(
+        storage,
+        InfraLocalImpl(tmp_path),
+        agent_kinds=KINDS,
+        agent_sessions_options=AgentSessionsOptions(retention=timedelta(0)),
+    )
+    ctx = context(Role.MEMBER)
+    sessions, authority = managers.agent_sessions, managers.attribution.get_authority
+    trees = storage.get_agent_storage()
+    root = await start(managers, ctx)
+    child = await managers.agents.spawn(ctx, root.id, spawn())
+    sibling = await start(managers, ctx)
+    await sessions.delete_session(ctx, root.id)
+    await sessions.purge_across_tenants()
+    with pytest.raises(NotFound):
+        await authority(ctx, root.id)
+    assert await trees.read_tree(ctx.org_id, root.id) is not None, "its child is left"
+    await sessions.delete_session(ctx, child.id)
+    await sessions.purge_across_tenants()
+    with pytest.raises(NotFound):
+        await authority(ctx, child.id)
+    assert await trees.read_tree(ctx.org_id, root.id) is None, "its last session is gone"
+    assert (await authority(ctx, sibling.id)).principal == person_of(ctx)
+    assert (await managers.agents.tree_of(ctx, sibling.id)).id == sibling.id

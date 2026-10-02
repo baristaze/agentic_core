@@ -81,6 +81,13 @@ class AgentsManagerInterface(ABC):
         ...
 
     @abstractmethod
+    async def purge_tree(self, org_id: UUID, tree_id: UUID) -> bool:
+        """Platform-internal: a tree goes when the last of its sessions is
+        purged, before that session's row, under the purge login, in the
+        tenant named; for no principal. False when none was left."""
+        ...
+
+    @abstractmethod
     async def purge_tenant(self, ctx: TenantContext) -> int:
         """The sweep, for one tenant past its own retention: every tree, a
         batch at most a call. Any other tenant returns 0 and reads
