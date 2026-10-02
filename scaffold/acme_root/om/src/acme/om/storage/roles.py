@@ -32,14 +32,18 @@ TABLE_ROLES: dict[str, DatabaseRole] = {
     "agent_sessions": DatabaseRole.CORE,
     "steps": DatabaseRole.ACTIVITY,
     "step_cursors": DatabaseRole.ACTIVITY,
+    "budgets": DatabaseRole.CORE,
+    "budget_tallies": DatabaseRole.ACTIVITY,
+    "budget_holds": DatabaseRole.ACTIVITY,
+    "budget_settlements": DatabaseRole.ACTIVITY,
     "fill_sets": DatabaseRole.CORE,
 }
 
-APPEND_ONLY_TABLES: frozenset[str] = frozenset({"steps"})
+APPEND_ONLY_TABLES: frozenset[str] = frozenset({"steps", "budget_holds", "budget_settlements"})
 """Tables whose rows are written once: the serving logins hold SELECT and
 INSERT on them and never UPDATE or DELETE. The migration that creates one
 takes the two back from the role's default privileges, and the login command
-takes them back again after each grant it makes (ADR 1002)."""
+takes them back again after each grant it makes (ADR 1002, ADR 1006)."""
 
 PURGED_TABLES: frozenset[str] = frozenset({"agent_sessions", "steps", "step_cursors"})
 """The tables the purge login reaches: a session and its history, which no

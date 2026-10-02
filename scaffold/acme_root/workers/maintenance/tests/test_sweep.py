@@ -38,6 +38,10 @@ from acme.infra.observability import (
 )
 from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.base import EMPTY_UUID, new_id, utcnow
+from acme.om.budgets.rules import lines_of
+from acme.om.budgets.types.amount import Spend
+from acme.om.budgets.types.budget import Budget, BudgetScopeKind, WindowKind
+from acme.om.budgets.types.hold import Hold
 from acme.om.context import CredentialKind, RequestContext, Role, TenantContext, build_context
 from acme.om.events.manager import audit_event
 from acme.om.media.types.file import File
@@ -460,6 +464,49 @@ async def test_the_sweep_purges_a_session_deleted_past_its_retention_and_no_othe
     for session in (recent, live):
         assert await sessions.read_session(org_id, session.id) is not None
         assert len(await history.read_steps(org_id, session.id, 0, 10)) == 1
+
+
+async def test_a_deleted_tenants_budgets_go_and_it_stays_unmarked_while_its_ledger_remains(
+    tmp_path: Path,
+) -> None:
+    """A tenant's budgets go with its other rows. What its calls held and
+    spent cannot: no serving login deletes a hold or a settlement, so the
+    ledger's purge reports what is left, and the tenant is never marked
+    purged while any of it remains."""
+    container = build_container(tmp_path)
+    org_id, _ = await deleted_org(container, days_ago=40)
+    budgets, ledger = container.storage.get_budget_storage(), container.storage.get_ledger_storage()
+    now = utcnow()
+    budget = Budget(
+        id=new_id(),
+        created_at=now,
+        updated_at=now,
+        created_by=new_id(),
+        updated_by=new_id(),
+        scope_kind=BudgetScopeKind.TENANT,
+        scope_key=str(org_id),
+        window_kind=WindowKind.LIFE,
+        tokens=1_000,
+    )
+    assert await budgets.create_budget(org_id, budget, ())
+    hold = Hold(
+        id=new_id(),
+        created_at=now,
+        spender_id=new_id(),
+        purpose="main",
+        exposure=Spend(cost_micros=0, tokens=10),
+        lines=lines_of([budget], now),
+    )
+    assert await ledger.open_hold(org_id, hold) is None
+    loop = build_loop(container)
+    tenancy = container.storage.get_tenancy_storage()
+
+    for _ in range(3):
+        await loop._sweep_once()  # pyright: ignore[reportPrivateUsage]
+    assert await budgets.read_budgets(org_id, None, 10) == []
+    assert await ledger.count_tenant(org_id, 10) == 2, "the hold and its tally stay"
+    kept = await tenancy.read_org(org_id)
+    assert kept is not None and kept.purged_at is None, "its ledger remains"
 
 
 async def test_a_pass_reads_no_org_row_to_ask_whether_a_tenant_expired(

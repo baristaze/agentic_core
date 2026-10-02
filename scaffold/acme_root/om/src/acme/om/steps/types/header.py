@@ -50,15 +50,26 @@ class LoopOutcome(StrEnum):
     ERRORED = "errored"  # an error no park can clear
 
 
+PERSON_ONLY = frozenset({ParkReason.PERSON, ParkReason.HANDOVER, ParkReason.PAUSE})
+"""The reasons only a person clears: a question, a hand-over, a pause."""
+
+
 class Park(Platform):
     """What a parked loop waits on: its reason, what clears it, and when it
-    tries again by itself. No retry time means only a person can unblock it."""
+    tries again by itself. No retry time means only a person can unblock it,
+    so a park only a person clears carries none."""
 
     reason: ParkReason
     unlock: Stored = Field(min_length=1, max_length=MAX_NAME)
     """What clears the park, named as a kind or an id (`approval`, a job's
     id), never as content."""
     retry_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def _a_person_sets_no_clock(self) -> Self:
+        if self.retry_at is not None and self.reason in PERSON_ONLY:
+            raise ValueError(f"a {self.reason.value} park is cleared by a person, never by a time")
+        return self
 
 
 class InputHeader(Platform):
