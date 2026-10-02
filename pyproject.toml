@@ -1,7 +1,8 @@
 # Tool configuration for the checkers under scripts/ and their tests.
 # This repository is not a Python package: nothing here is built or
-# published, and uv does not manage it as a project. The release version
-# lives in .claude-plugin/plugin.json, never here.
+# published, and uv does not manage it as a project. The one package it
+# holds, agentic-check, has its own pyproject.toml under checkers/. The
+# release version lives in .claude-plugin/plugin.json, never here.
 
 [project]
 name = "agentic-core-checks"
@@ -13,20 +14,28 @@ managed = false
 
 [tool.ruff]
 line-length = 130
-src = ["scripts", "tests"]
-include = ["scripts/**/*.py", "tests/**/*.py"]
+src = ["scripts", "tests", "checkers/src"]
+include = ["scripts/**/*.py", "tests/**/*.py", "checkers/**/*.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["_common", "check_skills", "conftest"]
+known-first-party = ["_common", "check_skills", "conftest", "agentic_check", "agentic_check_fixtures"]
 
 [tool.mypy]
 python_version = "3.10"
-files = ["scripts", "tests"]
-mypy_path = ["scripts", "tests"]
+files = ["scripts", "tests", "checkers/src"]
+mypy_path = ["scripts", "tests", "checkers/src"]
 explicit_package_bases = true
 check_untyped_defs = true
 warn_unused_ignores = true
 warn_redundant_casts = true
+
+# agentic-check under checkers/src needs Python 3.11 for tomllib; the
+# scripts keep the 3.10 floor above, and mypy has one python_version
+# per run. Under 3.10 rules tomllib has no stub, so it reads as Any
+# here. The checker's own tests run on 3.11 and later, where it is real.
+[[tool.mypy.overrides]]
+module = ["tomllib"]
+ignore_missing_imports = true

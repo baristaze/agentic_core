@@ -66,7 +66,10 @@ it.
   `scaffold` branch holds the guideline's `scaffold/` folder unchanged,
   and main merges each release with a merge commit, never a squash
   (`arch-upgrade-scaffold`).
-- `checkers/` holds the checker for the lenses a program can decide.
+- `checkers/` holds `agentic-check`, the checker for the lenses a
+  program can decide, in the shape of the guideline's `arch-check`: its
+  own distribution, configured in the scaffold's `pyproject.toml` and
+  run by its `make check`. Its tests are `tests/test_agentic_check_*.py`.
 - `.claude-plugin/` holds the plugin and marketplace manifests; the
   repository root is the plugin, `agentic-core`. `plugin.json` carries
   the one release version, and `scripts/check_version.py` holds every
@@ -110,11 +113,13 @@ claude plugin validate . --strict   # the manifests (when claude is installed)
 
 The scaffold's gates run in a copy of it, as CI's `scaffold` job runs
 them. A copy named `agentic` runs its stack as the compose project
-`agentic`, on the ports its `.env.example` names:
+`agentic`, on the ports its `.env.example` names. Its `agentic-check`
+runs at the engine release the copy pins; `AGENTIC_CHECK` runs this
+checkout's instead, as CI does:
 
 ```bash
 python3 scaffold/new.py ../agentic && cd ../agentic
-make setup && make check            # the copy's fast gate
+make setup && make check AGENTIC_CHECK="uv run --no-project --python $(cat .python-version) python $OLDPWD/checkers/agentic_check.py"
 cp .env.example .env && make infra-up migrate migrate-check test-integration
 ```
 

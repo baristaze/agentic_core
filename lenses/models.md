@@ -32,7 +32,12 @@ hold is MOD-02.)
 
 **Severity.** medium
 
-**Check.** review
+**Shape.** `scaffold/acme_root/om/src/acme/om/models/types/fill.py` and
+`scaffold/acme_root/om/src/acme/om/models/resolver.py`
+
+**Check.** `agentic-check` decides that no string is written as a `model`
+argument, key, field, or default outside the price table and the fills;
+the rest is judged.
 
 ## MOD-02 A switch is explicit, never silent
 
@@ -58,6 +63,9 @@ compaction first, or one inside an open tool-use cycle with thinking on.
 
 **Severity.** high
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/models/impl/manager.py` and
+`scaffold/acme_root/om/src/acme/om/models/rules.py`
+
 **Check.** review
 
 ## MOD-03 A fallback stays inside the session's eligibility
@@ -82,6 +90,9 @@ tenant's is missing; a session under zero data retention resolved to a
 fill that retains.
 
 **Severity.** medium
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/models/impl/resolver.py` and
+`scaffold/acme_root/om/src/acme/om/models/rules.py`
 
 **Check.** review
 
@@ -110,6 +121,9 @@ credential; an adapter outside `integrations/`, or one with no twin.
 
 **Severity.** medium
 
+**Shape.**
+`scaffold/acme_root/integrations/src/acme/integrations/model_providers`
+
 **Check.** review
 
 ## MOD-05 A response records its stop reason and is never assumed whole
@@ -131,6 +145,9 @@ treated as complete; a refusal raised as a provider error and retried.
 (A truncated tool-use block executed is STP-11.)
 
 **Severity.** medium
+
+**Shape.**
+`scaffold/acme_root/integrations/src/acme/integrations/model_providers`
 
 **Check.** review
 
@@ -158,6 +175,9 @@ loop; a provider error handed to the model as a tool failure.
 
 **Severity.** medium
 
+**Shape.**
+`scaffold/acme_root/integrations/src/acme/integrations/model_providers`
+
 **Check.** review
 
 ## MOD-07 The engine owns retries, and an outage signal parks at once
@@ -183,6 +203,9 @@ process of a fleet keeps for itself.
 
 **Severity.** medium
 
+**Shape.**
+`scaffold/acme_root/integrations/src/acme/integrations/model_providers`
+
 **Check.** review
 
 ## MOD-08 The scripted provider stands in for every provider
@@ -201,5 +224,9 @@ engine handles, or that streams a response with no usage; a test that
 needs a network or a provider's key.
 
 **Severity.** medium
+
+**Shape.**
+`scaffold/acme_root/integrations/src/acme/integrations/model_providers` and
+`scaffold/acme_root/integrations/tests/test_model_providers_scripted.py`
 
 **Check.** review

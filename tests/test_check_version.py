@@ -46,3 +46,22 @@ def test_plugin_version_must_be_semver(repo, version, capsys):
     repo.write(".claude-plugin/plugin.json", '{"version": "v1.2"}\n')
     assert version.main() == 1
     assert "is not MAJOR.MINOR.PATCH" in capsys.readouterr().out
+
+
+def test_the_checker_and_its_pins_carry_the_version(repo, version, capsys):
+    pin = "uvx --from git+https://github.com/baristaze/agentic_core@v1.2.3#subdirectory=checkers agentic-check"
+    repo.write("checkers/pyproject.toml", '[project]\nname = "agentic-core-check"\nversion = "1.2.3"\n')
+    repo.write("checkers/src/agentic_check/__init__.py", '__version__ = "1.2.3"\n')
+    repo.write("checkers/README.md", f"# agentic-check\n\n{pin}\n")
+    repo.write("scaffold/acme_root/Makefile", f"AGENTIC_CHECK ?= {pin}\n")
+    assert version.main() == 0
+    capsys.readouterr()
+    repo.edit("checkers/pyproject.toml", '"1.2.3"', '"1.2.4"')
+    repo.edit("checkers/src/agentic_check/__init__.py", '"1.2.3"', '"1.2.4"')
+    repo.edit("scaffold/acme_root/Makefile", "@v1.2.3", "@v1.2.4")
+    assert version.main() == 1
+    out = capsys.readouterr().out
+    assert "checkers/pyproject.toml: version is '1.2.4', plugin.json says '1.2.3'" in out
+    assert "checkers/src/agentic_check/__init__.py: __version__ is '1.2.4', plugin.json says '1.2.3'" in out
+    assert "scaffold/acme_root/Makefile:1: pins agentic_core@v1.2.4, plugin.json says 1.2.3" in out
+    assert "checkers/README.md" not in out

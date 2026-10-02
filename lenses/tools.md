@@ -37,7 +37,12 @@ TOL-02.)
 
 **Severity.** medium
 
-**Check.** review
+**Shape.** `scaffold/acme_root/om/src/acme/om/tools/types/tool.py` and
+`scaffold/acme_root/om/src/acme/om/tools/tool.py`
+
+**Check.** `agentic-check` decides that every `ToolSpec` built without
+unpacking a mapping names its class, effect, timeout, interruptibility,
+and mode; the rest is judged.
 
 ## TOL-02 A tool's effect says what a repeat may do
 
@@ -57,6 +62,9 @@ key an idempotent tool passes to the system it calls.
 recovery runs it twice (STP-11); a key the tool receives and drops.
 
 **Severity.** high
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/tools/types/tool.py` and
+`scaffold/acme_root/om/src/acme/om/tools/tool.py`
 
 **Check.** review
 
@@ -83,6 +91,8 @@ calls its sender may not make.
 
 **Severity.** high
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/tools/registry.py`
+
 **Check.** review
 
 ## TOL-04 An MCP server's annotations are hints, never authority
@@ -104,6 +114,9 @@ definition served with no pinned hash, or a changed one served before it
 is reviewed.
 
 **Severity.** high
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/tools/types/mcp.py` and
+`scaffold/acme_root/om/src/acme/om/tools/mcp.py`
 
 **Check.** review
 
@@ -128,6 +141,8 @@ irreversible change outside the workspace, such as a force push, classed
 
 **Severity.** medium
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/tools/types/tool.py`
+
 **Check.** review
 
 ## TOL-06 Policy decides by class and target, never by the model's claims
@@ -151,6 +166,9 @@ call; a tenant setting that loosens a call past a platform ceiling; a
 destructive call allowed unattended.
 
 **Severity.** high
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/tools/types/policy.py` and
+`scaffold/acme_root/om/src/acme/om/tools/rules.py`
 
 **Check.** review
 
@@ -179,6 +197,9 @@ expires.
 
 **Severity.** high
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/tools/rules.py` and
+`scaffold/acme_root/om/src/acme/om/tools/impl/manager.py`
+
 **Check.** review
 
 ## TOL-08 A tool's time is the least of three, and its whole tree stops
@@ -199,6 +220,9 @@ that stops the tool's process and leaves its children running; several
 calls folded into one request step.
 
 **Severity.** medium
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/tools/rules.py` and
+`scaffold/acme_root/infra/src/acme/infra/transports/processes.py`
 
 **Check.** review
 
@@ -223,6 +247,9 @@ recovery is STP-11, and a spending job that skips the gate is BND-02.)
 
 **Severity.** medium
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/tools/tool.py` and
+`scaffold/acme_root/om/src/acme/om/tools/types/call.py`
+
 **Check.** review
 
 ## TOL-10 A tool failure has a class the model reads
@@ -246,6 +273,9 @@ advice; a failing test returned as a tool failure; an engine retry of an
 `unsafe` call (the repeated side effect is STP-11).
 
 **Severity.** medium
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/tools/rules.py` and
+`scaffold/acme_root/om/src/acme/om/steps/types/header.py`
 
 **Check.** review
 
@@ -275,7 +305,11 @@ value.
 
 **Severity.** high
 
-**Check.** review
+**Shape.** `scaffold/acme_root/infra/src/acme/infra/transports/injection.py` and
+`scaffold/acme_root/infra/src/acme/infra/transports/local.py`
+
+**Check.** `agentic-check` decides that no tool input, tool output, or step
+type declares a `SecretStr` or `SecretBytes` field; the rest is judged.
 
 ## TOL-12 Redaction stops accidents; scope and lifetime are the defense
 
@@ -298,6 +332,8 @@ a match on the raw value alone; a stream with no holdback, so a split
 value passes; a snapshot pushed unscanned.
 
 **Severity.** high
+
+**Shape.** `scaffold/acme_root/infra/src/acme/infra/transports/redaction.py`
 
 **Check.** review
 
@@ -326,7 +362,13 @@ run a command.
 
 **Severity.** high
 
-**Check.** review
+**Shape.** `scaffold/acme_root/om/src/acme/om/tools/tool.py` and
+`scaffold/acme_root/infra/src/acme/infra/transports/__init__.py`
+
+**Check.** `agentic-check` decides that a module defining a tool imports no
+process, socket, or `shutil` module, and calls no `open()`, `os.open()`, or
+`io.open()` and no `os` or `asyncio` function that starts a process; the
+rest is judged.
 
 ## TOL-14 Isolation is refused, never weakened
 
@@ -349,5 +391,8 @@ refusal found after the model has been called; a new environment with no
 `environment_changed` step.
 
 **Severity.** high
+
+**Shape.** `scaffold/acme_root/infra/src/acme/infra/workspaces/__init__.py` and
+`scaffold/acme_root/om/src/acme/om/tools/manager.py`
 
 **Check.** review

@@ -28,6 +28,8 @@ kind's name; a kind upgraded mid-loop, or with no `switched` step.
 
 **Severity.** medium
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/agents/types/kind.py`
+
 **Check.** review
 
 ## AGT-02 A done rule ends a loop, and a result gate checks the claim
@@ -51,6 +53,9 @@ call; a success accepted with no evidence; a null gate that passes a
 result as checked.
 
 **Severity.** medium
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/agents/rules.py` and
+`scaffold/acme_root/om/src/acme/om/agents/impl/gate.py`
 
 **Check.** review
 
@@ -77,6 +82,8 @@ cancel that leaves a child running.
 
 **Severity.** medium
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/agents/impl/manager.py`
+
 **Check.** review
 
 ## AGT-04 A child never escalates
@@ -96,6 +103,9 @@ taken from its kind with no limit by the parent's. (A child that starts
 without its parent's untrusted mark is TRU-06.)
 
 **Severity.** high
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_sessions/rules.py` and
+`scaffold/acme_root/om/src/acme/om/attribution/rules.py`
 
 **Check.** review
 
@@ -121,6 +131,9 @@ park unlocked on the child, or one that parks its parent.
 
 **Severity.** medium
 
+**Shape.** `scaffold/acme_root/om/src/acme/om/agents/rules.py` and
+`scaffold/acme_root/om/src/acme/om/agents/types/tree.py`
+
 **Check.** review
 
 ## AGT-06 The root's budget bounds the whole tree
@@ -139,6 +152,9 @@ copy of its parent's or budget created outside the root's; a child's
 calls gated on a scope the root's budget does not bound.
 
 **Severity.** high
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/agents/types/tree.py` and
+`scaffold/acme_root/om/src/acme/om/agents/types/request.py`
 
 **Check.** review
 
@@ -161,5 +177,7 @@ with no principal's confirmation; a starting agent whose messages can
 change the new session's objective.
 
 **Severity.** high
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/agents/impl/manager.py`
 
 **Check.** review

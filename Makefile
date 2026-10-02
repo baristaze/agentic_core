@@ -17,7 +17,7 @@ MARKDOWNLINT := $(NPX) markdownlint-cli2@$(call npm_pin,markdownlint-cli2)
 RUFF := uvx ruff@$(call pin,ruff)
 MYPY := uvx --with pytest==$(call pin,pytest) mypy@$(call pin,mypy)
 
-.PHONY: help check lint ruff mypy lenses links toc version skills agents test plugin gen-skills gen-skills-check gen-toc clean
+.PHONY: help check lint ruff mypy lenses links toc version skills agents test plugin checkers-dist gen-skills gen-skills-check gen-toc clean
 
 help:              ## show targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -27,11 +27,11 @@ check: lint ruff mypy lenses links toc version gen-skills-check skills agents te
 lint:              ## markdownlint over every Markdown file
 	$(MARKDOWNLINT) "**/*.md" "#node_modules"
 
-ruff:              ## lint and format check of scripts/ and tests/
+ruff:              ## lint and format check of scripts/, checkers/, and tests/
 	$(RUFF) check
 	$(RUFF) format --check
 
-mypy:              ## type check of scripts/ and tests/
+mypy:              ## type check of scripts/, checkers/src/, and tests/
 	$(MYPY)
 
 lenses:            ## every lens follows the format and cites a real section of the spec
@@ -61,6 +61,11 @@ plugin:            ## validate the plugin, marketplace, skills, and agents with 
 	  && for dir in skills agents; do if [ -d "$$dir" ]; then claude plugin validate "$$dir" --strict || exit 1; fi; done \
 	  && $(PYTHON) scripts/check_plugin.py; \
 	else echo "plugin: claude not installed, skipped"; fi
+
+checkers-dist:     ## build the agentic-check wheel and run the agentic-check entry point from it
+	@dist=$$(mktemp -d) && trap 'rm -rf "$$dist"' EXIT \
+	  && uv build --quiet checkers --wheel --out-dir "$$dist" \
+	  && uvx --isolated --from "$$(ls "$$dist"/*.whl)" agentic-check --version
 
 gen-skills:        ## regenerate the review skills from the template and the lens files
 	$(PYTHON) scripts/gen_skills.py
