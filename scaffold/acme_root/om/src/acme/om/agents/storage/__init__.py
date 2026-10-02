@@ -9,7 +9,7 @@ from acme.om.agents.types.tree import AgentTree
 from acme.om.outbox.types.row import OutboxRow
 
 
-class AgentTreeStorageInterface(ABC):
+class AgentStorageInterface(ABC):
     @abstractmethod
     async def create_tree(
         self, org_id: UUID, tree: AgentTree, outbox_rows: tuple[OutboxRow, ...]

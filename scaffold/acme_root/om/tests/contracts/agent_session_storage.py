@@ -9,7 +9,6 @@ import pytest
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
-from acme.om.attribution.types.authority import Authority, AuthorityMode
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
 from acme.om.exceptions import PreconditionFailed
@@ -43,9 +42,6 @@ def make_session(*, parent: AgentSession | None = None) -> AgentSession:
         participants=(actor, new_id()),
         kind="delivery",
         kind_version=1,
-        authority=Authority(
-            mode=AuthorityMode.STEADY, principal=Principal(kind=PrincipalKind.PERSON, id=actor)
-        ),
         tools=("read_log", "run_tests"),
         parent_id=None if parent is None else parent.id,
         root_id=session_id if parent is None else parent.root_id,
@@ -91,7 +87,6 @@ class AgentSessionStorageContract:
         org = new_id()
         session = make_session().model_copy(
             update={
-                "spender": Principal(kind=PrincipalKind.PERSON, id=new_id()),
                 "speaker": Principal(kind=PrincipalKind.SERVICE, id=new_id()),
                 "untrusted": True,
                 "handed_off_from": new_id(),

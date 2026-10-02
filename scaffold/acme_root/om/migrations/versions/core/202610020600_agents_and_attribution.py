@@ -1,5 +1,5 @@
-"""A session's kind, authority, lineage, and attribution; the agent trees,
-with their fence.
+"""A session's kind, lineage, and cached attribution; the agent trees and
+the session authorities, with their fences.
 
 Revision ID: 202610020600
 Revises: 202610020100
@@ -15,8 +15,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    run_sql(DatabaseRole.CORE, "202610020600_agent_kinds_and_trees.up.sql")
+    run_sql(DatabaseRole.CORE, "202610020600_agents_and_attribution.up.sql")
 
 
 def downgrade() -> None:
-    run_sql(DatabaseRole.CORE, "202610020600_agent_kinds_and_trees.down.sql")
+    run_sql(DatabaseRole.CORE, "202610020600_agents_and_attribution.down.sql")

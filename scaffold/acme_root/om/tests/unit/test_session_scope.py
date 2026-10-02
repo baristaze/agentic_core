@@ -31,7 +31,8 @@ IMPL_INTERFACES: dict[str, str] = {
     "OrchestrationsStoragePostgresImpl": "OrchestrationsStorageInterface",
     "StepStoragePostgresImpl": "StepStorageInterface",
     "AgentSessionStoragePostgresImpl": "AgentSessionStorageInterface",
-    "AgentTreeStoragePostgresImpl": "AgentTreeStorageInterface",
+    "AgentStoragePostgresImpl": "AgentStorageInterface",
+    "AttributionStoragePostgresImpl": "AttributionStorageInterface",
 }
 """Which interface each Postgres impl answers, so a method found in the source
 can be held against the exceptions list, which names interfaces."""

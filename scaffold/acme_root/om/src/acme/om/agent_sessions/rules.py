@@ -35,8 +35,7 @@ from typing import Any
 from uuid import UUID
 
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
-from acme.om.attribution.rules import call_principal, fold, spender_of
-from acme.om.attribution.types.authority import Authority
+from acme.om.attribution.rules import fold
 from acme.om.steps.types.header import (
     ControlCommand,
     ControlHeader,
@@ -177,34 +176,21 @@ def lineage(source: AgentSession | None, session: AgentSession) -> dict[str, Any
     session it came from, with its speaker and mark brought up to its
     history, or None for a root.
 
-    A root starts on its own: depth 1, no spender, no speaker, unmarked. A
-    session that came from another takes its mark, and runs under the
-    principal that session's own calls run under, never one its maker
-    names. A child also joins its parent's tree one level down, pays as its
-    parent pays, and may call only the tools both its kind and its parent
-    may: no child holds more than its parent. A session handed over roots a
-    tree of its own, and pays as the principal who confirms its work."""
+    A root starts on its own: depth 1, no speaker, unmarked. A session that
+    came from another carries its mark. A child also joins its parent's
+    tree one level down and may call only the tools both its kind and its
+    parent may: no child holds more than its parent. A session handed over
+    roots a tree of its own. Whose authority it runs under, and who pays,
+    is attribution's (`attribution.rules.inherited`)."""
     if source is None:
-        return {
-            "root_id": session.id,
-            "depth": 1,
-            "spender": None,
-            "speaker": None,
-            "untrusted": False,
-        }
-    principal = call_principal(source.authority, source.speaker)
-    taken = {
-        "speaker": None,
-        "untrusted": source.untrusted,
-        "authority": Authority(mode=session.authority.mode, principal=principal),
-    }
+        return {"root_id": session.id, "depth": 1, "speaker": None, "untrusted": False}
+    taken = {"speaker": None, "untrusted": source.untrusted}
     if session.parent_id is None:
-        return {**taken, "root_id": session.id, "depth": 1, "spender": None}
+        return {**taken, "root_id": session.id, "depth": 1}
     return {
         **taken,
         "root_id": source.root_id,
         "depth": source.depth + 1,
-        "spender": spender_of(source.spender, source.speaker),
         "tools": tuple(tool for tool in session.tools if tool in source.tools),
     }
 

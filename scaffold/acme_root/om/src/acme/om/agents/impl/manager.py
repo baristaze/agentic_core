@@ -7,13 +7,13 @@ from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.agents.gate import ResultGateInterface
 from acme.om.agents.manager import AgentsManagerInterface
 from acme.om.agents.rules import claim_refusal, tree_for, tree_refusal
-from acme.om.agents.storage import AgentTreeStorageInterface
+from acme.om.agents.storage import AgentStorageInterface
 from acme.om.agents.types.kind import AgentKind, AgentKindCatalog
 from acme.om.agents.types.request import Handoff, Spawn, Start
 from acme.om.agents.types.result import Result, Verdict
 from acme.om.agents.types.tree import AgentTree
 from acme.om.attribution import AttributionManagerInterface
-from acme.om.attribution.types.authority import Authority
+from acme.om.attribution.types.authority import SessionAuthority
 from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
 from acme.om.base import Platform, derived_id, new_id, utcnow
 from acme.om.context import Permission, TenantContext
@@ -38,7 +38,7 @@ class AgentsOptions(Platform):
 class AgentsManagerImpl(AgentsManagerInterface):
     def __init__(
         self,
-        storage: AgentTreeStorageInterface,
+        storage: AgentStorageInterface,
         sessions: AgentSessionsManagerInterface,
         steps: StepsManagerInterface,
         attribution: AttributionManagerInterface,
@@ -67,9 +67,10 @@ class AgentsManagerImpl(AgentsManagerInterface):
         await self._create_tree(
             ctx, tree_for(kind, start.id, start.deadline, self._clock(), ctx.user_id)
         )
-        principal = Principal(kind=PrincipalKind.PERSON, id=ctx.user_id)
-        session = self._session(ctx, kind, start.id, start.title, start.participants, principal)
-        return await self._sessions.create_session(ctx, session)
+        session = self._session(ctx, kind, start.id, start.title, start.participants)
+        created = await self._sessions.create_session(ctx, session)
+        await self._open(ctx, created)
+        return created
 
     async def spawn(self, ctx: TenantContext, parent_id: UUID, spawn: Spawn) -> AgentSession:
         ctx.require(Permission.WRITE)
@@ -90,14 +91,15 @@ class AgentsManagerImpl(AgentsManagerInterface):
             # two leaves the count one high, never one low.
             if await self._storage.take_slot(ctx.org_id, tree.id) is None:
                 raise TreeBoundReached(f"the tree holds its {tree.count} sub-agents")
-            # The principal, the spender, the mark, the cut of the tools, and
-            # the depth are the create's, taken from the parent.
-            made = self._session(
-                ctx, kind, spawn.id, spawn.title, (), parent.authority.principal, parent_id
-            )
+            # The mark, the cut of the tools, and the depth are the create's,
+            # and the principal and the spender the authority's, each taken
+            # from the parent.
+            made = self._session(ctx, kind, spawn.id, spawn.title, (), parent_id)
             child = await self._sessions.create_session(ctx, made)
+        authority = await self._open(ctx, child)
         objective = self._input(
             child,
+            authority.principal,
             derived_id(child.id, child.created_at, "objective"),
             from_agent=parent,
             origin=Origin.PARENT,
@@ -159,26 +161,26 @@ class AgentsManagerImpl(AgentsManagerInterface):
         source = await self._sessions.get_session(ctx, session_id)
         session = await self._find(ctx, handoff.id)
         if session is not None and session.handed_off_from != session_id:
-            raise ValidationFailed(f"agent session {handoff.id} was not handed over by {session_id}")
+            raise ValidationFailed(
+                f"agent session {handoff.id} was not handed over by {session_id}"
+            )
         if session is None:
             kind = self._kinds.latest(handoff.kind)
-            await self._create_tree(ctx, tree_for(kind, handoff.id, None, self._clock(), ctx.user_id))
+            await self._create_tree(
+                ctx, tree_for(kind, handoff.id, None, self._clock(), ctx.user_id)
+            )
             principal = await self._attribution.call_principal(ctx, session_id)
             participants = (principal.id,) if principal.kind is PrincipalKind.PERSON else ()
             made = self._session(
-                ctx,
-                kind,
-                handoff.id,
-                handoff.title,
-                participants,
-                principal,
-                handed_off_from=session_id,
+                ctx, kind, handoff.id, handoff.title, participants, handed_off_from=session_id
             )
             session = await self._sessions.create_session(ctx, made)
+        authority = await self._open(ctx, session)
         # The objective is the agent's, so it is data and wakes nothing: the
         # session starts when its principal speaks.
         objective = self._input(
             session,
+            authority.principal,
             derived_id(session.id, session.created_at, "objective"),
             from_agent=source,
             origin=Origin.ENGINE,
@@ -188,9 +190,7 @@ class AgentsManagerImpl(AgentsManagerInterface):
         await self._steps.append_inputs(ctx, session.id, [objective])
         return session
 
-    async def judge_result(
-        self, ctx: TenantContext, session_id: UUID, result: Result
-    ) -> Verdict:
+    async def judge_result(self, ctx: TenantContext, session_id: UUID, result: Result) -> Verdict:
         ctx.require(Permission.READ)
         await self._sessions.get_session(ctx, session_id)
         refusal = claim_refusal(result)
@@ -211,14 +211,13 @@ class AgentsManagerImpl(AgentsManagerInterface):
         session_id: UUID,
         title: str,
         participants: tuple[UUID, ...],
-        principal: Principal,
         parent_id: UUID | None = None,
         *,
         handed_off_from: UUID | None = None,
     ) -> AgentSession:
         """A session as its maker sends it: the kind pinned at its version,
-        its tools, and its mode. What it takes from where it came from is
-        the create's to set."""
+        and its tools. What it takes from where it came from is the
+        create's to set."""
         now = self._clock()
         return AgentSession(
             id=session_id,
@@ -230,16 +229,22 @@ class AgentsManagerImpl(AgentsManagerInterface):
             participants=participants,
             kind=kind.name,
             kind_version=kind.version,
-            authority=Authority(mode=kind.authority, principal=principal),
             tools=kind.tools,
             parent_id=parent_id,
             root_id=session_id,
             handed_off_from=handed_off_from,
         )
 
+    async def _open(self, ctx: TenantContext, session: AgentSession) -> SessionAuthority:
+        """The session's authority, in the mode of the kind version it
+        pinned; made once, and answered as stored after."""
+        mode = self._kinds.get(session.kind, session.kind_version).authority
+        return await self._attribution.open_authority(ctx, session.id, mode)
+
     def _input(
         self,
         session: AgentSession,
+        principal: Principal,
         step_id: UUID,
         *,
         from_agent: AgentSession,
@@ -248,8 +253,8 @@ class AgentsManagerImpl(AgentsManagerInterface):
         waking: bool,
     ) -> Step:
         """A message an agent writes into `session`: on the authority
-        `session` runs under, naming the agent that wrote it, and carrying
-        the mark `session` took from it."""
+        `session` runs under, `principal`, naming the agent that wrote it,
+        and carrying the mark `session` took from it."""
         return Step(
             id=step_id,
             created_at=self._clock(),
@@ -260,7 +265,7 @@ class AgentsManagerImpl(AgentsManagerInterface):
             origin=origin,
             header=InputHeader(
                 waking=waking,
-                principal=session.authority.principal,
+                principal=principal,
                 agent=AgentRef(
                     kind=from_agent.kind,
                     version=from_agent.kind_version,

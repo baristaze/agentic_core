@@ -5,8 +5,9 @@ from acme.integrations.impl.configured import absent_integrations
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agents import AgentsManagerInterface
-from acme.om.agents.storage import AgentTreeStorageInterface
+from acme.om.agents.storage import AgentStorageInterface
 from acme.om.attribution import AttributionManagerInterface
+from acme.om.attribution.storage import AttributionStorageInterface
 from acme.om.events import EventsManagerInterface
 from acme.om.events.storage import EventStorageInterface
 from acme.om.idempotency import IdempotencyManagerInterface
@@ -48,7 +49,8 @@ async def test_memory_root_serves_every_storage() -> None:
     assert isinstance(root.get_orchestrations_storage(), OrchestrationsStorageInterface)
     assert isinstance(root.get_step_storage(), StepStorageInterface)
     assert isinstance(root.get_agent_session_storage(), AgentSessionStorageInterface)
-    assert isinstance(root.get_agent_tree_storage(), AgentTreeStorageInterface)
+    assert isinstance(root.get_agent_storage(), AgentStorageInterface)
+    assert isinstance(root.get_attribution_storage(), AttributionStorageInterface)
     assert await root.healthcheck() is True
     await root.close()
 

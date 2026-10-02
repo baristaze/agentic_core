@@ -13,6 +13,7 @@ from acme.integrations.impl.configured import IntegrationsConfiguredImpl, Integr
 from acme.integrations.root import IntegrationsInterface
 from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
 from acme.om.agents.impl.manager import AgentsOptions
+from acme.om.attribution.impl.manager import AttributionOptions
 from acme.om.events.impl.manager import EventsOptions
 from acme.om.idempotency.impl.manager import IdempotencyOptions
 from acme.om.media.impl.manager import MediaOptions
@@ -77,6 +78,7 @@ def worker_managers(
         steps_options=StepsOptions(purge_batch=batch),
         agent_sessions_options=AgentSessionsOptions(purge_batch=batch),
         agents_options=AgentsOptions(purge_batch=batch),
+        attribution_options=AttributionOptions(purge_batch=batch),
     )
 
 

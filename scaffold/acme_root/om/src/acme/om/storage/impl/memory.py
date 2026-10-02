@@ -2,8 +2,10 @@
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.storage.impl.memory import AgentSessionStorageMemoryImpl
-from acme.om.agents.storage import AgentTreeStorageInterface
-from acme.om.agents.storage.impl.memory import AgentTreeStorageMemoryImpl
+from acme.om.agents.storage import AgentStorageInterface
+from acme.om.agents.storage.impl.memory import AgentStorageMemoryImpl
+from acme.om.attribution.storage import AttributionStorageInterface
+from acme.om.attribution.storage.impl.memory import AttributionStorageMemoryImpl
 from acme.om.events.storage import EventStorageInterface
 from acme.om.events.storage.impl.memory import EventStorageMemoryImpl
 from acme.om.idempotency.storage import IdempotencyStorageInterface
@@ -37,7 +39,8 @@ class StorageMemoryImpl(StorageInterface):
         self._events = EventStorageMemoryImpl()
         self._steps = StepStorageMemoryImpl()
         self._agent_sessions = AgentSessionStorageMemoryImpl(self._outbox)
-        self._agent_trees = AgentTreeStorageMemoryImpl(self._outbox)
+        self._agents = AgentStorageMemoryImpl(self._outbox)
+        self._attribution = AttributionStorageMemoryImpl(self._outbox)
 
     def get_tenancy_storage(self) -> TenancyStorageInterface:
         return self._tenancy
@@ -66,8 +69,11 @@ class StorageMemoryImpl(StorageInterface):
     def get_agent_session_storage(self) -> AgentSessionStorageInterface:
         return self._agent_sessions
 
-    def get_agent_tree_storage(self) -> AgentTreeStorageInterface:
-        return self._agent_trees
+    def get_agent_storage(self) -> AgentStorageInterface:
+        return self._agents
+
+    def get_attribution_storage(self) -> AttributionStorageInterface:
+        return self._attribution
 
     async def healthcheck(self) -> bool:
         return True

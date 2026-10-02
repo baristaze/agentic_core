@@ -11,8 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.storage.impl.postgres import AgentSessionStoragePostgresImpl
-from acme.om.agents.storage import AgentTreeStorageInterface
-from acme.om.agents.storage.impl.postgres import AgentTreeStoragePostgresImpl
+from acme.om.agents.storage import AgentStorageInterface
+from acme.om.agents.storage.impl.postgres import AgentStoragePostgresImpl
+from acme.om.attribution.storage import AttributionStorageInterface
+from acme.om.attribution.storage.impl.postgres import AttributionStoragePostgresImpl
 from acme.om.events.storage import EventStorageInterface
 from acme.om.events.storage.impl.postgres import EventStoragePostgresImpl
 from acme.om.idempotency.storage import IdempotencyStorageInterface
@@ -146,7 +148,8 @@ class StoragePostgresImpl(StorageInterface):
         self._orchestrations = OrchestrationsStoragePostgresImpl(sessions)
         self._steps = StepStoragePostgresImpl(sessions)
         self._agent_sessions = AgentSessionStoragePostgresImpl(sessions)
-        self._agent_trees = AgentTreeStoragePostgresImpl(sessions)
+        self._agents = AgentStoragePostgresImpl(sessions)
+        self._attribution = AttributionStoragePostgresImpl(sessions)
 
     def get_tenancy_storage(self) -> TenancyStorageInterface:
         return self._tenancy
@@ -175,8 +178,11 @@ class StoragePostgresImpl(StorageInterface):
     def get_agent_session_storage(self) -> AgentSessionStorageInterface:
         return self._agent_sessions
 
-    def get_agent_tree_storage(self) -> AgentTreeStorageInterface:
-        return self._agent_trees
+    def get_agent_storage(self) -> AgentStorageInterface:
+        return self._agents
+
+    def get_attribution_storage(self) -> AttributionStorageInterface:
+        return self._attribution
 
     async def healthcheck(self) -> bool:
         """A connect and a `SELECT 1` on every engine, each under the bounds its

@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from acme.om.agents.storage import AgentTreeStorageInterface
+from acme.om.agents.storage import AgentStorageInterface
 from acme.om.agents.types.tree import AgentTree
 from acme.om.exceptions import PreconditionFailed
 from acme.om.outbox.storage import OutboxLandingInterface
@@ -8,7 +8,7 @@ from acme.om.outbox.types.row import OutboxRow
 from acme.om.storage.impl.memory_base import MemoryStorageBase, MemoryTable
 
 
-class AgentTreeStorageMemoryImpl(MemoryStorageBase, AgentTreeStorageInterface):
+class AgentStorageMemoryImpl(MemoryStorageBase, AgentStorageInterface):
     def __init__(self, outbox: OutboxLandingInterface | None = None) -> None:
         super().__init__(outbox)
         self._trees: MemoryTable[AgentTree] = {}

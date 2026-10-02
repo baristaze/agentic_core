@@ -8,7 +8,7 @@ from datetime import timedelta
 
 import pytest
 
-from acme.om.agents.storage import AgentTreeStorageInterface
+from acme.om.agents.storage import AgentStorageInterface
 from acme.om.agents.types.tree import AgentTree
 from acme.om.base import new_id, utcnow
 from acme.om.exceptions import PreconditionFailed
@@ -17,7 +17,7 @@ from contracts.racing import race
 CROSS_TENANT_CASES: frozenset[str] = frozenset(
     {"create_tree", "purge_tenant", "read_tree", "take_slot", "write_tree"}
 )
-"""Every method of `AgentTreeStorageInterface` that takes a tenant has a case
+"""Every method of `AgentStorageInterface` that takes a tenant has a case
 in this module that presents another tenant's."""
 
 
@@ -43,12 +43,12 @@ def moved(tree: AgentTree, version: int) -> AgentTree:
     return tree.model_copy(update={"deadline": later, "version": version, "updated_at": utcnow()})
 
 
-class AgentTreeStorageContract:
+class AgentStorageContract:
     @pytest.fixture
-    def storage(self) -> AgentTreeStorageInterface:
+    def storage(self) -> AgentStorageInterface:
         raise NotImplementedError("the concrete test class provides the storage")
 
-    async def test_round_trip(self, storage: AgentTreeStorageInterface) -> None:
+    async def test_round_trip(self, storage: AgentStorageInterface) -> None:
         org = new_id()
         tree = make_tree()
         assert await storage.create_tree(org, tree, ())
@@ -56,7 +56,7 @@ class AgentTreeStorageContract:
         assert await storage.read_tree(org, new_id()) is None
 
     async def test_create_reports_an_existing_id_and_changes_nothing(
-        self, storage: AgentTreeStorageInterface
+        self, storage: AgentStorageInterface
     ) -> None:
         org = new_id()
         tree = make_tree()
@@ -65,7 +65,7 @@ class AgentTreeStorageContract:
         assert await storage.read_tree(org, tree.id) == tree
 
     async def test_create_tree_under_another_tenant_is_not_read_here(
-        self, storage: AgentTreeStorageInterface
+        self, storage: AgentStorageInterface
     ) -> None:
         org_a, org_b = new_id(), new_id()
         tree = make_tree()
@@ -75,7 +75,7 @@ class AgentTreeStorageContract:
         assert await storage.read_tree(org_a, tree.id) == tree
 
     async def test_slots_are_taken_up_to_the_count_and_no_further(
-        self, storage: AgentTreeStorageInterface
+        self, storage: AgentStorageInterface
     ) -> None:
         org = new_id()
         tree = make_tree(count=2)
@@ -89,7 +89,7 @@ class AgentTreeStorageContract:
         assert await storage.take_slot(org, new_id()) is None
 
     async def test_spawns_at_once_never_pass_the_count(
-        self, storage: AgentTreeStorageInterface
+        self, storage: AgentStorageInterface
     ) -> None:
         # Eight spawns reach a tree with room for three: three slots, and the
         # size stops at the count. See contracts/racing.py for what each
@@ -104,7 +104,7 @@ class AgentTreeStorageContract:
         assert stored is not None and stored.size == 3
 
     async def test_take_slot_under_another_tenant_takes_nothing(
-        self, storage: AgentTreeStorageInterface
+        self, storage: AgentStorageInterface
     ) -> None:
         org_a, org_b = new_id(), new_id()
         tree = make_tree()
@@ -113,7 +113,7 @@ class AgentTreeStorageContract:
         assert await storage.read_tree(org_a, tree.id) == tree
 
     async def test_write_is_a_compare_and_set_and_a_slot_moves_the_version(
-        self, storage: AgentTreeStorageInterface
+        self, storage: AgentStorageInterface
     ) -> None:
         org = new_id()
         tree = make_tree()
@@ -129,7 +129,7 @@ class AgentTreeStorageContract:
         assert await storage.read_tree(org, tree.id) == taken
 
     async def test_write_tree_under_another_tenant_lands_nothing(
-        self, storage: AgentTreeStorageInterface
+        self, storage: AgentStorageInterface
     ) -> None:
         org_a, org_b = new_id(), new_id()
         tree = make_tree()
@@ -139,7 +139,7 @@ class AgentTreeStorageContract:
         assert await storage.read_tree(org_a, tree.id) == tree
 
     async def test_purge_tenant_takes_the_tenants_trees_a_batch_at_a_time(
-        self, storage: AgentTreeStorageInterface
+        self, storage: AgentStorageInterface
     ) -> None:
         gone, kept = new_id(), new_id()
         trees = [make_tree() for _ in range(3)]

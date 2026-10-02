@@ -2,7 +2,7 @@ from uuid import UUID
 
 from sqlalchemy import Update, select, update
 
-from acme.om.agents.storage import AgentTreeStorageInterface
+from acme.om.agents.storage import AgentStorageInterface
 from acme.om.agents.storage.tables.agent_trees import AgentTrees
 from acme.om.agents.types.tree import AgentTree
 from acme.om.exceptions import PreconditionFailed
@@ -45,7 +45,7 @@ def slot_statement(org_id: UUID, tree_id: UUID) -> Update:
     )
 
 
-class AgentTreeStoragePostgresImpl(PgStorageBase, AgentTreeStorageInterface):
+class AgentStoragePostgresImpl(PgStorageBase, AgentStorageInterface):
     async def create_tree(
         self, org_id: UUID, tree: AgentTree, outbox_rows: tuple[OutboxRow, ...]
     ) -> bool:

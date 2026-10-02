@@ -38,7 +38,7 @@ from acme.infra.observability import (
 )
 from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.agents.types.tree import AgentTree
-from acme.om.attribution.types.authority import Authority, AuthorityMode
+from acme.om.attribution.types.authority import AuthorityMode, SessionAuthority
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import EMPTY_UUID, new_id, utcnow
 from acme.om.context import CredentialKind, RequestContext, Role, TenantContext, build_context
@@ -382,10 +382,20 @@ def a_session() -> AgentSession:
         title="the weekly report",
         kind="delivery",
         kind_version=1,
-        authority=Authority(
-            mode=AuthorityMode.STEADY, principal=Principal(kind=PrincipalKind.PERSON, id=by)
-        ),
         root_id=session_id,
+    )
+
+
+def its_authority(session: AgentSession) -> SessionAuthority:
+    now = utcnow()
+    return SessionAuthority(
+        id=session.id,
+        created_at=now,
+        updated_at=now,
+        created_by=session.created_by,
+        updated_by=session.created_by,
+        mode=AuthorityMode.STEADY,
+        principal=Principal(kind=PrincipalKind.PERSON, id=session.created_by),
     )
 
 
@@ -419,21 +429,24 @@ def a_message(session_id: UUID) -> Step:
 async def test_a_deleted_tenant_is_never_marked_purged_while_its_history_remains(
     tmp_path: Path,
 ) -> None:
-    """A tenant's agent sessions and trees go with its other rows. Its steps
-    cannot: no serving login deletes one, so the steps' purge reports what
-    is left, and the tenant is never marked purged while any of it remains.
-    A tenant whose sessions kept no history is marked once they are gone."""
+    """A tenant's agent sessions, trees, and authorities go with its other
+    rows. Its steps cannot: no serving login deletes one, so the steps'
+    purge reports what is left, and the tenant is never marked purged while
+    any of it remains. A tenant whose sessions kept no history is marked
+    once they are gone."""
     container = build_container(tmp_path)
     with_history, _ = await deleted_org(container, days_ago=40)
     without_history, _ = await deleted_org(container, days_ago=40)
     sessions = container.storage.get_agent_session_storage()
-    trees = container.storage.get_agent_tree_storage()
+    trees = container.storage.get_agent_storage()
+    authorities = container.storage.get_attribution_storage()
     steps = container.storage.get_step_storage()
     made: dict[UUID, AgentSession] = {}
     for org_id in (with_history, without_history):
         session = made[org_id] = a_session()
         assert await sessions.create_session(org_id, session, ())
         assert await trees.create_tree(org_id, its_tree(session), ())
+        assert await authorities.create_authority(org_id, its_authority(session), ())
         if org_id == with_history:
             await steps.append_inputs(org_id, session.id, [a_message(session.id)])
     loop = build_loop(container)
@@ -444,6 +457,7 @@ async def test_a_deleted_tenant_is_never_marked_purged_while_its_history_remains
     for org_id in (with_history, without_history):
         assert await sessions.read_sessions(org_id, None, None, 10) == []
         assert await trees.read_tree(org_id, made[org_id].root_id) is None
+        assert await authorities.read_authority(org_id, made[org_id].id) is None
     assert await steps.count_tenant(with_history, 10) == 2, "the step and its cursor stay"
     kept = await tenancy.read_org(with_history)
     assert kept is not None and kept.purged_at is None, "its history remains"

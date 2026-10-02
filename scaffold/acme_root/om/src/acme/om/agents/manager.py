@@ -73,9 +73,7 @@ class AgentsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def judge_result(
-        self, ctx: TenantContext, session_id: UUID, result: Result
-    ) -> Verdict:
+    async def judge_result(self, ctx: TenantContext, session_id: UUID, result: Result) -> Verdict:
         """The result gate. A claim that cites no evidence is refused before
         any gate looks; the rest is the injected gate's to accept or
         refuse."""

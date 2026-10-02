@@ -17,7 +17,11 @@ from acme.om.agents.impl.gate import ResultGateNullImpl
 from acme.om.agents.impl.manager import AgentsManagerImpl, AgentsOptions
 from acme.om.agents.types.kind import AgentKind, AgentKindCatalog
 from acme.om.attribution import AttributionManagerInterface, PrincipalContext
-from acme.om.attribution.impl.manager import AttributionManagerImpl, no_principal_context
+from acme.om.attribution.impl.manager import (
+    AttributionManagerImpl,
+    AttributionOptions,
+    no_principal_context,
+)
 from acme.om.base import utcnow
 from acme.om.events import EventsManagerInterface
 from acme.om.events.impl.manager import EventsManagerImpl, EventsOptions
@@ -124,6 +128,7 @@ def build_managers(
     steps_options: StepsOptions | None = None,
     agent_sessions_options: AgentSessionsOptions | None = None,
     agents_options: AgentsOptions | None = None,
+    attribution_options: AttributionOptions | None = None,
     agent_kinds: tuple[AgentKind, ...] = (),
     principal_context: PrincipalContext | None = None,
     result_gate: ResultGateInterface | None = None,
@@ -198,10 +203,15 @@ def build_managers(
         agent_sessions_options or AgentSessionsOptions(),
     )
     attribution = AttributionManagerImpl(
-        agent_sessions, principal_context or no_principal_context
+        storage.get_attribution_storage(),
+        agent_sessions,
+        principal_context or no_principal_context,
+        tenancy,
+        outbox,
+        attribution_options or AttributionOptions(),
     )
     agents = AgentsManagerImpl(
-        storage.get_agent_tree_storage(),
+        storage.get_agent_storage(),
         agent_sessions,
         steps,
         attribution,

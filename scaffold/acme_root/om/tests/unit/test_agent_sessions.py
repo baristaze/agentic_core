@@ -102,9 +102,7 @@ def test_an_event_built_with_no_word_on_waking_leaves_an_idle_session_idle() -> 
     assert after_step(IDLE, event) == IDLE
     unsaid = InputHeader(principal=a_person())
     assert after_step(IDLE, a_step(StepType.EVENT, unsaid)) == IDLE
-    assert after_step(IDLE, a_step(StepType.MESSAGE, unsaid)).status is (
-        SessionStatus.PENDING
-    )
+    assert after_step(IDLE, a_step(StepType.MESSAGE, unsaid)).status is (SessionStatus.PENDING)
 
 
 def fold(steps: list[Step]) -> Projection:

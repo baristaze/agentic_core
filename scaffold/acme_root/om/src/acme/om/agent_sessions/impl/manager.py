@@ -11,8 +11,6 @@ from acme.om.agent_sessions.types.agent_session import (
     SessionStatus,
 )
 from acme.om.attribution.rules import fold
-from acme.om.attribution.types.authority import Authority
-from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import Platform, utcnow
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import NotFound, PreconditionFailed, TenantMismatch, ValidationFailed
@@ -140,29 +138,6 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
             session = after
             if not page.has_more:
                 return session
-
-    async def assign_principal(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
-        ctx.require(Permission.WRITE)
-        session = await self._read(ctx, session_id)
-        if session.parent_id is not None:
-            raise ValidationFailed(f"agent session {session_id} runs under its parent's principal")
-        principal = Principal(kind=PrincipalKind.PERSON, id=ctx.user_id)
-        if session.authority.principal == principal:
-            return session
-        now = self._clock()
-        taken = AgentSession.model_validate(
-            {
-                **session.model_dump(),
-                "authority": Authority(mode=session.authority.mode, principal=principal),
-                "version": session.version + 1,
-                "updated_at": now,
-                "updated_by": ctx.user_id,
-            }
-        )
-        rows = (versioned_row(ctx, UPDATED, taken.id, taken.version),)
-        await self._storage.write_session(ctx.org_id, taken, session.version, rows)
-        await self._relay_all(ctx, rows)
-        return taken
 
     async def archive_session(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
         ctx.require(Permission.WRITE)

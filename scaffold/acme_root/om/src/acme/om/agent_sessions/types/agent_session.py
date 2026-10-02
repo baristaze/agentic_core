@@ -2,8 +2,8 @@
 ends, and an input that wakes the session starts the next one.
 
 The entity holds what no step does: who made it, its title, its
-participants, its agent kind and version, its authority and the tools it
-may call, its parent and its root, and the session that handed it over.
+participants, its agent kind and version and the tools it may call, its
+parent and its root, and the session that handed it over.
 Its status is a projection of its steps, cached here for queries; the
 steps are the truth, and the cache is rebuilt from them
 (`agent_sessions.rules.projected`). The cache also holds two answers of
@@ -18,7 +18,6 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
-from acme.om.attribution.types.authority import Authority
 from acme.om.attribution.types.principal import MAX_KIND, Principal
 from acme.om.base import Identifiable, Platform, Trackable
 from acme.om.steps.types.content import Stored
@@ -43,20 +42,18 @@ class AgentSession(Identifiable, Trackable):
         "archived_at",
         "version",
         "depth",
-        "spender",
         "speaker",
         "untrusted",
     )
-    """The root, the depth, and the spender follow where the session came
-    from, and the rest is the projection's. A session that came from
-    another also takes its authority's principal and, for a child, the cut
-    of its tools from there (`agent_sessions.rules.lineage`)."""
+    """The root and the depth follow where the session came from, and the
+    rest is the projection's; a session also takes its mark from where it
+    came and, for a child, the cut of its tools
+    (`agent_sessions.rules.lineage`)."""
 
     title: Stored = Field(min_length=1, max_length=200)
     participants: tuple[UUID, ...] = ()  # the users the session is shared with
     kind: str = Field(min_length=1, max_length=MAX_KIND)  # its agent kind, pinned
     kind_version: int = Field(ge=1)
-    authority: Authority  # whose authority its tool calls run under
     # Its registry: the tools it may call, by name, its kind's, cut to its
     # parent's for a child.
     tools: tuple[str, ...] = ()
@@ -64,8 +61,6 @@ class AgentSession(Identifiable, Trackable):
     root_id: UUID  # its tree's root; its own id when it has no parent
     depth: int = Field(default=1, ge=1)  # 1 for a root; a child is its parent's plus one
     handed_off_from: UUID | None = None  # the session whose agent handed it the work
-    # Who pays until a principal speaks in it: what a child's spawn passed.
-    spender: Principal | None = None
     # The principal behind the latest principal-authored input the cache
     # has read.
     speaker: Principal | None = None

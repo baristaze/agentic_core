@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
+from contracts.agent_session_storage import make_session
 from contracts.doubles import context
 from contracts.factories import make_org
 from contracts.step_storage import (
@@ -35,9 +36,9 @@ from acme.om.attribution.rules import (
     trust_of,
 )
 from acme.om.attribution.types.authority import (
-    Authority,
     AuthorityMode,
     CallReach,
+    SessionAuthority,
     Trust,
 )
 from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
@@ -49,7 +50,14 @@ from acme.om.context import (
     TenantContext,
     build_context,
 )
-from acme.om.exceptions import AuthorityRevoked, NoSpender, NotAuthorized, PrincipalLapsed
+from acme.om.exceptions import (
+    AuthorityRevoked,
+    NoSpender,
+    NotAuthorized,
+    NotFound,
+    PrincipalLapsed,
+    ValidationFailed,
+)
 from acme.om.root import Managers, build_managers
 from acme.om.steps.types.content import Content, TextBlock, ToolUseBlock
 from acme.om.steps.types.header import (
@@ -155,6 +163,19 @@ def from_an_agent(
     )
 
 
+def an_authority(mode: AuthorityMode, principal: Principal) -> SessionAuthority:
+    now = utcnow()
+    return SessionAuthority(
+        id=new_id(),
+        created_at=now,
+        updated_at=now,
+        created_by=principal.id,
+        updated_by=principal.id,
+        mode=mode,
+        principal=principal,
+    )
+
+
 def from_a_program(session_id: UUID, principal: Principal) -> Step:
     """An automation's trigger: a program speaking for its principal."""
     return make_message(session_id, principal=principal).model_copy(
@@ -230,8 +251,8 @@ def test_the_speaker_is_the_latest_principal_who_spoke() -> None:
 
 def test_a_call_runs_under_the_fixed_principal_or_the_latest_asker() -> None:
     fixed, asker = a_person(), a_person()
-    steady = Authority(mode=AuthorityMode.STEADY, principal=fixed)
-    delegated = Authority(mode=AuthorityMode.DELEGATED, principal=fixed)
+    steady = an_authority(AuthorityMode.STEADY, fixed)
+    delegated = an_authority(AuthorityMode.DELEGATED, fixed)
     assert call_principal(steady, asker) == fixed
     assert call_principal(delegated, asker) == asker
     assert call_principal(delegated, None) == fixed
@@ -427,7 +448,8 @@ async def test_a_child_pays_as_its_spawn_did_until_a_principal_speaks_to_it(
         parent.id,
         Spawn(id=new_id(), kind="delivery", title="reproduce it", objective="run the tests"),
     )
-    assert child.spender == asker
+    authority = await managers.attribution.get_authority(ctx, child.id)
+    assert (authority.principal, authority.spender) == (person_of(ctx), asker)
     assert await managers.attribution.spender_for(ctx, child.id) == asker
     steering = a_person()
     await say(managers, ctx, child.id, steering)
@@ -459,9 +481,8 @@ async def test_the_mark_is_sticky_from_the_first_data_and_passes_to_children(
     objective = (await managers.steps.get_steps(ctx, late.id, 0, 10)).items[0]
     assert isinstance(objective.header, InputHeader) and objective.header.untrusted
     # A marked parent's later message marks the child it reaches.
-    carried = from_an_agent(
-        clean.id, clean.authority.principal, origin=Origin.PARENT, untrusted=True
-    )
+    on = (await managers.attribution.get_authority(ctx, clean.id)).principal
+    carried = from_an_agent(clean.id, on, origin=Origin.PARENT, untrusted=True)
     await managers.steps.append_inputs(ctx, clean.id, [carried])
     assert await attribution.is_marked(ctx, clean.id)
 
@@ -518,8 +539,8 @@ async def test_a_steady_session_runs_under_its_principal_and_parks_when_it_lapse
     transition.revoked.add(owner.id)
     with pytest.raises(PrincipalLapsed):
         await attribution.authorize_call(teammate_ctx, sid, OUTWARD)
-    taken = await managers.agent_sessions.assign_principal(teammate_ctx, sid)
-    assert taken.authority == Authority(mode=AuthorityMode.STEADY, principal=teammate)
+    taken = await attribution.assign_principal(teammate_ctx, sid)
+    assert (taken.mode, taken.principal, taken.version) == (AuthorityMode.STEADY, teammate, 2)
     assert (await attribution.authorize_call(teammate_ctx, sid, OUTWARD)).principal == teammate
 
 
@@ -554,4 +575,26 @@ async def test_a_viewer_reads_attribution_and_takes_over_nothing(managers: Manag
     await say(managers, member, sid, person_of(member))
     assert await managers.attribution.spender_for(viewer, sid) == person_of(member)
     with pytest.raises(NotAuthorized):
-        await managers.agent_sessions.assign_principal(viewer, sid)
+        await managers.attribution.assign_principal(viewer, sid)
+
+
+async def test_a_session_with_no_authority_runs_no_call_and_spends_nothing(
+    managers: Managers,
+) -> None:
+    """A session made around the agents swimlane has no authority until one
+    is opened for it, and nothing runs on it meanwhile; a session made from
+    one that holds none gets none."""
+    ctx = context(Role.MEMBER)
+    bare = await managers.agent_sessions.create_session(ctx, make_session())
+    await say(managers, ctx, bare.id, person_of(ctx))
+    with pytest.raises(NotFound):
+        await managers.attribution.authorize_call(ctx, bare.id, OUTWARD)
+    with pytest.raises(NotFound):
+        await managers.attribution.spender_for(ctx, bare.id)
+    orphan = await managers.agent_sessions.create_session(ctx, make_session(parent=bare))
+    with pytest.raises(ValidationFailed):
+        await managers.attribution.open_authority(ctx, orphan.id, AuthorityMode.STEADY)
+    opened = await managers.attribution.open_authority(ctx, bare.id, AuthorityMode.DELEGATED)
+    assert opened.principal == person_of(ctx) and opened.spender is None
+    again = await managers.attribution.open_authority(ctx, bare.id, AuthorityMode.STEADY)
+    assert again == opened, "made once, answered as stored"

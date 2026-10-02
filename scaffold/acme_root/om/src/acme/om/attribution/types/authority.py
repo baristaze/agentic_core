@@ -5,12 +5,15 @@ An agent kind picks its mode. Delegated: a call runs with the asking
 person's live permissions, asked again of the adopter's transition on
 every call. Steady: a call runs under one principal fixed when the
 session is made, whoever resumes it; when that principal no longer holds,
-the call parks until a person takes it over."""
+the call waits until a person takes the session over."""
 
 from enum import StrEnum
+from typing import ClassVar
+
+from pydantic import Field
 
 from acme.om.attribution.types.principal import Principal
-from acme.om.base import Platform
+from acme.om.base import Identifiable, Platform, Trackable
 from acme.om.context import TenantContext
 
 
@@ -27,14 +30,26 @@ class Trust(StrEnum):
     DATA = "data"
 
 
-class Authority(Platform):
-    """A session's authority. `principal` is the one a steady session's
-    calls run under. A delegated session's calls run under whoever asked
-    last, and under `principal` until a principal speaks: the person who
-    made it, or for a child the principal its spawn ran under."""
+class SessionAuthority(Identifiable, Trackable):
+    """A session's authority, one record keyed by the session's id. Made
+    once, right after the session, and never by a caller's say: a root runs
+    under the person who made it; a session made from another runs under
+    the principal that session's calls run under, and a child pays as its
+    parent pays (`attribution.rules.inherited`).
+
+    `principal` is the one a steady session's calls run under. A delegated
+    session's calls run under whoever asked last, and under `principal`
+    until a principal speaks. `spender` pays until a principal speaks in
+    the session: what a child's spawn passed it, or nobody."""
+
+    MANAGER_OWNED_FIELDS: ClassVar[tuple[str, ...]] = ("principal", "spender", "version")
+    """Inherited, or taken over; the caller names the mode alone."""
 
     mode: AuthorityMode
     principal: Principal
+    spender: Principal | None = None
+    # Every write after the create is a compare-and-set on it.
+    version: int = Field(default=1, ge=1)
 
 
 class CallReach(Platform):

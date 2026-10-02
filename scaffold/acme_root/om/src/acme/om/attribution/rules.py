@@ -17,9 +17,9 @@ on a mark the model's reading has outrun."""
 from collections.abc import Iterable
 
 from acme.om.attribution.types.authority import (
-    Authority,
     AuthorityMode,
     CallReach,
+    SessionAuthority,
     Trust,
 )
 from acme.om.attribution.types.principal import Principal
@@ -78,20 +78,33 @@ def fold(
     return speaker, marked
 
 
-def spender_of(inherited: Principal | None, speaker: Principal | None) -> Principal | None:
+def spender_of(passed: Principal | None, speaker: Principal | None) -> Principal | None:
     """Who pays for the next model call: the principal behind the latest
     principal-authored input, else the spender a child's spawn passed it.
     None when neither names one, and then nothing is spent."""
-    return speaker if speaker is not None else inherited
+    return speaker if speaker is not None else passed
 
 
-def call_principal(authority: Authority, speaker: Principal | None) -> Principal:
+def call_principal(authority: SessionAuthority, speaker: Principal | None) -> Principal:
     """Whose authority a tool call runs under: a steady session's fixed
     principal; a delegated session's latest speaker, or its own principal
     before anyone has spoken."""
     if authority.mode is AuthorityMode.DELEGATED and speaker is not None:
         return speaker
     return authority.principal
+
+
+def inherited(
+    source: SessionAuthority, speaker: Principal | None, *, child: bool
+) -> tuple[Principal, Principal | None]:
+    """The principal and the spender a session takes from the one it came
+    from, whose speaker is `speaker`. It runs under the principal that
+    session's calls run under, never one its maker names: no child holds
+    more than its parent. A child pays as its parent pays; a session handed
+    over pays as the principal who confirms its work, so it takes no
+    spender."""
+    principal = call_principal(source, speaker)
+    return principal, spender_of(source.spender, speaker) if child else None
 
 
 def needs_person(*, marked: bool, reach: CallReach) -> bool:

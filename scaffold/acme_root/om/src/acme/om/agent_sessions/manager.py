@@ -25,11 +25,11 @@ class AgentSessionsManagerInterface(ABC):
         handed over roots a tree of its own; a session to come from that the
         tenant does not hold is `ValidationFailed`. What a session takes from
         where it came is the manager's, read from that session's history as
-        it stands (`agent_sessions.rules.lineage`): its mark, the principal
-        its calls run under, and for a child its spender and the cut of its
-        tools, so no maker grants a child more than its parent holds. The
-        root, the depth, the status, and the provenance are the manager's
-        too. An id written already answers the session as stored."""
+        it stands (`agent_sessions.rules.lineage`): its mark, and for a child
+        the cut of its tools, so no maker grants a child more than its parent
+        holds. The root, the depth, the status, and the provenance are the
+        manager's too. An id written already answers the session as
+        stored."""
         ...
 
     @abstractmethod
@@ -74,14 +74,6 @@ class AgentSessionsManagerInterface(ABC):
         row that announces a change of status or the end of a loop. A writer
         that got there first is read again and the fold goes on from it.
         With nothing new, the session is answered as it is."""
-        ...
-
-    @abstractmethod
-    async def assign_principal(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
-        """The caller takes a session over: its tool calls run under them
-        from here. A steady session whose principal no longer holds parks
-        until a person does this. A child's principal is its parent's, and a
-        child is never taken over (`ValidationFailed`)."""
         ...
 
     @abstractmethod

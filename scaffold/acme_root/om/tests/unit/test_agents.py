@@ -23,7 +23,7 @@ from acme.om.agents.types.request import Handoff, Spawn, Start
 from acme.om.agents.types.result import Claim, Result, Turn, Verdict
 from acme.om.agents.types.tree import AgentTree
 from acme.om.attribution.rules import trust_of
-from acme.om.attribution.types.authority import Authority, AuthorityMode, Trust
+from acme.om.attribution.types.authority import AuthorityMode, Trust
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
 from acme.om.context import Role, TenantContext
@@ -196,7 +196,8 @@ async def test_a_session_starts_on_the_latest_version_with_its_tree(
     before = utcnow()
     session = await start(managers, ctx)
     assert (session.kind, session.kind_version) == ("delivery", 2)
-    assert session.authority == Authority(mode=AuthorityMode.STEADY, principal=person_of(ctx))
+    authority = await managers.attribution.get_authority(ctx, session.id)
+    assert (authority.mode, authority.principal) == (AuthorityMode.STEADY, person_of(ctx))
     assert session.tools == DELIVERY.tools and session.depth == 1
     tree = await managers.agents.tree_of(ctx, session.id)
     assert (tree.id, tree.height, tree.count, tree.size) == (session.id, 3, 3, 0)
@@ -216,7 +217,8 @@ async def test_a_child_holds_no_more_than_its_parent(managers: Managers) -> None
     assert child.tools == ("read_log", "run_tests", "submit"), "cut to the tools both may call"
     with pytest.raises(ValidationFailed):
         await managers.agents.spawn(owner, parent.id, spawn("reporter"))
-    assert child.authority.principal == parent.authority.principal
+    on = managers.attribution.get_authority
+    assert (await on(owner, child.id)).principal == (await on(owner, parent.id)).principal
     assert (child.parent_id, child.root_id, child.depth) == (parent.id, parent.id, 2)
     # A delegated parent's child runs under whoever asked the parent.
     assistant = await start(managers, owner, "assistant")
@@ -224,32 +226,31 @@ async def test_a_child_holds_no_more_than_its_parent(managers: Managers) -> None
         owner, assistant.id, [make_message(assistant.id, principal=person_of(teammate))]
     )
     asked = await managers.agents.spawn(owner, assistant.id, spawn("assistant"))
-    assert asked.authority == Authority(
-        mode=AuthorityMode.DELEGATED, principal=person_of(teammate)
-    )
+    authority = await on(owner, asked.id)
+    assert (authority.mode, authority.principal) == (AuthorityMode.DELEGATED, person_of(teammate))
     assert asked.tools == ASSISTANT.tools
 
 
 async def test_a_child_made_by_hand_is_held_to_its_parent_too(managers: Managers) -> None:
     """The create is the one path every session takes, so a child sent with
-    another principal, a tool its parent lacks, a spender, and no mark is
-    stored with its parent's."""
+    a tool its parent lacks, the wrong depth, and no mark is stored with its
+    parent's; its authority names no principal its maker chose, only its
+    parent's, and it pays as its parent pays."""
     ctx = context(Role.MEMBER)
     parent = await start(managers, ctx)
-    await managers.steps.append_inputs(ctx, parent.id, [make_message(parent.id)])
-    stranger = a_person()
+    asker = a_person()
+    await managers.steps.append_inputs(ctx, parent.id, [make_message(parent.id, principal=asker)])
+    await managers.steps.append_inputs(
+        ctx, parent.id, [make_message(parent.id).model_copy(update={"type": StepType.EVENT})]
+    )
     sent = make_session(parent=parent).model_copy(
-        update={
-            "authority": Authority(mode=AuthorityMode.STEADY, principal=stranger),
-            "tools": ("read_log", "deploy_production"),
-            "spender": stranger,
-            "depth": 1,
-        }
+        update={"tools": ("read_log", "deploy_production"), "depth": 1, "untrusted": False}
     )
     child = await managers.agent_sessions.create_session(ctx, sent)
-    assert child.authority.principal == parent.authority.principal != stranger
-    assert child.tools == ("read_log",)
-    assert child.spender != stranger and child.depth == 2
+    assert child.tools == ("read_log",) and child.depth == 2 and child.untrusted
+    authority = await managers.attribution.open_authority(ctx, child.id, AuthorityMode.DELEGATED)
+    assert authority.principal == person_of(ctx), "the steady parent's principal"
+    assert authority.spender == asker
 
 
 async def test_a_child_draws_on_its_trees_budget_and_deadline(managers: Managers) -> None:
@@ -357,7 +358,9 @@ async def test_a_handoff_waits_for_its_principal_and_its_objective_is_data(
         None,
         handed.id,
     )
-    assert handed.authority == Authority(mode=AuthorityMode.STEADY, principal=person_of(asker))
+    authority = await managers.attribution.get_authority(owner, handed.id)
+    assert (authority.mode, authority.principal) == (AuthorityMode.STEADY, person_of(asker))
+    assert authority.spender is None, "paid by the person who confirms it"
     assert handed.participants == (asker.user_id,)
     assert (await agents.tree_of(owner, handed.id)).id == handed.id
     assert await agents.hand_off(owner, source.id, handoff) == handed
@@ -413,4 +416,3 @@ async def test_a_viewer_reads_a_tree_and_spawns_nothing(managers: Managers) -> N
         await managers.agents.cancel_children(viewer, root.id)
     with pytest.raises(NotAuthorized):
         await managers.agents.set_deadline(viewer, root.id, None)
-
