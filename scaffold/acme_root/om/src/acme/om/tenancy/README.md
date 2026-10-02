@@ -75,7 +75,9 @@ plane. This is one of the kinds of thing
 Tenancy mints the context every other manager takes. A request's
 credential becomes a `TenantContext` through `authenticate`, and a claimed
 work item's through `service_context`, on the service role with the
-person who asked as its attribution. A manager checks what it needs
+person who asked as its attribution. A call an agent makes on a person's
+authority runs under `member_context`: the role their membership holds at
+that moment, read again for every call. A manager checks what it needs
 with `ctx.require(permission)`, and never reads tenancy's tables.
 
 The tenancy manager keeps those transitions, the seeding, the grant

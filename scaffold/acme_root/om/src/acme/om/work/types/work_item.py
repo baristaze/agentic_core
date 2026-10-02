@@ -24,6 +24,7 @@ class WorkKind(StrEnum):
     DELETE_ORG = "DELETE_ORG"  # a closed team org: its providers, then the org
     WAKE_SESSION = "WAKE_SESSION"  # a parked session's retry time has come
     WAKE_SESSIONS = "WAKE_SESSIONS"  # the reason an org's sessions parked for is gone
+    LOOP = "LOOP"  # a session's loop, for the session runner to run
 
 
 WORK_ROW_PREFIX = "work."
@@ -130,6 +131,14 @@ class WakeSessionsPayload(Platform):
     reason: LoopParkReason
 
 
+class LoopPayload(Platform):
+    """A session's loop to run: an input woke the session, or an unlock let
+    its park go. The item's target is the session; the run reads where the
+    loop is from its history, so the item carries nothing else. Each time the
+    session turns pending asks for one, and a run that finds nothing to do
+    writes nothing."""
+
+
 class DeleteAccountPayload(Platform):
     """What is left of an account once its own rows are gone: the person's
     name at the identity provider, when they signed in through it, since the
@@ -158,6 +167,7 @@ WORK_PAYLOADS: dict[WorkKind, type[Platform]] = {
     WorkKind.DELETE_ORG: DeleteOrgPayload,
     WorkKind.WAKE_SESSION: WakeSessionPayload,
     WorkKind.WAKE_SESSIONS: WakeSessionsPayload,
+    WorkKind.LOOP: LoopPayload,
 }
 """The payload shape of every kind; enqueue validates the item's payload against it."""
 
@@ -177,6 +187,10 @@ WORK_ENQUEUE_PERMISSIONS: dict[WorkKind, Permission] = {
     # the status, which WRITE covers.
     WorkKind.WAKE_SESSION: Permission.WRITE,
     WorkKind.WAKE_SESSIONS: Permission.WRITE,
+    # A write that wakes a session asks for it, relayed from its own commit;
+    # the run appends steps and projects the status, which WRITE covers, and
+    # each tool call asks its principal's own permissions again.
+    WorkKind.LOOP: Permission.WRITE,
 }
 """The permission that asks for each kind. The person who asks authorizes
 the whole run once, so the permission has to be as wide as the run: every

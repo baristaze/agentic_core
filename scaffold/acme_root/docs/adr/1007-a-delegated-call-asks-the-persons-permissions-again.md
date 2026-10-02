@@ -35,8 +35,9 @@ stop (`PrincipalLapsed`) until a person takes the session over.
 
 **The transition is the adopter's.** It is one operation of the
 adopter's tenancy manager, handed to the root. A root handed none wires
-the one that answers for nobody, so every tool call is refused rather
-than run on an authority nobody asked about.
+the tenancy manager's own, `member_context`: a person's role as their
+membership holds it at the call. It answers for no service principal,
+since the tenancy manager grants none, and for nobody who has left.
 
 **The decision is on the record.** A tool request names the principal it
 ran under and the mode that chose it.

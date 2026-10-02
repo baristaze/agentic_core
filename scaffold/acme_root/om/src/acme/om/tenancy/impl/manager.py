@@ -536,6 +536,27 @@ class TenancyManagerImpl(TenancyManagerInterface):
             credential_kind=CredentialKind.INTERNAL,
         )
 
+    async def member_context(
+        self, rctx: RequestContext, org_id: UUID, user_id: UUID
+    ) -> TenantContext:
+        # The member's own authority, read now: a role that changed since the
+        # work was asked for is the role the call runs with, and a member who
+        # left runs nothing.
+        org, user, membership = await self._storage.read_principal(org_id, user_id)
+        if org is None or org.deleted_at is not None:
+            raise NotAuthorized("the org is gone")
+        if user is None or user.deleted_at is not None or membership is None:
+            raise NotAuthorized(f"user {user_id} holds no place in the org")
+        return build_context(
+            rctx,
+            user_id=user.id,
+            org_id=org.id,
+            role=membership.role,
+            permissions=permissions_of(membership.role),
+            credential_kind=CredentialKind.INTERNAL,
+            teams=membership.teams,
+        )
+
     async def _every_org(self) -> list[Org]:
         """Every tenant, page by page: a sweep that stopped at the first clamp
         would never reach the tenants behind it."""

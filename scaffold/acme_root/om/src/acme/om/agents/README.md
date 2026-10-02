@@ -113,7 +113,9 @@ status and parks, its steps, its fill set, the window a request reads,
 the budget gate, policy and the transport, and attribution. It reads a
 session's kind to know when its loop is done and passes a submitted
 result through the gate; spawn and hand-off are called from the tools
-that offer them. A process that runs sessions calls the loop's one
-operation with the session and its context; nothing else drives a loop.
+that offer them. The session runner calls the loop's one operation with
+the session and the context its claim built: once each time the session
+turns pending, and again when a run's time is up. Nothing else drives a
+loop.
 Each session is an [agent session](../agent_sessions/README.md); what it
 may do and who pays is [attribution](../attribution/README.md)'s.
