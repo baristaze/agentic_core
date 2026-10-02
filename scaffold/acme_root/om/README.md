@@ -62,6 +62,13 @@ model's request or response, a tool's request or response, a summary, or
 a mark of a loop's life. Steps are numbered with no gaps and written
 once; the history only grows.
 
+What a step says is its **content**, and it is **sealed**: kept only
+under a **session key** of its own session, which the platform holds
+locked by the org's key. Everything else about a step, its **shape**,
+stays readable. **Revoking** a session's key erases its content and
+keeps its shape, so the history keeps its holes in known places. A
+session may instead keep its content in **memory only**.
+
 ## What the platform writes for itself
 
 No person creates these and no screen shows them, but each belongs to
@@ -99,6 +106,8 @@ arrive twice, so the second copy gets the first one's answer.
 - An agent session's steps are its truth. Its status is read off them,
   and a change of it writes an outbox row like any other change. A
   session and its steps name their org.
+- A step's content is sealed under its session's key, so revoking one
+  key erases what one session said and nothing else.
 
 ## One page per kind
 
@@ -106,6 +115,7 @@ arrive twice, so the second copy gets the first one's answer.
 - [Files](src/acme/om/media/README.md)
 - [Agent sessions](src/acme/om/agent_sessions/README.md)
 - [Steps](src/acme/om/steps/README.md)
+- [Privacy](src/acme/om/privacy/README.md)
 - [Events](src/acme/om/events/README.md)
 - [Outbox rows](src/acme/om/outbox/README.md)
 - [Work items](src/acme/om/work/README.md)
