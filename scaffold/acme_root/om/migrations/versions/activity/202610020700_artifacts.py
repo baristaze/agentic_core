@@ -2,14 +2,14 @@
 the serving logins.
 
 Revision ID: 202610020700
-Revises: 202610020101
+Revises: 202610020401
 """
 
 from acme.om.storage.migrate import run_sql
 from acme.om.storage.roles import DatabaseRole
 
 revision = "202610020700"
-down_revision = "202610020101"
+down_revision = "202610020401"
 branch_labels = None
 depends_on = None
 

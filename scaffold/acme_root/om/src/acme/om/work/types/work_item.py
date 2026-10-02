@@ -12,6 +12,8 @@ from pydantic import Field
 from acme.om.base import FrozenMapping, Identifiable, Platform, Trackable
 from acme.om.context import Permission
 from acme.om.orchestrations.types.orchestration import ParkReason
+from acme.om.steps.types.header import Park
+from acme.om.steps.types.header import ParkReason as LoopParkReason
 
 
 class WorkKind(StrEnum):
@@ -20,6 +22,8 @@ class WorkKind(StrEnum):
     WAKE_PARKED = "WAKE_PARKED"  # the reason an org's records parked for is gone
     DELETE_ACCOUNT = "DELETE_ACCOUNT"  # a deleted account's providers, then its personal org
     DELETE_ORG = "DELETE_ORG"  # a closed team org: its providers, then the org
+    WAKE_SESSION = "WAKE_SESSION"  # a parked session's retry time has come
+    WAKE_SESSIONS = "WAKE_SESSIONS"  # the reason an org's sessions parked for is gone
 
 
 WORK_ROW_PREFIX = "work."
@@ -109,6 +113,23 @@ class WakeParkedPayload(Platform):
     reason: ParkReason
 
 
+class WakeSessionPayload(ScheduledPayload):
+    """A parked session's retry time: the item waits in the queue until
+    `not_before`, the park's retry time, and the item's target is the
+    session. When it runs, a session still parked on exactly `park` is
+    unlocked; one that moved on is left as it is."""
+
+    park: Park
+
+
+class WakeSessionsPayload(Platform):
+    """The reason the org's sessions parked for is gone (a raised budget
+    clears `budget`); the item's target is the org. Every session parked for
+    it is unlocked when the item runs, and its gates run again."""
+
+    reason: LoopParkReason
+
+
 class DeleteAccountPayload(Platform):
     """What is left of an account once its own rows are gone: the person's
     name at the identity provider, when they signed in through it, since the
@@ -135,6 +156,8 @@ WORK_PAYLOADS: dict[WorkKind, type[Platform]] = {
     WorkKind.WAKE_PARKED: WakeParkedPayload,
     WorkKind.DELETE_ACCOUNT: DeleteAccountPayload,
     WorkKind.DELETE_ORG: DeleteOrgPayload,
+    WorkKind.WAKE_SESSION: WakeSessionPayload,
+    WorkKind.WAKE_SESSIONS: WakeSessionsPayload,
 }
 """The payload shape of every kind; enqueue validates the item's payload against it."""
 
@@ -149,6 +172,11 @@ WORK_ENQUEUE_PERMISSIONS: dict[WorkKind, Permission] = {
     # Only the deletion of a team org, an owner's or an operator's, asks for
     # this one, relayed from its own commit; no route enqueues it.
     WorkKind.DELETE_ORG: Permission.MANAGE_MEMBERS,
+    # A park asks for the first and a raised budget for the second, each
+    # relayed from its own commit; the handlers append a control and project
+    # the status, which WRITE covers.
+    WorkKind.WAKE_SESSION: Permission.WRITE,
+    WorkKind.WAKE_SESSIONS: Permission.WRITE,
 }
 """The permission that asks for each kind. The person who asks authorizes
 the whole run once, so the permission has to be as wide as the run: every
