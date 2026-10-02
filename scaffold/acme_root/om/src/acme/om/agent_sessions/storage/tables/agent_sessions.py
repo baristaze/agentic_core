@@ -18,6 +18,10 @@ class AgentSessions(IdentifiableMixin, TrackableMixin, SoftDeletableMixin, Base)
         # status is cached for exactly this read.
         Index("ix_agent_sessions_org_id_id", "org_id", "id"),
         Index("ix_agent_sessions_org_id_status_id", "org_id", "status", "id"),
+        # A parent's children by id: the cancel that cascades reads them.
+        Index("ix_agent_sessions_org_id_parent_id_id", "org_id", "parent_id", "id"),
+        # A tree's sessions: a purge asks whether any is left besides its own.
+        Index("ix_agent_sessions_org_id_root_id", "org_id", "root_id"),
         # The sweep's read across tenants: the deleted sessions by their
         # delete, the one column their retention counts from.
         Index(
@@ -28,8 +32,15 @@ class AgentSessions(IdentifiableMixin, TrackableMixin, SoftDeletableMixin, Base)
     )
     title: Mapped[str]
     participants: Mapped[list[str]]
+    kind: Mapped[str]
+    kind_version: Mapped[int]
+    tools: Mapped[list[str]]
     parent_id: Mapped[UUID | None]
     root_id: Mapped[UUID]
+    depth: Mapped[int]
+    handed_off_from: Mapped[UUID | None]
+    speaker: Mapped[dict[str, Any] | None]
+    untrusted: Mapped[bool]
     status: Mapped[str]
     park: Mapped[dict[str, Any] | None]
     # The same width as a step's seq.

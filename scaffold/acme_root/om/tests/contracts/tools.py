@@ -24,6 +24,8 @@ from acme.infra.workspaces import (
     WorkspaceProviderInterface,
 )
 from acme.infra.workspaces.twin import WorkspaceTwinImpl
+from acme.om.attribution.types.authority import AuthorityMode
+from acme.om.attribution.types.principal import AgentRef
 from acme.om.base import Platform, new_id, utcnow
 from acme.om.context import TenantContext
 from acme.om.events import EventsManagerInterface
@@ -43,7 +45,7 @@ from acme.om.tools.tool import ToolInterface, ToolRuntime
 from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule, Target
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolMode, ToolSpec
 from contracts.doubles import Members
-from contracts.step_storage import make_message, make_request
+from contracts.step_storage import a_person, make_message, make_request
 
 TWIN_SPEC = IsolationSpec(mode=IsolationMode.TWIN, egress=EgressPolicy(mode=EgressMode.NONE))
 HOST_SPEC = IsolationSpec(mode=IsolationMode.HOST, egress=EgressPolicy(mode=EgressMode.OPEN))
@@ -279,7 +281,16 @@ async def put_call(
         header=ModelResponseHeader(),
         content=Content(blocks=(use,)),
     )
-    request = tool_request(new_id(), utcnow(), model_response, use, authorization_class)
+    request = tool_request(
+        new_id(),
+        utcnow(),
+        model_response,
+        use,
+        authorization_class,
+        principal=a_person(),
+        authority=AuthorityMode.STEADY,
+        agent=AgentRef(kind="delivery", version=1, session_id=session_id),
+    )
     stored = await steps.append_steps(
         ctx, session_id, epoch, [model_request, model_response, request]
     )

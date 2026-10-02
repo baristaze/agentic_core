@@ -10,6 +10,8 @@ from typing import Any
 from uuid import UUID
 
 from acme.infra.transports import CommandResult
+from acme.om.attribution.types.authority import AuthorityMode
+from acme.om.attribution.types.principal import AgentRef, Principal
 from acme.om.base import thaw_mapping
 from acme.om.context import Role
 from acme.om.steps.types.content import Content, TextBlock, ToolResultBlock, ToolUseBlock
@@ -82,24 +84,35 @@ def definition_hash(definition: McpToolDefinition) -> str:
 
 
 def tool_request(
-    step_id: UUID, at: datetime, response: Step, use: ToolUseBlock, authorization_class: str
+    step_id: UUID,
+    at: datetime,
+    response: Step,
+    use: ToolUseBlock,
+    authorization_class: str,
+    *,
+    principal: Principal,
+    authority: AuthorityMode,
+    agent: AgentRef,
 ) -> Step:
-    """The request step of one tool use of a model response: it references
-    the response and the use's id, and carries the input's hash, never the
-    input."""
+    """The request step of one tool use of a model response, the agent's act:
+    it references the response and the use's id, carries the input's hash,
+    never the input, and names the principal the call runs under."""
     return Step(
         id=step_id,
         created_at=at,
         session_id=response.session_id,
         loop_id=response.loop_id,
         type=StepType.TOOL_REQUEST,
-        actor=Actor.ENGINE,
+        actor=Actor.AGENT,
         origin=Origin.ENGINE,
         refs=(response.id,),
         header=ToolRequestHeader(
             tool=use.name,
             tool_use_id=use.id,
             input_hash=input_hash(use.input),
+            principal=principal,
+            authority=authority,
+            agent=agent,
             authorization_class=authorization_class,
         ),
     )

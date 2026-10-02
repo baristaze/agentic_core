@@ -7,7 +7,7 @@ from datetime import timedelta
 from uuid import UUID
 
 import pytest
-from contracts.step_storage import make_message, make_request
+from contracts.step_storage import a_person, make_message, make_request
 from pydantic import ValidationError
 
 from acme.om.agent_sessions.limits import (
@@ -26,6 +26,8 @@ from acme.om.agent_sessions.limits import (
     tripped,
 )
 from acme.om.agent_sessions.rules import parked_step
+from acme.om.attribution.types.authority import AuthorityMode
+from acme.om.attribution.types.principal import AgentRef
 from acme.om.base import new_id, utcnow
 from acme.om.budgets.rules import budget_park
 from acme.om.budgets.types.amount import AmountUnit
@@ -180,7 +182,7 @@ def a_step(loop_id: UUID, step_type: StepType, header: object, content: Content 
             "session_id": SESSION,
             "loop_id": loop_id,
             "type": step_type,
-            "actor": Actor.ENGINE,
+            "actor": Actor.AGENT if step_type is StepType.TOOL_REQUEST else Actor.ENGINE,
             "origin": Origin.ENGINE,
             "responds_to": new_id() if step_type.is_response() else None,
             "refs": (new_id(),) if step_type is StepType.TOOL_REQUEST else (),
@@ -227,7 +229,13 @@ def response(loop: UUID, *, calls: bool, truncated: bool = False) -> Step:
 
 def tool_request(loop: UUID, input_hash: str) -> Step:
     header = ToolRequestHeader(
-        tool="read_log", tool_use_id="c", input_hash=input_hash, authorization_class="read"
+        tool="read_log",
+        tool_use_id="c",
+        input_hash=input_hash,
+        principal=a_person(),
+        authority=AuthorityMode.STEADY,
+        agent=AgentRef(kind="delivery", version=1, session_id=SESSION),
+        authorization_class="read",
     )
     return a_step(loop, StepType.TOOL_REQUEST, header)
 

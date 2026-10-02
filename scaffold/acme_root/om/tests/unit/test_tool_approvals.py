@@ -23,6 +23,7 @@ from contracts.tools import (
     tools_over,
     twin_transport,
 )
+from pydantic import ValidationError
 
 from acme.infra.workspaces import Workspace
 from acme.om.base import new_id, utcnow
@@ -211,13 +212,16 @@ async def test_only_a_persons_decision_on_exactly_this_call_counts(setting: Sett
     request, now = found.request, utcnow()
     assert verdict(request, [decision_on(request)], now)[0] is Verdict.APPROVED
     for stray in (
-        decision_on(request, actor=Actor.AGENT),
+        decision_on(request, actor=Actor.ENGINE),
         decision_on(request, actor=Actor.MODEL),
         decision_on(request, refs=(new_id(),)),
         decision_on(request, tool="delete_branch"),
         decision_on(request, hash_=input_hash({"branch": "main"})),
     ):
         assert verdict(request, [stray], now)[0] is Verdict.PENDING
+    # An agent's control step names its agent, so none decides a call.
+    with pytest.raises(ValidationError):
+        decision_on(request, actor=Actor.AGENT)
     # The latest decision holds.
     approve, deny = decision_on(request), decision_on(request, command=ControlCommand.DENY)
     assert verdict(request, [approve, deny], now)[0] is Verdict.DENIED

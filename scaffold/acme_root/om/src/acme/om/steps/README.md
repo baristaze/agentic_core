@@ -17,6 +17,11 @@ This is one of the kinds of thing [Acme is made of](../../../../README.md).
 - **Actor and origin**: who produced the step (a person, a program, an
   agent, the model, the engine, or something outside) and where it came
   in.
+- **Principal and spender**: on whose authority a message, an event, or
+  a tool call runs, and who pays for a call to a model. A person's or a
+  program's message is written in the name of whoever appends it. A step
+  an agent produced also names the agent: its kind and its session
+  ([attribution](../attribution/README.md)).
 - **Header and content**: the header is the step's shape, readable
   always: ids, names, counts, flags. The content is what was said: text,
   images, documents, the model's thinking, a tool's use and its result.
@@ -50,8 +55,9 @@ This is one of the kinds of thing [Acme is made of](../../../../README.md).
 - **A stale run is refused, never trusted to stop.**
 - **The same step sent twice is kept once.**
 - **A step is checked when it is made.** A step whose content does not
-  fit its type, such as a response with no request or a tool call that
-  copies what it calls, is refused before it is kept.
+  fit its type, such as a response with no request, a tool call that
+  copies what it calls, or a model call that names nobody to pay, is
+  refused before it is kept.
 - **Every step belongs to one org.** Another org that names a session
   finds no step of it.
 

@@ -4,6 +4,7 @@ hands back one frozen object with a field per manager."""
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from uuid import UUID
 
 from acme.infra.cache import CacheInterface, CacheScope
 from acme.infra.root import InfraInterface
@@ -12,6 +13,16 @@ from acme.integrations.identity.absent import IdentityProviderAbsentImpl
 from acme.integrations.root import IntegrationsInterface
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.impl.manager import AgentSessionsManagerImpl, AgentSessionsOptions
+from acme.om.agents import AgentsManagerInterface, ResultGateInterface
+from acme.om.agents.impl.gate import ResultGateNullImpl
+from acme.om.agents.impl.manager import AgentsManagerImpl, AgentsOptions
+from acme.om.agents.types.kind import AgentKind, AgentKindCatalog
+from acme.om.attribution import AttributionManagerInterface, PrincipalContext
+from acme.om.attribution.impl.manager import (
+    AttributionManagerImpl,
+    AttributionOptions,
+    no_principal_context,
+)
 from acme.om.base import utcnow
 from acme.om.budgets import BudgetGateInterface, BudgetsManagerInterface
 from acme.om.budgets.impl.gate import BudgetGateImpl, BudgetGateOptions
@@ -78,7 +89,19 @@ class Managers:
     budget_gate: BudgetGateInterface
     pricing: PricingInterface
     models: ModelsManagerInterface
+    attribution: AttributionManagerInterface
+    agents: AgentsManagerInterface
     tools: ToolsManagerInterface
+
+
+async def purge_held(
+    managers: Managers, org_id: UUID, session_id: UUID, tree_id: UUID | None
+) -> None:
+    """What attribution and the agents hold of a session the sweep purges:
+    its authority, and its tree when it was the tree's last session."""
+    await managers.attribution.purge_authority(org_id, session_id)
+    if tree_id is not None:
+        await managers.agents.purge_tree(org_id, tree_id)
 
 
 def build_tenancy(
@@ -161,6 +184,11 @@ def build_managers(
     budgets_options: BudgetsOptions | None = None,
     models_options: ModelsOptions | None = None,
     model_prices: ModelPricesInterface | None = None,
+    agents_options: AgentsOptions | None = None,
+    attribution_options: AttributionOptions | None = None,
+    agent_kinds: tuple[AgentKind, ...] = (),
+    principal_context: PrincipalContext | None = None,
+    result_gate: ResultGateInterface | None = None,
     tools_options: ToolsOptions | None = None,
 ) -> Managers:
     """`integrations` is the root of the hosted services the managers front:
@@ -174,7 +202,14 @@ def build_managers(
 
     `model_prices` is what the resolver asks before it picks a model: the
     one source of prices. None wires the null, which prices nothing, so no
-    model resolves until a source is wired."""
+    model resolves until a source is wired.
+
+    The last three are the adopter's for its agents: the agent kinds it
+    declares, every version it still runs; the transition of its tenancy
+    manager that answers for a principal's live permissions, which every
+    tool call asks; and the gate a result passes. None wires the transition
+    that answers for nobody, so every tool call is refused, and the null
+    gate, which accepts a result and marks it unverified."""
     # The relay every core-role manager hands its outbox rows to. It reaches
     # the work manager through the root below, because a row of kind
     # `work.<kind>` is enqueued there: the work manager needs the tenancy
@@ -234,6 +269,12 @@ def build_managers(
         tenancy,
         outbox,
         agent_sessions_options or AgentSessionsOptions(),
+        # What attribution and the agents hold of a purged session goes with
+        # it. Both are built below on this manager, so the edge is bound at
+        # call time.
+        purged=lambda org_id, session_id, tree_id: purge_held(
+            managers, org_id, session_id, tree_id
+        ),
     )
     privacy = PrivacyManagerImpl(
         storage.get_privacy_storage(),
@@ -263,6 +304,26 @@ def build_managers(
         tenancy,
         ModelResolverTableImpl(model_prices or ModelPricesNullImpl(), ResolverOptions()),
         models_options or ModelsOptions(),
+    )
+    attribution = AttributionManagerImpl(
+        storage.get_attribution_storage(),
+        agent_sessions,
+        steps,
+        principal_context or no_principal_context,
+        tenancy,
+        outbox,
+        attribution_options or AttributionOptions(),
+    )
+    agents = AgentsManagerImpl(
+        storage.get_agent_storage(),
+        agent_sessions,
+        steps,
+        attribution,
+        result_gate or ResultGateNullImpl(),
+        AgentKindCatalog(kinds=agent_kinds),
+        tenancy,
+        outbox,
+        agents_options or AgentsOptions(),
     )
     # Where the engine touches the world: the session's history for a
     # person's decisions, the events for the audit of each secret a call
@@ -309,6 +370,8 @@ def build_managers(
         # The one source of prices: the list table.
         pricing=PricingTableImpl(),
         models=models,
+        attribution=attribution,
+        agents=agents,
         tools=tools,
     )
     return managers
