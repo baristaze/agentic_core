@@ -85,7 +85,13 @@ def make_request(session_id: UUID, loop_id: UUID, carried: tuple[UUID, ...] = ()
         actor=Actor.ENGINE,
         origin=Origin.ENGINE,
         refs=carried,
-        header=ModelRequestHeader(role="main"),
+        header=ModelRequestHeader(
+            role="main",
+            fill="anthropic/claude-sonnet-5-5",
+            fill_set_version=1,
+            left_edge=1,
+            prompt_hash="k:prompt",
+        ),
     )
 
 

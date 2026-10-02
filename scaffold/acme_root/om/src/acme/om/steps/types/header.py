@@ -6,9 +6,11 @@ counts, and flags, never what a person typed or a tool returned."""
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal, Self
+from uuid import UUID
 
 from pydantic import Field, model_validator
 
+from acme.integrations.model_providers.types import Usage
 from acme.om.base import Platform
 from acme.om.models.types.fill import FillSwitch
 from acme.om.steps.types.content import MAX_NAME, Stored
@@ -79,10 +81,19 @@ class ControlHeader(Platform):
 
 class ModelRequestHeader(Platform):
     """One call of one model role. Its content is empty: it references the
-    steps it carried."""
+    inputs it delivered, and records the window it read by reference: the
+    fill it was sized for and the fill set's version that named it, its left
+    edge (the first step it reads verbatim), and the summary it reads before
+    them. `prompt_hash` is a hash of the rendered prompt keyed by the
+    session, so a cache regression is a query and a replay is checked by it."""
 
     kind: Literal["model_request"] = "model_request"
     role: Stored = Field(min_length=1, max_length=MAX_NAME)
+    fill: Stored = Field(min_length=1, max_length=MAX_NAME)  # provider/model
+    fill_set_version: int = Field(ge=1)
+    left_edge: int = Field(ge=1)
+    summary_id: UUID | None = None
+    prompt_hash: Stored = Field(min_length=1, max_length=MAX_NAME)
 
 
 class ModelResponseHeader(Platform):
@@ -93,6 +104,7 @@ class ModelResponseHeader(Platform):
     kind: Literal["model_response"] = "model_response"
     truncated: bool = False
     abandoned: bool = False
+    usage: Usage | None = None  # what the provider reported the call used
 
 
 class ToolRequestHeader(Platform):
@@ -106,12 +118,24 @@ class ToolRequestHeader(Platform):
     input_hash: Stored = Field(min_length=1, max_length=MAX_NAME)
 
 
+class ArtifactRef(Platform):
+    """The handle of a tool result kept whole as an artifact, outside the
+    step: its id, and how many characters it holds. The step keeps the
+    result's head and tail; a read tool pages through the rest by the id."""
+
+    id: UUID
+    characters: int = Field(gt=0)
+
+
 class ToolResponseHeader(Platform):
     """`interrupted` marks a call stopped before it answered, its outcome
-    unknown, so the model verifies before it retries."""
+    unknown, so the model verifies before it retries. `artifact` is the
+    handle of a result above the size bound, whose head and tail are the
+    first two parts of the step's result."""
 
     kind: Literal["tool_response"] = "tool_response"
     interrupted: bool = False
+    artifact: ArtifactRef | None = None
 
 
 class SummaryHeader(Platform):

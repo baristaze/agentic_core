@@ -10,7 +10,8 @@ shape, which stays readable, and its content, which is sealed at rest.
 A step is checked against its type when it is built, so a step that breaks
 its type's shape is refused there and never stored: the header its type
 fixes, the blocks its type may hold, `responds_to` on a response alone, and
-an attachment's placeholder for every block that names one."""
+an attachment's placeholder for every block that names one, and the head
+and tail of a result kept as an artifact."""
 
 from collections.abc import Mapping
 from enum import StrEnum
@@ -29,7 +30,7 @@ from acme.om.steps.types.content import (
     ToolResultBlock,
     ToolUseBlock,
 )
-from acme.om.steps.types.header import InputHeader, StepHeader
+from acme.om.steps.types.header import InputHeader, StepHeader, ToolResponseHeader
 
 
 class StepFamily(StrEnum):
@@ -268,4 +269,9 @@ def shape_refusal(step: Step) -> str | None:
     }
     if missing := named - held:
         return f"no placeholder for attachment {sorted(str(i) for i in missing)[0]}"
+    if isinstance(step.header, ToolResponseHeader) and step.header.artifact is not None:
+        (result,) = step.content.blocks
+        preview = result.parts[:2] if isinstance(result, ToolResultBlock) else ()
+        if len(preview) != 2 or not all(isinstance(part, TextBlock) for part in preview):
+            return "a result kept as an artifact holds its head and its tail first"
     return None
