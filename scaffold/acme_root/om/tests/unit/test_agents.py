@@ -16,6 +16,7 @@ from pydantic import ValidationError
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
+from acme.om.agent_sessions.limits import deadline_park
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
 from acme.om.agents import ResultGateInterface
 from acme.om.agents.rules import after_turn, claim_refusal, tree_refusal
@@ -286,6 +287,31 @@ async def test_a_child_draws_on_its_trees_budget_and_deadline(managers: Managers
         Spawn.model_validate({**spawn().model_dump(), "budget": 10})
     with pytest.raises(ValidationError):
         Spawn.model_validate({**spawn().model_dump(), "deadline": later})
+
+
+async def test_a_moved_deadline_unlocks_every_session_of_the_tree_it_parked(
+    managers: Managers,
+) -> None:
+    """The extension is the deadline park's unlock: once a person moves the
+    tree's deadline past now, the root and its child that waited on it are
+    pending for a run, and nobody unlocks them by hand. A deadline moved to
+    a time already past unlocks nothing."""
+    ctx = context(Role.MEMBER)
+    agents, sessions = managers.agents, managers.agent_sessions
+    root = await start(managers, ctx)
+    child = await agents.spawn(ctx, root.id, spawn())
+    for session in (root, child):
+        (said,) = await managers.steps.append_inputs(ctx, session.id, [make_message(session.id)])
+        epoch = await managers.steps.begin_run(ctx, session.id)
+        await sessions.park(ctx, session.id, epoch, said.loop_id, deadline_park())
+
+    async def statuses() -> list[SessionStatus]:
+        return [(await sessions.get_session(ctx, s.id)).status for s in (root, child)]
+
+    await agents.set_deadline(ctx, child.id, utcnow() - timedelta(minutes=1))
+    assert await statuses() == [SessionStatus.PARKED] * 2
+    await agents.set_deadline(ctx, child.id, utcnow() + timedelta(hours=1))
+    assert await statuses() == [SessionStatus.PENDING] * 2
 
 
 async def test_a_tree_stops_at_its_height_and_its_count(managers: Managers) -> None:

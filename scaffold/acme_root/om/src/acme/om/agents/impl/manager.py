@@ -3,6 +3,7 @@ from datetime import datetime
 from uuid import UUID
 
 from acme.om.agent_sessions import AgentSessionsManagerInterface
+from acme.om.agent_sessions.limits import deadline_park
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
 from acme.om.agents.gate import ResultGateInterface
 from acme.om.agents.manager import AgentsManagerInterface
@@ -142,28 +143,17 @@ class AgentsManagerImpl(AgentsManagerInterface):
         rows = (versioned_row(ctx, UPDATED, moved.id, moved.version),)
         await self._storage.write_tree(ctx.org_id, moved, tree.version, rows)
         await self._relay_all(ctx, rows)
+        if deadline is None or deadline > self._clock():
+            # The extension is the deadline park's unlock: a session of the
+            # tree that waits on it goes on, and its gates run again.
+            for member in (tree.id, *await self._below(ctx, tree.id)):
+                await self._sessions.wake_session(ctx, member, deadline_park())
         return moved
 
     async def cancel_children(self, ctx: TenantContext, session_id: UUID) -> tuple[UUID, ...]:
         ctx.require(Permission.WRITE)
-        reached: list[UUID] = []
-        parents = [session_id]
-        # Down the tree a level at a time; the tree's count bounds the walk.
-        while parents:
-            parent_id = parents.pop(0)
-            after: UUID | None = None
-            while True:
-                page = await self._sessions.get_children(
-                    ctx, parent_id, after, self._options.max_limit
-                )
-                for child in page.items:
-                    parents.append(child.id)
-                    if await self._cancel(ctx, child.id):
-                        reached.append(child.id)
-                if not page.has_more or not page.items:
-                    break
-                after = page.items[-1].id
-        return tuple(reached)
+        below = await self._below(ctx, session_id)
+        return tuple([child for child in below if await self._cancel(ctx, child)])
 
     async def hand_off(
         self, ctx: TenantContext, session_id: UUID, handoff: Handoff
@@ -323,6 +313,26 @@ class AgentsManagerImpl(AgentsManagerInterface):
         )
         await self._steps.append_inputs(ctx, session_id, [control])
         return True
+
+    async def _below(self, ctx: TenantContext, session_id: UUID) -> list[UUID]:
+        """Every session below `session_id`, children and theirs, a level at
+        a time; the tree's count bounds the walk."""
+        below: list[UUID] = []
+        parents = [session_id]
+        while parents:
+            parent_id = parents.pop(0)
+            after: UUID | None = None
+            while True:
+                page = await self._sessions.get_children(
+                    ctx, parent_id, after, self._options.max_limit
+                )
+                for child in page.items:
+                    parents.append(child.id)
+                    below.append(child.id)
+                if not page.has_more or not page.items:
+                    break
+                after = page.items[-1].id
+        return below
 
     async def _find(self, ctx: TenantContext, session_id: UUID) -> AgentSession | None:
         try:

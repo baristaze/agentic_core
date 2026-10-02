@@ -61,7 +61,9 @@ class AgentsManagerInterface(ABC):
     ) -> AgentTree:
         """Moves the deadline of the tree a session draws on, for every
         session of the tree at once, as a person does to unlock a loop the
-        deadline parked."""
+        deadline parked. A deadline moved past now, or taken away, is that
+        unlock: every session of the tree parked on the deadline is
+        unlocked, and its gates run again when it resumes."""
         ...
 
     @abstractmethod
