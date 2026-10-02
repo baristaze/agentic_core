@@ -1118,9 +1118,15 @@ export interface components {
          * @enum {string}
          */
         ControlCommand: "pause" | "resume" | "cancel" | "interrupt" | "compact" | "approve" | "deny" | "unlock";
-        /** ControlRequest */
+        /**
+         * ControlRequest
+         * @description A control. An interrupt names the seq of the tool request it stops,
+         *     and no other control names one.
+         */
         ControlRequest: {
             command: components["schemas"]["SessionControl"];
+            /** Request Seq */
+            request_seq?: number | null;
         };
         /**
          * CreateOrgRequest

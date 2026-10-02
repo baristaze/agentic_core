@@ -675,12 +675,22 @@ class ApiClient:
         return StepView.model_validate(said)
 
     async def send_control(
-        self, session_id: UUID, command: SessionControl, *, idempotency_key: str | None = None
+        self,
+        session_id: UUID,
+        command: SessionControl,
+        *,
+        request_seq: int | None = None,
+        idempotency_key: str | None = None,
     ) -> StepView:
+        """A control out of band; an interrupt names, by `request_seq`, the
+        tool request it stops."""
+        body: dict[str, Any] = {"command": command.value}
+        if request_seq is not None:
+            body["request_seq"] = request_seq
         sent = await self.request(
             "POST",
             f"/v1/agent-sessions/{session_id}/controls",
-            json={"command": command.value},
+            json=body,
             idempotency_key=idempotency_key or str(uuid4()),
         )
         return StepView.model_validate(sent)

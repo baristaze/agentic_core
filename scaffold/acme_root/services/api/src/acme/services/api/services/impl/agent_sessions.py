@@ -6,6 +6,7 @@ from acme.om.agents import AgentsManagerInterface
 from acme.om.agents.types.request import Start
 from acme.om.base import utcnow
 from acme.om.context import TenantContext
+from acme.om.exceptions import NotFound
 from acme.om.steps import StepsManagerInterface
 from acme.om.steps.rules import control_step, message_step
 from acme.om.steps.types.content import TextBlock
@@ -119,9 +120,23 @@ class AgentSessionsServiceImpl(AgentSessionsServiceInterface):
         self, ctx: TenantContext, session_id: UUID, body: ControlRequest, step_id: UUID
     ) -> StepView:
         command = ControlCommand(body.command.value)
-        control = control_step(step_id, utcnow(), session_id, ctx, command)
+        call = None
+        if body.request_seq is not None:
+            call = (await self._tool_request(ctx, session_id, body.request_seq)).id
+        control = control_step(step_id, utcnow(), session_id, ctx, command, call)
         (stored,), _ = await self._sessions.receive(ctx, session_id, [control])
         return step_view(stored)
+
+    async def _tool_request(self, ctx: TenantContext, session_id: UUID, seq: int) -> Step:
+        """The tool request at `seq` in the session's history, read after the
+        session itself, so another tenant's names nothing; `NotFound` when no
+        tool request is there."""
+        await self._sessions.get_session(ctx, session_id)
+        page = await self._steps.get_steps(ctx, session_id, seq - 1, 1)
+        found = next((step for step in page.items if step.seq == seq), None)
+        if found is None or found.type is not StepType.TOOL_REQUEST:
+            raise NotFound(f"no tool request at {seq} in agent session {session_id}")
+        return found
 
     async def decide_call(
         self, ctx: TenantContext, session_id: UUID, request_seq: int, body: DecisionRequest

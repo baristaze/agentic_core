@@ -120,6 +120,28 @@ async def test_a_decision_is_its_own_route_and_names_a_call(
     assert nothing.status_code == 404, "no tool request is at that place"
 
 
+async def test_an_interrupt_names_a_tool_request_the_session_holds(
+    client: httpx.AsyncClient, owner: dict[str, str]
+) -> None:
+    session = await start(client, owner)
+    path = f"/v1/agent-sessions/{session['id']}"
+    said = await client.post(f"{path}/messages", headers=created(owner), json={"text": "go"})
+    assert said.status_code == 201, said.text
+
+    bare = await client.post(
+        f"{path}/controls", headers=created(owner), json={"command": "interrupt"}
+    )
+    named = await client.post(
+        f"{path}/controls", headers=created(owner), json={"command": "pause", "request_seq": 1}
+    )
+    no_call = await client.post(
+        f"{path}/controls", headers=created(owner), json={"command": "interrupt", "request_seq": 1}
+    )
+
+    assert (bare.status_code, named.status_code) == (422, 422)
+    assert no_call.status_code == 404, "the step at 1 is a message, not a tool request"
+
+
 async def test_a_kind_the_product_does_not_run_starts_nothing(
     client: httpx.AsyncClient, owner: dict[str, str]
 ) -> None:

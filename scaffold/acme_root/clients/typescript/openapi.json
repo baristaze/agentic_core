@@ -285,9 +285,22 @@
       },
       "ControlRequest": {
         "additionalProperties": false,
+        "description": "A control. An interrupt names the seq of the tool request it stops,\nand no other control names one.",
         "properties": {
           "command": {
             "$ref": "#/components/schemas/SessionControl"
+          },
+          "request_seq": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Seq"
           }
         },
         "required": [

@@ -6,9 +6,10 @@ session's own reader does."""
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Self
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from acme.integrations.model_providers.types import StopReason
 from acme.om.agent_sessions.types.agent_session import SessionStatus
@@ -109,7 +110,17 @@ class SessionControl(StrEnum):
 
 
 class ControlRequest(RequestBody):
+    """A control. An interrupt names the seq of the tool request it stops,
+    and no other control names one."""
+
     command: SessionControl
+    request_seq: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def _an_interrupt_names_its_call(self) -> Self:
+        if (self.command is SessionControl.INTERRUPT) != (self.request_seq is not None):
+            raise ValueError("an interrupt names the call it stops, and no other control names one")
+        return self
 
 
 class DecisionRequest(RequestBody):

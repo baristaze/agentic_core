@@ -59,6 +59,10 @@ class ControlCommand(StrEnum):
     unlock = 'unlock'
 
 
+class RequestSeq(RootModel[int]):
+    root: Annotated[int, Field(ge=1, title='Request Seq')]
+
+
 class CreateOrgRequest(BaseModel):
     """
     An org with its owner, as `bootstrap` seeds one. The owner's identity
@@ -831,10 +835,15 @@ class ApiKeyView(BaseModel):
 
 
 class ControlRequest(BaseModel):
+    """
+    A control. An interrupt names the seq of the tool request it stops,
+    and no other control names one.
+    """
     model_config = ConfigDict(
         extra='forbid',
     )
     command: SessionControl
+    request_seq: Annotated[RequestSeq | None, Field(title='Request Seq')] = None
 
 
 class FilePageView(BaseModel):

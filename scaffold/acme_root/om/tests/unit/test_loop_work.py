@@ -212,6 +212,19 @@ def test_a_decision_on_a_call_is_not_a_bare_control(command: ControlCommand) -> 
         control_step(new_id(), utcnow(), new_id(), ctx, command)
 
 
+def test_an_interrupt_names_the_one_call_it_stops_and_no_other_control_names_one() -> None:
+    ctx = context(Role.MEMBER)
+    call = new_id()
+
+    stopping = control_step(new_id(), utcnow(), new_id(), ctx, ControlCommand.INTERRUPT, call)
+
+    assert stopping.refs == (call,)
+    with pytest.raises(ValueError, match="names the call it stops"):
+        control_step(new_id(), utcnow(), new_id(), ctx, ControlCommand.INTERRUPT)
+    with pytest.raises(ValueError, match="names the call it stops"):
+        control_step(new_id(), utcnow(), new_id(), ctx, ControlCommand.PAUSE, call)
+
+
 def request() -> RequestContext:
     return RequestContext(request_id=new_id(), app=CLI)
 

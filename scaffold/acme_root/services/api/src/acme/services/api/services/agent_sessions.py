@@ -43,7 +43,8 @@ class AgentSessionsServiceInterface(ABC):
         self, ctx: TenantContext, session_id: UUID, body: ControlRequest, step_id: UUID
     ) -> StepView:
         """The control, durable when this answers, under `step_id`; a run
-        reads it between steps and while a tool runs."""
+        reads it between steps and while a tool runs. An interrupt names the
+        tool request it stops by its seq: `NotFound` when none is there."""
         ...
 
     @abstractmethod

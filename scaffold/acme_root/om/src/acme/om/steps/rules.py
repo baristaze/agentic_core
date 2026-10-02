@@ -76,13 +76,22 @@ def message_step(
 
 
 def control_step(
-    step_id: UUID, now: datetime, session_id: UUID, ctx: TenantContext, command: ControlCommand
+    step_id: UUID,
+    now: datetime,
+    session_id: UUID,
+    ctx: TenantContext,
+    command: ControlCommand,
+    call: UUID | None = None,
 ) -> Step:
     """A principal's control, out of band, through the surface `ctx` arrived
-    on. A decision on a tool call is the tools manager's to write, bound to
-    its call, and is refused here (`ValueError`)."""
+    on. An interrupt names the request of the one call it stops, `call`, and
+    no other control names one. A decision on a tool call is the tools
+    manager's to write, bound to its call, and is refused here, as a
+    control that names a call it cannot is (`ValueError`)."""
     if command in DECIDED:
         raise ValueError(f"a {command.value} decides one tool call; the tools manager writes it")
+    if (command is ControlCommand.INTERRUPT) != (call is not None):
+        raise ValueError("an interrupt names the call it stops, and no other control names one")
     return Step(
         id=step_id,
         created_at=now,
@@ -91,5 +100,6 @@ def control_step(
         type=StepType.CONTROL,
         actor=actor_of(ctx.credential_kind),
         origin=origin_of(ctx.app.type),
+        refs=() if call is None else (call,),
         header=ControlHeader(command=command),
     )

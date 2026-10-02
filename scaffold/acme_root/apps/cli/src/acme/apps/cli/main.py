@@ -454,12 +454,16 @@ def say(
 def control(
     session_id: SessionId,
     command: Annotated[SessionControl, typer.Argument(help="What the loop is told.")],
+    call: Annotated[
+        int | None,
+        typer.Option("--call", help="The seq of the tool request an interrupt stops."),
+    ] = None,
     as_json: Json = False,
     api: Api = None,
 ) -> None:
     """Send a control out of band: pause, resume, cancel, interrupt, compact,
-    or unlock."""
-    sent = run(lambda client: client.send_control(session_id, command), api)
+    or unlock. An interrupt names the call it stops."""
+    sent = run(lambda client: client.send_control(session_id, command, request_seq=call), api)
     typer.echo(sent.model_dump_json(indent=2) if as_json else step_line(sent))
 
 
