@@ -21,5 +21,7 @@ async def test_every_capability_works_over_the_local_root(tmp_path: Path) -> Non
     await infra.get_secrets().put(org, "s", "v")
     assert await infra.get_secrets().get(org, "s") == "v"
     assert infra.get_topics().describe() == "topics=memory"
-    assert len(infra.describe()) == len(CacheScope) + 4
+    org_key = await infra.get_keys().generate(org, new_id(), 1)
+    assert len(org_key.plaintext) == 32
+    assert len(infra.describe()) == len(CacheScope) + 5
     await infra.close()

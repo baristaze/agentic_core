@@ -1,7 +1,7 @@
 # Infrastructure
 
 The capabilities the platform asks for and never implements itself:
-cache, buckets, topics, queues, secrets, and observability. Each is an
+cache, buckets, topics, queues, secrets, keys, and observability. Each is an
 interface with a twin that runs on a laptop and an implementation that
 runs in the cloud. The object model sees the interface alone, and
 infra imports nothing from the object model.
@@ -15,6 +15,7 @@ infra imports nothing from the object model.
 | Topics | Wake-ups and live updates (`work_available`, `entity_changed`), best effort; a publish answers whether the bus took it | In-process, or Valkey pub/sub | Valkey pub/sub |
 | Queues | Work whose producer is outside the platform: `webhooks`, what a provider sends; at least once, so the consumer is idempotent | In-process, or ElasticMQ | SQS, with a dead-letter queue |
 | Secrets | Get, has, put, and delete by name; the object model holds a name, never a value | The settings, from `.env` and the environment | Secrets Manager |
+| Keys | Make, unwrap, and re-wrap a data key bound to its tenant, its key, and its version; keeps no copy | In-process, derived from a root key | KMS, under the account's key |
 | Observability | Structured logs, Prometheus metrics, OpenTelemetry traces, error reports | Prometheus, Grafana, Jaeger, GlitchTip | CloudWatch, X-Ray, a Sentry-compatible backend |
 
 The environment name decides what a process may use: `local` and `test`

@@ -59,3 +59,8 @@ output "site_certificate_validation" {
     }
   ]
 }
+
+output "sessions_key_alias" {
+  description = "The alias the environment's processes read as ACME_KMS_KEY_ID."
+  value       = aws_kms_alias.sessions.name
+}
