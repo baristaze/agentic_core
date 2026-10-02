@@ -9,8 +9,10 @@ answered from the transport's record without running again."""
 import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
+from uuid import UUID
 
 import pytest
+from contracts.loops import live
 from contracts.tools import (
     HOST_SPEC,
     INJECTED_TOKEN,
@@ -25,7 +27,9 @@ from contracts.tools import (
 from acme.infra.impl.configured import InfraConfiguredImpl
 from acme.infra.impl.settings import InfraSettings
 from acme.infra.transports.redaction import forms, marker
-from acme.om.base import new_id
+from acme.om.agent_sessions.types.agent_session import AgentSession
+from acme.om.attribution.types.authority import AuthorityMode
+from acme.om.base import new_id, utcnow
 from acme.om.context import AppContext, AppType, RequestContext, TenantContext
 from acme.om.root import Managers, build_managers
 from acme.om.storage.impl.postgres import StoragePostgresImpl
@@ -65,7 +69,30 @@ async def an_org(storage: StoragePostgresImpl, tmp_path: Path) -> tuple[TenantCo
         "Ann",
     )
     overrides = {f"{owner.org_id.hex}_api_token".upper(): SECRET}
-    return owner, build_managers(storage, InfraConfiguredImpl(settings(tmp_path, overrides)))
+    managers = build_managers(
+        storage, InfraConfiguredImpl(settings(tmp_path, overrides)), principal_context=live
+    )
+    return owner, managers
+
+
+async def a_session(managers: Managers, owner: TenantContext) -> UUID:
+    """A session the owner made, whose calls run under the owner: the gate
+    asks attribution whose authority each call runs under."""
+    session_id, now = new_id(), utcnow()
+    session = AgentSession(
+        id=session_id,
+        created_at=now,
+        updated_at=now,
+        created_by=owner.user_id,
+        updated_by=owner.user_id,
+        title="a call over Postgres",
+        kind="operator",
+        kind_version=1,
+        root_id=session_id,
+    )
+    await managers.agent_sessions.create_session(owner, session)
+    await managers.attribution.open_authority(owner, session_id, AuthorityMode.STEADY)
+    return session_id
 
 
 def settings(tmp_path: Path, overrides: dict[str, str]) -> InfraSettings:
@@ -96,7 +123,7 @@ async def test_a_call_is_approved_run_audited_and_recovered_over_postgres(
     stored = await tools.write_policy(owner, policy.model_copy(update={"rules": narrowed}))
     assert (await tools.get_policy(owner)) == stored
 
-    session = new_id()
+    session = await a_session(managers, owner)
     workspace = await tools.prepare_workspace(owner, session, HOST_SPEC)
     script = "import os; print('token', os.environ['API_TOKEN'])"
     found = await put_call(

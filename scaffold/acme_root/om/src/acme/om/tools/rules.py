@@ -12,7 +12,7 @@ from uuid import UUID
 from acme.infra.transports import CommandResult
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.attribution.types.principal import AgentRef, Principal
-from acme.om.base import thaw_mapping
+from acme.om.base import derived_id, thaw_mapping
 from acme.om.context import Role
 from acme.om.steps.types.content import Content, TextBlock, ToolResultBlock, ToolUseBlock
 from acme.om.steps.types.header import (
@@ -47,6 +47,11 @@ DEFAULT_CEILINGS = PolicyLayer(
 """The platform's ceilings out of the box: what is destructive, and what
 acts outward, waits for a person. An adopter adds its own, such as one for
 each class it declares that must always wait for a person."""
+
+INWARD_CLASSES = frozenset({ToolClass.READ, ToolClass.WRITE, ToolClass.EXECUTE, ToolClass.SPAWN})
+"""The classes whose calls stay inside the session's own work by their
+nature: its workspace, its records, its children. Every other class, a
+domain class included, acts outward unless its target says it does not."""
 
 ADVICE: dict[ToolFailure, str] = {
     ToolFailure.INVALID_INPUT: "The input does not fit the tool's schema. Correct it and call again.",
@@ -134,6 +139,17 @@ def matches(rule: PolicyRule, call: PolicyCall) -> bool:
             for name, value in rule.target.items()
         )
     )
+
+
+def reaches_outward(call: PolicyCall) -> bool:
+    """Whether a call acts outward, for the rule of two: on external state
+    beyond the session's own work product, or past its egress allowlist.
+    The target's `outward` attribute answers, as the system it acts on
+    reports it; a target that does not say takes its class's answer."""
+    said = call.target.attributes.get("outward")
+    if isinstance(said, bool):
+        return said
+    return call.authorization_class not in INWARD_CLASSES
 
 
 def specificity(rule: PolicyRule) -> int:
@@ -237,6 +253,9 @@ its claim, so it ends, and no response is written."""
 CAPABILITY_MISSING = "capability_missing"
 """The code of a capability the agent does not have, such as a workspace."""
 
+ISOLATION_REFUSED = "isolation_refused"
+"""The code of a workspace provider's refusal of a spec it cannot meet."""
+
 INFRA_FAILURES: dict[str, ToolFailure] = {"path_outside_workspace": ToolFailure.INVALID_INPUT}
 """A failure infra raised whose class its code decides: a path the model
 chose that leads out of the workspace is an input it can correct."""
@@ -268,6 +287,15 @@ def bounded(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return f"{text[:limit]}\n[cut: {limit} of {len(text)} characters shown]"
+
+
+def response_id(request: Step, epoch: int) -> UUID:
+    """The id of the response a run writes for a request, derived from the
+    request and the run's writer epoch: the parts a call's output streams
+    carry it before the response is written, and no two runs share it, so a
+    run that lost its claim never lands its answer as the one a later run
+    wrote: its append is refused."""
+    return derived_id(request.id, request.created_at, f"tool_response:{epoch}")
 
 
 def response(

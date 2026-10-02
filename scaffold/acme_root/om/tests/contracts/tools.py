@@ -24,8 +24,9 @@ from acme.infra.workspaces import (
     WorkspaceProviderInterface,
 )
 from acme.infra.workspaces.twin import WorkspaceTwinImpl
-from acme.om.attribution.types.authority import AuthorityMode
-from acme.om.attribution.types.principal import AgentRef
+from acme.om.attribution import AttributionManagerInterface
+from acme.om.attribution.types.authority import AuthorityMode, CallAuthority, CallReach
+from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
 from acme.om.base import Platform, new_id, utcnow
 from acme.om.context import TenantContext
 from acme.om.events import EventsManagerInterface
@@ -194,6 +195,31 @@ class Clock:
         return self.now
 
 
+class Answering(AttributionManagerInterface):
+    """Just enough attribution for the gate: every call runs under the
+    person who asks, in the context that asks, and the rule of two holds
+    when `needs_person` says so. A partial double: only `authorize_call` is
+    reached, so the abstract set is cleared below."""
+
+    def __init__(self) -> None:
+        self.needs_person = False
+        self.reaches: list[CallReach] = []
+
+    async def authorize_call(
+        self, ctx: TenantContext, session_id: UUID, reach: CallReach
+    ) -> CallAuthority:
+        self.reaches.append(reach)
+        return CallAuthority(
+            principal=Principal(kind=PrincipalKind.PERSON, id=ctx.user_id),
+            mode=AuthorityMode.STEADY,
+            context=ctx,
+            needs_person=self.needs_person,
+        )
+
+
+Answering.__abstractmethods__ = frozenset()
+
+
 @dataclass
 class Tools:
     manager: ToolsManagerImpl
@@ -201,6 +227,7 @@ class Tools:
     events: EventsManagerInterface
     storage: StorageMemoryImpl
     clock: Clock
+    attribution: Answering
 
 
 def tools_over(
@@ -216,6 +243,7 @@ def tools_over(
         storage.get_outbox_storage(), storage.get_event_storage(), TopicsMemoryImpl()
     )
     clock = Clock()
+    attribution = Answering()  # pyright: ignore[reportAbstractUsage] (a partial double)
     manager = ToolsManagerImpl(
         storage.get_tool_storage(),
         steps,
@@ -226,8 +254,9 @@ def tools_over(
         transport,
         options or ToolsOptions(),
         clock,
+        attribution=attribution,
     )
-    return Tools(manager, steps, events, storage, clock)
+    return Tools(manager, steps, events, storage, clock, attribution)
 
 
 def twin_transport(

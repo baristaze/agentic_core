@@ -22,7 +22,9 @@ thing [Acme is made of](../../../../README.md).
   and never at what the model says about the call. The agent's kind sets
   the defaults, the org narrows or loosens them, and the platform's
   ceilings hold above both: what cannot be undone, or acts outside, waits
-  for a person.
+  for a person. A session that has read outside data and holds private
+  data or credentials waits for a person before any call that acts
+  outside, whatever policy says.
 - **Approval**: a person's yes or no to one exact call, the tool and its
   input. It expires.
 - **Job**: work that outlives a run, such as a long build. The
