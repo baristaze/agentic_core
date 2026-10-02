@@ -1,7 +1,8 @@
 """Tools and helpers the tools suites share: a handful of tools in the
 contract's shape, the tools manager over the memory storage with the
-transport a case picks, and a tool call put in a session's history the way
-the loop puts one there."""
+transport a case picks, its inputs hashed and its records sealed under each
+session's key, and a tool call put in a session's history the way the loop
+puts one there."""
 
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -10,6 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from acme.infra.keys.memory import KeyServiceMemoryImpl
 from acme.infra.secrets import SecretsInterface
 from acme.infra.secrets.local import SecretsLocalImpl
 from acme.infra.topics.memory import TopicsMemoryImpl
@@ -33,6 +35,8 @@ from acme.om.events import EventsManagerInterface
 from acme.om.events.impl.manager import EventsManagerImpl, EventsOptions
 from acme.om.exceptions import ToolFailed
 from acme.om.outbox.impl.relay import OutboxRelayImpl
+from acme.om.privacy.impl.keys import SessionKeysImpl
+from acme.om.privacy.impl.records import RecordSealKeysImpl
 from acme.om.steps import StepsManagerInterface
 from acme.om.steps.impl.manager import StepsManagerImpl, StepsOptions, no_registry
 from acme.om.steps.types.content import Content, TextBlock, ToolUseBlock
@@ -40,11 +44,13 @@ from acme.om.steps.types.header import ModelResponseHeader, ToolFailure, ToolRes
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.tools.impl.manager import ToolsManagerImpl, ToolsOptions
+from acme.om.tools.manager import ToolsManagerInterface
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.rules import tool_request
 from acme.om.tools.tool import ToolInterface, ToolRuntime
 from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule, Target
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolMode, ToolSpec
+from acme.om.windows.impl.hashes import PromptHashMemoryImpl
 from contracts.doubles import Members
 from contracts.step_storage import a_person, make_message, make_request
 
@@ -248,6 +254,7 @@ def tools_over(
     clock = Clock()
     attribution = Answering()  # pyright: ignore[reportAbstractUsage] (a partial double)
     waits: list[float] = []
+    keys = SessionKeysImpl(storage.get_privacy_storage(), KeyServiceMemoryImpl())
 
     async def sleep(seconds: float) -> None:
         # The manager's waits move the case's clock; none is slept.
@@ -264,6 +271,8 @@ def tools_over(
         transport,
         options or ToolsOptions(),
         clock,
+        keyed_hash=PromptHashMemoryImpl().keyed_hash,
+        record_seal=RecordSealKeysImpl(keys, storage.get_privacy_storage()),
         attribution=attribution,
         sleep=sleep,
     )
@@ -289,6 +298,7 @@ class Call:
 
 
 async def put_call(
+    tools: ToolsManagerInterface,
     steps: StepsManagerInterface,
     ctx: TenantContext,
     tool: str,
@@ -298,8 +308,9 @@ async def put_call(
     epoch: int | None = None,
 ) -> Call:
     """A model's tool use and its request step in the history, written and
-    numbered as the loop writes them: the request is persisted before any
-    operation of the tools manager sees it."""
+    numbered as the loop writes them: the request is persisted, its input
+    hashed by `tools` under the session's key, before any operation of the
+    tools manager sees it."""
     session_id = session_id or new_id()
     if epoch is None:
         (message,) = await steps.append_inputs(ctx, session_id, [make_message(session_id)])
@@ -327,6 +338,7 @@ async def put_call(
         model_response,
         use,
         authorization_class,
+        input_hash=await tools.input_hash(ctx, session_id, call_input),
         principal=a_person(),
         authority=AuthorityMode.STEADY,
         agent=AgentRef(kind="delivery", version=1, session_id=session_id),

@@ -222,7 +222,12 @@ async def test_the_target_comes_from_the_system_and_not_from_what_the_input_clai
         {},
     ):
         found = await put_call(
-            tools.steps, ctx, "push_branch", {"branch": "main", **claim}, "integration"
+            tools.manager,
+            tools.steps,
+            ctx,
+            "push_branch",
+            {"branch": "main", **claim},
+            "integration",
         )
         gate = await tools.manager.gate(
             ctx, registry, KIND_DEFAULTS, found.request, found.call_input, workspace
@@ -233,7 +238,12 @@ async def test_the_target_comes_from_the_system_and_not_from_what_the_input_clai
         assert isinstance(header, ToolResponseHeader) and header.failure is ToolFailure.DENIED
         outcomes.append(gate.outcome)
     open_branch = await put_call(
-        tools.steps, ctx, "push_branch", {"branch": "feature", "protected": True}, "integration"
+        tools.manager,
+        tools.steps,
+        ctx,
+        "push_branch",
+        {"branch": "feature", "protected": True},
+        "integration",
     )
     gate = await tools.manager.gate(
         ctx, registry, KIND_DEFAULTS, open_branch.request, open_branch.call_input, workspace
@@ -305,7 +315,9 @@ async def test_a_call_that_runs_code_acts_outward_from_a_workspace_with_open_egr
     ctx = context(Role.OWNER, make_org())
     spec = IsolationSpec(mode=IsolationMode.TWIN, egress=EgressPolicy(mode=egress))
     workspace = Workspace(id=new_id(), org_id=ctx.org_id, spec=spec, location="twin:ws")
-    found = await put_call(tools.steps, ctx, "run_command", {"argv": ["true"]}, "execute")
+    found = await put_call(
+        tools.manager, tools.steps, ctx, "run_command", {"argv": ["true"]}, "execute"
+    )
     await tools.manager.gate(
         ctx, registry_of(Command()), KIND_DEFAULTS, found.request, found.call_input, workspace
     )
