@@ -22,6 +22,7 @@ from uuid import UUID
 from pydantic import Field, model_validator
 
 from acme.integrations.model_providers.content import MAX_NAME as MAX_NAME
+from acme.integrations.model_providers.content import UNPARSED as UNPARSED
 from acme.integrations.model_providers.content import Block as Block
 from acme.integrations.model_providers.content import DocumentBlock as DocumentBlock
 from acme.integrations.model_providers.content import ImageBlock as ImageBlock

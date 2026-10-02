@@ -26,6 +26,7 @@ from acme.integrations.model_providers.calls import (
     ToolUseDelta,
 )
 from acme.integrations.model_providers.content import (
+    UNPARSED,
     DocumentBlock,
     ImageBlock,
     TextBlock,
@@ -174,12 +175,22 @@ async def test_an_incomplete_response_is_never_whole(reason: str, stop: StopReas
 
 
 @pytest.mark.parametrize("arguments", ['{"a": 1', "[1]", "not json"])
-async def test_a_malformed_tool_call_is_dropped_and_never_runs(arguments: str) -> None:
+async def test_a_completed_call_that_is_no_object_is_kept_as_written(arguments: str) -> None:
+    """The model finished its call, so it reads why the call never ran: the
+    arguments are kept under their one key, and the turn stops for the call."""
     call = {"type": "function_call", "call_id": "call_1", "name": "add", "arguments": arguments}
     _, folded = await fold(sse(finished("completed", [call])))
     reply = folded.reply()
+    assert reply.blocks == (ToolUseBlock(id="call_1", name="add", input={UNPARSED: arguments}),)
+    assert reply.stop_reason is StopReason.TOOL_USE and reply.dropped == ()
+
+
+async def test_a_malformed_call_of_a_response_cut_short_is_dropped_and_never_runs() -> None:
+    call = {"type": "function_call", "call_id": "call_1", "name": "add", "arguments": '{"a": 1'}
+    _, folded = await fold(sse(finished("incomplete", [call], "max_output_tokens")))
+    reply = folded.reply()
     assert reply.blocks == () and reply.dropped[0].what == "tool use call_1"
-    assert reply.stop_reason is StopReason.END_TURN
+    assert reply.stop_reason is StopReason.OUTPUT_LIMIT and reply.truncated
 
 
 async def test_a_failed_response_fails_with_its_kind_and_what_arrived() -> None:
@@ -312,7 +323,10 @@ def test_cache_markers_and_a_thinking_budget_are_named_and_dropped() -> None:
     assert [d.what for d in dropped] == ["2 cache marker(s)", "a thinking budget"]
 
 
-def test_files_render_as_data_urls_and_a_tool_results_files_are_dropped() -> None:
+def test_files_render_as_data_urls_in_a_turn_and_in_a_tool_result() -> None:
+    """A tool's result that holds a file reaches the model with it: the
+    result is the file's parts in their order, as a user turn carries them,
+    and a result of text alone stays one string."""
     image, pdf = uuid4(), uuid4()
     call = ModelCall(
         model=MODEL,
@@ -322,7 +336,14 @@ def test_files_render_as_data_urls_and_a_tool_results_files_are_dropped() -> Non
                 blocks=(
                     ImageBlock(attachment_id=image),
                     DocumentBlock(attachment_id=pdf),
-                    ToolResultBlock(tool_use_id="call_1", parts=(ImageBlock(attachment_id=image),)),
+                    ToolResultBlock(
+                        tool_use_id="call_1",
+                        parts=(TextBlock(text="the chart"), ImageBlock(attachment_id=image)),
+                    ),
+                    ToolResultBlock(
+                        tool_use_id="call_2",
+                        parts=(TextBlock(text="a"), TextBlock(text="b")),
+                    ),
                 ),
             ),
         ),
@@ -335,16 +356,26 @@ def test_files_render_as_data_urls_and_a_tool_results_files_are_dropped() -> Non
         ),
     )
     body, dropped = request_body(call)
-    assert body["input"][0] == {"type": "function_call_output", "call_id": "call_1", "output": ""}
-    assert body["input"][1]["content"] == [
-        {"type": "input_image", "image_url": "data:image/png;base64,cG5n"},
+    png = {"type": "input_image", "image_url": "data:image/png;base64,cG5n"}
+    assert body["input"][0] == {
+        "type": "function_call_output",
+        "call_id": "call_1",
+        "output": [{"type": "input_text", "text": "the chart"}, png],
+    }
+    assert body["input"][1] == {
+        "type": "function_call_output",
+        "call_id": "call_2",
+        "output": "a\nb",
+    }
+    assert body["input"][2]["content"] == [
+        png,
         {
             "type": "input_file",
             "filename": "report.pdf",
             "file_data": "data:application/pdf;base64,cGRm",
         },
     ]
-    assert [d.what for d in dropped] == ["image in a tool result"]
+    assert dropped == ()
 
 
 def test_a_schema_maps_to_the_text_format() -> None:

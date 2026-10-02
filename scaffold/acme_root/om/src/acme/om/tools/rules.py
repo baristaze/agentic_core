@@ -4,7 +4,7 @@ responses the model reads. Values in, values out; the time is an argument."""
 
 import hashlib
 import json
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -326,10 +326,82 @@ def engine_retries(failure: ToolFailure, effect: Effect) -> bool:
 
 
 def bounded(text: str, limit: int) -> str:
-    """Text the model reads, within its bound, saying what was cut."""
+    """Text the model reads, within its bound: its head and its tail, where
+    an output's end, its summary or the error that stopped it, usually is,
+    with a line between them saying what was cut."""
     if len(text) <= limit:
         return text
-    return f"{text[:limit]}\n[cut: {limit} of {len(text)} characters shown]"
+    tail = limit // 2
+    shown = f"[cut: {limit} of {len(text)} characters shown, the head above and the tail below]"
+    return f"{text[: limit - tail]}\n{shown}\n{text[len(text) - tail :]}"
+
+
+def shares(sizes: Sequence[int], room: int) -> list[int]:
+    """What each of `sizes` may take of `room`: even shares, and a size
+    within its share takes only itself and leaves the rest to the others."""
+    allowed = [0] * len(sizes)
+    left, count = max(room, 0), len(sizes)
+    for index in sorted(range(len(sizes)), key=lambda at: sizes[at]):
+        allowed[index] = min(sizes[index], left // count)
+        left, count = left - allowed[index], count - 1
+    return allowed
+
+
+def fit(texts: Sequence[str], room: int, size: Callable[[str], int] = len) -> list[str]:
+    """Texts the model reads together within `room`, as `size` measures
+    each where it is read: one within its share whole, one past it cut by
+    `bounded` until it fits, so each keeps its own head and tail whatever
+    the others hold. A command's streams are such texts."""
+    sizes = [size(text) for text in texts]
+    if sum(sizes) <= room:
+        return list(texts)
+    fitted: list[str] = []
+    for text, have, share in zip(texts, sizes, shares(sizes, room), strict=True):
+        keep = max(0, share * len(text) // max(have, 1))
+        cut = text if have <= share else bounded(text, keep)
+        while size(cut) > share and keep > 0:
+            keep = max(0, keep - (size(cut) - share))
+            cut = bounded(text, keep)
+        fitted.append(cut)
+    return fitted
+
+
+def _json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _strings(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, Mapping):
+        return [text for item in value.values() for text in _strings(item)]
+    if isinstance(value, list | tuple):
+        return [text for item in value for text in _strings(item)]
+    return []
+
+
+def _put(value: Any, texts: Iterator[str]) -> Any:
+    if isinstance(value, str):
+        return next(texts)
+    if isinstance(value, Mapping):
+        return {key: _put(item, texts) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_put(item, texts) for item in value]
+    return value
+
+
+def bounded_json(value: Any, limit: int) -> str:
+    """A tool's output as the model reads it, as JSON within `limit`
+    characters where it can be: each string, such as a command's stdout and
+    its stderr, cut to its share (`fit`), never the whole as one text, which
+    would lose the end of every string but the last."""
+    whole = _json(value)
+    if len(whole) <= limit:
+        return whole
+    texts = _strings(value)
+    measured = [len(_json(text)) for text in texts]
+    room = limit - (len(whole) - sum(measured))
+    return _json(_put(value, iter(fit(texts, room, size=lambda text: len(_json(text))))))
 
 
 def response_id(request: Step, epoch: int) -> UUID:
@@ -382,21 +454,30 @@ def response(
     )
 
 
-def command_text(result: CommandResult) -> str:
-    """A command's end as the model reads it. A non-zero exit is a result,
-    often the most useful one."""
+def _command_lines(result: CommandResult, streams: Sequence[tuple[str, str]]) -> str:
     lines = [f"exit code: {result.exit_code}"]
-    if result.stdout:
-        lines += ["stdout:", result.stdout]
-    if result.stderr:
-        lines += ["stderr:", result.stderr]
+    for name, text in streams:
+        lines += [f"{name}:", text]
     if result.truncated:
         lines.append("[the output was cut at its bound]")
     return "\n".join(lines)
 
 
-def recovered_text(result: CommandResult) -> str:
-    return (
-        "The run that made this call was lost; the call's command had ended, "
-        "and this is how, from the transport's record.\n" + command_text(result)
-    )
+def command_text(result: CommandResult, limit: int) -> str:
+    """A command's end as the model reads it, within `limit` characters:
+    its stdout and its stderr each cut to its share (`fit`), so each keeps
+    its own end. A non-zero exit is a result, often the most useful one."""
+    streams = [(n, t) for n, t in (("stdout", result.stdout), ("stderr", result.stderr)) if t]
+    frame = len(_command_lines(result, [(name, "") for name, _ in streams]))
+    kept = fit([text for _, text in streams], limit - frame)
+    return _command_lines(result, [(name, k) for (name, _), k in zip(streams, kept, strict=True)])
+
+
+RECOVERED = (
+    "The run that made this call was lost; the call's command had ended, "
+    "and this is how, from the transport's record.\n"
+)
+
+
+def recovered_text(result: CommandResult, limit: int) -> str:
+    return RECOVERED + command_text(result, limit - len(RECOVERED))

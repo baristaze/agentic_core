@@ -5,8 +5,9 @@ container on the local Docker, which needs Docker and is skipped without it.
 A secret injected into one process is redacted from everything it prints,
 raw, encoded, and escaped, before any of it streams or returns, and the
 process's environment holds nothing of the engine's. A command's whole tree
-ends at its deadline. A command from a stale run is refused. How a command
-ended is recorded under its key."""
+ends at its deadline. An output past its bound keeps its head and its tail,
+and a viewer that fails never stops the command. A command from a stale run
+is refused. How a command ended is recorded under its key."""
 
 import asyncio
 import base64
@@ -123,6 +124,35 @@ class TransportContract:
         )
         assert (result.exit_code, result.stdout, result.stderr) == (3, "out\n", "err\n")
         assert not result.timed_out and result.secrets == ()
+
+    async def test_an_output_past_its_bound_keeps_its_head_and_its_tail(
+        self, transport: TransportInterface, workspace: Workspace
+    ) -> None:
+        """A command's end, its summary or the error that stopped it, is kept
+        however much it printed before it."""
+        script = "echo BEGIN; i=0; while [ $i -lt 2000 ]; do echo 0123456789; i=$((i+1)); done; "
+        result = await transport.run(
+            workspace, command("sh", "-c", script + "echo THE END", max_output=1000)
+        )
+        assert result.exit_code == 0 and result.truncated
+        assert result.stdout.startswith("BEGIN\n") and result.stdout.endswith("THE END\n")
+        head, _, tail = result.stdout.partition("\n[")
+        cut, _, tail = tail.partition(" characters cut here]\n")
+        assert len(head) + len(tail) == 1000 and int(cut) == 6 + 2000 * 11 + 8 - 1000
+
+    async def test_a_viewer_that_fails_costs_the_view_never_the_command(
+        self, transport: TransportInterface, workspace: Workspace
+    ) -> None:
+        async def failing(stream: str, text: str) -> None:
+            raise RuntimeError("the viewer went away")
+
+        result = await transport.run(
+            workspace,
+            command("sh", "-c", "for i in 1 2 3; do echo line$i; sleep 0.05; done"),
+            failing,
+        )
+        assert (result.exit_code, result.stdout) == (0, "line1\nline2\nline3\n")
+        assert not result.timed_out
 
     async def test_a_secret_is_redacted_in_every_form_before_it_streams_or_returns(
         self, transport: TransportInterface, workspace: Workspace

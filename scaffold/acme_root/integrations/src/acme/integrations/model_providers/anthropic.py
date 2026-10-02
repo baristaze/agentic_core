@@ -30,6 +30,7 @@ from acme.integrations.model_providers.calls import (
 )
 from acme.integrations.model_providers.content import (
     MAX_NAME,
+    UNPARSED,
     Block,
     DocumentBlock,
     ImageBlock,
@@ -396,7 +397,7 @@ class AnthropicReply:
         self._drop(str(kind), "the engine holds no such part")
         return []
 
-    def _blocks_out(self) -> tuple[list[ReplyBlock], list[ThinkingBlock]]:
+    def _blocks_out(self, *, finished: bool) -> tuple[list[ReplyBlock], list[ThinkingBlock]]:
         blocks: list[ReplyBlock] = []
         thinking: list[ThinkingBlock] = []
         source = ThinkingSource(provider=ProviderName.ANTHROPIC, model=self._model)
@@ -420,21 +421,28 @@ class AnthropicReply:
                     )
                 )
             elif opened.type == "tool_use":
-                tool_use = self._tool_use(opened)
+                tool_use = self._tool_use(opened, finished=finished)
                 if tool_use is not None:
                     blocks.append(tool_use)
         return blocks, thinking
 
-    def _tool_use(self, opened: _Open) -> ToolUseBlock | None:
+    def _tool_use(self, opened: _Open, *, finished: bool) -> ToolUseBlock | None:
+        """A tool use's block. An input that is not a JSON object is kept as
+        the model wrote it when the reply stopped for its calls, so the call
+        is refused as invalid input the model reads; in a reply that was cut
+        it is dropped, and never runs either way."""
         raw = "".join(opened.json)
         try:
             value = json.loads(raw) if raw else {}
         except ValueError:
-            self._drop(f"tool use {opened.id}", "its input is not whole JSON, so it never runs")
-            return None
+            value = None
         if not isinstance(value, dict):
-            self._drop(f"tool use {opened.id}", "its input is not an object")
-            return None
+            if not finished:
+                self._drop(
+                    f"tool use {opened.id}", "its input is no whole object, so it never runs"
+                )
+                return None
+            value = {UNPARSED: raw}
         try:
             return ToolUseBlock(id=opened.id, name=opened.name, input=value)
         except ValidationError:
@@ -462,8 +470,8 @@ class AnthropicReply:
         )
 
     def _build(self, *, whole: bool) -> ModelReply:
-        blocks, thinking = self._blocks_out()
         stop = STOP_REASONS.get(self._stop or "") if whole else None
+        blocks, thinking = self._blocks_out(finished=stop is StopReason.TOOL_USE)
         if whole and self._stop and stop is None:
             self._drop(
                 f"stop reason {self._stop}", "unknown, so the reply is recorded as truncated"

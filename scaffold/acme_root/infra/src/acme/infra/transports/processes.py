@@ -1,6 +1,8 @@
 """A process a transport starts on this host, driven to its end: its output
-pumped through the command's redaction as it arrives, kept within a bound,
-and its whole tree ended at the deadline.
+pumped through the command's redaction as it arrives, kept within a bound
+(past it, its head and its tail, where a command's end, its summary or the
+error that stopped it, usually is), and its whole tree ended at the
+deadline.
 
 A tree is the process, every process descended from it, and its process
 group. Ending it freezes what is below the process first, walking the tree
@@ -11,8 +13,10 @@ workspace's release is what ends it."""
 
 import asyncio
 import codecs
+import logging
 import os
 import signal
+from collections import deque
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -21,6 +25,8 @@ from pathlib import Path
 from acme.infra.base import utcnow
 from acme.infra.transports import OutputSink
 from acme.infra.transports.redaction import Redactor
+
+log = logging.getLogger(__name__)
 
 GRACE_SECONDS = 2.0
 """How long the output of an ended tree is read before it is cut off."""
@@ -146,7 +152,8 @@ class Driven:
 
 class _Pump:
     """One stream: decoded, redacted with a holdback, kept to `max_output`
-    characters, and passed on as it arrives."""
+    characters (past them, its head and its tail, half each), and passed on
+    as it arrives while it is within them."""
 
     def __init__(
         self,
@@ -162,8 +169,15 @@ class _Pump:
         self._redaction = redactor.stream()
         self._max = max_output
         self._on_output = on_output
-        self._kept: list[str] = []
-        self._size = 0
+        self._head: list[str] = []
+        self._head_size = 0
+        self._tail: deque[str] = deque()
+        self._tail_size = 0
+        self._tail_room = max_output // 2
+        self._head_room = max_output - self._tail_room
+        self._seen = 0
+        self._streamed = 0
+        self._viewer_failed = False
         self.truncated = False
 
     async def run(self) -> None:
@@ -173,25 +187,66 @@ class _Pump:
         await self._emit(self._redaction.flush())
 
     async def _emit(self, text: str) -> None:
-        room = self._max - self._size
-        if len(text) > room:
-            self.truncated = True
-            text = text[: max(room, 0)]
+        """Keeps the text and passes it on while the stream is within its
+        bound. A viewer that fails costs the view, never the command: its
+        output is still read and kept."""
         if not text:
             return
-        self._kept.append(text)
-        self._size += len(text)
-        if self._on_output is not None:
-            await self._on_output(self._name, text)
+        self._keep(text)
+        room = self._max - self._streamed
+        if self._on_output is None or room <= 0:
+            return
+        shown = text[:room]
+        self._streamed += len(shown)
+        try:
+            await self._on_output(self._name, shown)
+        except Exception:
+            if not self._viewer_failed:
+                self._viewer_failed = True
+                log.warning("a viewer of %s failed; the command goes on", self._name, exc_info=True)
+
+    def _keep(self, text: str) -> None:
+        """The head fills first; past it, the tail keeps the latest text,
+        dropping its oldest pieces while what is left still fills it."""
+        if not text:
+            return
+        self._seen += len(text)
+        room = self._head_room - self._head_size
+        if room > 0:
+            self._head.append(text[:room])
+            self._head_size += min(room, len(text))
+            text = text[room:]
+        if text:
+            self._tail.append(text)
+            self._tail_size += len(text)
+            while self._tail and self._tail_size - len(self._tail[0]) >= self._tail_room:
+                self._tail_size -= len(self._tail.popleft())
 
     def text(self) -> str:
-        """What was kept, and what the holdback still held, redacted, when
-        the stream was cut off before its end."""
-        rest = self._redaction.flush()
-        room = self._max - self._size
-        if len(rest) > room:
-            self.truncated = True
-        return "".join(self._kept) + rest[: max(room, 0)]
+        """What was kept, the holdback's text included when the stream was
+        cut off before its end, redacted: all of it within the bound, else
+        its head and its tail with a line between them saying what was cut."""
+        self._keep(self._redaction.flush())
+        head, tail = "".join(self._head), "".join(self._tail)
+        if self._seen <= self._max:
+            return head + tail
+        self.truncated = True
+        return cut_between(head, tail[len(tail) - self._tail_room :], self._seen - self._max)
+
+
+def cut_between(head: str, tail: str, cut: int) -> str:
+    """A stream past its bound: its head, a line naming how many characters
+    were cut, and its tail."""
+    return f"{head}\n[{cut} characters cut here]\n{tail}"
+
+
+def bound_text(text: str, limit: int) -> tuple[str, bool]:
+    """A whole stream within `limit` characters, as `_Pump` keeps one, and
+    whether it was cut: as it is, or its head and its tail, half each."""
+    if len(text) <= limit:
+        return text, False
+    tail = limit // 2
+    return cut_between(text[: limit - tail], text[len(text) - tail :], len(text) - limit), True
 
 
 async def drive(

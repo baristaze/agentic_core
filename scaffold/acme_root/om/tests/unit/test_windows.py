@@ -63,7 +63,7 @@ from acme.om.steps.types.header import (
     SummaryHeader,
     ToolResponseHeader,
 )
-from acme.om.steps.types.step import Step, StepType
+from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.windows import rules
 from acme.om.windows.gate import CallGateInterface
@@ -338,6 +338,47 @@ async def test_a_window_near_its_limit_compacts_into_a_summary_that_references_i
     (asked,) = engine.summarizer.calls
     assert asked.model == SUMMARY_FILL.model and asked.messages[0].role == "user"
     assert all(b.kind == "text" and b.text.startswith("<data ") for b in asked.messages[0].blocks)
+
+
+async def test_the_summarizer_is_asked_where_the_agent_stopped_and_for_no_instruction(
+    engine: Engine,
+) -> None:
+    """The default prompt asks for the sections that let the agent go on:
+    what it did, found, decided, and left unchecked, and what it was doing
+    where the record ends; bounded, invented from nothing, and with no
+    instruction of its own."""
+    session = await a_session(engine, a_long_history())
+    engine.summarizer.add(a_summary())
+    await engine.windows.render_request(
+        engine.ctx, session.id, session.epoch, session.loop_id, KIND
+    )
+    (asked,) = engine.summarizer.calls
+    prompt = asked.system[0].text
+    for section in ("## Done", "## Known", "## Decided", "## State", "## Next"):
+        assert f"\n{section}\n" in prompt
+    assert "was doing where the record ends" in prompt and "not yet checked" in prompt
+    assert "invent nothing" in prompt and "under 1,500 words" in prompt
+    assert "write no instruction of your own" in prompt and "do not restate them" in prompt
+
+
+def test_an_objective_an_agent_handed_over_is_kept_by_the_summary_never_the_pinned_zone() -> None:
+    """A hand-off's objective is an agent's words, so the pinned zone never
+    quotes it: it pins the principal's first message. The summarizer is told
+    the pinned objective is the one a principal stated, and asked to keep an
+    objective that arrived from an agent, which would otherwise leave the
+    window with the fold."""
+    history = History()
+    handed = history.message(
+        "Make the upload test pass on every run.", actor=Actor.AGENT, origin=Origin.ENGINE
+    )
+    said = history.message("Go ahead.")
+    zone = rules.pinned_zone(history.steps, said.seq, CompactionPolicy())
+    assert zone.objective is not None and zone.objective.step_id == said.id
+    assert handed.as_text() not in rules.pinned_block(zone).text
+    prompt = CompactionPolicy().summarizer_prompt
+    assert "the objective as a principal stated it" in prompt
+    assert "An objective that arrived from an agent" in prompt
+    assert "keep it in the summary" in prompt
 
 
 async def test_a_compaction_writes_at_the_engines_clock(tmp_path: Path) -> None:

@@ -3,7 +3,10 @@ each step before it acts on it, settles a lost run's calls by their effect,
 delivers a message that lands mid-run with the next request, parks at once
 on a known outage, starts no loop by itself on an input that stopped one,
 records who spoke and who pays for every request, nudges in a step, and
-refuses a weaker workspace before any call."""
+refuses a weaker workspace before any call. A call the model wrote that is
+no object reaches it as invalid input, a sink that fails costs only the
+live view, a call that keeps failing earns a notice, and the wait before a
+provider is asked again carries jitter."""
 
 import asyncio
 from datetime import timedelta
@@ -30,14 +33,15 @@ from acme.integrations.model_providers.scripted import ScriptedFailure
 from acme.integrations.model_providers.types import ErrorKind, StopReason
 from acme.om.agent_sessions.limits import Limit, Limits, tally_loop, tripped
 from acme.om.agent_sessions.types.agent_session import SessionStatus
-from acme.om.agents.loop_rules import kind_prompts
+from acme.om.agents.impl.sink import StreamSinkMemoryImpl
+from acme.om.agents.loop_rules import REPEATED, kind_prompts, retry_wait
 from acme.om.agents.types.request import Handoff, Spawn
 from acme.om.agents.types.run import RunEnd
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
 from acme.om.exceptions import StaleWriter
 from acme.om.models.types.fill import MAIN, SUMMARIZER, Eligibility
-from acme.om.steps.types.content import TextBlock, ToolResultBlock, ToolUseBlock
+from acme.om.steps.types.content import UNPARSED, TextBlock, ToolResultBlock, ToolUseBlock
 from acme.om.steps.types.header import (
     ControlCommand,
     ControlHeader,
@@ -50,7 +54,7 @@ from acme.om.steps.types.header import (
     ToolResponseHeader,
 )
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
-from acme.om.steps.types.stream import TextPart, ToolInputPart
+from acme.om.steps.types.stream import StreamPart, TextPart, ToolInputPart
 from acme.om.tools.registry import ToolRegistry
 from acme.om.windows.impl.gate import CallGateBudgetImpl
 from acme.om.windows.rules import request_step
@@ -924,3 +928,99 @@ async def test_a_provider_outage_that_outlasts_its_retries_parks_again_and_never
         await loop.managers.agent_sessions.wake_session(loop.owner, session_id, run.park)
 
     assert ends == [RunEnd.PARKED] * 6, "it waits on the provider, and ends nothing"
+
+
+# What a model wrote that is no object, a sink that fails, a call that keeps
+# failing, and the wait before a provider is asked again.
+
+
+async def test_an_input_that_is_no_object_reaches_the_model_as_invalid_input(
+    tmp_path: Path,
+) -> None:
+    """The model finished a call whose input is not one JSON object: the
+    call never runs, its answer says why, and the loop goes on rather than
+    ending on a turn that called nothing."""
+    loop = loop_over(tmp_path)
+    session_id = await loop.start()
+    await loop.say(session_id, "What is the total?")
+    broken = ToolUseBlock(id="use_1", name="lookup", input={UNPARSED: '{"q": "the total"'})
+    loop.anthropic.add(reply(broken), reply(said("The total is 12.")))
+
+    run = await loop.loops.run(loop.owner, session_id)
+
+    assert run.outcome is LoopOutcome.SUCCEEDED and len(loop.anthropic.calls) == 2
+    assert loop.tools["lookup"].ran_as == [], "the call never ran"
+    (answer,) = of_type(await loop.history(session_id), StepType.TOOL_RESPONSE)
+    header = answer.header
+    assert isinstance(header, ToolResponseHeader) and header.failure is ToolFailure.INVALID_INPUT
+    assert "not one JSON object" in text_of(loop.anthropic.calls[1])
+
+
+class FailingSink(StreamSinkMemoryImpl):
+    def emit(self, part: StreamPart) -> None:
+        raise RuntimeError("the carrier went away")
+
+
+async def test_a_sink_that_fails_costs_the_live_view_never_the_call(tmp_path: Path) -> None:
+    loop = loop_over(tmp_path, sink=FailingSink())
+    session_id = await loop.start()
+    await loop.say(session_id, "What is the total?")
+    loop.anthropic.add(
+        reply(said("Looking."), use("lookup", use_id="use_1")), reply(said("The total is 12."))
+    )
+
+    run = await loop.loops.run(loop.owner, session_id)
+
+    assert run.outcome is LoopOutcome.SUCCEEDED
+    steps = await ran_alone(loop, session_id)
+    assert [s.as_text() for s in of_type(steps, StepType.MODEL_RESPONSE)][-1] == (
+        "The total is 12."
+    )
+    assert len(of_type(steps, StepType.TOOL_RESPONSE)) == 1
+
+
+async def test_a_call_that_keeps_failing_earns_a_notice_before_the_streak_ends_the_loop(
+    tmp_path: Path,
+) -> None:
+    """The same failing call three times in a row: the model is told so
+    before its next request, once, and the fifth ends the loop."""
+    loop = loop_over(tmp_path)
+    session_id = await loop.start()
+    await loop.say(session_id, "What is the total?")
+    loop.anthropic.add(*(reply(use("ledger")) for _ in range(5)))
+
+    run = await loop.loops.run(loop.owner, session_id)
+
+    assert run.outcome is LoopOutcome.INCONCLUSIVE and len(loop.anthropic.calls) == 5
+    steps = await loop.history(session_id)
+    notices = [s for s in of_type(steps, StepType.MESSAGE) if s.actor is Actor.ENGINE]
+    assert [n.as_text() for n in notices] == [REPEATED.format(tool="ledger", count=3)], (
+        "one notice, at the third failure"
+    )
+    answers = of_type(steps, StepType.TOOL_RESPONSE)
+    requests = of_type(steps, StepType.MODEL_REQUEST)
+    assert answers[2].seq < notices[0].seq < requests[3].seq
+    assert "failed 3 times in a row" in text_of(loop.anthropic.calls[3])
+    assert "failed 3 times in a row" not in text_of(loop.anthropic.calls[2])
+
+
+def test_the_wait_before_asking_again_grows_carries_jitter_and_honors_the_retry_after() -> None:
+    base = timedelta(seconds=1)
+    assert retry_wait(None, 0, base, 0.0) == timedelta(seconds=0.5)
+    assert retry_wait(None, 0, base, 0.99) < base
+    assert retry_wait(None, 2, base, 0.0) == timedelta(seconds=2), "the fixed half doubles"
+    assert retry_wait(None, 2, base, 0.0) < retry_wait(None, 2, base, 0.5)
+    assert retry_wait(9.0, 1, base, 0.5) == timedelta(seconds=9)
+
+
+async def test_the_loop_draws_its_retry_wait_from_its_jitter(tmp_path: Path) -> None:
+    loop = loop_over(tmp_path, jitter=lambda: 0.5)
+    session_id = await loop.start()
+    await loop.say(session_id, "What is the total?")
+    loop.anthropic.add(ScriptedFailure(kind=ErrorKind.OVERLOADED), reply(said("The total is 12.")))
+    before = loop.clock()
+
+    run = await loop.loops.run(loop.owner, session_id)
+
+    assert run.outcome is LoopOutcome.SUCCEEDED
+    assert loop.clock() - before == timedelta(seconds=0.75), "half of 1s, and half of its half"
