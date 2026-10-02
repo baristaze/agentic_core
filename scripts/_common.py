@@ -1,0 +1,223 @@
+"""Helpers shared by the checkers and generators under scripts/.
+
+Every script runs as `python3 scripts/<name>.py`, which puts this
+directory first on `sys.path`, so `from _common import ...` resolves
+without packaging. Standard library only.
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+from collections.abc import Sequence
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+# What "the repository's Markdown" leaves out: tool caches, installed
+# packages, and Claude Code's own folder (agent worktrees live under
+# .claude/worktrees/). A directory name is skipped at any depth. The
+# scaffold's skills sit in its `.agents/skills/`, which is read; its
+# `.claude/skills` is a link to that folder, and a link is never walked, so
+# each skill is read once.
+SKIP_DIRS = {".git", ".claude", ".venv", "node_modules", "__pycache__", ".pytest_cache", ".markdownlint-cli2-cache"}
+
+HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
+CLOSING = re.compile(r"(?:^|\s+)#+$")
+IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+
+
+def skipped(parts: Sequence[str]) -> bool:
+    """Whether a file, by the parts of its path from the root, is left out of the repository's files."""
+    return any(part in SKIP_DIRS for part in parts[:-1])
+
+
+def markdown_files(root: Path) -> list[Path]:
+    """Every Markdown file of the repository at `root`, at any depth, in path order.
+
+    This is the one definition every script uses, so a checker cannot
+    miss a file another checker reads.
+    """
+    out = []
+    for path in root.rglob("*.md"):
+        if skipped(path.relative_to(root).parts):
+            continue
+        if path.is_file():
+            out.append(path)
+    return sorted(out)
+
+
+def plain(heading: str) -> str:
+    """A heading's text as it renders: a link keeps its text, an image drops out."""
+    return LINK.sub(r"\1", IMAGE.sub("", heading))
+
+
+# a paired emphasis delimiter: `*x*`, `**x**`, or `_x_` at a word boundary, never a lone `*`
+EMPHASIS = re.compile(r"(\*{1,3}|(?<!\w)_{1,3})(?=\S)(.+?)(?<=\S)\1(?!\w)")
+CODE_SPAN = re.compile(r"(`+)(.+?)\1")
+
+NUMBERED_REFERENCE = re.compile(r"\b(?:sub)?sections?\s+\d+|§\s*\d+", re.IGNORECASE)
+"""A reference to a section by number: `section 4`, `subsection 3.2`, `§4`. Every checker refuses it with this one pattern."""
+
+
+def slug(heading: str) -> str:
+    """The anchor GitHub derives from a heading.
+
+    This is the rule of github-slugger, applied to the rendered text:
+    links keep their text, backticks and paired emphasis markers are
+    stripped (a lone `*` is punctuation, dropped after the trim), the
+    rest is lowercased, and every character that is not a letter, a
+    digit, a space, `-`, or `_` is dropped. Text inside a code span is
+    code, never emphasis, so `__init__` keeps its underscores. Each
+    space then becomes one hyphen, so a double space is `--`.
+    Underscores stay (`EMPTY_UUID` anchors as `empty_uuid`). `anchors`
+    numbers repeats; this function does not.
+    """
+    text = plain(heading)
+    parts: list[str] = []
+    at = 0
+    for m in CODE_SPAN.finditer(text):
+        parts.append(EMPHASIS.sub(r"\2", text[at : m.start()]))
+        parts.append(m.group(2))
+        at = m.end()
+    parts.append(EMPHASIS.sub(r"\2", text[at:]))
+    text = "".join(parts).replace("`", "").strip().lower()
+    text = re.sub(r"[^\w\- ]", "", text)
+    return text.replace(" ", "-")
+
+
+FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+
+def fenced_lines(text: str) -> list[bool]:
+    """For each line of `text` (split on newlines), whether it is fenced code, its fences included.
+
+    A fence opens with three or more backticks or tildes, indented at most
+    three spaces, and closes with a run of the same character at least as
+    long, as CommonMark reads it. Every script that skips fenced code asks
+    this function, so none of them can read a fence another one skips.
+    """
+    out: list[bool] = []
+    opener: str | None = None
+    for line in text.split("\n"):
+        m = FENCE.match(line)
+        if opener is None and m:
+            opener = m.group(1)
+            out.append(True)
+        elif opener is not None:
+            if m and m.group(1)[0] == opener[0] and len(m.group(1)) >= len(opener) and not line.strip().strip(opener[0]):
+                opener = None
+            out.append(True)
+        else:
+            out.append(False)
+    return out
+
+
+def unfenced(text: str) -> str:
+    """The text with every line of fenced code, fences included, blanked to spaces.
+
+    Blanked, not dropped, so offsets and line numbers still map back to
+    the file. `fenced_lines` decides which lines are code.
+    """
+    lines = text.split("\n")
+    return "\n".join(" " * len(line) if code else line for line, code in zip(lines, fenced_lines(text), strict=True))
+
+
+COMMENT_OPEN, COMMENT_CLOSE = "<!--", "-->"
+AGENTS_ONLY = re.compile(r"^\s*<!--\s*agents-only\s*$")
+"""The opening line of an agents-only block: `<!-- agents-only`, alone on its line.
+
+The block's body is Markdown an agent reads and a rendered page hides.
+It ends at the first line holding `-->`."""
+
+
+def commented_lines(text: str) -> list[str | None]:
+    """For each line of `text` (split on newlines), the kind of HTML comment it lies in, or None.
+
+    A comment opens on a line outside fenced code that starts with
+    `<!--`, and runs to the first line holding `-->`, both included. The
+    kind is "agents-only" for a block that opens with `AGENTS_ONLY`, and
+    "comment" for any other. A rendered page shows neither, so a heading
+    inside one is no heading.
+    """
+    out: list[str | None] = []
+    kind: str | None = None
+    for line, code in zip(text.split("\n"), fenced_lines(text), strict=True):
+        if kind is None and not code and line.lstrip().startswith(COMMENT_OPEN):
+            kind = "agents-only" if AGENTS_ONLY.match(line) else "comment"
+            out.append(kind)
+            if COMMENT_CLOSE in line.split(COMMENT_OPEN, 1)[1]:
+                kind = None
+        elif kind is not None:
+            out.append(kind)
+            if COMMENT_CLOSE in line:
+                kind = None
+        else:
+            out.append(None)
+    return out
+
+
+def heading_lines(text: str) -> list[tuple[int, int, str]]:
+    """(line index, level, title) for every ATX heading, in order, skipping fenced code and HTML comments.
+
+    The line index counts the lines of `text` from 0. A closing sequence
+    of `#` is not part of the title, as CommonMark reads it: `## Tables ##`
+    is the heading `Tables`.
+    """
+    out: list[tuple[int, int, str]] = []
+    lines = unfenced(text).split("\n")
+    for index, (line, comment) in enumerate(zip(lines, commented_lines(text), strict=True)):
+        m = None if comment else HEADING.match(line)
+        if m:
+            out.append((index, len(m.group(1)), CLOSING.sub("", m.group(2))))
+    return out
+
+
+def headings(text: str) -> list[tuple[int, str]]:
+    """(level, title) for every ATX heading, in order, as `heading_lines` reads them."""
+    return [(level, title) for _, level, title in heading_lines(text)]
+
+
+def anchors(text: str) -> list[tuple[int, str, str]]:
+    """(level, title, anchor) for every heading of a document.
+
+    The second heading with a given slug gets `-1`, the third `-2`, and
+    so on, skipping a numbered anchor an earlier heading already took
+    (`Foo`, `Foo`, `Foo 1` anchor as `foo`, `foo-1`, `foo-1-1`), which
+    is the rule github-slugger applies. Both the generator that writes
+    anchors and the checker that resolves them use this function, so
+    the two cannot disagree.
+    """
+    seen: dict[str, int] = {}
+    out: list[tuple[int, str, str]] = []
+    for level, title in headings(text):
+        base = found = slug(title)
+        while found in seen:
+            seen[base] += 1
+            found = f"{base}-{seen[base]}"
+        seen[found] = 0
+        out.append((level, title, found))
+    return out
+
+
+def parser(doc: str | None) -> argparse.ArgumentParser:
+    """The command line parser every script starts from.
+
+    Abbreviations are off, so only a flag spelled in full is read.
+    """
+    return argparse.ArgumentParser(description=(doc or "").split("\n", 1)[0], allow_abbrev=False)
+
+
+def arguments(doc: str | None, argv: Sequence[str], check: str | None = None) -> argparse.Namespace:
+    """Parse a script's command line; an unknown argument exits 2.
+
+    Every script parses its arguments here or through `parser`, so a
+    typo such as `--chekc` stops the run instead of falling through to
+    the default action. `check` is the help text of a `--check` flag,
+    for the generators that have one.
+    """
+    p = parser(doc)
+    if check is not None:
+        p.add_argument("--check", action="store_true", help=check)
+    return p.parse_args(list(argv))
