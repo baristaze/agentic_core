@@ -297,9 +297,13 @@ class ToolsManagerImpl(ToolsManagerInterface):
                 tree_deadline=tree_deadline,
                 on_output=on_output,
             )
+        # Asking admits this run's epoch on the transport first, so the lost
+        # run's command for this call can no longer start there.
         try:
-            recorded = await self._transport.outcome(workspace, request.id)
+            recorded = await self._transport.outcome(workspace, request.id, epoch)
         except InfraException as error:
+            if error.http_status == STALE_STATUS:
+                raise StaleWriter(error.message) from error
             # A workspace with no transport has no record to read.
             if error.code != CAPABILITY_MISSING:
                 raise

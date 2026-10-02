@@ -197,15 +197,26 @@ class TransportContract:
         with pytest.raises(StaleCommand):
             await transport.write_file(workspace, "x", b"x", epoch=4)
         assert [entry.path for entry in await transport.list_files(workspace, ".", 10)] == []
-        assert await transport.outcome(workspace, stale.key) is None
+        assert await transport.outcome(workspace, stale.key, epoch=5) is None
+        with pytest.raises(StaleCommand):
+            await transport.outcome(workspace, stale.key, epoch=4)
 
     async def test_how_a_command_ended_is_recorded_under_its_key(
         self, transport: TransportInterface, workspace: Workspace
     ) -> None:
         sent = command("sh", "-c", "echo done; exit 2")
         result = await transport.run(workspace, sent)
-        assert await transport.outcome(workspace, sent.key) == result
-        assert await transport.outcome(workspace, new_id()) is None
+        assert await transport.outcome(workspace, sent.key, epoch=1) == result
+        assert await transport.outcome(workspace, new_id(), epoch=1) is None
+
+    async def test_asking_for_an_outcome_fences_the_run_it_replaces(
+        self, transport: TransportInterface, workspace: Workspace
+    ) -> None:
+        lost = command("sh", "-c", "touch ran", epoch=1)
+        assert await transport.outcome(workspace, lost.key, epoch=2) is None
+        with pytest.raises(StaleCommand):
+            await transport.run(workspace, lost)
+        assert await transport.list_files(workspace, ".", 10) == []
 
     async def test_files_are_written_read_and_listed_inside_the_workspace(
         self, transport: TransportInterface, workspace: Workspace
@@ -303,7 +314,7 @@ async def test_the_null_transport_refuses_every_call() -> None:
     with pytest.raises(CapabilityMissing):
         await null.run(workspace, command("true"))
     with pytest.raises(CapabilityMissing):
-        await null.outcome(workspace, new_id())
+        await null.outcome(workspace, new_id(), epoch=1)
     with pytest.raises(CapabilityMissing):
         await null.write_file(workspace, "x", b"", epoch=1)
     with pytest.raises(CapabilityMissing):

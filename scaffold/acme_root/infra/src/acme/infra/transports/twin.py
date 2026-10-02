@@ -93,8 +93,9 @@ class TransportTwinImpl(TransportInterface):
         self._records[(workspace.id, command.key)] = result
         return result
 
-    async def outcome(self, workspace: Workspace, key: UUID) -> CommandResult | None:
+    async def outcome(self, workspace: Workspace, key: UUID, epoch: int) -> CommandResult | None:
         self._serve(workspace)
+        self._admit(workspace.id, epoch)
         return self._records.get((workspace.id, key))
 
     async def read_file(self, workspace: Workspace, path: str, max_bytes: int) -> bytes:
@@ -150,7 +151,7 @@ class TransportNullImpl(TransportInterface):
     ) -> CommandResult:
         raise CapabilityMissing("this agent has no workspace")
 
-    async def outcome(self, workspace: Workspace, key: UUID) -> CommandResult | None:
+    async def outcome(self, workspace: Workspace, key: UUID, epoch: int) -> CommandResult | None:
         raise CapabilityMissing("this agent has no workspace")
 
     async def read_file(self, workspace: Workspace, path: str, max_bytes: int) -> bytes:

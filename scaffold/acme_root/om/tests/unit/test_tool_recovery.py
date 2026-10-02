@@ -22,8 +22,10 @@ from contracts.tools import (
     twin_transport,
 )
 
+from acme.infra.transports import StaleCommand
 from acme.om.base import new_id
 from acme.om.context import Role
+from acme.om.exceptions import StaleWriter
 from acme.om.steps.types.header import ToolFailure
 from acme.om.tools.rules import engine_retries
 from acme.om.tools.types.tool import Effect
@@ -112,6 +114,36 @@ async def test_an_unsafe_call_with_no_record_is_interrupted_and_never_repeated(
         assert failure_of(settled) is ToolFailure.INTERRUPTED, tool
         assert "Check the state it would have changed" in result_text(settled)
     assert transport.commands == [] and push.pushed == []
+
+
+async def test_recovering_an_unsafe_call_fences_the_lost_runs_command(tmp_path: Path) -> None:
+    """The new run answers the call `interrupted`; the lost run, still going,
+    then tries to run it, and the transport refuses its epoch: the side
+    effect cannot happen after the history says its outcome is unknown."""
+    transport, _ = twin_transport(tmp_path)
+    tools = tools_over(transport)
+    ctx = context(Role.SERVICE, make_org())
+    registry = registry_of(Command("deploy", effect=Effect.UNSAFE))
+    workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
+    found = await put_call(tools.steps, ctx, "deploy", {"argv": ["deploy", "staging"]}, "execute")
+    later = await tools.steps.begin_run(ctx, found.session_id)
+    settled = await tools.manager.recover(
+        ctx, registry, found.request, found.call_input, workspace, epoch=later, tree_deadline=None
+    )
+    assert failure_of(settled) is ToolFailure.INTERRUPTED
+    with pytest.raises(StaleWriter):
+        await tools.manager.execute(
+            ctx,
+            registry,
+            found.request,
+            found.call_input,
+            workspace,
+            epoch=found.epoch,
+            tree_deadline=None,
+        )
+    assert transport.commands == []
+    with pytest.raises(StaleCommand):
+        await transport.outcome(workspace, found.request.id, found.epoch)
 
 
 def test_the_engine_retries_only_a_transient_failure_of_a_repeatable_tool() -> None:

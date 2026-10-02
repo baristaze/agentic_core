@@ -51,9 +51,11 @@ async def test_the_twin_fences_injects_redacts_and_records(tmp_path: Path) -> No
     sent = command("call", epoch=2, secrets=(TOKEN,))
     result = await transport.run(workspace, sent, sink)
     assert result.stdout == f"token={marker('api_token')}" and streamed == [result.stdout]
-    assert await transport.outcome(workspace, sent.key) == result
+    assert await transport.outcome(workspace, sent.key, epoch=2) == result
     with pytest.raises(StaleCommand):
         await transport.run(workspace, command("call", epoch=1))
+    with pytest.raises(StaleCommand):
+        await transport.outcome(workspace, sent.key, epoch=1)
 
 
 async def test_the_twin_times_a_command_out_at_its_deadline(tmp_path: Path) -> None:

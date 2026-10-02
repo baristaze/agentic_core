@@ -113,7 +113,9 @@ class ToolsManagerInterface(ABC):
         gate let it run. A `read_only` or `idempotent` call runs again under
         the same key. An `unsafe` one is never repeated: its response is the
         transport's record of how its command ended, or, with none,
-        `interrupted`, its outcome unknown."""
+        `interrupted`, its outcome unknown. Asking for the record admits this
+        run's epoch on the transport, so the lost run's command for the call
+        is refused from then on."""
         ...
 
     @abstractmethod

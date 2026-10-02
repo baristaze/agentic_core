@@ -129,8 +129,9 @@ class TransportContainerImpl(TransportInterface):
         await asyncio.to_thread(self._book.record, workspace.id, result)
         return result
 
-    async def outcome(self, workspace: Workspace, key: UUID) -> CommandResult | None:
+    async def outcome(self, workspace: Workspace, key: UUID, epoch: int) -> CommandResult | None:
         self._container(workspace)
+        await asyncio.to_thread(self._book.admit, workspace.id, epoch)
         return await asyncio.to_thread(self._book.read, workspace.id, key)
 
     async def read_file(self, workspace: Workspace, path: str, max_bytes: int) -> bytes:

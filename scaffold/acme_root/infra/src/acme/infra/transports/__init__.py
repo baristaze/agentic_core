@@ -178,9 +178,12 @@ class TransportInterface(ABC):
         ...
 
     @abstractmethod
-    async def outcome(self, workspace: Workspace, key: UUID) -> CommandResult | None:
+    async def outcome(self, workspace: Workspace, key: UUID, epoch: int) -> CommandResult | None:
         """How the command under `key` ended, as recorded; None when it has
-        no record: it never ran, or it was cut off before it ended."""
+        no record: it never ran, or it was cut off before it ended. It
+        admits `epoch` first, as a command does, so once a new run has asked,
+        no command from the run it replaced runs here (`StaleCommand` for a
+        stale `epoch`)."""
         ...
 
     @abstractmethod
