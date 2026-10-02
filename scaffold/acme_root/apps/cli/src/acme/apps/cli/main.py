@@ -1,9 +1,11 @@
 """The commands. Command mode does one thing and returns: sign in and out,
-the orgs, the switch between them, who the session is, and a file's upload.
-`listen` stays and prints every change in the org as it happens. Every
+the orgs, the switch between them, who the session is, a file's upload, and
+a session with an agent: started, spoken to, steered, and read.
+`listen` stays and prints every change in the org as it happens, and
+`session steps --follow` every step of a loop until it stops. Every
 command is a thin call into the client; the API decides, the CLI shows.
 Exit codes: 0 done, 1 the API refused, 2 usage, 3 not signed in, 4 the API
-is unreachable."""
+is unreachable, 5 a followed loop stopped without succeeding."""
 
 import asyncio
 import json
@@ -15,21 +17,36 @@ from collections.abc import Callable, Coroutine
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Annotated, Any, NoReturn
+from uuid import UUID
 
 import httpx
 import typer
 
 from acme.apps.cli import config
 from acme.apps.cli.listen import listen as run_listener
-from acme.apps.cli.model import choose_org, human_size, org_lines
+from acme.apps.cli.model import (
+    choose_org,
+    follow_succeeded,
+    human_size,
+    org_lines,
+    settled,
+    step_line,
+)
 from acme.client.client import ApiClient, ApiError
 from acme.client.realtime import ChannelRefused
-from acme.client.types import IssuedLoginView, IssuedSessionView
+from acme.client.types import (
+    AgentSessionView,
+    IssuedLoginView,
+    IssuedSessionView,
+    SessionControl,
+    StepView,
+)
 
 EXIT_REFUSED = 1
 EXIT_USAGE = 2
 EXIT_NOT_SIGNED_IN = 3
 EXIT_UNREACHABLE = 4
+EXIT_UNSUCCESSFUL = 5
 
 
 def app_version() -> str:
@@ -386,6 +403,124 @@ def upload(
             typer.echo(f"uploaded {stored.name} ({human_size(stored.size_bytes)}) as {stored.id}")
 
     run(go, api)
+
+
+# Sessions with an agent
+
+session_app = typer.Typer(
+    help="A session with an agent: start one, speak to it, steer it, read its history.",
+    no_args_is_help=True,
+)
+app.add_typer(session_app, name="session")
+
+SessionId = Annotated[UUID, typer.Argument(help="The session's id, as `session start` printed it.")]
+FOLLOW_SECONDS = 1.0
+"""How long `steps --follow` waits between two reads of the history."""
+
+
+@session_app.command("start")
+def start_session(
+    kind: Annotated[str, typer.Argument(help="The agent kind the session runs.")],
+    title: Annotated[str, typer.Argument(help="What the session is about.")],
+    as_json: Json = False,
+    api: Api = None,
+) -> None:
+    """Start a session on a kind. It is idle until a message wakes it."""
+
+    async def go(client: ApiClient) -> None:
+        started = await client.start_agent_session(kind, title)
+        if as_json:
+            typer.echo(started.model_dump_json(indent=2))
+        else:
+            typer.echo(f"started {started.id} on {started.kind} {started.kind_version}")
+
+    run(go, api)
+
+
+@session_app.command("say")
+def say(
+    session_id: SessionId,
+    text: Annotated[str, typer.Argument(help="The message, in your name.")],
+    as_json: Json = False,
+    api: Api = None,
+) -> None:
+    """Send a message. It is kept when this returns; an idle session wakes,
+    and a running loop reads it at its next model call."""
+    said = run(lambda client: client.send_message(session_id, text), api)
+    typer.echo(said.model_dump_json(indent=2) if as_json else step_line(said))
+
+
+@session_app.command("control")
+def control(
+    session_id: SessionId,
+    command: Annotated[SessionControl, typer.Argument(help="What the loop is told.")],
+    as_json: Json = False,
+    api: Api = None,
+) -> None:
+    """Send a control out of band: pause, resume, cancel, interrupt, compact,
+    or unlock."""
+    sent = run(lambda client: client.send_control(session_id, command), api)
+    typer.echo(sent.model_dump_json(indent=2) if as_json else step_line(sent))
+
+
+@session_app.command("decide")
+def decide(
+    session_id: SessionId,
+    seq: Annotated[int, typer.Argument(help="The seq of the tool request the loop waits on.")],
+    approve: Annotated[
+        bool, typer.Option("--approve/--deny", help="Let the call run, or refuse it.")
+    ],
+    note: Annotated[str, typer.Option("--note", help="What the model reads of a denial.")] = "",
+    api: Api = None,
+) -> None:
+    """Decide a tool call the loop parked on."""
+    decided = run(
+        lambda client: client.decide_call(session_id, seq, approve=approve, note=note), api
+    )
+    typer.echo(step_line(decided))
+
+
+@session_app.command("steps")
+def steps(
+    session_id: SessionId,
+    after: Annotated[int, typer.Option("--after", help="Start after this seq.")] = 0,
+    follow: Annotated[
+        bool,
+        typer.Option(
+            "--follow",
+            help="Keep reading until the loop stops; exit 0 when it ended succeeded, 1 otherwise.",
+        ),
+    ] = False,
+    as_json: Json = False,
+    api: Api = None,
+) -> None:
+    """The session's history, one step a line, in its order."""
+
+    async def go(client: ApiClient) -> bool:
+        seen: list[StepView] = []
+        cursor = after
+        stopped: AgentSessionView | None = None
+        while True:
+            page = await client.agent_session_steps(session_id, cursor)
+            for step in page.items:
+                typer.echo(step.model_dump_json() if as_json else step_line(step))
+            seen.extend(page.items)
+            cursor = page.items[-1].seq if page.items else cursor
+            if page.has_more:
+                continue
+            if not follow:
+                return True
+            if stopped is not None:
+                return follow_succeeded(stopped, seen)
+            session = await client.agent_session(session_id)
+            if settled(session):
+                # One more read: the steps the loop wrote before it stopped.
+                stopped = session
+                continue
+            await pause(FOLLOW_SECONDS)
+
+    if not run(go, api):
+        raise typer.Exit(EXIT_UNSUCCESSFUL)
 
 
 # Realtime
