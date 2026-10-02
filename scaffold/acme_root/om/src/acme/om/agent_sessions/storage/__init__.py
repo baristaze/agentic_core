@@ -41,3 +41,9 @@ class AgentSessionStorageInterface(ABC):
         together when the stored one is at `expected_version`, and raises
         `PreconditionFailed` otherwise, landing nothing."""
         ...
+
+    @abstractmethod
+    async def purge_tenant(self, org_id: UUID, limit: int) -> int:
+        """At most `limit` sessions of a deleted tenant past its retention;
+        returns how many went."""
+        ...

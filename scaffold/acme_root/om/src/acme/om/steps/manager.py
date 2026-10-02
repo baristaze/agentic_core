@@ -59,3 +59,13 @@ class StepsManagerInterface(ABC):
     async def get_cursor(self, ctx: TenantContext, session_id: UUID) -> StepCursor:
         """The session's head and the epoch of the run that holds it."""
         ...
+
+    @abstractmethod
+    async def purge_tenant(self, ctx: TenantContext) -> int:
+        """The sweep, for one tenant past its own retention. No serving login
+        may delete a step (ADR 1002), so it deletes nothing: it answers how
+        many steps and cursor rows the tenant still keeps, fewer than a
+        whole batch, so the sweep never marks the tenant purged while its
+        history remains and does not call again in the same pass. Any other
+        tenant returns 0 and reads nothing."""
+        ...

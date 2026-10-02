@@ -36,12 +36,15 @@ from acme.infra.observability import (
     WORK_OLDEST_READY_SECONDS,
     JsonFormatter,
 )
+from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.base import EMPTY_UUID, new_id, utcnow
 from acme.om.context import CredentialKind, RequestContext, Role, TenantContext, build_context
 from acme.om.events.manager import audit_event
 from acme.om.media.types.file import File
 from acme.om.orchestrations.types.orchestration import OrchestrationKind, OrchestrationStatus
 from acme.om.outbox import OutboxRelayInterface
+from acme.om.steps.types.header import InputHeader
+from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.tenancy.rules import hash_token, permissions_of
 from acme.om.tenancy.storage.impl.memory import TenancyStorageMemoryImpl
 from acme.om.tenancy.types.org import Org
@@ -363,6 +366,64 @@ async def test_a_deleted_tenant_is_marked_purged_once_nothing_is_left_and_skippe
     swept = {ctx.org_id for ctx in await container.managers.work.maintenance_contexts(request())}
     assert expired not in swept, "a purged tenant is left out"
     assert recent in swept and EMPTY_UUID in swept
+
+
+def a_session() -> AgentSession:
+    now, by, session_id = utcnow(), new_id(), new_id()
+    return AgentSession(
+        id=session_id,
+        created_at=now,
+        updated_at=now,
+        created_by=by,
+        updated_by=by,
+        title="the weekly report",
+        root_id=session_id,
+    )
+
+
+def a_message(session_id: UUID) -> Step:
+    step_id = new_id()
+    return Step(
+        id=step_id,
+        created_at=utcnow(),
+        session_id=session_id,
+        loop_id=step_id,
+        type=StepType.MESSAGE,
+        actor=Actor.PERSON,
+        origin=Origin.PORTAL,
+        header=InputHeader(),
+    )
+
+
+async def test_a_deleted_tenant_is_never_marked_purged_while_its_history_remains(
+    tmp_path: Path,
+) -> None:
+    """A tenant's agent sessions go with its other rows. Its steps cannot:
+    no serving login deletes one, so the steps' purge reports what is left,
+    and the tenant is never marked purged while any of it remains. A
+    tenant whose sessions kept no history is marked once they are gone."""
+    container = build_container(tmp_path)
+    with_history, _ = await deleted_org(container, days_ago=40)
+    without_history, _ = await deleted_org(container, days_ago=40)
+    sessions = container.storage.get_agent_session_storage()
+    steps = container.storage.get_step_storage()
+    for org_id in (with_history, without_history):
+        session = a_session()
+        assert await sessions.create_session(org_id, session, ())
+        if org_id == with_history:
+            await steps.append_inputs(org_id, session.id, [a_message(session.id)])
+    loop = build_loop(container)
+    tenancy = container.storage.get_tenancy_storage()
+
+    for _ in range(3):
+        await loop._sweep_once()  # pyright: ignore[reportPrivateUsage]
+    for org_id in (with_history, without_history):
+        assert await sessions.read_sessions(org_id, None, None, 10) == []
+    assert await steps.count_tenant(with_history, 10) == 2, "the step and its cursor stay"
+    kept = await tenancy.read_org(with_history)
+    assert kept is not None and kept.purged_at is None, "its history remains"
+    marked = await tenancy.read_org(without_history)
+    assert marked is not None and marked.purged_at is not None, "nothing was left"
 
 
 async def test_a_pass_reads_no_org_row_to_ask_whether_a_tenant_expired(

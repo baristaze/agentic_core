@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from contracts.doubles import context
 from contracts.step_storage import (
+    make_event,
     make_message,
     make_parked,
     make_request,
@@ -25,6 +26,7 @@ from acme.om.exceptions import NotAuthorized, StaleWriter, ValidationFailed
 from acme.om.root import build_managers
 from acme.om.steps import StepsManagerInterface
 from acme.om.steps.types.content import MAX_NAME, ToolResultBlock, ToolUseBlock
+from acme.om.steps.types.header import InputHeader
 from acme.om.steps.types.page import StepCursor
 from acme.om.steps.types.step import (
     BLOCK_KINDS,
@@ -67,12 +69,12 @@ def test_the_type_answers_questions() -> None:
 
 
 def test_the_views_read_the_blocks_of_their_type() -> None:
-    message = make_message(SESSION, "drops it")
+    message = make_message(SESSION, "the total is missing")
     request = make_request(SESSION, message.id)
     response = make_response(SESSION, message.id, request.id)
     result = make_tool_response(SESSION, message.id, new_id())
-    assert message.as_text() == "drops it"
-    assert response.as_text() == "reading the controller log"
+    assert message.as_text() == "the total is missing"
+    assert response.as_text() == "reading the import log"
     assert [use.name for use in response.as_tool_uses()] == ["read_log"]
     assert result.as_tool_response().tool_use_id == "call_1"
     assert request.as_text() == ""
@@ -168,6 +170,16 @@ def malformed() -> list[tuple[str, dict[str, Any]]]:
 def test_a_malformed_step_is_refused_when_it_is_built(what: str, shape: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):
         Step.model_validate(shape)
+
+
+def test_an_input_built_with_no_word_on_waking_takes_its_types_default() -> None:
+    message, event = make_message(SESSION), make_event(SESSION)
+    assert isinstance(message.header, InputHeader) and message.header.waking is True
+    assert isinstance(event.header, InputHeader) and event.header.waking is False
+    from_json = Step.model_validate(raw(event, header={"kind": "input"}))
+    assert from_json.header == InputHeader(waking=False)
+    said = Step.model_validate(raw(event, header={"kind": "input", "waking": True}))
+    assert said.header == InputHeader(waking=True)
 
 
 def test_a_tool_result_holds_text_and_files_alone() -> None:

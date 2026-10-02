@@ -10,7 +10,7 @@ from typing import Annotated, Literal, Self
 from pydantic import Field, model_validator
 
 from acme.om.base import Platform
-from acme.om.steps.types.content import MAX_NAME
+from acme.om.steps.types.content import MAX_NAME, Stored
 
 
 class ControlCommand(StrEnum):
@@ -59,7 +59,7 @@ class Park(Platform):
     so a park only a person clears carries none."""
 
     reason: ParkReason
-    unlock: str = Field(min_length=1, max_length=MAX_NAME)
+    unlock: Stored = Field(min_length=1, max_length=MAX_NAME)
     """What clears the park, named as a kind or an id (`approval`, a job's
     id), never as content."""
     retry_at: datetime | None = None
@@ -73,10 +73,13 @@ class Park(Platform):
 
 class InputHeader(Platform):
     """A `message` or an `event`. `waking` is set when the input arrives, by
-    the adopter's routing: a waking input starts a loop on an idle session."""
+    the adopter's routing: a waking input starts a loop on an idle session.
+    Left None, it takes its type's default when the step is built
+    (`steps.types.step.WAKES_BY_DEFAULT`): a principal's message wakes, and
+    an event from outside does not."""
 
     kind: Literal["input"] = "input"
-    waking: bool = True
+    waking: bool | None = None
 
 
 class ControlHeader(Platform):
@@ -89,7 +92,7 @@ class ModelRequestHeader(Platform):
     steps it carried."""
 
     kind: Literal["model_request"] = "model_request"
-    role: str = Field(min_length=1, max_length=MAX_NAME)
+    role: Stored = Field(min_length=1, max_length=MAX_NAME)
 
 
 class ModelResponseHeader(Platform):
@@ -108,9 +111,9 @@ class ToolRequestHeader(Platform):
     `refs`) and carrying its input's hash, never its input."""
 
     kind: Literal["tool_request"] = "tool_request"
-    tool: str = Field(min_length=1, max_length=MAX_NAME)
-    tool_use_id: str = Field(min_length=1, max_length=MAX_NAME)
-    input_hash: str = Field(min_length=1, max_length=MAX_NAME)
+    tool: Stored = Field(min_length=1, max_length=MAX_NAME)
+    tool_use_id: Stored = Field(min_length=1, max_length=MAX_NAME)
+    input_hash: Stored = Field(min_length=1, max_length=MAX_NAME)
 
 
 class ToolResponseHeader(Platform):

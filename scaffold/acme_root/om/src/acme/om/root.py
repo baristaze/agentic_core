@@ -118,6 +118,8 @@ def build_managers(
     events_options: EventsOptions | None = None,
     work_options: WorkOptions | None = None,
     orchestrations_options: OrchestrationsOptions | None = None,
+    steps_options: StepsOptions | None = None,
+    agent_sessions_options: AgentSessionsOptions | None = None,
 ) -> Managers:
     """`integrations` is the root of the hosted services the managers front:
     the identity provider, which the tenancy manager signs people in and
@@ -173,9 +175,13 @@ def build_managers(
         orchestrations_options or OrchestrationsOptions(),
     )
     # The history first: a session's status is read off its steps.
-    steps = StepsManagerImpl(storage.get_step_storage(), StepsOptions())
+    steps = StepsManagerImpl(storage.get_step_storage(), tenancy, steps_options or StepsOptions())
     agent_sessions = AgentSessionsManagerImpl(
-        storage.get_agent_session_storage(), steps, outbox, AgentSessionsOptions()
+        storage.get_agent_session_storage(),
+        steps,
+        tenancy,
+        outbox,
+        agent_sessions_options or AgentSessionsOptions(),
     )
     # The gate reads the budgets of a call's scopes and holds on the ledger.
     budgets = BudgetsManagerImpl(
