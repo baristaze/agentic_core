@@ -10,8 +10,9 @@ in a deployed environment, like every twin."""
 import json
 from collections import deque
 from collections.abc import AsyncIterator, Sequence
+from pathlib import Path
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, TypeAdapter
 
 from acme.infra.base import InfraModel, thaw_mapping
 from acme.integrations.model_providers import ModelProviderInterface
@@ -42,6 +43,20 @@ class ScriptedFailure(InfraModel):
     status: int | None = None
     retry_after: float | None = Field(default=None, ge=0)
     partial: ModelReply | None = None
+
+
+Turn = ModelReply | ScriptedFailure
+"""One turn of a script: the reply a call gets, or the failure it meets."""
+
+SCRIPT = TypeAdapter(dict[ProviderName, list[Turn]])
+"""A script as a file holds it: each provider's turns, in the order its
+calls take them."""
+
+
+def read_script(path: Path) -> dict[ProviderName, list[Turn]]:
+    """The script a process's twin answers from, read once at boot from a
+    JSON file: an object of provider names, each a list of turns."""
+    return SCRIPT.validate_json(path.read_bytes())
 
 
 def _chunks(text: str) -> list[str]:

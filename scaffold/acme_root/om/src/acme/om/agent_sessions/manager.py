@@ -7,7 +7,7 @@ that announces a change. That write may be late or lost, so it reads the
 steps from where it last stopped and is always rebuildable from them."""
 
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from uuid import UUID
 
 from acme.om.agent_sessions.types.agent_session import (
@@ -17,6 +17,7 @@ from acme.om.agent_sessions.types.agent_session import (
 )
 from acme.om.context import TenantContext
 from acme.om.steps.types.header import Park, ParkReason
+from acme.om.steps.types.step import Step
 
 SessionPurged = Callable[[UUID, UUID, UUID | None], Awaitable[None]]
 """What other namespaces hold of a session, purged before its row: given its
@@ -80,11 +81,26 @@ class AgentSessionsManagerInterface(ABC):
         """Brings the cached status up to the history: reads the steps after
         the last one it read, folds them (`agent_sessions.rules.projected`),
         and writes the session conditioned on the version it read, with the
-        row that announces a change of status or the end of a loop. A writer
-        that got there first is read again and the fold goes on from it.
+        row that announces a change of status or the end of a loop, and,
+        when it turns the session pending, the work that runs its loop. A
+        writer that got there first is read again and the fold goes on from it.
         With nothing new, the session is answered as it is. A session marked
         deleted is `NotFound`; once unmarked, the fold goes on from where it
         stopped."""
+        ...
+
+    @abstractmethod
+    async def receive(
+        self, ctx: TenantContext, session_id: UUID, inputs: Sequence[Step]
+    ) -> tuple[tuple[Step, ...], AgentSession]:
+        """The inbox, with the status after it: inputs and controls appended
+        whether or not a run holds the session, durable when this returns,
+        then the status brought up to them. A projection that makes the
+        session pending lands, with the session's write, the work that runs
+        its loop (`agent_sessions.rules.asks_for_run`). Returns the steps as
+        stored, a step appended before as it was, and the session. A
+        session another tenant holds, or one marked deleted, is `NotFound`,
+        with nothing appended."""
         ...
 
     @abstractmethod

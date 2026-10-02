@@ -5,7 +5,15 @@ unit tested without either."""
 from collections.abc import Sequence
 from uuid import UUID
 
-from acme.client.types import MembershipChoiceView, OrgKind
+from acme.client.types import (
+    AgentSessionView,
+    LoopOutcome,
+    MembershipChoiceView,
+    OrgKind,
+    SessionStatus,
+    StepType,
+    StepView,
+)
 
 
 def describe(kind: str, target_id: UUID, actor: str) -> str:
@@ -56,3 +64,45 @@ def org_lines(memberships: Sequence[MembershipChoiceView], current: str | None) 
         f"  {m.org.name} ({m.role.value}{', personal' if m.org.kind is OrgKind.personal else ''})"
         for m in ordered
     )
+
+
+LINE_TEXT = 120
+"""The most characters of a step's text one line shows."""
+
+
+def step_line(step: StepView) -> str:
+    """One line for a step of a session's history: its seq, its type, and
+    what it says or did, the text cut to one line."""
+    said = " ".join(step.text.split())
+    if len(said) > LINE_TEXT:
+        said = said[: LINE_TEXT - 1] + "…"
+    detail = said
+    if step.type is StepType.model_response and step.tools:
+        detail = f"{said} [calls {', '.join(step.tools)}]".strip()
+    elif step.type is StepType.tool_request:
+        detail = step.tool or ""
+    elif step.type is StepType.tool_response and step.failure is not None:
+        detail = f"{step.failure.value}: {said}"
+    elif step.command is not None:
+        detail = step.command.value
+    elif step.park is not None:
+        detail = f"{step.park.reason.value}, until {step.park.unlock}"
+    elif step.outcome is not None:
+        detail = step.outcome.value
+    return f"{step.seq:>5}  {step.type.value:<15} {detail}".rstrip()
+
+
+def settled(session: AgentSessionView) -> bool:
+    """Whether a session's loop has stopped moving: it ended, or it waits on
+    an unlock."""
+    return session.status in (SessionStatus.idle, SessionStatus.parked)
+
+
+def follow_succeeded(session: AgentSessionView, steps: Sequence[StepView]) -> bool:
+    """Whether a followed loop came to what was asked: the session is idle
+    and the last loop it ended succeeded. A park, or any other outcome, is
+    not."""
+    if session.status is not SessionStatus.idle:
+        return False
+    ended = [step for step in steps if step.type is StepType.loop_ended]
+    return bool(ended) and ended[-1].outcome is LoopOutcome.succeeded

@@ -16,8 +16,9 @@ Everything a multi-tenant product needs before its first domain screen:
 - **Infra and integrations**: cache, buckets, topics, queues, secrets, and
   observability; the identity provider with its twin; a webhook ingress
   that checks a signature at the edge and hands the delivery to a worker.
-- **Processes**: the API with its gateway and realtime socket, and the
-  maintenance worker with its sweep.
+- **Processes**: the API with its gateway and realtime socket, the
+  maintenance worker with its sweep, and the session runner, which runs
+  the loops of agent sessions.
 - **Apps and clients**: the portal shell, the CLI, the company site, and
   the TypeScript and Python clients, over the horizontal API.
 - **Operations**: the ops package and its skills, the local stack with its

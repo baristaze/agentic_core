@@ -17,6 +17,7 @@ from acme.infra.root import InfraInterface
 from acme.infra.trust import install_trust_store
 from acme.integrations.impl.configured import IntegrationsConfiguredImpl, absent_integrations
 from acme.integrations.root import IntegrationsInterface
+from acme.om.agents.types.kind import AgentKind
 from acme.om.root import Managers, TenancyOperatorOptions, TenancyOptions, build_managers
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.storage.impl.postgres import StoragePostgresImpl
@@ -162,6 +163,8 @@ class AppContainer:
         infra: InfraInterface,
         settings: ApiSettings | None = None,
         integrations: IntegrationsInterface | None = None,
+        *,
+        agent_kinds: tuple[AgentKind, ...] = (),
     ) -> AppContainer:
         settings = settings or ApiSettings.model_validate(
             {
@@ -172,7 +175,7 @@ class AppContainer:
         )
         # No identity provider unless the test hands one in.
         integrations = integrations or absent_integrations()
-        return cls.over(settings, storage, infra, integrations)
+        return cls.over(settings, storage, infra, integrations, agent_kinds=agent_kinds)
 
     @classmethod
     def over(
@@ -181,8 +184,12 @@ class AppContainer:
         storage: StorageInterface,
         infra: InfraInterface,
         integrations: IntegrationsInterface,
+        *,
+        agent_kinds: tuple[AgentKind, ...] = (),
     ) -> AppContainer:
-        """Managers, then services, over whichever roots the caller chose."""
+        """Managers, then services, over whichever roots the caller chose.
+        `agent_kinds` are the product's: a session starts on one of them, and
+        the session runner runs its loop with the same kinds."""
         managers = build_managers(
             storage,
             infra,
@@ -190,6 +197,7 @@ class AppContainer:
             operator_options(settings),
             integrations,
             environment=settings.environment,
+            agent_kinds=agent_kinds,
         )
         services = build_services(
             managers,

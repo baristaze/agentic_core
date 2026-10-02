@@ -802,6 +802,49 @@ async def test_one_pass_requeues_every_tenants_expired_leases_a_batch_at_a_time(
     assert set(work.requeue_limits) == {1}
 
 
+class HousekeepingRecordingWork(RequeueRecordingWork):
+    """Records the steps of a pass past recovery: the tenants it visits, the
+    tenants it judges purged, and the queue's own purge."""
+
+    def __init__(self, inner: WorkManagerInterface) -> None:
+        super().__init__(inner)
+        self.housekeeping: list[str] = []
+
+    async def maintenance_contexts(self, rctx: RequestContext) -> list[TenantContext]:
+        self.housekeeping.append("maintenance_contexts")
+        return await self._inner.maintenance_contexts(rctx)
+
+    async def mark_purged(self, ctx: TenantContext) -> bool:
+        self.housekeeping.append("mark_purged")
+        return await self._inner.mark_purged(ctx)
+
+    async def purge_items(self) -> int:
+        self.housekeeping.append("purge_items")
+        return await self._inner.purge_items()
+
+
+async def test_a_worker_that_purges_nothing_sweeps_recovery_alone(tmp_path: Path) -> None:
+    # A gone worker's item comes back to the queue and runs, and the pass
+    # visits no tenant, judges none purged, and purges nothing: those are the
+    # maintenance worker's, which holds the purges.
+    container = build_container(tmp_path)
+    ctx = await sign_in(container)
+    item = make_item(ctx)
+    await container.managers.work.enqueue(ctx, item)
+    lost = await container.managers.work.claim(
+        request(), "default", [WorkKind.NOOP], "gone-worker", timedelta(seconds=-1)
+    )
+    assert lost is not None
+    work = HousekeepingRecordingWork(container.managers.work)
+    handler = RecordingHandler()
+    loop, task = start_loop(container, handler, fast_options(recovery_only=True), work=work)
+    await until(lambda: [h.id for h in handler.handled] == [item.id] and loop.sweeps >= 2)
+    loop.stop()
+    await task
+    assert work.requeued[0] == 1, "the expired lease came back on the first pass"
+    assert work.housekeeping == []
+
+
 async def test_a_departed_members_queued_item_still_runs(tmp_path: Path) -> None:
     container = build_container(tmp_path)
     ctx = await sign_in(container)

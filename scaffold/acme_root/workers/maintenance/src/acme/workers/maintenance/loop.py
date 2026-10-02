@@ -8,7 +8,8 @@ tenants, then the purge of a tenant past its retention per tenant, then
 every namespace's purge of its rows past their retention across tenants,
 then the purges of done outbox rows and settled work items, within a time
 budget, then the tally of the platform's size when it is due, then the four
-gauges of the queue and the outbox), and drain first on stop."""
+gauges of the queue and the outbox; a worker that purges nothing sweeps the
+first two alone), and drain first on stop."""
 
 import asyncio
 import contextlib
@@ -104,6 +105,11 @@ class LoopOptions(Platform):
     # cover a day, and a tally five minutes old answers what the operator
     # plane asks of it (ADR 0074). Each worker counts on its own clock.
     tally_interval: timedelta = timedelta(minutes=5)
+    # A worker that purges nothing sweeps what bounds recovery and no more:
+    # the expired leases and the outbox a crash left. The purges, the tally,
+    # and the gauges are the maintenance worker's, which holds the purge
+    # login; a worker with no purges never judges a tenant purged.
+    recovery_only: bool = False
 
 
 class WorkerLoop:
@@ -458,9 +464,42 @@ class WorkerLoop:
     # Maintenance.
 
     async def _sweep_forever(self) -> None:
+        sweep = self._recover_once if self._options.recovery_only else self._sweep_once
         while True:
-            await self._sweep_once()
+            await sweep()
             await asyncio.sleep(self._options.sweep_interval.total_seconds())
+
+    async def _recover_once(self) -> None:
+        """The pass of a worker that purges nothing: the expired leases go
+        back to the queue, and the outbox rows a crash left are relayed,
+        within the budget, as every pass begins."""
+        deadline = asyncio.get_running_loop().time() + self._options.sweep_budget.total_seconds()
+        await self._recover(self._request(), deadline)
+        self.sweeps += 1
+
+    async def _recover(self, rctx: RequestContext, deadline: float) -> None:
+        """The two cross-tenant steps that bound recovery: a crashed worker's
+        item waits one pass at most, and a write whose handoff a crash cut
+        is handed off."""
+        try:
+            await self._while_full(
+                lambda: self._work.requeue_stale(rctx, self._options.requeue_batch),
+                self._options.requeue_batch,
+                deadline,
+            )
+        except Exception:
+            log.exception("sweep: requeue_stale failed")
+        try:
+            # Whatever a crash left between the core write and its push. A
+            # batch with a row that failed is not full, so a destination that
+            # is down is not asked again in this pass.
+            await self._while_full(
+                lambda: self._outbox.relay_pending(self._options.outbox_batch),
+                self._options.outbox_batch,
+                deadline,
+            )
+        except Exception:
+            log.exception("sweep: outbox relay failed")
 
     async def _sweep_once(self) -> None:
         """First the cross-tenant steps that bound recovery: the expired
@@ -492,25 +531,7 @@ class WorkerLoop:
         started = clock()
         deadline = started + self._options.sweep_budget.total_seconds()
         rctx = self._request()
-        try:
-            await self._while_full(
-                lambda: self._work.requeue_stale(rctx, self._options.requeue_batch),
-                self._options.requeue_batch,
-                deadline,
-            )
-        except Exception:
-            log.exception("sweep: requeue_stale failed")
-        try:
-            # Whatever a crash left between the core write and its push. A
-            # batch with a row that failed is not full, so a destination that
-            # is down is not asked again in this pass.
-            await self._while_full(
-                lambda: self._outbox.relay_pending(self._options.outbox_batch),
-                self._options.outbox_batch,
-                deadline,
-            )
-        except Exception:
-            log.exception("sweep: outbox relay failed")
+        await self._recover(rctx, deadline)
         try:
             contexts = await self._work.maintenance_contexts(rctx)
         except Exception:

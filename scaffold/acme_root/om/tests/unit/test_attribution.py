@@ -256,9 +256,9 @@ def test_a_request_records_the_latest_principal_who_spoke_and_nothing_after_move
 
 
 def test_a_message_is_said_in_the_name_of_the_context_that_appends_it() -> None:
-    claimed, appender = a_person(), new_id()
+    claimed, appender = a_person(), a_person().model_copy(update={"key_id": new_id()})
     said = said_by(make_message(SESSION, principal=claimed), appender)
-    assert isinstance(said.header, InputHeader) and said.header.principal.id == appender
+    assert isinstance(said.header, InputHeader) and said.header.principal == appender
     event = make_event(SESSION, principal=claimed)
     assert said_by(event, appender) == event, "an event is routed, never said"
     parent = from_an_agent(SESSION, claimed, origin=Origin.PARENT)

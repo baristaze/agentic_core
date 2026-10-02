@@ -1,6 +1,7 @@
 """The settings the integrations read, mixed into a process's one settings
 object; nothing below reads the environment."""
 
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator
@@ -41,6 +42,10 @@ class IntegrationsSettings(BaseSettings):
     # every model call as a missing credential and is what a process that
     # calls no model holds.
     model_providers: Literal["live", "scripted", "none"] = "none"
+    # The scripted twin's script: a JSON file of each provider's turns, read
+    # once at boot, so a process the twin serves answers what a suite
+    # scripted for it. None leaves every script empty.
+    model_script: Path | None = None
     # The platform's own keys, process credentials injected at start. Empty
     # or "off" leaves the provider with no platform key: a call runs only on
     # a credential of its own, and without one fails as `credential`.
