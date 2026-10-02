@@ -398,6 +398,46 @@ async def test_a_switch_to_a_smaller_window_compacts_first(tmp_path: Path) -> No
     assert narrow.window.fill == NARROW.name and narrow.window.summary_id is not None
 
 
+async def test_a_switch_inside_a_tool_use_cycle_thinks_again_once_the_cycle_closes(
+    tmp_path: Path,
+) -> None:
+    """A model a switch brings in cannot replay the signed thinking of the
+    turn whose tool use it picks up, and a provider may refuse that turn
+    with thinking on: it runs with thinking off until it answers without a
+    tool."""
+    thinking = WIDE.model_copy(update={"thinking_budget": 1_024})
+    fallback = thinking.model_copy(update={"model": "claude-opus-5-5"})
+    table = (RoleFill(role=MAIN, fill=thinking, fallbacks=(fallback,)), *WIDENING[1:])
+    engine = an_engine(tmp_path, table)
+    history = History()
+    objective = history.message("Find why the robot drops the object.")
+    history.turn((objective,), "Reading the gripper log.", [("read_log", "released at 4.2 s")])
+    session = await a_session(engine, history)
+    assert (await render_main(engine, session)).call.thinking_budget == 1_024
+    await engine.models.switch_fill(
+        engine.ctx,
+        session.id,
+        session.epoch,
+        session.loop_id,
+        MAIN,
+        fallback,
+        SwitchReason.FALLBACK,
+    )
+    held = await render_main(engine, session)
+    assert held.window.fill == fallback.name and held.call.thinking_budget is None
+    later = History(session.id)
+    still = later.response(
+        await record(engine, session, held), "Reading the wrist log.", [("call_w", "read_log", {})]
+    )
+    later.result(later.call(still, "call_w"), "the wrist is fine")
+    await engine.steps.append_steps(engine.ctx, session.id, session.epoch, later.steps)
+    open_still = await render_main(engine, session)
+    assert open_still.call.thinking_budget is None, "the cycle is open still"
+    closed = later.response(await record(engine, session, open_still), "It releases early.")
+    await engine.steps.append_steps(engine.ctx, session.id, session.epoch, [closed])
+    assert (await render_main(engine, session)).call.thinking_budget == 1_024
+
+
 # A provider's overflow compacts once and retries once.
 
 
