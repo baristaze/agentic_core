@@ -3,14 +3,14 @@
 A rule names a lens by id, and its severity is the lens's. The review
 skills read the lens files; an installed checker has no lens files, so
 it carries this table, and the set of lenses whose rule is `core`.
-`tests/test_agentic_check_framework.py` holds both equal to `lenses/*.md`
-and the spec: a lens added, removed, re-rated, or re-cited there is
-changed here in the same change.
+The engine's `tests/test_agentic_check.py` holds both equal to its
+`lenses/*.md` and its spec: a lens added, removed, re-rated, or
+re-cited there is changed here in the same change.
 """
 
 from __future__ import annotations
 
-from agentic_check.model import Severity
+from acme.agentic_check.model import Severity
 
 LENSES: dict[str, Severity] = {
     "STP-01": "medium",

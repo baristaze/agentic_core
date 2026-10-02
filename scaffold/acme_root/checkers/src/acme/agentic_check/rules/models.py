@@ -5,10 +5,10 @@ from __future__ import annotations
 import ast
 from collections.abc import Iterator
 
-from agentic_check.config import glob_match
-from agentic_check.model import Violation
-from agentic_check.project import Project, dotted, last, string
-from agentic_check.registry import rule
+from acme.agentic_check.config import glob_match
+from acme.agentic_check.model import Violation
+from acme.agentic_check.project import Project, dotted, last, string
+from acme.agentic_check.registry import rule
 
 FIELD = "model"
 """The name a model id travels under: a keyword, a dictionary key, a field, a parameter."""
@@ -24,7 +24,9 @@ def literal(node: ast.AST | None) -> str | None:
 
 
 def named_model(target: ast.AST) -> bool:
-    return (isinstance(target, ast.Name) and target.id == FIELD) or (isinstance(target, ast.Attribute) and target.attr == FIELD)
+    return (isinstance(target, ast.Name) and target.id == FIELD) or (
+        isinstance(target, ast.Attribute) and target.attr == FIELD
+    )
 
 
 @rule(
@@ -54,9 +56,17 @@ def no_model_at_a_call_site(project: Project) -> Iterator[Violation]:
         for node in ast.walk(tree):
             found: list[tuple[ast.AST, str]] = []
             if isinstance(node, ast.Call):
-                found += [(k.value, v) for k in node.keywords if k.arg == FIELD and (v := literal(k.value))]
+                found += [
+                    (k.value, v)
+                    for k in node.keywords
+                    if k.arg == FIELD and (v := literal(k.value))
+                ]
             elif isinstance(node, ast.Dict):
-                found += [(v, s) for k, v in zip(node.keys, node.values, strict=True) if string(k) == FIELD and (s := literal(v))]
+                found += [
+                    (v, s)
+                    for k, v in zip(node.keys, node.values, strict=True)
+                    if string(k) == FIELD and (s := literal(v))
+                ]
             elif isinstance(node, ast.Assign | ast.AnnAssign):
                 targets = node.targets if isinstance(node, ast.Assign) else [node.target]
                 value = literal(node.value)
@@ -64,8 +74,18 @@ def no_model_at_a_call_site(project: Project) -> Iterator[Violation]:
                     found.append((node, value))
             elif isinstance(node, ast.arguments):
                 positional = [*node.posonlyargs, *node.args]
-                pairs = [*zip(positional[len(positional) - len(node.defaults) :], node.defaults, strict=True)]
-                pairs += [(a, d) for a, d in zip(node.kwonlyargs, node.kw_defaults, strict=True) if d is not None]
+                pairs = [
+                    *zip(
+                        positional[len(positional) - len(node.defaults) :],
+                        node.defaults,
+                        strict=True,
+                    )
+                ]
+                pairs += [
+                    (a, d)
+                    for a, d in zip(node.kwonlyargs, node.kw_defaults, strict=True)
+                    if d is not None
+                ]
                 found += [(d, v) for a, d in pairs if a.arg == FIELD and (v := literal(d))]
             for at, value in found:
                 yield Violation.at(

@@ -6,9 +6,17 @@ import ast
 import re
 from collections.abc import Iterator
 
-from agentic_check.model import Violation
-from agentic_check.project import Function, Project, SourceFile, docstrings, functions, is_under, string
-from agentic_check.registry import rule
+from acme.agentic_check.model import Violation
+from acme.agentic_check.project import (
+    Function,
+    Project,
+    SourceFile,
+    docstrings,
+    functions,
+    is_under,
+    string,
+)
+from acme.agentic_check.registry import rule
 
 TABLE = "steps"
 """The history's table, as its table class names it in `__tablename__`."""
@@ -51,15 +59,23 @@ def assigned(scope: ast.AST, name: str) -> list[ast.expr]:
         node = stack.pop()
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | ast.Lambda):
             continue
-        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in node.targets):
+        if isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == name for t in node.targets
+        ):
             out.append(node.value)
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == name:
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == name
+        ):
             out.extend([node.value] if node.value is not None else [])
         stack.extend(ast.iter_child_nodes(node))
     return out
 
 
-def names_table(project: Project, file: SourceFile, expr: ast.AST, scopes: list[ast.AST], tables: set[str]) -> bool:
+def names_table(
+    project: Project, file: SourceFile, expr: ast.AST, scopes: list[ast.AST], tables: set[str]
+) -> bool:
     """Whether an expression means the table: its class, its `__table__`, or a local name assigned either."""
     for node in ast.walk(expr):
         if isinstance(node, ast.Name | ast.Attribute) and project.full_name(file, node) in tables:
@@ -76,7 +92,13 @@ def statement(project: Project, file: SourceFile, call: ast.Call) -> tuple[str, 
     """`(kind, target)` when a call builds an UPDATE or a DELETE: `update(t)`, `sqlalchemy.delete(t)`, `t.update()`, or
     `insert(t).on_conflict_do_update()`, an update."""
     func = call.func
-    name = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else None
+    name = (
+        func.attr
+        if isinstance(func, ast.Attribute)
+        else func.id
+        if isinstance(func, ast.Name)
+        else None
+    )
     if name == UPSERT and isinstance(func, ast.Attribute):
         return "update", func.value
     if name not in STATEMENTS:
@@ -92,8 +114,8 @@ def statement(project: Project, file: SourceFile, call: ast.Call) -> tuple[str, 
 @rule(
     "STP-07",
     coverage="partial",
-    summary="No statement updates the steps table, and only a purge deletes from it: no update(), and no delete() or SQL "
-    "DELETE outside a purge_* function.",
+    summary="No statement updates the steps table, and only a purge deletes from it: "
+    "no update(), and no delete() or SQL DELETE outside a purge_* function.",
 )
 def steps_are_written_once(project: Project) -> Iterator[Violation]:
     """The steps table is the class under the OM whose `__tablename__`
@@ -124,14 +146,26 @@ def steps_are_written_once(project: Project) -> Iterator[Violation]:
                 if not names_table(project, file, target, scopes, tables):
                     continue
                 if kind == "update":
-                    yield Violation.at(file.rel, node, "updates a step; a step is written once, and nothing rewrites it")
+                    yield Violation.at(
+                        file.rel,
+                        node,
+                        "updates a step; a step is written once, and nothing rewrites it",
+                    )
                 elif not purge:
-                    yield Violation.at(file.rel, node, "deletes steps outside a purge; only the purge removes a history")
+                    yield Violation.at(
+                        file.rel,
+                        node,
+                        "deletes steps outside a purge; only the purge removes a history",
+                    )
             elif (text := string(node)) is not None and id(node) not in prose:
                 m = sql.search(text)
                 if m and (m.group(1) or m.group(2)):
-                    yield Violation.at(file.rel, node, "holds SQL that updates a step; a step is written once")
+                    yield Violation.at(
+                        file.rel, node, "holds SQL that updates a step; a step is written once"
+                    )
                 elif m and not purge:
                     yield Violation.at(
-                        file.rel, node, "holds SQL that deletes steps outside a purge; only the purge removes a history"
+                        file.rel,
+                        node,
+                        "holds SQL that deletes steps outside a purge; only the purge removes a history",
                     )

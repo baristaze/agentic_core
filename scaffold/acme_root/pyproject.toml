@@ -19,6 +19,7 @@ members = [
     "clients/python",
     "apps/cli",
     "ops",
+    "checkers",
 ]
 
 [tool.uv.sources]
@@ -31,6 +32,7 @@ acme-session-runner = { workspace = true }
 acme-client = { workspace = true }
 acme-cli = { workspace = true }
 acme-ops = { workspace = true }
+acme-checkers = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -56,6 +58,7 @@ pythonpath = [
     "apps/cli/tests",
     "ops/tests",
     "ops/audit",
+    "checkers/tests",
 ]
 asyncio_default_fixture_loop_scope = "function"
 testpaths = [
@@ -68,6 +71,7 @@ testpaths = [
     "clients/python/tests",
     "apps/cli/tests",
     "ops/tests",
+    "checkers/tests",
 ]
 markers = [
     "integration: needs the local compose stack",
@@ -76,10 +80,11 @@ markers = [
     "live: calls a live model provider and spends; `make test-live` runs it by hand",
 ]
 
-# The engine's static checker (`make agentic-check`). The layout is the
-# scaffold's, so only the package is named, and the Python client's types,
-# generated from the committed OpenAPI document by `make openapi` and never
-# hand-edited, are left out, as the linter leaves them.
+# The engine's static checker (`make agentic-check`), which `checkers/`
+# carries. The layout is the scaffold's, so only the package is named, and
+# the Python client's types, generated from the committed OpenAPI document
+# by `make openapi` and never hand-edited, are left out, as the linter
+# leaves them.
 [tool.agentic-check]
 package = "acme"
 exclude = ["clients/python/src/acme/client/schema.py"]

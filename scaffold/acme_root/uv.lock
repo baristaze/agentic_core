@@ -5,6 +5,7 @@ requires-python = ">=3.14"
 [manifest]
 members = [
     "acme-api",
+    "acme-checkers",
     "acme-cli",
     "acme-client",
     "acme-infra",
@@ -36,6 +37,11 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.15" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.53" },
 ]
+
+[[package]]
+name = "acme-checkers"
+version = "0.1.0"
+source = { editable = "checkers" }
 
 [[package]]
 name = "acme-cli"

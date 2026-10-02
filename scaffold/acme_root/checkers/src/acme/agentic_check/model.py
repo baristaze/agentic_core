@@ -1,7 +1,7 @@
 """The values every part of agentic-check shares: a rule, a violation, a finding.
 
 A rule is a function over a `Project` that yields `Violation`s. Its
-registration (`agentic_check.registry.rule`) carries what the lens says
+registration (`acme.agentic_check.registry.rule`) carries what the lens says
 about it: the id, the group, the severity, and how much of the lens the
 rule decides. The runner turns each violation into a `Finding` stamped
 with those fields, so a rule never repeats them.
@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
-    from agentic_check.project import Project
+    from acme.agentic_check.project import Project
 
 Severity = Literal["high", "medium", "low"]
 Coverage = Literal["full", "partial"]
@@ -34,7 +34,7 @@ GROUPS: dict[str, str] = {
     "bounds": "BND",
     "privacy": "PRV",
 }
-"""Each lens group and the id prefix of its lenses, in the order of `lenses/README.md`."""
+"""Each lens group and the id prefix of its lenses, in the order of the engine's `lenses/README.md`."""
 
 FRAMEWORK = "framework"
 """The group of the findings agentic-check raises about itself: `PARSE`, `IGNORE`, and `ERROR`."""
@@ -112,4 +112,10 @@ class Applied:
     reason: str
 
     def as_dict(self) -> dict[str, Any]:
-        return {"rule": self.rule, "path": self.path, "line": self.line, "adr": self.adr, "reason": self.reason}
+        return {
+            "rule": self.rule,
+            "path": self.path,
+            "line": self.line,
+            "adr": self.adr,
+            "reason": self.reason,
+        }

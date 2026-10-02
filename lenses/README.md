@@ -86,11 +86,12 @@ Ids are the group prefix and two digits: `STP`, `WIN`, `MOD`, `TOL`,
   as code. A review reads the file and compares the code with it. A lens
   has one only where a scaffold file shows its rule plainly.
 - **Check** reads `review` when the review alone judges the lens. The
-  checker under `checkers/` decides what a program can decide without
-  guessing, by a rule with the lens's id, and says so here in the
-  guideline's two sentences: "`agentic-check` decides it." when it
-  decides the whole lens, and "`agentic-check` decides `<the part>`; the
-  rest is judged." when the review judges what it leaves.
+  checker the scaffold carries, `scaffold/acme_root/checkers/`, decides
+  what a program can decide without guessing, by a rule with the lens's
+  id, and says so here in the guideline's two sentences:
+  "`agentic-check` decides it." when it decides the whole lens, and
+  "`agentic-check` decides `<the part>`; the rest is judged." when the
+  review judges what it leaves.
 
 `make lenses` holds the format, a width of 80 columns, the citations,
 each Shape path, the Check line against the checker's rules, and every

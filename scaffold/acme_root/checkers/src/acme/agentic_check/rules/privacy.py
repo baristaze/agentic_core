@@ -5,9 +5,9 @@ from __future__ import annotations
 import ast
 from collections.abc import Iterator
 
-from agentic_check.model import Violation
-from agentic_check.project import Project, SourceFile, dotted, is_under, last, names_in
-from agentic_check.registry import rule
+from acme.agentic_check.model import Violation
+from acme.agentic_check.project import Project, SourceFile, dotted, is_under, last, names_in
+from acme.agentic_check.registry import rule
 
 ENGINE = [
     "om.agent_sessions",
@@ -24,7 +24,8 @@ ENGINE = [
     "infra.keys",
     "integrations.model_providers",
 ]
-"""The engine's code, relative to the package: its namespaces, the capabilities under infra, and the provider adapters."""
+"""The engine's code, relative to the package: its namespaces, the capabilities under infra,
+and the provider adapters."""
 
 
 def interface(annotation: ast.AST | None) -> str | None:
@@ -35,10 +36,14 @@ def interface(annotation: ast.AST | None) -> str | None:
 def optional(annotation: ast.AST | None) -> bool:
     """Whether an annotation admits None: `X | None`, `Optional[X]`, or `Union[X, None]`."""
     names = names_in(annotation)
-    return "Optional" in names or any(isinstance(n, ast.Constant) and n.value is None for n in ast.walk(annotation or ast.Pass()))
+    return "Optional" in names or any(
+        isinstance(n, ast.Constant) and n.value is None for n in ast.walk(annotation or ast.Pass())
+    )
 
 
-def constructor_parameters(cls: ast.ClassDef) -> Iterator[tuple[ast.AST, str, ast.AST | None, bool]]:
+def constructor_parameters(
+    cls: ast.ClassDef,
+) -> Iterator[tuple[ast.AST, str, ast.AST | None, bool]]:
     """(node, name, annotation, has a default) for each parameter of `__init__`, and each field of a dataclass."""
     for node in cls.body:
         if isinstance(node, ast.FunctionDef) and node.name == "__init__":
@@ -59,7 +64,11 @@ def engine_files(project: Project, modules: list[str]) -> list[SourceFile]:
     """The engine's modules, each OM namespace's storage left out: a storage impl has the guideline's shape."""
     prefixes = [project.sub(m) for m in modules]
     storage = [f"{p}.storage" for p in prefixes if is_under(p, project.sub("om"))]
-    return [f for f in project.modules_under(*prefixes) if not any(is_under(f.module, s) for s in storage)]
+    return [
+        f
+        for f in project.modules_under(*prefixes)
+        if not any(is_under(f.module, s) for s in storage)
+    ]
 
 
 @rule(
@@ -94,9 +103,13 @@ def every_dependency_is_wired(project: Project) -> Iterator[Violation]:
                     continue
                 if has_default:
                     yield Violation.at(
-                        file.rel, node, f"{cls.name} takes {name}: {kind} with a default; a root wires every dependency"
+                        file.rel,
+                        node,
+                        f"{cls.name} takes {name}: {kind} with a default; a root wires every dependency",
                     )
                 elif optional(annotation):
                     yield Violation.at(
-                        file.rel, node, f"{cls.name} takes {name}: {kind} as optional; a root wires a null object instead"
+                        file.rel,
+                        node,
+                        f"{cls.name} takes {name}: {kind} as optional; a root wires a null object instead",
                     )

@@ -19,10 +19,10 @@ import traceback
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-from agentic_check import __version__
-from agentic_check.config import PYPROJECT, ConfigError, glob_match
-from agentic_check.model import FRAMEWORK, Applied, Finding, Rule
-from agentic_check.project import Project
+from acme.agentic_check import __version__
+from acme.agentic_check.config import PYPROJECT, ConfigError, glob_match
+from acme.agentic_check.model import FRAMEWORK, Applied, Finding, Rule
+from acme.agentic_check.project import Project
 
 PARSE = "PARSE"
 IGNORE = "IGNORE"
@@ -40,7 +40,9 @@ class Result:
 
 
 def framework(rule: str, path: str, line: int, message: str) -> Finding:
-    return Finding(rule=rule, group=FRAMEWORK, severity="high", path=path, line=line, col=1, message=message)
+    return Finding(
+        rule=rule, group=FRAMEWORK, severity="high", path=path, line=line, col=1, message=message
+    )
 
 
 def run(project: Project, rules: Sequence[Rule], paths: Sequence[str] = ()) -> Result:
@@ -62,10 +64,17 @@ def run(project: Project, rules: Sequence[Rule], paths: Sequence[str] = ()) -> R
             failed.add(r.id)
             detail = f": {raised}" if str(raised) else ""
             errors.append(
-                framework(ERROR, PYPROJECT, 1, f"{r.id} raised {type(raised).__name__}{detail}; its findings are missing")
+                framework(
+                    ERROR,
+                    PYPROJECT,
+                    1,
+                    f"{r.id} raised {type(raised).__name__}{detail}; its findings are missing",
+                )
             )
         else:
-            raw.extend(Finding(r.id, r.group, r.severity, v.path, v.line, v.col, v.message) for v in found)
+            raw.extend(
+                Finding(r.id, r.group, r.severity, v.path, v.line, v.col, v.message) for v in found
+            )
     project.parse_all()
     for rel, (line, message) in sorted(project.parse_errors.items()):
         raw.append(framework(PARSE, rel, line, f"does not parse: {message}"))
@@ -78,7 +87,10 @@ def run(project: Project, rules: Sequence[Rule], paths: Sequence[str] = ()) -> R
         matching = [
             i
             for i, e in enumerate(project.config.exceptions)
-            if f.group != FRAMEWORK and e.rule == f.rule and e.path is not None and glob_match(e.path, f.path)
+            if f.group != FRAMEWORK
+            and e.rule == f.rule
+            and e.path is not None
+            and glob_match(e.path, f.path)
         ]
         if not matching:
             kept.append(f)
@@ -88,7 +100,14 @@ def run(project: Project, rules: Sequence[Rule], paths: Sequence[str] = ()) -> R
         applied.append(Applied(f.rule, f.path, f.line, first.adr, first.reason))
     for i, e in enumerate(project.config.exceptions):
         if e.rule in ran and i not in used:
-            kept.append(framework(IGNORE, PYPROJECT, 1, f"the exception for {e.rule} on {e.path} matches no finding"))
+            kept.append(
+                framework(
+                    IGNORE,
+                    PYPROJECT,
+                    1,
+                    f"the exception for {e.rule} on {e.path} matches no finding",
+                )
+            )
 
     findings = [f for f in kept if reported(f.path)] + errors
     findings.sort(key=lambda f: (f.path, f.line, f.col, f.rule, f.message))

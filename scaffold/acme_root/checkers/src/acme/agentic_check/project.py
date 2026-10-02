@@ -20,12 +20,22 @@ from functools import cached_property
 from pathlib import Path
 from typing import TypeVar
 
-from agentic_check.config import Config, ConfigError, glob_match
+from acme.agentic_check.config import Config, ConfigError, glob_match
 
 T = TypeVar("T")
 
 SKIP_DIRS = frozenset(
-    {".git", ".venv", "venv", "node_modules", "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".tox"}
+    {
+        ".git",
+        ".venv",
+        "venv",
+        "node_modules",
+        "__pycache__",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".tox",
+    }
 )
 """Directory names never walked into, at any depth."""
 
@@ -70,12 +80,18 @@ class Project:
         entries = self.config.options.get(rule, {})
         unknown = sorted(set(entries) - set(allowed) - self.declared.get(rule, set()))
         if unknown:
-            raise ConfigError(f"[tool.agentic-check.options.{rule}]: unknown key(s) {', '.join(unknown)}")
+            raise ConfigError(
+                f"[tool.agentic-check.options.{rule}]: unknown key(s) {', '.join(unknown)}"
+            )
         if key not in entries:
             return default
         value = entries[key]
-        if not isinstance(value, type(default)) or (isinstance(value, list) and not all(isinstance(v, str) for v in value)):
-            raise ConfigError(f"[tool.agentic-check.options.{rule}] `{key}` must be a {type(default).__name__}")
+        if not isinstance(value, type(default)) or (
+            isinstance(value, list) and not all(isinstance(v, str) for v in value)
+        ):
+            raise ConfigError(
+                f"[tool.agentic-check.options.{rule}] `{key}` must be a {type(default).__name__}"
+            )
         return value
 
     # --- names
@@ -115,7 +131,9 @@ class Project:
                 if is_package:
                     parts.pop()
                 if parts:
-                    out[rel] = SourceFile(path=path, rel=rel, module=".".join(parts), is_package=is_package)
+                    out[rel] = SourceFile(
+                        path=path, rel=rel, module=".".join(parts), is_package=is_package
+                    )
         return tuple(out[k] for k in sorted(out))
 
     @cached_property
@@ -180,13 +198,19 @@ class Project:
         if tree is not None:
             for node in ast.walk(tree):
                 if isinstance(node, ast.ImportFrom):
-                    target = self.resolve(file, node.level, node.module) if node.level else node.module or ""
+                    target = (
+                        self.resolve(file, node.level, node.module)
+                        if node.level
+                        else node.module or ""
+                    )
                     for alias in node.names:
                         if alias.name != "*":
                             out[alias.asname or alias.name] = f"{target}.{alias.name}"
                 elif isinstance(node, ast.Import):
                     for alias in node.names:
-                        out[alias.asname or alias.name.split(".")[0]] = alias.name if alias.asname else alias.name.split(".")[0]
+                        out[alias.asname or alias.name.split(".")[0]] = (
+                            alias.name if alias.asname else alias.name.split(".")[0]
+                        )
             for node in tree.body:
                 if isinstance(node, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
                     out[node.name] = f"{file.module}.{node.name}"
@@ -250,14 +274,21 @@ class Project:
 
     def defined(self, module_prefix: str, class_name: str) -> list[str]:
         """The full names of the classes called `class_name` under `module_prefix`."""
-        return [n for n in self.classes if n.rpartition(".")[2] == class_name and is_under(n.rpartition(".")[0], module_prefix)]
+        return [
+            n
+            for n in self.classes
+            if n.rpartition(".")[2] == class_name and is_under(n.rpartition(".")[0], module_prefix)
+        ]
 
 
 # --- ast helpers
 
 
 def is_under(name: str, prefix: str) -> bool:
-    """Whether module `name` is `prefix` or inside it: `acme.om.x` is under `acme.om`, `acme.omx` is not."""
+    """Whether module `name` is `prefix` or inside it.
+
+    `acme.om.x` is under `acme.om`, and `acme.omx` is not.
+    """
     return name == prefix or name.startswith(prefix + ".")
 
 
@@ -288,9 +319,16 @@ def docstrings(tree: ast.AST) -> set[int]:
     """The ids of every docstring node under `tree`: a module's, a class's, or a function's first string."""
     out: set[int] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef) and node.body:
+        if (
+            isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef)
+            and node.body
+        ):
             first = node.body[0]
-            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+            if (
+                isinstance(first, ast.Expr)
+                and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)
+            ):
                 out.add(id(first.value))
     return out
 

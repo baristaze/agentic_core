@@ -59,11 +59,6 @@ jobs:
         run: npm install -g "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION"
       - name: make check
         run: make check
-      # agentic-check needs Python 3.11, so its wheel is built and its entry
-      # point run on the latest leg alone.
-      - name: build the agentic-check wheel and run its entry point
-        if: matrix.python == '3.14'
-        run: make checkers-dist
 
   scaffold:
     # A copy of the scaffold, made the way a platform starts, passes its own
@@ -107,10 +102,10 @@ jobs:
         working-directory: ${{ env.COPY }}
         run: make setup
       # arch-check runs at the guideline release the copy pins, and
-      # agentic-check from this checkout's checkers/, on the copy's Python.
-      - name: make check, with agentic-check from this checkout
+      # agentic-check from the copy's own checkers/, so nothing fetches it.
+      - name: make check
         working-directory: ${{ env.COPY }}
-        run: make check AGENTIC_CHECK="uv run --no-project --python $(cat .python-version) python $GITHUB_WORKSPACE/checkers/agentic_check.py"
+        run: make check
       - name: the integration suite over the copy's compose stack
         working-directory: ${{ env.COPY }}
         run: |

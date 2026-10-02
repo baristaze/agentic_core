@@ -1,8 +1,9 @@
 # Tool configuration for the checkers under scripts/ and their tests.
 # This repository is not a Python package: nothing here is built or
-# published, and uv does not manage it as a project. The one package it
-# holds, agentic-check, has its own pyproject.toml under checkers/. The
-# release version lives in .claude-plugin/plugin.json, never here.
+# published, and uv does not manage it as a project. The engine's
+# agentic-check is a member of the scaffold's workspace, which its own
+# ruff.toml and pyrightconfig.json configure. The release version lives
+# in .claude-plugin/plugin.json, never here.
 
 [project]
 name = "agentic-core-checks"
@@ -14,28 +15,27 @@ managed = false
 
 [tool.ruff]
 line-length = 130
-src = ["scripts", "tests", "checkers/src"]
-include = ["scripts/**/*.py", "tests/**/*.py", "checkers/**/*.py"]
+src = ["scripts", "tests"]
+include = ["scripts/**/*.py", "tests/**/*.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["_common", "check_skills", "conftest", "agentic_check", "agentic_check_fixtures"]
+known-first-party = ["_common", "check_skills", "conftest", "acme"]
 
 [tool.mypy]
 python_version = "3.10"
-files = ["scripts", "tests", "checkers/src"]
-mypy_path = ["scripts", "tests", "checkers/src"]
+files = ["scripts", "tests"]
+mypy_path = ["scripts", "tests"]
 explicit_package_bases = true
 check_untyped_defs = true
 warn_unused_ignores = true
 warn_redundant_casts = true
 
-# agentic-check under checkers/src needs Python 3.11 for tomllib; the
-# scripts keep the 3.10 floor above, and mypy has one python_version
-# per run. Under 3.10 rules tomllib has no stub, so it reads as Any
-# here. The checker's own tests run on 3.11 and later, where it is real.
+# The scaffold's agentic-check, which tests/test_agentic_check.py reads,
+# is typed by the scaffold's pyright, on the Python a copy pins; the
+# scripts keep the 3.10 floor above, so here it reads as Any.
 [[tool.mypy.overrides]]
-module = ["tomllib"]
+module = ["acme.*"]
 ignore_missing_imports = true

@@ -45,6 +45,7 @@ served to it. Exposure is by listing, never by folder.
 - [The command line](apps/cli/README.md): the terminal client and its exit codes
 - [The TypeScript client](clients/typescript/README.md): the one client every browser app imports
 - [The Python client](clients/python/README.md): the one client every Python caller goes through
+- [The engine's checker](checkers/README.md): agentic-check, the engine's lenses a parser decides, its configuration, and its exceptions
 
 ## Platform operators
 
