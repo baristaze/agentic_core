@@ -175,13 +175,13 @@ module "buckets" {
   object_key_patterns = { "user-file-uploads" = "*/media/*" }
 }
 
-# The key the session keys are wrapped under: what a step says is sealed
-# under a session's data key, and the data key is kept wrapped by this one.
+# The use of the key the session keys are wrapped under: what a step says
+# is sealed under a session's data key, and the data key is kept wrapped by
+# the account's key, which outlives this graph.
 module "keys" {
   source = "../keys"
 
   environment = var.environment
-  destroyable = var.destroyable
 }
 
 module "secrets" {

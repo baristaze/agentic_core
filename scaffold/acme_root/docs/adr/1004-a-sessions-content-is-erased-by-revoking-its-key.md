@@ -39,8 +39,11 @@ absent. This is the deviation from both rules.
 **The key service keeps no copy of a data key.** The platform keeps the
 one wrapped copy, so destroying it is destroying the key: the cloud key
 service can unwrap only what it is handed. Using the tenant's key is the
-task roles' permission, granted on that key alone; a database login, or
-a role that reads the database, holds wrapped keys and cannot open one.
+task roles' permission, granted on the environment's keys alone; a
+database login, or a role that reads the database, holds wrapped keys and
+cannot open one. In the cloud that key is the account's, outside every
+environment's graph, so destroying an environment leaves its backups
+openable, and the key goes only by hand.
 
 **Shape stays readable.** Ids, types, sequence numbers, references,
 headers, and hashes keyed by the session are not sealed, so billing,

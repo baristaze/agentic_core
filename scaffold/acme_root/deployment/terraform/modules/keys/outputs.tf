@@ -1,6 +1,6 @@
 output "alias_name" {
-  description = "The process reads it as ACME_KMS_KEY_ID."
-  value       = aws_kms_alias.sessions.name
+  description = "The process reads it as ACME_KMS_KEY_ID: the account's key for this environment."
+  value       = "alias/acme-${var.environment}-sessions"
 }
 
 output "policy_arn" {

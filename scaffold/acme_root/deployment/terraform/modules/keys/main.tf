@@ -1,30 +1,17 @@
-# The KMS key every session's data keys are wrapped under, in this
-# environment. A data key is generated, unwrapped, and re-wrapped under it
-# with an encryption context of ids (the tenant, the session, the version),
-# so one tenant's wrapped key opens nothing for another, and KMS's own trail
-# records ids and never content. KMS rotates the key's material once a
-# year; a rotation re-encrypts nothing it wrapped, and the engine re-wraps
-# each data key in place.
-#
-# The use of the key is the task roles' alone, by the policy below. A
-# database login holds the wrapped keys and cannot unwrap one, and neither
-# can the investigate role, which reads the database.
+# The use of the key every session's data keys are wrapped under. The key
+# itself is the account's (the `account` module), so destroying this
+# environment never reaches it. The grant is on the keys tagged as this
+# environment's, so a version wrapped under an earlier key of the
+# environment still opens while that key exists. The use is the task
+# roles' alone: a database login holds the wrapped keys and cannot unwrap
+# one, and neither can the investigate role, which reads the database.
+
+data "aws_partition" "current" {}
+data "aws_region" "current" {}
+data "aws_caller_identity" "current" {}
 
 locals {
   tags = { "acme:environment" = var.environment }
-}
-
-resource "aws_kms_key" "sessions" {
-  description             = "Wraps the session keys of ${var.environment}."
-  key_usage               = "ENCRYPT_DECRYPT"
-  enable_key_rotation     = true
-  deletion_window_in_days = var.destroyable ? 7 : 30
-  tags                    = local.tags
-}
-
-resource "aws_kms_alias" "sessions" {
-  name          = "alias/acme-${var.environment}-sessions"
-  target_key_id = aws_kms_key.sessions.key_id
 }
 
 data "aws_iam_policy_document" "use" {
@@ -35,7 +22,15 @@ data "aws_iam_policy_document" "use" {
       "kms:ReEncryptFrom",
       "kms:ReEncryptTo",
     ]
-    resources = [aws_kms_key.sessions.arn]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:kms:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:key/*",
+    ]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/acme:environment"
+      values   = [var.environment]
+    }
   }
 }
 

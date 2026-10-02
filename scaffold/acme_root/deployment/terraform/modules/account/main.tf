@@ -385,6 +385,26 @@ data "aws_iam_policy_document" "task_boundary" {
   }
 }
 
+# The key every session's data keys are wrapped under, in this account's
+# environment. It lives here, beside the state and the registry, and not in
+# the environment's graph: the content in the database, its backups, and a
+# final snapshot is sealed under it, so it outlives an environment that is
+# destroyed and rebuilt, and no deploy run can schedule its deletion. KMS
+# rotates its material once a year; each version of a session's key records
+# the key's ARN, so it opens under this key whatever the alias names later.
+resource "aws_kms_key" "sessions" {
+  description             = "Wraps the session keys of ${var.environment}."
+  key_usage               = "ENCRYPT_DECRYPT"
+  enable_key_rotation     = true
+  deletion_window_in_days = 30
+  tags                    = { "acme:environment" = var.environment }
+}
+
+resource "aws_kms_alias" "sessions" {
+  name          = "alias/acme-${var.environment}-sessions"
+  target_key_id = aws_kms_key.sessions.key_id
+}
+
 resource "aws_iam_policy" "task_boundary" {
   # Deliberately not "acme-<environment>-...": that shape is what a deploy
   # role may write, and a boundary it could rewrite is no boundary.
