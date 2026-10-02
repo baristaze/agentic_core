@@ -14,10 +14,12 @@ needs its source read in full. A path that starts with `../` is read
 from this skill's folder as `realpath` resolves it. If either file is
 missing, stop and say the installation is incomplete.
 
-This pass covers Identity, Trust, and Attribution, sections of the spec. A lens that leans on
-a rule of the guideline judges the engine's rule only: the guideline's
-own rule is its own review's (`arch-review-<group>`, from the
-guideline's plugin), never a finding here.
+This pass covers these sections of the spec: Identity, Trust, and Attribution.
+
+A lens that leans on a rule of the guideline judges the engine's rule
+only: the guideline's own rule is its own review's
+(`arch-review-<group>`, from the guideline's plugin), never a finding
+here.
 
 ## Input
 
