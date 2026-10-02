@@ -114,6 +114,15 @@ its oldest part is folded into a **summary**, a step of its own, and the
 standing instructions through every fold. A tool's result too large for
 a step is kept whole as an **artifact** in the object store.
 
+## The loop
+
+The **loop** is what an agent does, whatever its kind: it asks a model
+what to do next, does it, and records each step before it acts. It runs
+until the kind's work is done, a limit stops it, a person cancels it, or
+it must wait. A person can write to it while it runs, pause it, cancel
+it, or take over its workspace by hand. What it is writing streams live
+to whoever watches.
+
 ## Tools and who agrees to them
 
 A **tool** is one thing an agent can do, such as run a command or push a
@@ -176,6 +185,9 @@ arrive twice, so the second copy gets the first one's answer.
   or the org. A budget, its holds, and their settlements name their org.
 - A tool policy names its org, one each, and a person's decision on a
   call lands in the session's history like any other step.
+- A loop is a run of a session's steps and has no record of its own; it
+  reads where it is from them, so a loop a crash interrupted goes on
+  where it stopped.
 
 ## One page per kind
 

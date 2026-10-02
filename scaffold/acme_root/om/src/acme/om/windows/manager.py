@@ -9,7 +9,8 @@ limit, a principal asks, or a provider refuses its prompt as too long, it
 compacts: the summarizer folds the oldest part into a `summary` step, and
 the steps themselves never change. A side model role reads a consistent
 suffix sized to its own fill. A tool result too large for a step is kept
-as an artifact the agent reads a page at a time."""
+as an artifact the agent reads a page at a time, sealed under its session's
+key like the step it came from, and purged with its history."""
 
 from abc import ABC, abstractmethod
 from uuid import UUID
@@ -84,5 +85,21 @@ class WindowsManagerInterface(ABC):
     ) -> ArtifactPage:
         """A page of an artifact: its characters from `offset`, at most
         `limit` and the policy's page. An artifact the tenant's session does
-        not hold is `NotFound`."""
+        not hold is `NotFound`; one whose session's key is revoked is
+        `KeyRevoked`: its content is erased, and its record stays."""
+        ...
+
+    @abstractmethod
+    async def purge_artifacts(self, org_id: UUID, session_id: UUID) -> int:
+        """Platform-internal: the artifacts of a session the sweep has
+        claimed for its purge go with its history, before its row, under the
+        purge login, in the tenant named; for no principal. Each object goes
+        before its record. Returns how many records went."""
+        ...
+
+    @abstractmethod
+    async def purge_tenant(self, ctx: TenantContext) -> int:
+        """The sweep, for one tenant past its own retention: its artifacts, a
+        batch at most a call, each object before its record. Any other
+        tenant returns 0 and reads nothing."""
         ...

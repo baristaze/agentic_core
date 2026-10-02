@@ -49,7 +49,9 @@ thing [Acme is made of](../../../../README.md).
 ## The rules
 
 - **One gate, before the call.** A check after the call overshoots every
-  stop by one call. Compaction and every side task pass it too.
+  stop by one call. Compaction and every side task pass it too. A gate
+  that holds nothing is for a developer's machine: a deployed process
+  refuses it when it starts.
 - **Nothing is spent when no one pays.** A call whose payer is unknown
   is refused.
 - **Two calls never both fit where one does.** Holds over one budget

@@ -89,6 +89,8 @@ def build_loop(container: WorkerContainer, lane: str | None = None) -> WorkerLoo
             "session_authorities": managers.attribution.purge_tenant,
             "models": managers.models.purge_tenant,
             "tools": managers.tools.purge_tenant,
+            # Every artifact's object, then its record, under the purge login.
+            "artifacts": managers.windows.purge_tenant,
             # The history, then its sessions, both under the purge login: a
             # tenant is marked purged only once a pass finds none of either.
             "steps": managers.steps.purge_tenant,

@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from acme.infra.buckets import BucketsInterface
 from acme.infra.cache import CacheInterface, CacheScope
 from acme.infra.keys import KeyServiceInterface
+from acme.infra.outages import OutageSignalInterface
 from acme.infra.queues import QueuesInterface
 from acme.infra.secrets import SecretsInterface
 from acme.infra.topics import TopicsInterface
@@ -32,6 +33,12 @@ class InfraInterface(ABC):
 
     @abstractmethod
     def get_keys(self) -> KeyServiceInterface: ...
+
+    @abstractmethod
+    def get_outages(self) -> OutageSignalInterface:
+        """The outage signal, on the shared cache: in one process over the
+        memory cache, shared by a fleet over Valkey."""
+        ...
 
     @abstractmethod
     def get_workspaces(self) -> WorkspaceProviderInterface: ...

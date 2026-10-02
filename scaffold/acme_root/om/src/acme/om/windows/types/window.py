@@ -9,6 +9,7 @@ from uuid import UUID
 from pydantic import Field
 
 from acme.integrations.model_providers.calls import ModelCall
+from acme.om.attribution.types.authority import RequestAttribution
 from acme.om.base import Platform
 from acme.om.models.types.fill import ModelRole
 from acme.om.steps.types.content import Attachment
@@ -37,7 +38,9 @@ class RenderedRequest(Platform):
     carries, which its step references; `attachments` are the placeholders
     whose bytes the call takes from blob storage; `prompt_hash` is keyed by
     the session. `overflow_retry` marks the one render a request gets after
-    the provider refused it as too long."""
+    the provider refused it as too long. `attribution` is who spoke and who
+    pays, as attribution answered for exactly the inputs it delivers, after
+    the latest model request it was rendered from."""
 
     call: ModelCall
     window: ContextWindow
@@ -45,3 +48,4 @@ class RenderedRequest(Platform):
     attachments: tuple[Attachment, ...] = ()
     prompt_hash: str = Field(min_length=1)
     overflow_retry: bool = False
+    attribution: RequestAttribution

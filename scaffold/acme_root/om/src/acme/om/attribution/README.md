@@ -38,7 +38,9 @@ authority. The rest is read off the session and its
 - **Speak.** A message is written in the name of whoever appends it;
   nobody writes one in another's name.
 - **Pay.** A model call is paid by the person behind the latest message
-  a person or a program sent that the model reads in it. Anything else
+  a person or a program sent that the model reads in it, read from
+  exactly the messages the call delivers: one that lands after it was
+  rendered lends it nothing. Anything else
   that arrives (an outside event, another agent's message, the engine's
   own notes) never becomes the payer. When nobody can be named, nothing
   is spent.
@@ -59,8 +61,9 @@ authority. The rest is read off the session and its
 - **Actor, principal, and spender are three answers.** No field stands
   for two of them.
 - **Only a principal instructs.** A person's message, and a parent
-  agent's message to its own sub-agent, are instructions. Everything
-  else is data: read, quoted, and never obeyed.
+  agent's message to its own sub-agent, are instructions, and so are the
+  engine's own notices, such as a nudge, which only the loop writes.
+  Everything else is data: read, quoted, and never obeyed.
 - **The person who asked pays.**
 - **A permission taken away stops the next call.** A delegated call asks
   again every time, never once a conversation.

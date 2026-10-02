@@ -14,6 +14,7 @@ class CacheScope(StrEnum):
     RATE_LIMIT = "rate_limit"
     REALTIME_TICKET = "realtime_ticket"
     WORKER_LIVENESS = "worker_liveness"
+    OUTAGE = "outage"  # the outage signal: a provider failing for one credential
 
 
 def cache_key(org_id: UUID, key: str) -> str:

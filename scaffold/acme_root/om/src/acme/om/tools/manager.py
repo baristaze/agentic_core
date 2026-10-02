@@ -63,15 +63,24 @@ class ToolsManagerInterface(ABC):
         request: Step,
         call_input: Mapping[str, Any],
         workspace: Workspace,
+        *,
+        holds_private: bool = True,
     ) -> Gate:
         """Where a call stands before it runs. A tool the registry does not
         hold, an input its schema refuses, and a preflight that refuses are
-        answered at once. Then policy decides from the tool, its class, its
-        effect, and its target's attributes (`defaults` are the agent
-        kind's): an allowed call runs, a denied one is answered `denied`,
-        and one that needs approval runs on a person's approval of exactly
-        this call, is answered `denied` on a denial, and otherwise asks:
-        the loop parks."""
+        answered at once. Then attribution answers whose authority the call
+        runs under, asked again of the adopter's transition (`denied` for a
+        delegated principal who no longer holds it; `PrincipalLapsed` for a
+        steady one), and the rule of two: whether the session is marked,
+        `holds_private` (its private data or credentials), and whether the
+        call acts outward, read from its target. Then policy decides from the
+        tool, its class, its effect, and its target's attributes (`defaults`
+        are the agent kind's), and a call the rule of two holds needs a
+        person even where policy allows it: an allowed call runs, under the
+        context the gate's `authority` carries; a denied one is answered
+        `denied`; and one that needs approval runs on a person's approval of
+        exactly this call, is answered `denied` on a denial, and otherwise
+        asks: the loop parks."""
         ...
 
     @abstractmethod

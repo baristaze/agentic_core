@@ -5,6 +5,7 @@ from uuid import UUID
 
 from acme.om.context import TenantContext
 from acme.om.exceptions import Unavailable
+from acme.om.privacy import PrivacyManagerInterface
 from acme.om.windows.hashes import PromptHashInterface
 
 
@@ -28,3 +29,15 @@ class PromptHashMemoryImpl(PromptHashInterface):
     async def keyed_hash(self, ctx: TenantContext, session_id: UUID, value: bytes) -> str:
         key = self._keys.setdefault((ctx.org_id, session_id), secrets.token_bytes(32))
         return hmac.new(key, value, hashlib.sha256).hexdigest()
+
+
+class PromptHashPrivacyImpl(PromptHashInterface):
+    """The hash a root wires: the privacy namespace's keyed hash, under a key
+    derived from the session's own, so it confirms nothing once that key is
+    revoked."""
+
+    def __init__(self, privacy: PrivacyManagerInterface) -> None:
+        self._privacy = privacy
+
+    async def keyed_hash(self, ctx: TenantContext, session_id: UUID, value: bytes) -> str:
+        return await self._privacy.keyed_hash(ctx, session_id, value)

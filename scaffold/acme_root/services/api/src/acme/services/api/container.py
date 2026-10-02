@@ -189,6 +189,7 @@ class AppContainer:
             tenancy_options(settings),
             operator_options(settings),
             integrations,
+            environment=settings.environment,
         )
         services = build_services(
             managers,

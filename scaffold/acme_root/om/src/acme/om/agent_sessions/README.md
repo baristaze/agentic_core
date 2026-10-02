@@ -43,7 +43,10 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
   parked on a budget. A woken session is pending; the run that takes it
   up writes a `resumed` step and asks its gates again.
 - **End a loop.** The session goes idle, and the next input that wakes
-  it starts the next loop over the same history.
+  it starts the next loop over the same history. A waking input the loop
+  never delivered keeps it pending, so a new loop starts on it, unless
+  the loop ended in an error or a principal cancelled it: then the input
+  waits for whatever wakes the session next.
 - **Archive.** An archived session keeps what arrives and wakes for
   nothing, until a person's message brings it back.
 - **List** the sessions in a status, a page at a time.
@@ -60,6 +63,9 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
 
 - **A session never ends.** A loop ends; the session waits for its next
   input.
+- **A stopped loop never restarts itself.** A loop that ended in an
+  error, or that a principal cancelled, starts no new loop on an input
+  it left undelivered (ADR 1009).
 - **"Not now" is not "failed".** A park writes no outcome, and a limit
   that no raise cures ends the loop `inconclusive`, never `failed`, and
   never the session.

@@ -8,6 +8,7 @@ from uuid import UUID
 
 from pydantic import Field
 
+from acme.om.attribution.types.authority import CallAuthority
 from acme.om.base import Platform
 from acme.om.steps.types.header import ToolFailure
 from acme.om.steps.types.step import Step
@@ -31,11 +32,15 @@ class GateOutcome(StrEnum):
 
 class Gate(Platform):
     """Where a call stands before it runs. A refused call carries the
-    response that answers it; `decision` is policy's, when policy was asked."""
+    response that answers it; `decision` is policy's, when policy was asked,
+    and `authority` attribution's answer for the call then: the principal it
+    runs under and that principal's live context, which a call that runs
+    runs under."""
 
     outcome: GateOutcome
     decision: Decision | None = None
     response: Step | None = None
+    authority: CallAuthority | None = None
 
 
 class JobStarted(Platform):

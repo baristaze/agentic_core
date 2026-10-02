@@ -8,7 +8,11 @@ The status moves on the steps alone:
 - a step a run writes makes a pending session running, and a `resumed`
   step makes any session running;
 - a `parked` step parks it, and a `loop_ended` step makes it idle, or
-  pending when a waking input is still undelivered;
+  pending when a waking input is still undelivered and the loop reached
+  an end of its own: a loop that ended `errored` or `cancelled` wakes on
+  nothing it already held, so no loop restarts itself on the input that
+  stopped it, or on the one a principal cancelled. That input waits, and
+  the next request delivers it with whatever wakes the session next;
 - a control that clears the park makes a parked session pending, for a
   run to take up: `unlock` and `cancel` clear any park, `resume` a pause,
   and `approve` or `deny` a person's.
@@ -40,6 +44,8 @@ from acme.om.steps.types.header import (
     ControlCommand,
     ControlHeader,
     InputHeader,
+    LoopEndedHeader,
+    LoopOutcome,
     MarkHeader,
     ModelRequestHeader,
     ModelResponseHeader,
@@ -59,6 +65,11 @@ UNPARKS: dict[ControlCommand, frozenset[ParkReason]] = {
     ControlCommand.DENY: frozenset({ParkReason.PERSON}),
 }
 """The parks each control clears. A control not named here clears none."""
+
+STOPPED = frozenset({LoopOutcome.ERRORED, LoopOutcome.CANCELLED})
+"""The outcomes after which a loop wakes on nothing it already held: an
+error no park can clear would meet the same input again, and a principal
+who cancelled did not ask for another run."""
 
 
 @dataclass(frozen=True)
@@ -97,10 +108,13 @@ def after_step(state: Projection, step: Step) -> Projection:
         return state
     if isinstance(header, ParkedHeader):
         return replace(state, status=SessionStatus.PARKED, park=header.park)
-    if step.type is StepType.LOOP_ENDED:
-        waiting = state.pending_input is not None
+    if isinstance(header, LoopEndedHeader):
+        waiting = state.pending_input is not None and header.outcome not in STOPPED
         status = SessionStatus.PENDING if waiting else SessionStatus.IDLE
-        return replace(state, status=status, park=None, delivering_request=None)
+        pending = state.pending_input if waiting else None
+        return replace(
+            state, status=status, park=None, pending_input=pending, delivering_request=None
+        )
     if step.type is StepType.RESUMED or state.status is SessionStatus.PENDING:
         return replace(state, status=SessionStatus.RUNNING, park=None)
     return state
