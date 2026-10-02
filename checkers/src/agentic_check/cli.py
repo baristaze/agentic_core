@@ -87,9 +87,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if d.rule not in known:
             return error(f"[tool.agentic-check] names unknown rule {d.rule}")
         if d.rule in CORE:
-            kind = "disable" if d.path is None else "exception"
+            kind = "a disable" if d.path is None else "an exception"
             return error(
-                f"[tool.agentic-check] has a {kind} for {d.rule}, whose lens states a core rule of the spec: "
+                f"[tool.agentic-check] has {kind} for {d.rule}, whose lens states a core rule of the spec: "
                 "a departure from it is a different engine, never a deviation"
             )
     declared = {r.id: set(r.options) for r in everything}

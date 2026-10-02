@@ -139,7 +139,8 @@ def test_a_rule_whose_lens_is_core_takes_no_deviation(tmp_path, kind):
     write_project(tmp_path, BAD, pyproject=PYPROJECT + entry)
     code, _, err = check(tmp_path)
     assert code == 2
-    assert f"has a {kind} for MOD-01, whose lens states a core rule of the spec" in err
+    article = "an" if kind == "exception" else "a"
+    assert f"has {article} {kind} for MOD-01, whose lens states a core rule of the spec" in err
 
 
 def test_the_core_lenses_are_those_whose_first_source_is_tagged_core():
