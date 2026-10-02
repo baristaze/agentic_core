@@ -22,6 +22,11 @@ This is one of the kinds of thing [Acme is made of](../../../../README.md).
   images, documents, the model's thinking, a tool's use and its result.
   An image or a document is held by reference; its bytes live in the
   store.
+- **What a request read**: a model's request names the
+  [window](../windows/README.md) it read (the model it was sized for, its
+  first step, the summary before it) and a hash of what it sent, keyed
+  by the session. A tool's answer too large to keep in a step names the
+  artifact that holds it whole, and keeps its head and its tail.
 - **Cursor**: each session's last number, and the epoch of the run that
   holds it.
 

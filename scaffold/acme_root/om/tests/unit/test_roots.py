@@ -32,6 +32,8 @@ from acme.om.tenancy import (
     TenancySignInManagerInterface,
 )
 from acme.om.tenancy.storage import TenancyStorageInterface
+from acme.om.windows import WindowsManagerInterface
+from acme.om.windows.storage import WindowStorageInterface
 from acme.om.work import WorkManagerInterface, WorkOperatorManagerInterface
 from acme.om.work.storage import WorkStorageInterface
 
@@ -48,6 +50,7 @@ async def test_memory_root_serves_every_storage() -> None:
     assert isinstance(root.get_step_storage(), StepStorageInterface)
     assert isinstance(root.get_agent_session_storage(), AgentSessionStorageInterface)
     assert isinstance(root.get_fill_set_storage(), FillSetStorageInterface)
+    assert isinstance(root.get_window_storage(), WindowStorageInterface)
     assert await root.healthcheck() is True
     await root.close()
 
@@ -114,6 +117,7 @@ def test_business_root_has_a_field_per_manager(tmp_path: Path) -> None:
     assert isinstance(managers.steps, StepsManagerInterface)
     assert isinstance(managers.agent_sessions, AgentSessionsManagerInterface)
     assert isinstance(managers.models, ModelsManagerInterface)
+    assert isinstance(managers.windows, WindowsManagerInterface)
 
 
 def test_the_tenancy_manager_carries_each_delegate(tmp_path: Path) -> None:

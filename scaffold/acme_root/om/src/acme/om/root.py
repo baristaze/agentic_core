@@ -9,6 +9,7 @@ from acme.infra.cache import CacheInterface, CacheScope
 from acme.infra.root import InfraInterface
 from acme.integrations.identity import IdentityProviderInterface
 from acme.integrations.identity.absent import IdentityProviderAbsentImpl
+from acme.integrations.model_providers.registry import absent_model_providers
 from acme.integrations.root import IntegrationsInterface
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.impl.manager import AgentSessionsManagerImpl, AgentSessionsOptions
@@ -39,6 +40,13 @@ from acme.om.tenancy.impl.operator import TenancyOperatorManagerImpl, TenancyOpe
 from acme.om.tenancy.impl.org import TenancyOrgManagerImpl
 from acme.om.tenancy.impl.sign_in import TenancySignInManagerImpl
 from acme.om.tenancy.storage import TenancyStorageInterface
+from acme.om.windows import WindowsManagerInterface
+from acme.om.windows.gate import CallGateInterface
+from acme.om.windows.hashes import PromptHashInterface
+from acme.om.windows.impl.gate import CallGateNullImpl
+from acme.om.windows.impl.hashes import PromptHashNullImpl
+from acme.om.windows.impl.manager import WindowsManagerImpl, WindowsOptions
+from acme.om.windows.types.policy import CompactionPolicy
 from acme.om.work import WorkManagerInterface, WorkOperatorManagerInterface
 from acme.om.work.impl.manager import WorkManagerImpl, WorkOptions
 from acme.om.work.impl.operator import WorkOperatorManagerImpl
@@ -58,6 +66,7 @@ class Managers:
     steps: StepsManagerInterface
     agent_sessions: AgentSessionsManagerInterface
     models: ModelsManagerInterface
+    windows: WindowsManagerInterface
 
 
 def build_tenancy(
@@ -123,6 +132,9 @@ def build_managers(
     agent_sessions_options: AgentSessionsOptions | None = None,
     models_options: ModelsOptions | None = None,
     model_prices: ModelPricesInterface | None = None,
+    call_gate: CallGateInterface | None = None,
+    prompt_hash: PromptHashInterface | None = None,
+    compaction_policy: CompactionPolicy | None = None,
 ) -> Managers:
     """`integrations` is the root of the hosted services the managers front:
     the identity provider, which the tenancy manager signs people in and
@@ -135,7 +147,13 @@ def build_managers(
 
     `model_prices` is what the resolver asks before it picks a model: the
     one source of prices. None wires the null, which prices nothing, so no
-    model resolves until a source is wired."""
+    model resolves until a source is wired.
+
+    `call_gate` is the budget gate a compaction's model call passes, and
+    `prompt_hash` the key service's hash a request's header records. None
+    wires a loud null for each, which refuses: no summarizer is called
+    outside a gate, and no prompt is hashed without its session's key.
+    `compaction_policy` None keeps the default policy."""
     # The relay every core-role manager hands its outbox rows to. It reaches
     # the work manager through the root below, because a row of kind
     # `work.<kind>` is enqueued there: the work manager needs the tenancy
@@ -199,6 +217,19 @@ def build_managers(
         ModelResolverTableImpl(model_prices or ModelPricesNullImpl(), ResolverOptions()),
         models_options or ModelsOptions(),
     )
+    # What a model request reads: rendered from the history, compacted by
+    # the summarizer through the model providers, behind the gate.
+    windows = WindowsManagerImpl(
+        storage.get_window_storage(),
+        steps,
+        models,
+        absent_model_providers() if integrations is None else integrations.get_model_providers(),
+        infra.get_buckets(),
+        call_gate or CallGateNullImpl(),
+        prompt_hash or PromptHashNullImpl(),
+        compaction_policy or CompactionPolicy(),
+        WindowsOptions(),
+    )
     idempotency = IdempotencyManagerImpl(
         storage.get_idempotency_storage(), idempotency_options or IdempotencyOptions()
     )
@@ -226,5 +257,6 @@ def build_managers(
         steps=steps,
         agent_sessions=agent_sessions,
         models=models,
+        windows=windows,
     )
     return managers

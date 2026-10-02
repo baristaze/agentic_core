@@ -69,6 +69,15 @@ own turns, or a summary. A **fill** is the model that does it, and how. A
 session's **fill set** holds its fills, one per model role; a **switch**
 gives it a new version, and the session's history records each one.
 
+## What a model reads
+
+A **window** is the part of a session's history one call of a model
+reads, sized for that model. When the agent's own window nears its limit,
+its oldest part is folded into a **summary**, a step of its own, and the
+**pinned zone** carries the session's objective and its principals'
+standing instructions through every fold. A tool's result too large for
+a step is kept whole as an **artifact** in the object store.
+
 ## What the platform writes for itself
 
 No person creates these and no screen shows them, but each belongs to
@@ -105,6 +114,8 @@ arrive twice, so the second copy gets the first one's answer.
   for them too.
 - An agent session's fill set names the model for each of its jobs, and
   each switch of it is a step of the session's history.
+- A window and its summaries read a session's steps and change none of
+  them; an artifact belongs to the session whose step names it.
 - An agent session's steps are its truth. Its status is read off them,
   and a change of it writes an outbox row like any other change. A
   session and its steps name their org.
@@ -116,6 +127,7 @@ arrive twice, so the second copy gets the first one's answer.
 - [Agent sessions](src/acme/om/agent_sessions/README.md)
 - [Steps](src/acme/om/steps/README.md)
 - [Models](src/acme/om/models/README.md)
+- [Windows](src/acme/om/windows/README.md)
 - [Events](src/acme/om/events/README.md)
 - [Outbox rows](src/acme/om/outbox/README.md)
 - [Work items](src/acme/om/work/README.md)
