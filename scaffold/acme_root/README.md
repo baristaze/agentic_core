@@ -41,7 +41,7 @@ make setup             # Python and TypeScript dependencies
 make infra-up          # Postgres, Valkey, ElasticMQ, and MinIO alone
 make migrate           # the database logins, then every role's migration chain
 make seed              # the two orgs, their people, and the local operators
-make check             # lint, format, types, arch-check, unit tests
+make check             # lint, format, types, arch-check, agentic-check, unit tests
 make migrate-check     # every role's ORM metadata against the migrated schema
 make test-integration  # the storage contracts over Postgres
 ```
