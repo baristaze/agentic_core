@@ -12,6 +12,7 @@ from httpx import ASGITransport
 
 from acme.integrations.identity.twin import TWIN_PORTAL, IdentityProviderTwinImpl
 from acme.integrations.impl.configured import IntegrationsOverImpl
+from acme.integrations.model_providers.registry import absent_model_providers
 from acme.om.context import Role
 from acme.services.api.app import create_app
 from acme.services.api.container import AppContainer
@@ -28,7 +29,9 @@ def twin() -> IdentityProviderTwinImpl:
 
 @pytest.fixture
 def container(tmp_path: Path, twin: IdentityProviderTwinImpl) -> AppContainer:
-    return build_container(tmp_path, integrations=IntegrationsOverImpl(twin))
+    return build_container(
+        tmp_path, integrations=IntegrationsOverImpl(twin, absent_model_providers())
+    )
 
 
 async def invite(

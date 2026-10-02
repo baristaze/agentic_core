@@ -17,6 +17,7 @@ from acme.integrations.identity.deliveries import DELIVERY_NAMESPACE, SIGNATURE_
 from acme.integrations.identity.twin import IdentityProviderTwinImpl
 from acme.integrations.identity.workos import IdentityProviderWorkOSImpl
 from acme.integrations.impl.configured import IntegrationsOverImpl
+from acme.integrations.model_providers.registry import absent_model_providers
 from acme.services.api.container import AppContainer
 
 ROUTE = "/webhooks/identity"
@@ -30,7 +31,9 @@ def twin() -> IdentityProviderTwinImpl:
 
 @pytest.fixture
 def container(tmp_path: Path, twin: IdentityProviderTwinImpl) -> AppContainer:
-    return build_container(tmp_path, integrations=IntegrationsOverImpl(twin))
+    return build_container(
+        tmp_path, integrations=IntegrationsOverImpl(twin, absent_model_providers())
+    )
 
 
 async def queued(container: AppContainer) -> list[bytes]:
@@ -107,7 +110,7 @@ async def test_the_route_takes_no_credential_and_no_rate_limit(
     every signed delivery is queued."""
     container = build_container(
         tmp_path,
-        integrations=IntegrationsOverImpl(twin),
+        integrations=IntegrationsOverImpl(twin, absent_model_providers()),
         login_rate_limit=SMALL_BUDGET,
         credential_rate_limit_writes=SMALL_BUDGET,
         failed_authentication_limit=SMALL_BUDGET,
@@ -140,7 +143,9 @@ async def test_a_process_with_no_secret_answers_503(tmp_path: Path, provider: st
             transport=httpx.MockTransport(workos_answers_invalid_grant),
             webhook_secret=None,
         )
-        container = build_container(tmp_path, integrations=IntegrationsOverImpl(workos))
+        container = build_container(
+            tmp_path, integrations=IntegrationsOverImpl(workos, absent_model_providers())
+        )
     body, signature = IdentityProviderTwinImpl().signed_event("user.created", {"id": "user_01"})
     async with client_over(container) as client:
         refused = await client.post(ROUTE, content=body, headers={SIGNATURE_HEADER: signature})

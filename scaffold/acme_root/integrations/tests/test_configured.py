@@ -16,6 +16,14 @@ from acme.integrations.impl.configured import (
     IntegrationsConfiguredImpl,
     absent_integrations,
 )
+from acme.integrations.model_providers import reply_of
+from acme.integrations.model_providers.anthropic import ModelProviderAnthropicImpl
+from acme.integrations.model_providers.calls import Message, ModelCall
+from acme.integrations.model_providers.content import TextBlock
+from acme.integrations.model_providers.failures import ModelCallFailed
+from acme.integrations.model_providers.openai import ModelProviderOpenAIImpl
+from acme.integrations.model_providers.scripted import ModelProviderScriptedImpl
+from acme.integrations.model_providers.types import ErrorKind, ProviderName
 from acme.integrations.settings import IntegrationsSettings
 
 DEPLOYED = frozenset({"dev", "staging", "production"})
@@ -134,7 +142,55 @@ async def test_the_absent_provider_refuses_every_call() -> None:
             await call
     root = absent_integrations()
     await root.start()
-    assert root.describe() == [root.get_identity_provider().describe()]
+    assert root.describe()[0] == root.get_identity_provider().describe()
+    assert len(root.describe()) == 1 + len(ProviderName)
     with pytest.raises(ProviderUnavailable, match="closed"):
         absent.verify_delivery(b"{}", "t=1, v1=x")
     await root.close()
+
+
+CALL = ModelCall(
+    model="claude-haiku-4-5",
+    messages=(Message(role="user", blocks=(TextBlock(text="hello"),)),),
+    max_output_tokens=10,
+)
+
+
+@pytest.mark.parametrize("environment", ["dev", "staging", "production"])
+def test_the_scripted_model_provider_is_refused_in_a_deployed_environment(environment: str) -> None:
+    with pytest.raises(UnsafeIntegration, match="ACME_MODEL_PROVIDERS=scripted"):
+        IntegrationsConfiguredImpl(settings(model_providers="scripted"), environment, True)
+
+
+def test_the_scripted_model_provider_runs_locally() -> None:
+    root = IntegrationsConfiguredImpl(settings(model_providers="scripted"), "local", False)
+    for provider in ProviderName:
+        twin = root.get_model_providers().get(provider)
+        assert isinstance(twin, ModelProviderScriptedImpl) and twin.provider is provider
+
+
+async def test_live_model_providers_are_the_adapters_and_say_so_without_their_keys() -> None:
+    root = IntegrationsConfiguredImpl(
+        settings(model_providers="live", anthropic_api_key="sk-ant-secret", openai_api_key="off"),
+        "staging",
+        True,
+    )
+    providers = root.get_model_providers()
+    assert isinstance(providers.get(ProviderName.ANTHROPIC), ModelProviderAnthropicImpl)
+    assert isinstance(providers.get(ProviderName.OPENAI), ModelProviderOpenAIImpl)
+    described = " ".join(root.describe())
+    assert "a platform key" in described and "no platform key" in described
+    assert "sk-ant-secret" not in described
+    assert "sk-ant-secret" not in repr(settings(anthropic_api_key="sk-ant-secret"))
+    with pytest.raises(ModelCallFailed) as failed:
+        await reply_of(providers.get(ProviderName.OPENAI).stream(CALL))
+    assert failed.value.kind is ErrorKind.CREDENTIAL
+    await root.close()
+
+
+async def test_no_model_provider_is_the_default_and_fails_every_call_as_a_credential() -> None:
+    root = IntegrationsConfiguredImpl(settings(), "production", True)
+    for provider in ProviderName:
+        with pytest.raises(ModelCallFailed) as failed:
+            await reply_of(root.get_model_providers().get(provider).stream(CALL))
+        assert failed.value.kind is ErrorKind.CREDENTIAL
