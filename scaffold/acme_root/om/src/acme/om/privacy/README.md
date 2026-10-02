@@ -65,9 +65,10 @@ The sealing layer is `impl/sealed_steps.py`, the memory-only layer
 `root.private_history` wires all three over the one history. The
 artifacts' seal is `impl/artifacts.py`, which the root wires behind the
 windows' `ArtifactSealInterface`. A command's record takes the same blob
-form (`impl/blobs.py`) through `impl/records.py`, which the root makes for
-each session behind the transport's `RecordSealInterface`. A data key is
-in the clear only inside `impl/keys.py`. Revocation is
+form (`impl/blobs.py`) through `impl/records.py`, which the root wires
+behind the tools' `RecordSealInterface`; each call binds it to its session
+and key as the transport's `RecordSeal`. A data key is in the clear only
+inside `impl/keys.py`. Revocation is
 `PrivacyStorageInterface.revoke`, one commit (ADR 1004).
 -->
 
