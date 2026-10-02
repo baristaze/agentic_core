@@ -1,7 +1,8 @@
 """checkers/src/agentic_check: the catalog, the configuration, exceptions, reports, and exit codes.
 
 The base tree is clean under every rule, so a finding here is one a
-test planted: MOD-01's, a model named where no model is named.
+test planted: MOD-01's, a model named where no model is named, or,
+where a deviation is recorded, PRV-06's, a gate with a default.
 """
 
 import re
@@ -14,13 +15,20 @@ pytest.importorskip("tomllib")
 
 from agentic_check import __version__, registry
 from agentic_check.cli import pinned_python
-from agentic_check.lenses import LENSES
+from agentic_check.lenses import CORE, LENSES
 from agentic_check_fixtures import ADR, OM, PYPROJECT, check, check_json, write, write_project
 
 REPO = Path(__file__).resolve().parent.parent
 SCAFFOLD = REPO / "scaffold" / "acme_root"
 RULES = [r.id for r in registry.rules()]
 BAD = {f"{OM}/agents/kinds.py": "MAIN = dict(model='claude-y')\n"}
+DEFAULTED = {
+    f"{OM}/budgets/impl/importer.py": (
+        "from acme.om.budgets.gate import BudgetGateInterface\n\n\n"
+        "class ImporterImpl:\n    def __init__(self, gate: BudgetGateInterface | None = None) -> None:\n"
+        "        self._gate = gate\n"
+    )
+}
 
 
 def test_the_catalog_is_the_lens_files():
@@ -93,18 +101,19 @@ def test_list_group_rule_and_paths(tmp_path):
 
 def test_an_exception_with_its_adr_accepts_a_finding(tmp_path):
     entry = (
-        f'\n[[tool.agentic-check.exception]]\nrule = "MOD-01"\npath = "{OM}/agents/*.py"\nadr = "{ADR}"\nreason = "a catalog"\n'
+        f'\n[[tool.agentic-check.exception]]\nrule = "PRV-06"\npath = "{OM}/budgets/impl/*.py"\n'
+        f'adr = "{ADR}"\nreason = "an old job"\n'
     )
-    write_project(tmp_path, BAD, pyproject=PYPROJECT + entry)
+    write_project(tmp_path, DEFAULTED, pyproject=PYPROJECT + entry)
     code, report = check_json(tmp_path)
     assert (code, report["findings"]) == (0, [])
     assert report["exceptions_applied"] == [
-        {"rule": "MOD-01", "path": f"{OM}/agents/kinds.py", "line": 1, "adr": ADR, "reason": "a catalog"}
+        {"rule": "PRV-06", "path": f"{OM}/budgets/impl/importer.py", "line": 5, "adr": ADR, "reason": "an old job"}
     ]
 
 
 def test_an_exception_that_matches_nothing_is_a_finding(tmp_path):
-    entry = f'\n[[tool.agentic-check.exception]]\nrule = "MOD-01"\npath = "{OM}/agents/*.py"\nadr = "{ADR}"\nreason = "gone"\n'
+    entry = f'\n[[tool.agentic-check.exception]]\nrule = "PRV-06"\npath = "{OM}/agents/*.py"\nadr = "{ADR}"\nreason = "gone"\n'
     write_project(tmp_path, pyproject=PYPROJECT + entry)
     code, report = check_json(tmp_path)
     assert code == 1
@@ -112,15 +121,48 @@ def test_an_exception_that_matches_nothing_is_a_finding(tmp_path):
 
 
 def test_a_disable_turns_a_rule_off_and_needs_its_adr(tmp_path):
-    entry = f'\n[[tool.agentic-check.disable]]\nrule = "MOD-01"\nadr = "{ADR}"\nreason = "a catalog"\n'
-    write_project(tmp_path, BAD, pyproject=PYPROJECT + entry)
+    entry = f'\n[[tool.agentic-check.disable]]\nrule = "PRV-06"\nadr = "{ADR}"\nreason = "an old job"\n'
+    write_project(tmp_path, DEFAULTED, pyproject=PYPROJECT + entry)
     code, report = check_json(tmp_path)
     assert code == 0
-    assert "MOD-01" not in [r["id"] for r in report["rules_run"]]
-    write_project(tmp_path, BAD, pyproject=PYPROJECT + entry.replace(ADR, "docs/adr/2999-missing.md"))
+    assert "PRV-06" not in [r["id"] for r in report["rules_run"]]
+    write_project(tmp_path, DEFAULTED, pyproject=PYPROJECT + entry.replace(ADR, "docs/adr/2999-missing.md"))
     code, _, err = check(tmp_path)
     assert code == 2
     assert "ADR file docs/adr/2999-missing.md does not exist" in err
+
+
+@pytest.mark.parametrize("kind", ["disable", "exception"])
+def test_a_rule_whose_lens_is_core_takes_no_deviation(tmp_path, kind):
+    path = f'path = "{OM}/agents/*.py"\n' if kind == "exception" else ""
+    entry = f'\n[[tool.agentic-check.{kind}]]\nrule = "MOD-01"\n{path}adr = "{ADR}"\nreason = "a catalog"\n'
+    write_project(tmp_path, BAD, pyproject=PYPROJECT + entry)
+    code, _, err = check(tmp_path)
+    assert code == 2
+    assert f"has a {kind} for MOD-01, whose lens states a core rule of the spec" in err
+
+
+def test_the_core_lenses_are_those_whose_first_source_is_tagged_core():
+    """The section a lens cites first states its rule, and its own tag decides, never a parent's."""
+    import check_lenses
+
+    known, tagged = check_lenses.sections(), check_lenses.tags()
+    core: set[str] = set()
+    for path in sorted((REPO / "lenses").glob("*.md")):
+        if path.name == "README.md":
+            continue
+        text = path.read_text(encoding="utf-8")
+        lines = text.split("\n")
+        fenced = {n for n, code in enumerate(check_lenses.fenced_lines(text)) if code}
+        for i, line in enumerate(lines):
+            m = None if i in fenced else check_lenses.HEADING.match(line)
+            if m:
+                fields, _ = check_lenses.lens_fields(lines, i, fenced)
+                parts = check_lenses.cited_parts(next(v for n, v, _ in fields if n == "Source"), known)
+                if parts and tagged.get(parts[0]) == "core":
+                    core.add(f"{m.group(1)}-{m.group(2)}")
+    assert core == CORE
+    assert {r.id for r in registry.rules()} - CORE == {"PRV-06"}
 
 
 @pytest.mark.parametrize(

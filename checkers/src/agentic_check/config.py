@@ -13,14 +13,14 @@ its package:
     sites = ["om/src/acme/om/models/impl/resolver.py"]
 
     [[tool.agentic-check.disable]]
-    rule = "TOL-01"
-    adr = "docs/adr/2001-tools-declared-elsewhere.md"
+    rule = "PRV-06"
+    adr = "docs/adr/2001-dependencies-default-to-their-null-objects.md"
     reason = "one line"
 
     [[tool.agentic-check.exception]]
-    rule = "MOD-01"
-    path = "om/src/acme/om/models/impl/catalog.py"
-    adr = "docs/adr/2002-a-catalog-of-models.md"
+    rule = "PRV-06"
+    path = "om/src/acme/om/tools/impl/legacy.py"
+    adr = "docs/adr/2002-the-import-job-builds-its-tools-with-no-prices.md"
     reason = "one line"
 
 With no `[tool.agentic-check]` table at all, the checker still runs:
@@ -28,8 +28,9 @@ the package is inferred when `om/src/` holds exactly one package
 directory, and there are no disables or exceptions.
 
 A disable or an exception is a deviation from the engine's spec, so
-each names an ADR file under `docs/adr/` that exists. Anything else is
-a `ConfigError`.
+each names an ADR file under `docs/adr/` that exists, and the command
+line refuses one for a rule whose lens is `core` (`lenses.CORE`).
+Anything else is a `ConfigError`.
 """
 
 from __future__ import annotations

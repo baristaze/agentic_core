@@ -21,7 +21,7 @@ from typing import Any
 from agentic_check.cli import main
 
 PYPROJECT = '[tool.agentic-check]\npackage = "acme"\n'
-ADR = "docs/adr/2001-a-catalog-of-models.md"
+ADR = "docs/adr/2001-the-import-job-builds-its-tools-with-no-gate.md"
 OM = "om/src/acme/om"
 
 TOOL = f"{OM}/tools/echo.py"
@@ -113,7 +113,10 @@ BASE: dict[str, str] = {
     # a module outside the tools that may start a process
     "infra/src/acme/infra/__init__.py": "",
     "infra/src/acme/infra/docker.py": "import subprocess\n\n\ndef run() -> None:\n    subprocess.run(['true'])\n",
-    ADR: "# 2001. A catalog of models\n\nDate: 2026-10-02\n\n## Context\n\nA catalog.\n\n## Decision\n\nIt names models.\n",
+    ADR: (
+        "# 2001. The import job builds its tools with no gate\n\nDate: 2026-10-02\n\n"
+        "## Context\n\nAn old job.\n\n## Decision\n\nA default.\n"
+    ),
 }
 
 

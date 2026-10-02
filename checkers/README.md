@@ -91,19 +91,22 @@ Markdown file under `docs/adr/` that exists:
 
 ```toml
 [[tool.agentic-check.disable]]
-rule = "TOL-01"
-adr = "docs/adr/2001-tools-declared-by-a-catalog.md"
+rule = "PRV-06"
+adr = "docs/adr/2001-dependencies-default-to-their-null-objects.md"
 reason = "one line"
 
 [[tool.agentic-check.exception]]
-rule = "MOD-01"
-path = "om/src/acme/om/models/impl/catalog.py"
-adr = "docs/adr/2002-a-catalog-of-models.md"
+rule = "PRV-06"
+path = "om/src/acme/om/tools/impl/legacy.py"
+adr = "docs/adr/2002-the-import-job-builds-its-tools-with-no-prices.md"
 reason = "one line"
 ```
 
-An exception that matches nothing is itself a finding, so an exception
-never outlives the code it excused.
+A rule whose lens states a `core` rule of the spec, the section its
+Source names first being tagged `core`, takes neither: a departure from
+it is a different engine, never a deviation, and the checker refuses
+the entry. An exception that matches nothing is itself a finding, so an
+exception never outlives the code it excused.
 
 ## Adding a rule
 

@@ -17,6 +17,7 @@ from pathlib import Path
 
 from agentic_check import __version__, registry, report
 from agentic_check.config import ConfigError, find_root, load
+from agentic_check.lenses import CORE
 from agentic_check.model import GROUPS
 from agentic_check.project import Project
 from agentic_check.runner import ERROR as RULE_ERROR
@@ -85,6 +86,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     for d in (*config.disabled, *config.exceptions):
         if d.rule not in known:
             return error(f"[tool.agentic-check] names unknown rule {d.rule}")
+        if d.rule in CORE:
+            kind = "disable" if d.path is None else "exception"
+            return error(
+                f"[tool.agentic-check] has a {kind} for {d.rule}, whose lens states a core rule of the spec: "
+                "a departure from it is a different engine, never a deviation"
+            )
     declared = {r.id: set(r.options) for r in everything}
     for name, entries in config.options.items():
         if name not in known:

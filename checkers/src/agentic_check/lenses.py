@@ -2,8 +2,9 @@
 
 A rule names a lens by id, and its severity is the lens's. The review
 skills read the lens files; an installed checker has no lens files, so
-it carries this table. `tests/test_agentic_check_framework.py` holds it
-equal to `lenses/*.md`: a lens added, removed, or re-rated there is
+it carries this table, and the set of lenses whose rule is `core`.
+`tests/test_agentic_check_framework.py` holds both equal to `lenses/*.md`
+and the spec: a lens added, removed, re-rated, or re-cited there is
 changed here in the same change.
 """
 
@@ -97,3 +98,42 @@ LENSES: dict[str, Severity] = {
     "PRV-08": "high",
     "PRV-09": "medium",
 }
+
+CORE: frozenset[str] = frozenset(
+    {
+        "BND-02",
+        "BND-03",
+        "BND-04",
+        "BND-09",
+        "BND-10",
+        "MOD-01",
+        "PRV-01",
+        "PRV-02",
+        "STP-01",
+        "STP-02",
+        "STP-03",
+        "STP-07",
+        "STP-08",
+        "STP-09",
+        "STP-10",
+        "STP-11",
+        "STP-12",
+        "STP-13",
+        "STP-14",
+        "TOL-01",
+        "TOL-02",
+        "TOL-06",
+        "TOL-11",
+        "TOL-12",
+        "TOL-13",
+        "TOL-14",
+        "TRU-01",
+        "TRU-02",
+        "TRU-03",
+        "TRU-04",
+        "TRU-05",
+    }
+)
+"""The lenses whose first Source, the section that states the rule, is tagged
+`core` in the spec. A departure from such a rule is a different engine,
+never a deviation, so no disable or exception may name one."""
