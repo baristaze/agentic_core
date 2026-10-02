@@ -1998,7 +1998,7 @@ export interface components {
          * WorkKind
          * @enum {string}
          */
-        WorkKind: "NOOP" | "ORCHESTRATION" | "WAKE_PARKED" | "DELETE_ACCOUNT" | "DELETE_ORG";
+        WorkKind: "NOOP" | "ORCHESTRATION" | "WAKE_PARKED" | "DELETE_ACCOUNT" | "DELETE_ORG" | "WAKE_SESSION" | "WAKE_SESSIONS";
         /**
          * WorkStatus
          * @enum {string}

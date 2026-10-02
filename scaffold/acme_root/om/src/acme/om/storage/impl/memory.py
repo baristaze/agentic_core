@@ -2,6 +2,8 @@
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.storage.impl.memory import AgentSessionStorageMemoryImpl
+from acme.om.budgets.storage import BudgetStorageInterface, LedgerStorageInterface
+from acme.om.budgets.storage.impl.memory import BudgetStorageMemoryImpl, LedgerStorageMemoryImpl
 from acme.om.events.storage import EventStorageInterface
 from acme.om.events.storage.impl.memory import EventStorageMemoryImpl
 from acme.om.idempotency.storage import IdempotencyStorageInterface
@@ -39,6 +41,8 @@ class StorageMemoryImpl(StorageInterface):
         self._events = EventStorageMemoryImpl()
         self._steps = StepStorageMemoryImpl()
         self._agent_sessions = AgentSessionStorageMemoryImpl(self._outbox)
+        self._budgets = BudgetStorageMemoryImpl(self._outbox)
+        self._ledger = LedgerStorageMemoryImpl()
         self._fill_sets = FillSetStorageMemoryImpl()
         self._tools = ToolStorageMemoryImpl(self._outbox)
 
@@ -68,6 +72,12 @@ class StorageMemoryImpl(StorageInterface):
 
     def get_agent_session_storage(self) -> AgentSessionStorageInterface:
         return self._agent_sessions
+
+    def get_budget_storage(self) -> BudgetStorageInterface:
+        return self._budgets
+
+    def get_ledger_storage(self) -> LedgerStorageInterface:
+        return self._ledger
 
     def get_fill_set_storage(self) -> FillSetStorageInterface:
         return self._fill_sets

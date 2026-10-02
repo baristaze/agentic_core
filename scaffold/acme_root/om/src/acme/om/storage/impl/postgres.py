@@ -11,6 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.storage.impl.postgres import AgentSessionStoragePostgresImpl
+from acme.om.budgets.storage import BudgetStorageInterface, LedgerStorageInterface
+from acme.om.budgets.storage.impl.postgres import (
+    BudgetStoragePostgresImpl,
+    LedgerStoragePostgresImpl,
+)
 from acme.om.events.storage import EventStorageInterface
 from acme.om.events.storage.impl.postgres import EventStoragePostgresImpl
 from acme.om.idempotency.storage import IdempotencyStorageInterface
@@ -148,6 +153,8 @@ class StoragePostgresImpl(StorageInterface):
         self._orchestrations = OrchestrationsStoragePostgresImpl(sessions)
         self._steps = StepStoragePostgresImpl(sessions)
         self._agent_sessions = AgentSessionStoragePostgresImpl(sessions)
+        self._budgets = BudgetStoragePostgresImpl(sessions)
+        self._ledger = LedgerStoragePostgresImpl(sessions)
         self._fill_sets = FillSetStoragePostgresImpl(sessions)
         self._tools = ToolStoragePostgresImpl(sessions)
 
@@ -177,6 +184,12 @@ class StoragePostgresImpl(StorageInterface):
 
     def get_agent_session_storage(self) -> AgentSessionStorageInterface:
         return self._agent_sessions
+
+    def get_budget_storage(self) -> BudgetStorageInterface:
+        return self._budgets
+
+    def get_ledger_storage(self) -> LedgerStorageInterface:
+        return self._ledger
 
     def get_fill_set_storage(self) -> FillSetStorageInterface:
         return self._fill_sets

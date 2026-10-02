@@ -285,6 +285,16 @@ class StaleWriter(StepsException, PreconditionFailed):
     code = "stale_writer"
 
 
+class BudgetsException(PlatformException): ...
+
+
+class SpenderUnknown(BudgetsException, NotAuthorized):
+    """A call or a job whose payer the engine cannot tell. The gate fails
+    closed for spend: nothing is held and nothing is spent."""
+
+    code = "spender_unknown"
+
+
 class ModelsException(PlatformException): ...
 
 
