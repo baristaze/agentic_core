@@ -40,7 +40,9 @@ MEMORY_ONLY = StoragePolicy(mode=StorageMode.MEMORY_ONLY, keep_shape=False)
 
 
 def make_record(session_id: UUID, policy: StoragePolicy | None = None) -> SessionPrivacy:
-    return SessionPrivacy(id=session_id, created_at=utcnow(), policy=policy or StoragePolicy())
+    return SessionPrivacy(
+        id=new_id(), session_id=session_id, created_at=utcnow(), policy=policy or StoragePolicy()
+    )
 
 
 def make_key(session_id: UUID, version: int, wrapped_at_ago: timedelta = timedelta(0)) -> SessionKey:
@@ -58,7 +60,9 @@ def make_key(session_id: UUID, version: int, wrapped_at_ago: timedelta = timedel
 
 def revocation(session_id: UUID) -> SessionPrivacy:
     now = utcnow()
-    return SessionPrivacy(id=session_id, created_at=now, revoked_at=now, revoked_by=new_id())
+    return SessionPrivacy(
+        id=new_id(), session_id=session_id, created_at=now, revoked_at=now, revoked_by=new_id()
+    )
 
 
 class PrivacyStorageContract:
@@ -160,26 +164,27 @@ class PrivacyStorageContract:
         self, storage: PrivacyStorageInterface
     ) -> None:
         """A session's record and keys are its tenant's: another tenant that
-        names the session reads nothing, writes nothing, and revokes
-        nothing, and the holder's key stays live."""
+        names the session reads nothing, adds no version to it, and a
+        revocation it makes is its own, never the holder's. A record that
+        presents the holder's id is refused."""
         org_a, org_b, session = new_id(), new_id(), new_id()
         record = make_record(session)
         await storage.create_privacy(org_a, record)
         key = await storage.add_key(org_a, make_key(session, 1, timedelta(days=2)))
         assert key.wrapped is not None
         assert await storage.read_privacy(org_b, session) is None
-        with pytest.raises(TenantMismatch):
-            await storage.create_privacy(org_b, make_record(session, MEMORY_ONLY))
         assert (await storage.read_keys(org_b, session)).keys == ()
         with pytest.raises(NotFound):
             await storage.add_key(org_b, make_key(session, 2))
         with pytest.raises(TenantMismatch):
-            await storage.revoke(org_b, revocation(session))
+            await storage.create_privacy(org_b, record.model_copy(update={"policy": MEMORY_ONLY}))
         stolen = key.model_copy(update={"wrapped": os.urandom(48)})
         assert not await storage.rewrap_key(org_b, stolen, key.wrapped)
         assert await storage.read_keys_wrapped_before(org_b, utcnow(), 10) == []
         assert await storage.purge_tenant(org_b, 10) == 0
-        assert await storage.read_privacy(org_a, record.id) == record
+        own = await storage.revoke(org_b, revocation(session))
+        assert own.revoked_at is not None
+        assert await storage.read_privacy(org_a, session) == record
         ring = await storage.read_keys(org_a, session)
         assert not ring.revoked and ring.keys == (key,)
 

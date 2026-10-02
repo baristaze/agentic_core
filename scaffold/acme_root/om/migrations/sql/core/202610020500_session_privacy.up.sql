@@ -9,12 +9,14 @@ CREATE TABLE core.session_privacy (
     id uuid NOT NULL,
     org_id uuid NOT NULL,
     created_at timestamptz NOT NULL,
+    session_id uuid NOT NULL,
     policy jsonb NOT NULL,
     revoked_at timestamptz,
     revoked_by uuid,
     CONSTRAINT pk_session_privacy PRIMARY KEY (id)
 );
-CREATE INDEX ix_session_privacy_org_id ON core.session_privacy (org_id);
+CREATE UNIQUE INDEX uq_session_privacy_org_id_session_id
+    ON core.session_privacy (org_id, session_id);
 
 CREATE TABLE core.session_keys (
     id uuid NOT NULL,

@@ -21,22 +21,29 @@ class PrivacyStorageMemoryImpl(MemoryStorageBase, PrivacyStorageInterface):
         async with self._lock:
             return self._created(org_id, record, outbox_rows)
 
+    def _record(self, org_id: UUID, session_id: UUID) -> SessionPrivacy | None:
+        return next(
+            (r for r in self._rows(self._records, org_id) if r.session_id == session_id), None
+        )
+
     def _created(
         self, org_id: UUID, record: SessionPrivacy, outbox_rows: tuple[OutboxRow, ...]
     ) -> SessionPrivacy:
-        if not self._insert(self._records, org_id, record, outbox_rows):
-            stored = self._get(self._records, org_id, record.id)
-            if stored is None:
-                raise TenantMismatch(f"session privacy {record.id} is not in {org_id}")
+        """The twin of the insert that meets the session's unique key, and of
+        the one that meets another tenant's primary key."""
+        stored = self._record(org_id, record.session_id)
+        if stored is not None:
             return stored
+        if not self._insert(self._records, org_id, record, outbox_rows):
+            raise TenantMismatch(f"session privacy {record.id} is not in {org_id}")
         return record
 
     async def read_privacy(self, org_id: UUID, session_id: UUID) -> SessionPrivacy | None:
-        return self._get(self._records, org_id, session_id)
+        return self._record(org_id, session_id)
 
     async def add_key(self, org_id: UUID, key: SessionKey) -> SessionKey:
         async with self._lock:
-            record = self._get(self._records, org_id, key.session_id)
+            record = self._record(org_id, key.session_id)
             if record is None:
                 raise NotFound(f"no privacy record for session {key.session_id}")
             if record.revoked_at is not None:
@@ -62,7 +69,7 @@ class PrivacyStorageMemoryImpl(MemoryStorageBase, PrivacyStorageInterface):
         )
 
     async def read_keys(self, org_id: UUID, session_id: UUID) -> KeyRing:
-        record = self._get(self._records, org_id, session_id)
+        record = self._record(org_id, session_id)
         keys = sorted(
             (key for key in self._rows(self._keys, org_id) if key.session_id == session_id),
             key=lambda key: key.version,
@@ -79,15 +86,15 @@ class PrivacyStorageMemoryImpl(MemoryStorageBase, PrivacyStorageInterface):
             raise ValueError("a revocation names when it happened")
         async with self._lock:
             stored = self._created(org_id, record, outbox_rows)
-            if stored.revoked_at is not None and stored is not record:
-                return stored
             if stored is not record:
+                if stored.revoked_at is not None:
+                    return stored
                 stored = stored.model_copy(
                     update={"revoked_at": at, "revoked_by": record.revoked_by}
                 )
                 self._put(self._records, org_id, stored, outbox_rows)
             for key in self._rows(self._keys, org_id):
-                if key.session_id == stored.id and not key.is_destroyed():
+                if key.session_id == stored.session_id and not key.is_destroyed():
                     self._put(self._keys, org_id, _destroyed(key, at))
             return stored
 
@@ -103,20 +110,23 @@ class PrivacyStorageMemoryImpl(MemoryStorageBase, PrivacyStorageInterface):
         self, org_id: UUID, before: datetime, limit: int
     ) -> list[SessionKey]:
         stale = [
-            key
+            (key.wrapped_at, key)
             for key in self._rows(self._keys, org_id)
             if key.wrapped_at is not None and key.wrapped_at < before
         ]
-        return sorted(stale, key=lambda key: (key.wrapped_at or before, key.id))[:limit]
+        return [key for _, key in sorted(stale, key=lambda pair: (pair[0], pair[1].id))][:limit]
 
     async def purge_tenant(self, org_id: UUID, limit: int) -> int:
+        """The versions first, so a record never goes while a version of its
+        key is left."""
         async with self._lock:
-            gone = 0
-            for table in (self._keys, self._records):
-                for row in self._rows(table, org_id)[: limit - gone]:
-                    del table[row.id]
-                    gone += 1
-            return gone
+            keys = [key.id for key in self._rows(self._keys, org_id)][:limit]
+            for key_id in keys:
+                del self._keys[key_id]
+            records = [r.id for r in self._rows(self._records, org_id)][: limit - len(keys)]
+            for record_id in records:
+                del self._records[record_id]
+            return len(keys) + len(records)
 
 
 def _destroyed(key: SessionKey, at: datetime) -> SessionKey:

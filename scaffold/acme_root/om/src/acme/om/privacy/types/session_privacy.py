@@ -40,10 +40,11 @@ class StoragePolicy(Platform):
 
 
 class SessionPrivacy(Identifiable, Created):
-    """One per session, under the session's own id: its policy, written once
-    and never changed, and the revocation of its key. A session with none is
-    sealed; the first content sealed for it writes the default."""
+    """One per session of a tenant: its policy, written once and never
+    changed, and the revocation of its key. A session with none is sealed;
+    the first step appended to it writes the default."""
 
+    session_id: UUID
     policy: StoragePolicy = StoragePolicy()
     revoked_at: datetime | None = None
     revoked_by: UUID | None = None

@@ -13,7 +13,7 @@ from collections.abc import Callable, Sequence
 from datetime import datetime
 from uuid import UUID
 
-from acme.om.base import utcnow
+from acme.om.base import new_id, utcnow
 from acme.om.privacy.impl.sealed_steps import refuse_sealed
 from acme.om.privacy.storage import PrivacyStorageInterface
 from acme.om.privacy.types.session_privacy import SessionPrivacy, StorageMode, StoragePolicy
@@ -84,7 +84,7 @@ class StepStorageRoutedImpl(StepStorageInterface):
         if policy is None:
             if writing:
                 record = await self._policies.create_privacy(
-                    org_id, SessionPrivacy(id=session_id, created_at=self._clock())
+                    org_id, SessionPrivacy(id=new_id(), session_id=session_id, created_at=self._clock())
                 )
             else:
                 record = await self._policies.read_privacy(org_id, session_id)

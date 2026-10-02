@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import CursorResult, Result, select, update
+from sqlalchemy import CursorResult, Result, Select, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 
@@ -26,17 +26,42 @@ class PrivacyStoragePostgresImpl(PgStorageBase, PrivacyStorageInterface):
     async def create_privacy(
         self, org_id: UUID, record: SessionPrivacy, outbox_rows: tuple[OutboxRow, ...] = ()
     ) -> SessionPrivacy:
-        if await self._insert(SessionPrivacyRows, org_id, record, outbox_rows):
-            return record
-        stored = await self.read_privacy(org_id, record.id)
-        if stored is None:
-            raise TenantMismatch(f"session privacy {record.id} is not in {org_id}")
-        return stored
+        """The insert meets the session's unique key when the tenant holds a
+        record of it, and lands nothing; another tenant's id is the primary
+        key's, and refused."""
+        insert = (
+            pg_insert(SessionPrivacyRows)
+            .values(org_id=org_id, **to_values(record, SessionPrivacyRows))
+            .on_conflict_do_nothing(
+                index_elements=[SessionPrivacyRows.org_id, SessionPrivacyRows.session_id]
+            )
+            .returning(SessionPrivacyRows.id)
+        )
+        async with self._session_for(SessionPrivacyRows, org_id=org_id) as session:
+            try:
+                landed = (await session.execute(insert)).scalar_one_or_none() is not None
+                if landed:
+                    for outbox_row in outbox_rows:
+                        session.add(to_row(outbox_row, OutboxRows, org_id=org_id))
+                    await session.commit()
+                    return record
+                stored = (
+                    await session.execute(self._record(org_id, record.session_id))
+                ).scalar_one()
+                await session.commit()
+                return to_model(stored, SessionPrivacy)
+            except IntegrityError as error:
+                await session.rollback()
+                raise TenantMismatch(f"session privacy {record.id} is not in {org_id}") from error
+
+    @staticmethod
+    def _record(org_id: UUID, session_id: UUID) -> Select[tuple[SessionPrivacyRows]]:
+        return select(SessionPrivacyRows).where(
+            SessionPrivacyRows.org_id == org_id, SessionPrivacyRows.session_id == session_id
+        )
 
     async def read_privacy(self, org_id: UUID, session_id: UUID) -> SessionPrivacy | None:
-        stmt = select(SessionPrivacyRows).where(
-            SessionPrivacyRows.org_id == org_id, SessionPrivacyRows.id == session_id
-        )
+        stmt = self._record(org_id, session_id)
         async with self._session_for(stmt, org_id=org_id) as session:
             row = (await session.execute(stmt)).scalar_one_or_none()
             return None if row is None else to_model(row, SessionPrivacy)
@@ -47,7 +72,10 @@ class PrivacyStoragePostgresImpl(PgStorageBase, PrivacyStorageInterface):
         never lands after the key is revoked."""
         lock = (
             select(SessionPrivacyRows.revoked_at)
-            .where(SessionPrivacyRows.org_id == org_id, SessionPrivacyRows.id == key.session_id)
+            .where(
+                SessionPrivacyRows.org_id == org_id,
+                SessionPrivacyRows.session_id == key.session_id,
+            )
             .with_for_update()
         )
         insert = (
@@ -87,7 +115,7 @@ class PrivacyStoragePostgresImpl(PgStorageBase, PrivacyStorageInterface):
 
     async def read_keys(self, org_id: UUID, session_id: UUID) -> KeyRing:
         revoked = select(SessionPrivacyRows.revoked_at).where(
-            SessionPrivacyRows.org_id == org_id, SessionPrivacyRows.id == session_id
+            SessionPrivacyRows.org_id == org_id, SessionPrivacyRows.session_id == session_id
         )
         keys = (
             select(SessionKeys)
@@ -111,38 +139,37 @@ class PrivacyStoragePostgresImpl(PgStorageBase, PrivacyStorageInterface):
         written = (
             pg_insert(SessionPrivacyRows)
             .values(org_id=org_id, **to_values(record, SessionPrivacyRows))
-            .on_conflict_do_nothing(index_elements=[SessionPrivacyRows.id])
+            .on_conflict_do_nothing(
+                index_elements=[SessionPrivacyRows.org_id, SessionPrivacyRows.session_id]
+            )
             .returning(SessionPrivacyRows.id)
         )
         mark = (
             update(SessionPrivacyRows)
             .where(
                 SessionPrivacyRows.org_id == org_id,
-                SessionPrivacyRows.id == record.id,
+                SessionPrivacyRows.session_id == record.session_id,
                 SessionPrivacyRows.revoked_at.is_(None),
             )
             .values(revoked_at=at, revoked_by=record.revoked_by)
-        )
-        read = (
-            select(SessionPrivacyRows)
-            .where(SessionPrivacyRows.org_id == org_id, SessionPrivacyRows.id == record.id)
-            .with_for_update()
         )
         destroy = (
             update(SessionKeys)
             .where(
                 SessionKeys.org_id == org_id,
-                SessionKeys.session_id == record.id,
+                SessionKeys.session_id == record.session_id,
                 SessionKeys.destroyed_at.is_(None),
             )
             .values(wrapped=None, wrapping=None, wrapped_at=None, destroyed_at=at)
         )
         async with self._session_for(SessionPrivacyRows, org_id=org_id) as session:
-            landed = (await session.execute(written)).scalar_one_or_none() is not None
+            try:
+                landed = (await session.execute(written)).scalar_one_or_none() is not None
+            except IntegrityError as error:
+                await session.rollback()
+                raise TenantMismatch(f"session privacy {record.id} is not in {org_id}") from error
             marked = rowcount(await session.execute(mark)) == 1
-            row = (await session.execute(read)).scalar_one_or_none()
-            if row is None:
-                raise TenantMismatch(f"session privacy {record.id} is not in {org_id}")
+            row = (await session.execute(self._record(org_id, record.session_id))).scalar_one()
             stored = to_model(row, SessionPrivacy)
             await session.execute(destroy)
             if landed or marked:

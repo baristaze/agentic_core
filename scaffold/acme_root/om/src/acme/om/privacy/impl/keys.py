@@ -96,7 +96,7 @@ class SessionKeysImpl(SessionKeysInterface):
         that made the same version first wins, and its key is the one
         answered."""
         now = self._clock()
-        await self._storage.create_privacy(org_id, SessionPrivacy(id=session_id, created_at=now))
+        await self._storage.create_privacy(org_id, SessionPrivacy(id=new_id(), session_id=session_id, created_at=now))
         data = await self._service.generate(org_id, session_id, version)
         made = SessionKey(
             id=new_id(),
