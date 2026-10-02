@@ -41,6 +41,7 @@ from contracts.work_storage import make_item
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+from acme.om.agent_sessions.storage.impl.postgres import AgentSessionStoragePostgresImpl
 from acme.om.base import EMPTY_UUID, new_id, utcnow
 from acme.om.events.storage.impl.postgres import EventStoragePostgresImpl
 from acme.om.idempotency.storage.impl.postgres import IdempotencyStoragePostgresImpl
@@ -221,6 +222,11 @@ async def test_every_purge_across_tenants_reads_an_index_led_by_its_retention(
         lambda: OrchestrationsStoragePostgresImpl(sessions).purge_settled(cut, 1000),
     )
     assert served(settled, "ix_orchestrations_status_updated_at"), settled
+    (agent_sessions,) = await across(
+        DatabaseRole.CORE,
+        lambda: AgentSessionStoragePostgresImpl(sessions).read_purgeable(cut, 100),
+    )
+    assert served(agent_sessions, "ix_agent_sessions_deleted_at"), agent_sessions
 
 
 async def test_the_queue_purge_reads_its_index(

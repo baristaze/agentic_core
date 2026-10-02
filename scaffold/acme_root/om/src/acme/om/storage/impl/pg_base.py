@@ -39,18 +39,23 @@ log = logging.getLogger(__name__)
 
 
 class LoginSessions(Mapping[DatabaseRole, SessionFactory]):
-    """The session factories of every role under the two logins a process
-    holds: the runtime login's, which is what the mapping itself answers, and
-    the system login's beside them, which only the system scope opens. The
-    system login's URL names another login, so its pool is its own."""
+    """The session factories of every role under the logins a process holds:
+    the runtime login's, which is what the mapping itself answers, the system
+    login's beside them, which only the system scope opens, and the purge
+    login's in the one process that purges a history, the maintenance worker,
+    and nowhere else. Each URL names another login, so each pool is its own."""
 
     def __init__(
         self,
         runtime: Mapping[DatabaseRole, SessionFactory],
         system: Mapping[DatabaseRole, SessionFactory],
+        purge: Mapping[DatabaseRole, SessionFactory] | None = None,
     ) -> None:
         self._runtime = dict(runtime)
         self.system: Mapping[DatabaseRole, SessionFactory] = dict(system)
+        self.purge: Mapping[DatabaseRole, SessionFactory] | None = (
+            None if purge is None else dict(purge)
+        )
 
     def __getitem__(self, role: DatabaseRole) -> SessionFactory:
         return self._runtime[role]
@@ -337,6 +342,22 @@ costs nothing that shows. `SET LOCAL` ends with the transaction, so no other
 statement on the connection is planned this way."""
 
 
+PURGE_LOCK = text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))")
+"""The lock a purge of one tenant's rows in one role holds to its commit."""
+
+
+async def hold_purge(session: AsyncSession, role: DatabaseRole, org_id: UUID) -> None:
+    """Takes the lock of the purges of one tenant's rows in one role, held to
+    the transaction's end. The purge login holds no UPDATE, so it cannot lock
+    the rows it chooses with `FOR UPDATE SKIP LOCKED`, as `delete_batch`
+    does. Without this lock, a second purge picks the batch the first is
+    deleting, waits for it, and counts nothing, which reads as nothing left
+    while the rest remains. With it, the second waits here, and its delete
+    then reads what the first left. The key names the role, so purges in two
+    roles never wait on each other."""
+    await session.execute(PURGE_LOCK, {"key": f"acme.purge:{role.value}:{org_id}"})
+
+
 def deleted(result: Result[Any]) -> int:
     """The rows a DELETE took, as the driver reports them, so a purge counts
     what went without carrying every id back to count it."""
@@ -386,18 +407,52 @@ class PgStorageBase:
         second transaction opens a second session.
 
         It is also where the driver's failures to answer in time are
-        translated, once for every role and both logins: a checkout past its
+        translated, once for every role and every login: a checkout past its
         bound and a statement past its deadline leave here as `Unavailable`
         (`not_in_time`), never as the driver's own error."""
         role = role_of(target)
         system = org_id == EMPTY_UUID
         logins = self._sessions.system if system else self._sessions
-        factory = logins[role]
+        login = "system" if system else "runtime"
+        async with self._scoped(logins[role], role, login, org_id, user_id, identity_id) as session:
+            yield session
+
+    @asynccontextmanager
+    async def _purge_session_for(self, target: Any, *, org_id: UUID) -> AsyncIterator[AsyncSession]:
+        """The funnel for the one statement a serving login may not send: the
+        delete of a session and its history, on the purge login's pool, under
+        one tenant's scope. The system scope is refused here, before any
+        connection, as the policies refuse it to this login: a purge reaches
+        the tenant it names and nothing else. A process that holds no purge
+        login, every one but the maintenance worker, is refused too (ADR
+        1010). Each transaction holds the tenant's purge lock in its role
+        (`hold_purge`), so two workers purging one tenant take turns."""
+        if org_id == EMPTY_UUID:
+            raise RuntimeError("a purge names its tenant; the system scope purges nothing")
+        if self._sessions.purge is None:
+            raise RuntimeError("this process holds no purge login")
+        role = role_of(target)
+        async with self._scoped(self._sessions.purge[role], role, "purge", org_id) as session:
+            await hold_purge(session, role, org_id)
+            yield session
+
+    @staticmethod
+    @asynccontextmanager
+    async def _scoped(
+        factory: SessionFactory,
+        role: DatabaseRole,
+        login: str,
+        org_id: UUID,
+        user_id: UUID | None = None,
+        identity_id: UUID | None = None,
+    ) -> AsyncIterator[AsyncSession]:
+        """A session begun under its scope on one login's pool, with the
+        driver's failures to answer in time translated (`not_in_time`)."""
         try:
             async with await scoped_session(factory, org_id, user_id, identity_id) as session:
                 yield session
         except Exception as error:
-            refusal = not_in_time(error, role, "system" if system else "runtime")
+            refusal = not_in_time(error, role, login)
             if refusal is None:
                 raise
             raise refusal from error

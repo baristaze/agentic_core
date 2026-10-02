@@ -247,26 +247,32 @@ class Step(Identifiable, Created):
 
 
 def shape_refusal(step: Step) -> str | None:
-    """Why a step breaks its type's shape, or None when it fits."""
+    """Why a step breaks its type's shape, or None when it fits. Content that
+    is sealed or absent holds nothing in the clear, so only its shape is
+    checked."""
     if step.header.kind != HEADER_KINDS[step.type]:
         return f"its header is {step.header.kind}, not {HEADER_KINDS[step.type]}"
     if step.type.is_response() != (step.responds_to is not None):
         return "a response names its request, and nothing else does"
+    if step.type is StepType.TOOL_REQUEST and not step.refs:
+        return "it references the response that asked for it"
+    if step.id in step.refs or step.responds_to == step.id:
+        return "it references itself"
+    if not step.content.is_plain():
+        if step.children != Children():
+            return f"its content is {step.content.state.value}, and its children with it"
+        return None
     kinds = [block.kind for block in step.content.blocks]
     allowed = BLOCK_KINDS[step.type]
     if stray := sorted(set(kinds) - allowed):
         return f"its content may not hold {', '.join(stray)}"
     if step.type is StepType.TOOL_RESPONSE and kinds != ["tool_result"]:
         return "it holds exactly one tool result"
-    if step.type is StepType.TOOL_REQUEST and not step.refs:
-        return "it references the response that asked for it"
     uses = [block.id for block in step.content.blocks if isinstance(block, ToolUseBlock)]
     if len(set(uses)) != len(uses):
         return "two tool uses share an id"
     if step.children.thinking and step.type is not StepType.MODEL_RESPONSE:
         return "only a model response carries thinking"
-    if step.id in step.refs or step.responds_to == step.id:
-        return "it references itself"
     held = {attachment.id for attachment in step.children.attachments}
     if len(held) != len(step.children.attachments):
         return "two attachments share an id"

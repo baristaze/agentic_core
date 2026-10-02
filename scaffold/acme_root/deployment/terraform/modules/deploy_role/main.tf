@@ -584,6 +584,14 @@ data "aws_iam_policy_document" "fences" {
       "ecr:PutRegistryPolicy",
       "ecr:PutReplicationConfiguration",
       "ecr:SetRepositoryPolicy",
+      # The session keys' KMS key, which the environment's content in every
+      # backup is sealed under.
+      "kms:CreateKey",
+      "kms:DeleteAlias",
+      "kms:DisableKey",
+      "kms:PutKeyPolicy",
+      "kms:ScheduleKeyDeletion",
+      "kms:UpdateAlias",
     ]
     resources = ["*"]
   }

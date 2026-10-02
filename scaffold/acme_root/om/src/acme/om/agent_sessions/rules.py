@@ -222,3 +222,11 @@ def unlock_step(step_id: UUID, session_id: UUID, now: datetime) -> Step:
 
 def _seq(step: Step) -> int:
     return step.seq
+
+
+def purge_due(session: AgentSession, deleted_before: datetime) -> bool:
+    """Whether a session's shape is past its retention: it was marked deleted
+    before the cut. The retention counts from the mark, and nothing else
+    starts a purge, so a session that was never marked, or was marked
+    since the cut, is never purged one session at a time."""
+    return session.deleted_at is not None and session.deleted_at < deleted_before

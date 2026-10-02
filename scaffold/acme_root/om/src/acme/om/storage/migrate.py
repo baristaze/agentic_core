@@ -2,7 +2,7 @@
 each migration a pair of hand-written SQL files behind a thin wrapper.
 
 Every migration runs under the migration login, which owns the schema. The
-master opens one command only, `ensure-logins`, which makes the three logins
+master opens one command only, `ensure-logins`, which makes the four logins
 and hands the migration login what it owns (`acme.om.storage.logins`).
 
 Every statement the runner sends waits for a lock
@@ -315,7 +315,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     logins = sub.add_parser(
         "ensure-logins",
-        help="as the master: the three logins, the migration login's ownership, the grants",
+        help="as the master: the four logins, the migration login's ownership, the grants",
     )
     logins.add_argument(
         "--local",
@@ -349,7 +349,10 @@ def main(argv: list[str] | None = None) -> int:
             if not lock_not_granted(error):
                 raise
             return gave_up("logins", bound)
-        print("logins: the migration login owns every role schema; the serving logins hold DML")
+        print(
+            "logins: the migration login owns every role schema; the serving logins hold DML;"
+            " the purge login deletes a history"
+        )
         return 0
     urls = settings.migration_role_urls()
     roles = _roles_from_args(args)

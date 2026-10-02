@@ -31,6 +31,7 @@ IMPL_INTERFACES: dict[str, str] = {
     "OrchestrationsStoragePostgresImpl": "OrchestrationsStorageInterface",
     "StepStoragePostgresImpl": "StepStorageInterface",
     "AgentSessionStoragePostgresImpl": "AgentSessionStorageInterface",
+    "PrivacyStoragePostgresImpl": "PrivacyStorageInterface",
     "BudgetStoragePostgresImpl": "BudgetStorageInterface",
     "LedgerStoragePostgresImpl": "LedgerStorageInterface",
     "FillSetStoragePostgresImpl": "FillSetStorageInterface",
@@ -148,7 +149,10 @@ def test_every_enumerated_exception_takes_the_system_scope(interface: str, metho
     primitive or read one row by a hash, and the source they pass through is
     read by the test above."""
     impl = next(name for name, value in IMPL_INTERFACES.items() if value == interface)
-    path = next(p for p in impl_modules() if impl.lower().startswith(p.parent.parts[-3]))
+    # The namespace's folder, its underscores dropped, starts the impl's name.
+    path = next(
+        p for p in impl_modules() if impl.lower().startswith(p.parent.parts[-3].replace("_", ""))
+    )
     tree = ast.parse(path.read_text())
     calls = [
         call

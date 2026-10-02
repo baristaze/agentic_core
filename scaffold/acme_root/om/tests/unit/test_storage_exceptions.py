@@ -30,6 +30,7 @@ from contracts import (
     media_storage,
     orchestration_storage,
     outbox_storage,
+    privacy_storage,
     step_storage,
     tenancy_storage,
     window_storage,
@@ -91,6 +92,9 @@ STORAGE_EXCEPTIONS: frozenset[tuple[str, str]] = frozenset(
         ("IdempotencyStorageInterface", "purge_records"),
         ("MediaStorageInterface", "read_purgeable"),
         ("MediaStorageInterface", "purge_files_across_tenants"),
+        # The sessions marked deleted past their retention, each named with
+        # its tenant: the claim and the deletes that follow run under it.
+        ("AgentSessionStorageInterface", "read_purgeable"),
         ("EventStorageInterface", "trim"),
         ("OrchestrationsStorageInterface", "purge_settled"),
         # The sweep's gauges: one read each across every tenant's rows.
@@ -114,6 +118,7 @@ CROSS_TENANT_CASES: dict[str, frozenset[str]] = {
     "MediaStorageInterface": media_storage.CROSS_TENANT_CASES,
     "OrchestrationsStorageInterface": orchestration_storage.CROSS_TENANT_CASES,
     "OutboxStorageInterface": outbox_storage.CROSS_TENANT_CASES,
+    "PrivacyStorageInterface": privacy_storage.CROSS_TENANT_CASES,
     "StepStorageInterface": step_storage.CROSS_TENANT_CASES,
     "TenancyStorageInterface": tenancy_storage.CROSS_TENANT_CASES,
     "WindowStorageInterface": window_storage.CROSS_TENANT_CASES,
@@ -148,6 +153,10 @@ MANAGER_EXCEPTIONS: frozenset[tuple[str, str]] = frozenset(
         ("IdempotencyManagerInterface", "purge_across_tenants"),
         ("EventsManagerInterface", "purge_across_tenants"),
         ("OrchestrationsManagerInterface", "purge_across_tenants"),
+        ("AgentSessionsManagerInterface", "purge_across_tenants"),
+        # And the history of each session that purge has claimed, named with
+        # its tenant: bookkeeping of the same step, for no principal.
+        ("StepsManagerInterface", "purge_histories"),
         # The sweep's gauges of the queue, read across tenants like the purge.
         ("WorkManagerInterface", "oldest_ready_age"),
         ("WorkManagerInterface", "failed_within"),

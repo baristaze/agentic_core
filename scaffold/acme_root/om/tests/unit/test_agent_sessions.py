@@ -2,6 +2,7 @@
 agent sessions manager over the memory storage, with the history it reads
 appended through the steps manager."""
 
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -21,6 +22,7 @@ from contracts.step_storage import (
 from acme.infra.impl.local import InfraLocalImpl
 from acme.om.agent_sessions.impl.manager import AgentSessionsManagerImpl, AgentSessionsOptions
 from acme.om.agent_sessions.rules import Projection, after_step, announces, projected
+from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.storage.impl.memory import AgentSessionStorageMemoryImpl
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
 from acme.om.base import new_id, utcnow
@@ -29,6 +31,7 @@ from acme.om.exceptions import NotAuthorized, NotFound, PreconditionFailed, Vali
 from acme.om.outbox.storage.impl.memory import OutboxStorageMemoryImpl
 from acme.om.outbox.types.row import OutboxRow
 from acme.om.root import Managers, build_managers
+from acme.om.steps.impl.manager import StepsManagerImpl, StepsOptions
 from acme.om.steps.types.header import (
     ControlCommand,
     ControlHeader,
@@ -41,6 +44,7 @@ from acme.om.steps.types.header import (
     ParkedHeader,
     ParkReason,
 )
+from acme.om.steps.types.page import StepCursor
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.storage.impl.memory import StorageMemoryImpl
 
@@ -463,3 +467,190 @@ async def test_a_viewer_reads_and_writes_nothing(managers: Managers) -> None:
         await managers.agent_sessions.project_status(viewer, session.id)
     with pytest.raises(NotAuthorized):
         await managers.agent_sessions.archive_session(viewer, session.id)
+
+
+async def test_a_deleted_session_is_hidden_from_every_read_and_comes_back_whole(
+    managers: Managers,
+) -> None:
+    """Mark deleted hides a session from every read: by id, on a page, as a
+    parent, and from the writes that read it first. Its history stays as it
+    was, content and shape, and so does every field of the session. Unmarked,
+    it comes back as it was, and the delete and the return are announced."""
+    ctx = context(Role.MEMBER)
+    sessions, steps = managers.agent_sessions, managers.steps
+    sid = (await sessions.create_session(ctx, make_session())).id
+    history = await steps.append_inputs(ctx, sid, [make_event(sid), make_event(sid)])
+    idle = await sessions.project_status(ctx, sid)
+    deleted = await sessions.delete_session(ctx, sid)
+    assert deleted.deleted_at is not None and deleted.deleted_by == ctx.user_id
+    reads = (
+        sessions.get_session,
+        sessions.project_status,
+        sessions.archive_session,
+        sessions.delete_session,
+    )
+    for read in reads:
+        with pytest.raises(NotFound):
+            await read(ctx, sid)
+    assert (await sessions.get_sessions(ctx, None, None, 10)).items == ()
+    with pytest.raises(ValidationFailed):
+        await sessions.create_session(ctx, make_session(parent=deleted))
+    assert (await steps.get_steps(ctx, sid, 0, 10)).items == history
+
+    restored = await sessions.restore_session(ctx, sid)
+    changed = {"version", "updated_at", "updated_by"}
+    assert restored.model_dump(exclude=changed) == idle.model_dump(exclude=changed)
+    assert restored.version == idle.version + 2
+    assert await sessions.get_session(ctx, sid) == restored
+    assert (await sessions.get_sessions(ctx, None, None, 10)).items == (restored,)
+    assert (await steps.get_steps(ctx, sid, 0, 10)).items == history
+    assert await sessions.restore_session(ctx, sid) == restored, "not marked: as it is"
+    assert await kinds(managers, ctx, sid) == ["created", "deleted", "updated"]
+
+
+async def test_only_an_idle_session_is_deleted(managers: Managers) -> None:
+    ctx = context(Role.MEMBER)
+    sid = (await managers.agent_sessions.create_session(ctx, make_session())).id
+    await managers.steps.append_inputs(ctx, sid, [make_message(sid)])
+    await managers.agent_sessions.project_status(ctx, sid)
+    with pytest.raises(ValidationFailed):
+        await managers.agent_sessions.delete_session(ctx, sid)
+    with pytest.raises(NotAuthorized):
+        await managers.agent_sessions.delete_session(context(Role.VIEWER), sid)
+
+
+class Clock:
+    """A clock a case moves by hand."""
+
+    def __init__(self) -> None:
+        self.now = utcnow()
+
+    def __call__(self) -> datetime:
+        return self.now
+
+
+def purging(
+    managers: Managers,
+    storage: StorageMemoryImpl,
+    clock: Clock,
+    *,
+    sessions: AgentSessionStorageInterface | None = None,
+    batch: int = 1000,
+) -> AgentSessionsManagerImpl:
+    """The agent sessions manager on a clock of the case's, with a 30-day
+    retention and a history purged `batch` steps at a time."""
+    return AgentSessionsManagerImpl(
+        sessions or storage.get_agent_session_storage(),
+        StepsManagerImpl(
+            storage.get_step_storage(), managers.tenancy, StepsOptions(purge_batch=batch)
+        ),
+        managers.tenancy,
+        managers.outbox,
+        AgentSessionsOptions(retention=timedelta(days=30)),
+        clock=clock,
+    )
+
+
+async def test_a_purge_before_the_retention_ends_is_refused_and_one_after_takes_everything(
+    tmp_path: Path,
+) -> None:
+    """Nothing is purged on demand: a session marked deleted within its
+    retention, or never marked, keeps its row and its history whenever the
+    purge runs, and can be unmarked. Past the retention, counted from the
+    last mark, the purge takes the session, its steps, and its cursor."""
+    storage = StorageMemoryImpl()
+    managers = build_managers(storage, InfraLocalImpl(tmp_path))
+    clock = Clock()
+    sessions = purging(managers, storage, clock)
+    ctx = context(Role.MEMBER)
+    gone, kept = [await sessions.create_session(ctx, make_session()) for _ in range(2)]
+    for sid in (gone.id, kept.id):
+        await managers.steps.append_inputs(ctx, sid, [make_message(sid)])
+    rows, history = storage.get_agent_session_storage(), storage.get_step_storage()
+
+    await sessions.delete_session(ctx, gone.id)
+    clock.now += timedelta(days=29)
+    assert await sessions.purge_across_tenants() == 0
+    found = await rows.read_session(ctx.org_id, gone.id)
+    assert found is not None and found.purge_started_at is None
+    assert len(await history.read_steps(ctx.org_id, gone.id, 0, 10)) == 1
+    await sessions.restore_session(ctx, gone.id)
+    await sessions.delete_session(ctx, gone.id)
+    clock.now += timedelta(days=29)
+    assert await sessions.purge_across_tenants() == 0, "the retention counts from the last mark"
+
+    clock.now += timedelta(days=2)
+    assert await sessions.purge_across_tenants() == 1
+    assert await rows.read_session(ctx.org_id, gone.id) is None
+    assert await history.read_steps(ctx.org_id, gone.id, 0, 10) == []
+    assert await history.read_cursor(ctx.org_id, gone.id) == StepCursor()
+    assert await sessions.purge_across_tenants() == 0
+    assert (await sessions.get_session(ctx, kept.id)).deleted_at is None
+    assert len(await history.read_steps(ctx.org_id, kept.id, 0, 10)) == 1
+
+
+async def test_a_claimed_session_cannot_come_back_and_its_long_history_goes_in_batches(
+    tmp_path: Path,
+) -> None:
+    """The claim makes the delete final: a session whose history is still
+    going answers an unmark as one gone, and each pass takes a batch more of
+    its history, then its row once the history is gone."""
+    storage = StorageMemoryImpl()
+    managers = build_managers(storage, InfraLocalImpl(tmp_path))
+    clock = Clock()
+    sessions = purging(managers, storage, clock, batch=2)
+    ctx = context(Role.MEMBER)
+    sid = (await sessions.create_session(ctx, make_session())).id
+    await managers.steps.append_inputs(ctx, sid, [make_event(sid) for _ in range(3)])
+    rows, history = storage.get_agent_session_storage(), storage.get_step_storage()
+    await sessions.delete_session(ctx, sid)
+    clock.now += timedelta(days=31)
+
+    assert await sessions.purge_across_tenants() == 1
+    claimed = await rows.read_session(ctx.org_id, sid)
+    assert claimed is not None and claimed.purge_started_at == clock.now
+    assert len(await history.read_steps(ctx.org_id, sid, 0, 10)) == 1
+    with pytest.raises(NotFound):
+        await sessions.restore_session(ctx, sid)
+    with pytest.raises(NotFound):
+        await sessions.get_session(ctx, sid)
+    assert await sessions.purge_across_tenants() == 1, "the last step and the cursor"
+    assert await rows.read_session(ctx.org_id, sid) is not None
+    assert await sessions.purge_across_tenants() == 1, "nothing left of the history"
+    assert await rows.read_session(ctx.org_id, sid) is None
+    assert await sessions.purge_across_tenants() == 0
+
+
+class RestoredMeanwhile(AgentSessionStorageMemoryImpl):
+    """The memory storage, but a person unmarks every session the sweep's
+    read finds, between that read and the claim."""
+
+    async def read_purgeable(
+        self, deleted_before: datetime, limit: int
+    ) -> list[tuple[UUID, AgentSession]]:
+        found = await super().read_purgeable(deleted_before, limit)
+        for org_id, session in found:
+            back = session.model_copy(
+                update={"deleted_at": None, "deleted_by": None, "version": session.version + 1}
+            )
+            await self.write_session(org_id, back, session.version, ())
+        return found
+
+
+async def test_an_unmark_that_lands_before_the_claim_keeps_the_session(tmp_path: Path) -> None:
+    storage = StorageMemoryImpl()
+    managers = build_managers(storage, InfraLocalImpl(tmp_path))
+    outbox = storage.get_outbox_storage()
+    assert isinstance(outbox, OutboxStorageMemoryImpl)
+    clock = Clock()
+    rows = RestoredMeanwhile(outbox)
+    sessions = purging(managers, storage, clock, sessions=rows)
+    ctx = context(Role.MEMBER)
+    sid = (await sessions.create_session(ctx, make_session())).id
+    (step,) = await managers.steps.append_inputs(ctx, sid, [make_message(sid)])
+    await sessions.delete_session(ctx, sid)
+    clock.now += timedelta(days=31)
+    assert await sessions.purge_across_tenants() == 1, "taken up, and found unmarked"
+    back = await sessions.get_session(ctx, sid)
+    assert back.deleted_at is None and back.purge_started_at is None
+    assert (await managers.steps.get_steps(ctx, sid, 0, 10)).items == (step,)

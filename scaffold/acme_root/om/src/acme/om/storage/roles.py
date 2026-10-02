@@ -32,6 +32,8 @@ TABLE_ROLES: dict[str, DatabaseRole] = {
     "agent_sessions": DatabaseRole.CORE,
     "steps": DatabaseRole.ACTIVITY,
     "step_cursors": DatabaseRole.ACTIVITY,
+    "session_privacy": DatabaseRole.CORE,
+    "session_keys": DatabaseRole.CORE,
     "budgets": DatabaseRole.CORE,
     "budget_tallies": DatabaseRole.ACTIVITY,
     "budget_holds": DatabaseRole.ACTIVITY,
@@ -47,6 +49,13 @@ APPEND_ONLY_TABLES: frozenset[str] = frozenset(
 INSERT on them and never UPDATE or DELETE. The migration that creates one
 takes the two back from the role's default privileges, and the login command
 takes them back again after each grant it makes (ADR 1002, ADR 1006)."""
+
+PURGED_TABLES: frozenset[str] = frozenset({"agent_sessions", "steps", "step_cursors"})
+"""The tables the purge login reaches: a session and its history, which no
+serving login may delete. It holds SELECT and DELETE on them and nothing
+else, granted by the migrations that admit it and again by the login
+command, and the tenant fence admits it within the tenant its transaction
+names and never under the system scope (ADR 1010)."""
 
 DROPPED_TABLE_ROLES: dict[str, DatabaseRole] = {}
 """Tables the migration chain made and later dropped. No process reaches

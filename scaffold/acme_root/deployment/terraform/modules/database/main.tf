@@ -40,10 +40,11 @@ resource "aws_db_instance" "this" {
   db_name = "acme"
   # The master user. On RDS it is not a superuser and carries no BYPASSRLS:
   # it is `rds_superuser`. The application does not connect as it: the
-  # migrate task's `ensure-logins` uses it to create the three logins
-  # (acme_migration, acme_runtime, acme_system) and move the schema to the
-  # migration login, and every serving task connects as the runtime and
-  # system logins, each under row-level security.
+  # migrate task's `ensure-logins` uses it to create the four logins
+  # (acme_migration, acme_runtime, acme_system, acme_purge) and move the
+  # schema to the migration login. Every serving task connects as the
+  # runtime and system logins, and the worker also as the purge login, each
+  # under row-level security.
   username            = "acme"
   password_wo         = var.master_password
   password_wo_version = var.master_password_version

@@ -16,6 +16,8 @@ from acme.om.orchestrations.storage import OrchestrationsStorageInterface
 from acme.om.orchestrations.storage.impl.memory import OrchestrationsStorageMemoryImpl
 from acme.om.outbox.storage import OutboxStorageInterface
 from acme.om.outbox.storage.impl.memory import OutboxStorageMemoryImpl
+from acme.om.privacy.storage import PrivacyStorageInterface
+from acme.om.privacy.storage.impl.memory import PrivacyStorageMemoryImpl
 from acme.om.steps.storage import StepStorageInterface
 from acme.om.steps.storage.impl.memory import StepStorageMemoryImpl
 from acme.om.storage.root import StorageInterface
@@ -41,6 +43,7 @@ class StorageMemoryImpl(StorageInterface):
         self._events = EventStorageMemoryImpl()
         self._steps = StepStorageMemoryImpl()
         self._agent_sessions = AgentSessionStorageMemoryImpl(self._outbox)
+        self._privacy = PrivacyStorageMemoryImpl(self._outbox)
         self._budgets = BudgetStorageMemoryImpl(self._outbox)
         self._ledger = LedgerStorageMemoryImpl()
         self._fill_sets = FillSetStorageMemoryImpl()
@@ -72,6 +75,9 @@ class StorageMemoryImpl(StorageInterface):
 
     def get_agent_session_storage(self) -> AgentSessionStorageInterface:
         return self._agent_sessions
+
+    def get_privacy_storage(self) -> PrivacyStorageInterface:
+        return self._privacy
 
     def get_budget_storage(self) -> BudgetStorageInterface:
         return self._budgets

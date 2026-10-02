@@ -1,6 +1,6 @@
-"""The three database logins, by name, and the one command that makes them.
+"""The four database logins, by name, and the one command that makes them.
 
-None of the three is a superuser or carries BYPASSRLS, since either walks past
+None of the four is a superuser or carries BYPASSRLS, since either walks past
 every row-level security policy and the policies are the second fence.
 
 - The migration login owns every schema and table. It runs the migrations in
@@ -12,6 +12,11 @@ every row-level security policy and the policies are the second fence.
 - The system login is the runtime login's twin for the system scope. The
   listed system-scope methods run under it, on a pool of their own, and the
   policies admit the system scope to it alone.
+- The purge login deletes a session and its history (`PURGED_TABLES`), which
+  no serving login may. It holds SELECT and DELETE on those tables and
+  nothing else, the tenant fence admits it within the tenant its transaction
+  names and never under the system scope, and only the maintenance worker
+  holds its URL (ADR 1010).
 
 The policies name the logins, so the names are fixed here and a URL that
 names another login is refused rather than followed.
@@ -27,13 +32,15 @@ from collections.abc import Iterable
 from sqlalchemy import Connection, text
 from sqlalchemy.engine import URL, make_url
 
-from acme.om.storage.roles import APPEND_ONLY_TABLES, DatabaseRole, role_for
+from acme.om.storage.roles import APPEND_ONLY_TABLES, PURGED_TABLES, DatabaseRole, role_for
 
 MIGRATION_LOGIN = "acme_migration"
 RUNTIME_LOGIN = "acme_runtime"
 SYSTEM_LOGIN = "acme_system"
+PURGE_LOGIN = "acme_purge"
 
 DML = "SELECT, INSERT, UPDATE, DELETE"
+PURGE = "SELECT, DELETE"
 VERSION_TABLE = "alembic_version"
 
 
@@ -215,15 +222,32 @@ def _grant(connection: Connection, schema: str) -> None:
             )
 
 
+def _grant_purge(connection: Connection, schema: str) -> None:
+    """The purge login's reach in one schema: usage, and SELECT and DELETE on
+    each of its tables the schema holds now. A table the chain has not made
+    yet is granted by the migration that makes it or admits the login."""
+    tables = sorted(table for table in PURGED_TABLES if role_for(table).value == schema)
+    if not tables:
+        return
+    _run(connection, f"GRANT USAGE ON SCHEMA {schema} TO {PURGE_LOGIN}")
+    for table in tables:
+        found = connection.execute(
+            text("SELECT to_regclass(:table)"), {"table": f"{schema}.{table}"}
+        ).scalar_one()
+        if found is not None:
+            _run(connection, f"GRANT {PURGE} ON {schema}.{table} TO {PURGE_LOGIN}")
+
+
 def ensure_logins(connection: Connection, passwords: dict[str, str]) -> None:
     """The whole command, in the caller's one transaction, as the master: the
-    three logins with the passwords their URLs carry, the master a member of
+    four logins with the passwords their URLs carry, the master a member of
     the migration login, every role schema and everything in it owned by the
-    migration login, and the runtime and system logins granted DML now and on
+    migration login, the runtime and system logins granted DML now and on
     every table to come, less the rewrite and the removal on an append-only
-    table. `passwords` maps each of the three logins to its password."""
+    table, and the purge login granted SELECT and DELETE on its tables alone.
+    `passwords` maps each of the four logins to its password."""
     database = connection.execute(text("SELECT current_database()")).scalar_one()
-    for login in (MIGRATION_LOGIN, RUNTIME_LOGIN, SYSTEM_LOGIN):
+    for login in (MIGRATION_LOGIN, RUNTIME_LOGIN, SYSTEM_LOGIN, PURGE_LOGIN):
         ensure_login(connection, login, passwords[login])
     _grant_membership(connection, MIGRATION_LOGIN)
     _run(
@@ -235,7 +259,7 @@ def ensure_logins(connection: Connection, passwords: dict[str, str]) -> None:
             MIGRATION_LOGIN,
         ),
     )
-    for login in (RUNTIME_LOGIN, SYSTEM_LOGIN):
+    for login in (RUNTIME_LOGIN, SYSTEM_LOGIN, PURGE_LOGIN):
         _run(
             connection,
             _formatted(connection, "GRANT CONNECT ON DATABASE %I TO %I", database, login),
@@ -243,3 +267,4 @@ def ensure_logins(connection: Connection, passwords: dict[str, str]) -> None:
     for role in DatabaseRole:
         _own_schema(connection, role.value)
         _grant(connection, role.value)
+        _grant_purge(connection, role.value)

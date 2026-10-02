@@ -9,7 +9,7 @@ SHELL := /bin/bash
 #
 # Both files are defaults. A variable exported in the shell wins over them,
 # as it does for the settings, for compose, and for scripts/dev.sh, so the
-# four ACME_DATABASE_* URLs exported at another database take migrate,
+# five ACME_DATABASE_* URLs exported at another database take migrate,
 # migrate-check, seed, and test-integration there. Make lets an included
 # file beat the environment, so each name the files set and the shell
 # exports is kept aside before the includes and put back after them.
@@ -141,7 +141,7 @@ collector-scrape: ## Point the devx collector at SCRAPE_PORT on the host and rec
 # The local targets (migrate, migrate-check, seed, test-integration) refuse a
 # database whose host is not local, so a stray .env never points them at a
 # shared one; the cloud runs `acme-api migrate` without --local. The master
-# makes the three logins first, and every migration runs as the migration
+# makes the four logins first, and every migration runs as the migration
 # login; both steps are safe to repeat.
 migrate: ## Make the database logins, then apply every role's migration chain to the local database
 	uv run --package acme-om python -m acme.om.storage.migrate ensure-logins --local

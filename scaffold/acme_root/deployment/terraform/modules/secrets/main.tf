@@ -1,5 +1,5 @@
 # Three kinds of secret live under one environment. The platform's own
-# credentials (the four database URLs, the TOTP encryption key, the edge
+# credentials (the five database URLs, the TOTP encryption key, the edge
 # secret, the Sentry DSN, the WorkOS application key and webhook secret) are
 # declared here and injected into tasks by the execution role.
 # Application-managed secrets, the ones SecretsInterface reads at runtime,
@@ -25,7 +25,7 @@ locals {
   secret_arn_prefix       = "arn:${data.aws_partition.current.partition}:secretsmanager:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:secret:"
 }
 
-# The database's four URLs, one per login. The master's is the secret the
+# The database's five URLs, one per login. The master's is the secret the
 # first release wrote under `database_url`, kept under that name: the master
 # password exists for the run that set it and nowhere else, so a new secret
 # could hold it only through a rotation. The migrate task alone reads it.
@@ -56,15 +56,16 @@ resource "aws_secretsmanager_secret_version" "database_master_url" {
   secret_string_wo_version = var.database_password_version
 }
 
-# The three logins the application connects as. Each password is generated
+# The four logins the application connects as. Each password is generated
 # for the run and written once per password version, write-only, into its
 # URL; the migrate task's `ensure-logins` reads the URLs and sets each
 # login's password from its own, so the secret is the one place a password
-# is decided. Raising the version rotates the three with the master's.
+# is decided. Raising the version rotates the four with the master's.
 locals {
   logins = {
     runtime   = "acme_runtime"
     system    = "acme_system"
+    purge     = "acme_purge"
     migration = "acme_migration"
   }
 }

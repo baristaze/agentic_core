@@ -60,7 +60,19 @@ the agent works, a loop waits on something, or nothing is open.
 A **step** is one event of a session's history: a message, a control, a
 model's request or response, a tool's request or response, a summary, or
 a mark of a loop's life. Steps are numbered with no gaps and written
-once; the history only grows.
+once; the history only grows, until its purge.
+
+A session marked **deleted** is hidden and can be restored. Once it has
+waited out its retention, the sweep **purges** it with its history, the
+one delete a history has, under a database login no serving process
+holds.
+
+What a step says is its **content**, and it is **sealed**: kept only
+under a **session key** of its own session, which the platform holds
+locked by the org's key. Everything else about a step, its **shape**,
+stays readable. **Revoking** a session's key erases its content and
+keeps its shape, so the history keeps its holes in known places. A
+session may instead keep its content in **memory only**.
 
 ## Budgets
 
@@ -132,6 +144,8 @@ arrive twice, so the second copy gets the first one's answer.
 - An agent session's steps are its truth. Its status is read off them,
   and a change of it writes an outbox row like any other change. A
   session and its steps name their org.
+- A step's content is sealed under its session's key, so revoking one
+  key erases what one session said and nothing else.
 - Every model call passes the gate first, charged to the scopes it
   serves: its session, its tree, the person who pays, a project, a team,
   or the org. A budget, its holds, and their settlements name their org.
@@ -142,6 +156,7 @@ arrive twice, so the second copy gets the first one's answer.
 - [Files](src/acme/om/media/README.md)
 - [Agent sessions](src/acme/om/agent_sessions/README.md)
 - [Steps](src/acme/om/steps/README.md)
+- [Privacy](src/acme/om/privacy/README.md)
 - [Budgets](src/acme/om/budgets/README.md)
 - [Models](src/acme/om/models/README.md)
 - [Windows](src/acme/om/windows/README.md)
