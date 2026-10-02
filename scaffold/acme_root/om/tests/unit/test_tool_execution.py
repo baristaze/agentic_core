@@ -144,6 +144,32 @@ async def test_the_whole_tree_ends_when_the_trees_deadline_comes_first(tmp_path:
         assert not _running(int(pid)), pid
 
 
+async def test_the_tree_ends_at_its_deadline_on_a_host_with_no_ps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A slim image has no `ps`: the tree is walked from `/proc` where there
+    is one, and its group ends with it either way."""
+    monkeypatch.setenv("PATH", str(tmp_path / "no-tools"))
+    ctx = context(Role.SERVICE, make_org())
+    tools = on_the_host(tmp_path, ctx)
+    registry = registry_of(Command("build", timeout=timedelta(hours=1)))
+    workspace = await tools.manager.prepare_workspace(ctx, new_id(), HOST_SPEC)
+    script = "sleep 600 & echo $! > child.pid; sleep 600"
+    found = await put_call(tools.steps, ctx, "build", {"argv": ["sh", "-c", script]}, "execute")
+    response = await tools.manager.execute(
+        ctx,
+        registry,
+        found.request,
+        found.call_input,
+        workspace,
+        epoch=found.epoch,
+        tree_deadline=utcnow() + timedelta(seconds=2),
+    )
+    assert failure_of(response) is ToolFailure.TIMEOUT
+    (pid,) = (Path(workspace.location) / "child.pid").read_text().split()
+    assert not _running(int(pid))
+
+
 def _running(pid: int) -> bool:
     for _ in range(30):
         try:

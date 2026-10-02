@@ -5,9 +5,9 @@ and its whole tree ended at the deadline.
 A tree is the process, every process descended from it, and its process
 group. Ending it freezes what is below the process first, walking the tree
 again after each freeze, so a process that forks while it is being ended is
-caught, then kills every process found and the group. A process that both leaves the
-group and is orphaned before the walk escapes both; the workspace's release
-is what ends it."""
+caught, then kills every process found and the group. A process that both
+leaves the group and is orphaned before the walk escapes both; the
+workspace's release is what ends it."""
 
 import asyncio
 import codecs
@@ -30,6 +30,8 @@ FREEZES = 3
 
 CHUNK = 65536
 
+PROC = Path("/proc")
+
 
 async def spawn(
     argv: Sequence[str], cwd: Path, env: Mapping[str, str]
@@ -50,28 +52,61 @@ async def spawn(
 
 async def tree(pid: int) -> list[int]:
     """`pid` and every process descended from it, from one listing of the
-    host's processes."""
-    listing = await asyncio.create_subprocess_exec(
-        "ps",
-        "-A",
-        "-o",
-        "pid=",
-        "-o",
-        "ppid=",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-    out, _ = await listing.communicate()
-    children: dict[int, list[int]] = {}
-    for line in out.decode().splitlines():
-        fields = line.split()
-        if len(fields) == 2 and fields[0].isdigit() and fields[1].isdigit():
-            children.setdefault(int(fields[1]), []).append(int(fields[0]))
+    host's processes: `ps` where the host has it, `/proc` where it has not,
+    as in a slim image. With neither, `pid` alone, and its group still ends
+    with it."""
+    children = await _children()
     found, frontier = [pid], [pid]
     while frontier:
         frontier = [child for parent in frontier for child in children.get(parent, [])]
         found += frontier
     return found
+
+
+async def _children() -> dict[int, list[int]]:
+    """Each process's children, by its pid."""
+    try:
+        listing = await asyncio.create_subprocess_exec(
+            "ps",
+            "-A",
+            "-o",
+            "pid=",
+            "-o",
+            "ppid=",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+    except OSError:
+        return await asyncio.to_thread(_children_in_proc)
+    out, _ = await listing.communicate()
+    if listing.returncode != 0:
+        return await asyncio.to_thread(_children_in_proc)
+    children: dict[int, list[int]] = {}
+    for line in out.decode().splitlines():
+        fields = line.split()
+        if len(fields) == 2 and fields[0].isdigit() and fields[1].isdigit():
+            children.setdefault(int(fields[1]), []).append(int(fields[0]))
+    return children
+
+
+def _children_in_proc() -> dict[int, list[int]]:
+    """Each process's children, read off `/proc/<pid>/stat`; none where the
+    host has no `/proc`. A process's name may hold spaces and parentheses,
+    so its parent is read after the last `)`."""
+    children: dict[int, list[int]] = {}
+    if not PROC.is_dir():
+        return children
+    for entry in PROC.iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            stat = (entry / "stat").read_text()
+        except OSError:
+            continue
+        fields = stat[stat.rfind(")") + 1 :].split()  # state, parent, group, ...
+        if len(fields) > 1 and fields[1].isdigit():
+            children.setdefault(int(fields[1]), []).append(int(entry.name))
+    return children
 
 
 def _signal(pids: Sequence[int], number: signal.Signals) -> None:
@@ -86,14 +121,18 @@ async def end_tree(pid: int) -> None:
     """Freezes the tree below `pid`, then kills it, `pid`, and its group.
     `pid` itself is never frozen: it is this process's child, and where the
     event loop learns of a child's end by `waitid`, a frozen child is
-    reported as one that ended, and reaping it would block the loop."""
-    for _ in range(FREEZES):
-        _signal([found for found in await tree(pid) if found != pid], signal.SIGSTOP)
-    _signal(await tree(pid), signal.SIGKILL)
+    reported as one that ended, and reaping it would block the loop. Whatever
+    the walk meets, `pid` and its group are killed."""
     try:
-        os.killpg(pid, signal.SIGKILL)
-    except ProcessLookupError, PermissionError:
-        pass
+        for _ in range(FREEZES):
+            _signal([found for found in await tree(pid) if found != pid], signal.SIGSTOP)
+        _signal(await tree(pid), signal.SIGKILL)
+    finally:
+        _signal([pid], signal.SIGKILL)
+        try:
+            os.killpg(pid, signal.SIGKILL)
+        except ProcessLookupError, PermissionError:
+            pass
 
 
 @dataclass(frozen=True)
