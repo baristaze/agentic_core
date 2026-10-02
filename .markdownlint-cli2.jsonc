@@ -1,0 +1,30 @@
+{
+  // markdownlint-cli2 configuration. Run with `make lint`.
+  "config": {
+    "default": true,
+    // Prose is wrapped by hand; tables, code, and tree diagrams run long.
+    "MD013": false,
+    // Wide tables keep their pipes unaligned for the same reason.
+    "MD060": false,
+    // Lists may use pandoc-style indentation ("-   item").
+    "MD007": false,
+    "MD030": false,
+    // The spec sets its rendering formula apart as an indented block, so
+    // a code block may be fenced or indented.
+    "MD046": false,
+    // Subsection titles may repeat under different sections.
+    "MD024": { "siblings_only": true },
+    // Mermaid nodes use <br/> for line breaks.
+    "MD033": { "allowed_elements": ["br"] },
+    // Every fenced block names its language.
+    "MD040": true,
+    // Files that open with frontmatter or an import line have no H1.
+    "MD041": false,
+    // A Makefile snippet in a code block needs its tabs.
+    "MD010": { "code_blocks": false }
+  },
+  // The same files scripts/_common.py leaves out of the repository's Markdown:
+  // every `.claude/` folder. The scaffold's skills sit in its `.agents/skills/`,
+  // and its `.claude/skills` is a link to them, so they are linted once.
+  "ignores": ["**/node_modules/**", ".git/**", "**/.claude/**", "**/.venv/**", "**/.pytest_cache/**"]
+}
