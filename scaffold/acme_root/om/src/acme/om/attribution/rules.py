@@ -26,7 +26,8 @@ from acme.om.attribution.types.authority import (
     Trust,
 )
 from acme.om.attribution.types.principal import Principal
-from acme.om.steps.types.header import InputHeader, ModelRequestHeader
+from acme.om.context import Role
+from acme.om.steps.types.header import ControlHeader, InputHeader, ModelRequestHeader
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 
 PRINCIPAL_ACTORS = frozenset({Actor.PERSON, Actor.PROGRAM})
@@ -86,6 +87,20 @@ def said_by(step: Step, user_id: UUID) -> Step:
         return step
     principal = header.principal.model_copy(update={"id": user_id})
     return step.model_copy(update={"header": header.model_copy(update={"principal": principal})})
+
+
+def decided_by(step: Step, user_id: UUID, role: Role) -> Step:
+    """A person's decision on a tool call as the context that appends it made
+    it: its decider is that context's user, in the role they hold, whatever
+    the caller wrote, so no one decides in another's name or above their own
+    role. Any other step is answered as it is."""
+    header = step.header
+    if not isinstance(header, ControlHeader) or header.call is None:
+        return step
+    if (header.call.decided_by, header.call.role) == (user_id, role):
+        return step
+    call = header.call.model_copy(update={"decided_by": user_id, "role": role})
+    return step.model_copy(update={"header": header.model_copy(update={"call": call})})
 
 
 def fold(

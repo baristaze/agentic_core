@@ -10,7 +10,9 @@ the session, and nothing else.
 
 Both write a principal's message in the name of the context that appends
 it: its principal is that context's user, never one the caller wrote
-(`attribution.rules.said_by`)."""
+(`attribution.rules.said_by`). A person's decision on a tool call is
+written the same way, with the role that context holds
+(`attribution.rules.decided_by`)."""
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence

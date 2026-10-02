@@ -244,7 +244,9 @@ class ToolsManagerImpl(ToolsManagerInterface):
             detail = f"policy does not allow {tool.spec.name}, a {call.authorization_class} call"
             denied = self._answer(request, detail, ToolFailure.DENIED)
             return Gate(outcome=GateOutcome.REFUSE, decision=decision, response=denied)
-        found, decision_step = verdict(request, await self._after(ctx, request), self._clock())
+        approvers = approver_roles(policy, call.authorization_class)
+        later = await self._after(ctx, request)
+        found, decision_step = verdict(request, later, self._clock(), approvers)
         if found is Verdict.APPROVED:
             return Gate(outcome=GateOutcome.RUN, decision=decision, authority=authority)
         if found is Verdict.DENIED and decision_step is not None:
@@ -409,6 +411,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
                     tool=header.tool,
                     input_hash=header.input_hash,
                     decided_by=ctx.user_id,
+                    role=ctx.role,
                     expires_at=now + self._options.approval_lifetime if approve else None,
                 ),
             ),

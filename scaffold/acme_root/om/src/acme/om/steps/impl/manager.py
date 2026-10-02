@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from uuid import UUID
 
-from acme.om.attribution.rules import said_by
+from acme.om.attribution.rules import decided_by, principal_authored, said_by
 from acme.om.base import Platform
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import ValidationFailed
@@ -38,16 +38,18 @@ class StepsManagerImpl(StepsManagerInterface):
     ) -> tuple[Step, ...]:
         ctx.require(Permission.WRITE)
         self._bound(steps)
-        said = [said_by(step, ctx.user_id) for step in steps]
-        return await self._storage.append_steps(ctx.org_id, session_id, epoch, said)
+        return await self._storage.append_steps(
+            ctx.org_id, session_id, epoch, self._said(ctx, steps)
+        )
 
     async def append_inputs(
         self, ctx: TenantContext, session_id: UUID, steps: Sequence[Step]
     ) -> tuple[Step, ...]:
         ctx.require(Permission.WRITE)
         self._bound(steps)
-        said = [said_by(step, ctx.user_id) for step in steps]
-        return await self._storage.append_inputs(ctx.org_id, session_id, said)
+        if any(principal_authored(step) for step in steps):
+            await self._instructs(ctx, session_id)
+        return await self._storage.append_inputs(ctx.org_id, session_id, self._said(ctx, steps))
 
     async def get_steps(
         self, ctx: TenantContext, session_id: UUID, after_seq: int, limit: int
@@ -76,6 +78,11 @@ class StepsManagerImpl(StepsManagerInterface):
             if await self._storage.purge_history(org_id, session_id, batch) < batch:
                 gone.append((org_id, session_id))
         return gone
+
+    def _said(self, ctx: TenantContext, steps: Sequence[Step]) -> list[Step]:
+        """Each step in the name of the context that appends it: a principal's
+        message is its user's, and a decision its user's, in its role."""
+        return [decided_by(said_by(step, ctx.user_id), ctx.user_id, ctx.role) for step in steps]
 
     def _bound(self, steps: Sequence[Step]) -> None:
         if len(steps) > self._options.max_append:

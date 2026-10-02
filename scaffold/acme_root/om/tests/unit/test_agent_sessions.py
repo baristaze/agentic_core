@@ -74,7 +74,9 @@ def control(command: ControlCommand) -> Step:
     call = None
     if command in (ControlCommand.APPROVE, ControlCommand.DENY):
         expires = utcnow() + timedelta(hours=1) if command is ControlCommand.APPROVE else None
-        call = DecidedCall(tool="t", input_hash="h", decided_by=new_id(), expires_at=expires)
+        call = DecidedCall(
+            tool="t", input_hash="h", decided_by=new_id(), role=Role.OWNER, expires_at=expires
+        )
     return a_step(StepType.CONTROL, ControlHeader(command=command, call=call))
 
 

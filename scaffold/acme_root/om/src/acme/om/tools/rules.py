@@ -217,9 +217,12 @@ def job_deadline(now: datetime, timeout: timedelta, tree_deadline: datetime | No
 # A person's decision.
 
 
-def decides(control: Step, request: Step) -> bool:
+def decides(control: Step, request: Step, approvers: Sequence[Role]) -> bool:
     """Whether a control step is a person's decision on exactly this call:
-    it references the request, and names its tool and its input's hash."""
+    it references the request, names its tool and its input's hash, and
+    was made in a role among `approvers`, those the tenant's policy lets
+    decide the call's class now. A decision in any other role is no
+    decision, however it reached the history."""
     header = control.header
     call = request.header
     return (
@@ -231,14 +234,18 @@ def decides(control: Step, request: Step) -> bool:
         and control.refs == (request.id,)
         and header.call.tool == call.tool
         and header.call.input_hash == call.input_hash
+        and header.call.role in approvers
     )
 
 
-def verdict(request: Step, later: Sequence[Step], now: datetime) -> tuple[Verdict, Step | None]:
+def verdict(
+    request: Step, later: Sequence[Step], now: datetime, approvers: Sequence[Role]
+) -> tuple[Verdict, Step | None]:
     """A person's verdict on a call, from the steps after its request in
-    order: the latest decision on exactly this call holds. An approval that
-    has expired asks again; a denial holds for good."""
-    latest = next((step for step in reversed(later) if decides(step, request)), None)
+    order: the latest decision on exactly this call, by a role among
+    `approvers`, holds. An approval that has expired asks again; a denial
+    holds for good."""
+    latest = next((step for step in reversed(later) if decides(step, request, approvers)), None)
     header = None if latest is None else latest.header
     if not isinstance(header, ControlHeader) or header.call is None:
         return Verdict.PENDING, None
