@@ -24,6 +24,11 @@ from acme.om.idempotency import IdempotencyManagerInterface
 from acme.om.idempotency.impl.manager import IdempotencyManagerImpl, IdempotencyOptions
 from acme.om.media import MediaManagerInterface
 from acme.om.media.impl.manager import MediaManagerImpl, MediaOptions
+from acme.om.models.impl.manager import ModelsManagerImpl, ModelsOptions
+from acme.om.models.impl.prices import ModelPricesNullImpl
+from acme.om.models.impl.resolver import ModelResolverTableImpl, ResolverOptions
+from acme.om.models.manager import ModelsManagerInterface
+from acme.om.models.prices import ModelPricesInterface
 from acme.om.orchestrations import OrchestrationsManagerInterface
 from acme.om.orchestrations.impl.manager import OrchestrationsManagerImpl, OrchestrationsOptions
 from acme.om.outbox import OutboxRelayInterface
@@ -60,6 +65,7 @@ class Managers:
     budgets: BudgetsManagerInterface
     budget_gate: BudgetGateInterface
     pricing: PricingInterface
+    models: ModelsManagerInterface
 
 
 def build_tenancy(
@@ -124,6 +130,8 @@ def build_managers(
     steps_options: StepsOptions | None = None,
     agent_sessions_options: AgentSessionsOptions | None = None,
     budgets_options: BudgetsOptions | None = None,
+    models_options: ModelsOptions | None = None,
+    model_prices: ModelPricesInterface | None = None,
 ) -> Managers:
     """`integrations` is the root of the hosted services the managers front:
     the identity provider, which the tenancy manager signs people in and
@@ -132,7 +140,11 @@ def build_managers(
 
     The options after `integrations` are what the process that sweeps sets
     on the managers it purges through: each one's retention and batch. None
-    keeps that manager's defaults."""
+    keeps that manager's defaults.
+
+    `model_prices` is what the resolver asks before it picks a model: the
+    one source of prices. None wires the null, which prices nothing, so no
+    model resolves until a source is wired."""
     # The relay every core-role manager hands its outbox rows to. It reaches
     # the work manager through the root below, because a row of kind
     # `work.<kind>` is enqueued there: the work manager needs the tenancy
@@ -198,6 +210,15 @@ def build_managers(
     budget_gate = BudgetGateImpl(
         storage.get_budget_storage(), storage.get_ledger_storage(), BudgetGateOptions()
     )
+    # A session's fills. The resolver refuses a model with no price row,
+    # so a root that wires no prices resolves nothing.
+    models = ModelsManagerImpl(
+        storage.get_fill_set_storage(),
+        steps,
+        tenancy,
+        ModelResolverTableImpl(model_prices or ModelPricesNullImpl(), ResolverOptions()),
+        models_options or ModelsOptions(),
+    )
     idempotency = IdempotencyManagerImpl(
         storage.get_idempotency_storage(), idempotency_options or IdempotencyOptions()
     )
@@ -228,5 +249,6 @@ def build_managers(
         budget_gate=budget_gate,
         # The one source of prices: the list table.
         pricing=PricingTableImpl(),
+        models=models,
     )
     return managers

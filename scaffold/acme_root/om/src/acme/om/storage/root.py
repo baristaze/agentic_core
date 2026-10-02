@@ -7,6 +7,7 @@ from acme.om.budgets.storage import BudgetStorageInterface, LedgerStorageInterfa
 from acme.om.events.storage import EventStorageInterface
 from acme.om.idempotency.storage import IdempotencyStorageInterface
 from acme.om.media.storage import MediaStorageInterface
+from acme.om.models.storage import FillSetStorageInterface
 from acme.om.orchestrations.storage import OrchestrationsStorageInterface
 from acme.om.outbox.storage import OutboxStorageInterface
 from acme.om.steps.storage import StepStorageInterface
@@ -47,6 +48,9 @@ class StorageInterface(ABC):
 
     @abstractmethod
     def get_ledger_storage(self) -> LedgerStorageInterface: ...
+
+    @abstractmethod
+    def get_fill_set_storage(self) -> FillSetStorageInterface: ...
 
     @abstractmethod
     async def healthcheck(self) -> bool: ...

@@ -22,6 +22,8 @@ from acme.om.idempotency.storage import IdempotencyStorageInterface
 from acme.om.idempotency.storage.impl.postgres import IdempotencyStoragePostgresImpl
 from acme.om.media.storage import MediaStorageInterface
 from acme.om.media.storage.impl.postgres import MediaStoragePostgresImpl
+from acme.om.models.storage import FillSetStorageInterface
+from acme.om.models.storage.impl.postgres import FillSetStoragePostgresImpl
 from acme.om.orchestrations.storage import OrchestrationsStorageInterface
 from acme.om.orchestrations.storage.impl.postgres import OrchestrationsStoragePostgresImpl
 from acme.om.outbox.storage import OutboxStorageInterface
@@ -151,6 +153,7 @@ class StoragePostgresImpl(StorageInterface):
         self._agent_sessions = AgentSessionStoragePostgresImpl(sessions)
         self._budgets = BudgetStoragePostgresImpl(sessions)
         self._ledger = LedgerStoragePostgresImpl(sessions)
+        self._fill_sets = FillSetStoragePostgresImpl(sessions)
 
     def get_tenancy_storage(self) -> TenancyStorageInterface:
         return self._tenancy
@@ -184,6 +187,9 @@ class StoragePostgresImpl(StorageInterface):
 
     def get_ledger_storage(self) -> LedgerStorageInterface:
         return self._ledger
+
+    def get_fill_set_storage(self) -> FillSetStorageInterface:
+        return self._fill_sets
 
     async def healthcheck(self) -> bool:
         """A connect and a `SELECT 1` on every engine, each under the bounds its

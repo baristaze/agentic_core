@@ -36,7 +36,23 @@ class IntegrationsSettings(BaseSettings):
     # with its own and ignores this one.
     workos_webhook_secret: SecretStr | None = Field(default=None, repr=False)
 
-    @field_validator("workos_api_key")
+    # Which model providers a process calls: the live adapters, the scripted
+    # twin (local only, refused at boot anywhere else), or none, which fails
+    # every model call as a missing credential and is what a process that
+    # calls no model holds.
+    model_providers: Literal["live", "scripted", "none"] = "none"
+    # The platform's own keys, process credentials injected at start. Empty
+    # or "off" leaves the provider with no platform key: a call runs only on
+    # a credential of its own, and without one fails as `credential`.
+    anthropic_api_key: SecretStr | None = Field(default=None, repr=False)
+    anthropic_base_url: str = "https://api.anthropic.com"
+    openai_api_key: SecretStr | None = Field(default=None, repr=False)
+    openai_base_url: str = "https://api.openai.com"
+    # The longest a model call waits on the network at one time: to connect,
+    # to send, and between two parts of a streamed answer.
+    model_timeout_seconds: float = Field(default=120.0, gt=0)
+
+    @field_validator("workos_api_key", "anthropic_api_key", "openai_api_key")
     @classmethod
     def _key_off_is_none(cls, value: SecretStr | None) -> SecretStr | None:
         if value is None or value.get_secret_value().strip().lower() in ("", "off"):
