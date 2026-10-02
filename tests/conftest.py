@@ -57,18 +57,67 @@ LENS_STEPS = """\
 **Source.** Steps, The Record.
 """
 
-REVIEW = """\
+LENSES_README = """\
+# Lenses
+
+## Groups
+
+| Group id | Prefix | File       | Covers |
+|----------|--------|------------|--------|
+| `steps`  | `STP`  | `steps.md` | Steps  |
+"""
+
+TEMPLATE = """\
 ---
-name: agentic-review-steps
-description: "Review code through the Steps lenses. Use as one leg of agentic-review-full."
+name: agentic-review-{group}
+description: "Review code through the {title} lenses: {covers}. Use as one leg of agentic-review-full."
 allowed-tools: Read, Grep, Bash(git diff:*)
 ---
 
-# agentic-review-steps
+# agentic-review-{group}
 
-Read `../../lenses/steps.md` and the spec at `../../agentic_core_spec.md`,
+Read `../../lenses/{group}.md` and the spec at `../../agentic_core_spec.md`,
 from this skill's folder as `realpath` resolves it. Take the scope from
 `git diff`. Never edit, stage, or commit.
+
+## Procedure
+
+1. Read the lens file end to end.
+2. For every lens decide **finding**, **pass**, **not applicable**, or
+   **unverified**.
+3. Write the report in the format below.
+
+## Output
+
+```markdown
+# Engine review: {title}
+
+**Scope.** <what was reviewed>
+
+## Findings
+
+- **<LENS-ID> <severity>** `<path>:<line>` <what breaks the rule>.
+```
+"""
+
+
+def render_template(group: str, title: str, covers: str) -> str:
+    """The review template with one group filled in, as `make gen-skills` writes it."""
+    return TEMPLATE.replace("{group}", group).replace("{title}", title).replace("{covers}", covers)
+
+
+REVIEW = render_template("steps", "Steps", "Steps")
+
+REVIEW_FULL = """\
+---
+name: agentic-review-full
+description: "Full review: runs agentic-review-steps and merges the report."
+allowed-tools: Read, Agent
+---
+
+# agentic-review-full
+
+Run `agentic-review-steps` on the scope and merge the reports.
 """
 
 SCAFFOLD = """\
@@ -95,6 +144,23 @@ maxTurns: 80
 ---
 
 You are a reviewer.
+
+Procedure (the same as the `agentic-review-<group>` skills):
+
+1. Read the lens file end to end.
+2. For every lens decide **finding**, **pass**, **not
+   applicable**, or **unverified**.
+3. Write the report in the format below.
+
+```markdown
+# Engine review: <group title>
+
+**Scope.** <what was reviewed>
+
+## Findings
+
+- **<LENS-ID> <severity>** `<path>:<line>` <what breaks the rule>.
+```
 """
 
 PLUGIN = '{"name": "agentic-core", "version": "1.2.3"}\n'
@@ -140,8 +206,11 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Repo:
     r.write("agentic_core_spec.md", SPEC)
     r.write("README.md", README)
     r.write("CHANGELOG.md", CHANGELOG)
+    r.write("lenses/README.md", LENSES_README)
     r.write("lenses/steps.md", LENS_STEPS)
+    r.write("skills/_template/review.SKILL.md", TEMPLATE)
     r.write("skills/agentic-review-steps/SKILL.md", REVIEW)
+    r.write("skills/agentic-review-full/SKILL.md", REVIEW_FULL)
     r.write("skills/agentic-scaffold-tool/SKILL.md", SCAFFOLD)
     r.write("agents/agentic-reviewer.md", AGENT)
     r.write(".claude-plugin/plugin.json", PLUGIN)

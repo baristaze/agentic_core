@@ -1,10 +1,11 @@
-"""scripts/check_agents.py: every subagent's frontmatter names it, describes it, and caps its turns."""
+"""scripts/check_agents.py: every subagent's frontmatter and turn cap, and the reviewer mirroring the review template."""
 
 import shutil
 
 import pytest
 
 AGENT = "agents/agentic-reviewer.md"
+TEMPLATE = "skills/_template/review.SKILL.md"
 
 
 @pytest.fixture
@@ -17,10 +18,44 @@ def test_valid_tree_passes(repo, agents, capsys):
     assert "agents ok: 1 agent(s)" in capsys.readouterr().out
 
 
-def test_no_agents_folder_passes(repo, agents, capsys):
+def test_no_agents_folder_and_no_review_template_pass(repo, agents, capsys):
     shutil.rmtree(repo.root / "agents")
+    (repo.root / "skills" / "_template" / "review.SKILL.md").unlink()
     assert agents.main() == 0
     assert "agents ok: 0 agent(s)" in capsys.readouterr().out
+
+
+def test_a_review_template_without_its_reviewer_fails(repo, agents, capsys):
+    (repo.root / AGENT).unlink()
+    assert agents.main() == 1
+    assert f"{AGENT}: missing; agentic-review-full fans out to it" in capsys.readouterr().out
+
+
+def test_the_reviewer_mirrors_the_template_step_count(repo, agents, capsys):
+    repo.edit(AGENT, "3. Write the report in the format below.\n", "")
+    assert agents.main() == 1
+    assert f"{AGENT}: 2 procedure steps, {TEMPLATE} has 3" in capsys.readouterr().out
+
+
+def test_the_reviewer_mirrors_the_template_report_block(repo, agents, capsys):
+    repo.edit(AGENT, "## Findings", "## Problems")
+    assert agents.main() == 1
+    assert f"{AGENT}: report block differs from {TEMPLATE}" in capsys.readouterr().out
+
+
+def test_the_reviewer_mirrors_the_template_decision_words_and_their_order(repo, agents, capsys):
+    repo.edit(AGENT, "**unverified**", "**unsure**")
+    assert agents.main() == 1
+    assert f"{AGENT}: procedure lacks the bold decision word(s) unverified" in capsys.readouterr().out
+    repo.edit(AGENT, "**unsure**", "**unverified**")
+    repo.edit(AGENT, "**finding**, **pass**", "**pass**, **finding**")
+    assert agents.main() == 1
+    assert "decision words are in a different order" in capsys.readouterr().out
+
+
+def test_input_numbering_outside_the_procedure_is_no_step(repo, agents):
+    repo.edit(TEMPLATE, "## Procedure", "## Input\n\n1. Empty: the branch.\n2. A path.\n\n## Procedure")
+    assert agents.main() == 0
 
 
 def test_name_must_equal_the_file_and_start_with_agentic(repo, agents, capsys):

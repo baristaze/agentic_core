@@ -51,6 +51,16 @@ A folder that does not exist holds no skill, and passes. Rules:
   and `Bash(make -C dir:*)` are refused;
 - every skill, the scaffold's included, has a non-empty allowed-tools:
   a skill without one runs with every tool the session has;
+- there is exactly one `agentic-review-<group>` skill per lens group the
+  table of `lenses/README.md` lists, and none for a group it does not
+  list; each names its lens file, `lenses/<group>.md`, and
+  `agentic-review-full` exists and names every group's review skill, so
+  a group added to the table cannot go unreviewed. `make gen-skills`
+  writes the group skills from one template; `make gen-skills-check`
+  holds them to it;
+- a review skill (`agentic-review-*`) runs no file of the repository it
+  reviews: every Bash entry of its allowed-tools is a git command, so
+  none pre-approves an interpreter or a runner;
 - allowed-tools names only what the body runs; the checker holds the make
   targets to it: for every `Bash(make <target>)` or `Bash(make <target>:*)`,
   `make <target>`, as whole words, appears inside a backticked span of the
@@ -91,6 +101,15 @@ from _common import arguments, fenced_lines
 ROOT = Path(__file__).resolve().parent.parent
 SKILLS = ROOT / "skills"
 AGENTS = ROOT / "agents"
+LENSES = ROOT / "lenses"
+GROUP_ROW = re.compile(r"^\|\s*`([a-z]+)`\s*\|")
+"""A row of the group table in `lenses/README.md`: its first cell is the group id, in backticks."""
+REVIEW = "agentic-review-"
+FULL = "agentic-review-full"
+NOT_GIT = (
+    "lets a review run more than a git command with nobody asked; a review runs no file of the repository it "
+    "reviews, so it pre-approves no interpreter and no runner"
+)
 NAME = re.compile(r"^agentic-[a-z0-9]+(?:-[a-z0-9]+)*$")
 STANDARD_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 """The standard's name: lowercase letters and digits, one hyphen between words, none at either end."""
@@ -337,7 +356,51 @@ def check_tools(tools: str, spans: list[str], rel: str, errors: list[str]) -> No
             errors.append(f"{rel}: allowed-tools names Bash({cmd}) but the body never runs {cmd}")
 
 
-def check_skill(folder: Path, errors: list[str]) -> int:
+def lens_groups() -> list[str]:
+    """The group ids the table of `lenses/README.md` lists, in its order; none when the file does not exist."""
+    readme = LENSES / "README.md"
+    if not readme.is_file():
+        return []
+    return [m.group(1) for line in readme.read_text(encoding="utf-8").splitlines() if (m := GROUP_ROW.match(line))]
+
+
+def check_review(folder: Path, tools: str, text: str, groups: list[str], reviewed: set[str], errors: list[str]) -> None:
+    """A review skill pre-approves git commands alone; a group's review skill is one the lens table lists, and
+    names its lens file. The group it reviews is added to `reviewed`."""
+    rel = str((folder / "SKILL.md").relative_to(ROOT))
+    for tool in (t.strip() for t in tools.split(",")):
+        cmd = bash_command(tool)
+        if cmd is not None and not cmd.startswith("git "):
+            errors.append(f"{rel}: {tool!r} {NOT_GIT}")
+    if folder.name == FULL:
+        return
+    group = folder.name.removeprefix(REVIEW)
+    if group not in groups:
+        errors.append(f"{rel}: no lens group '{group}' in lenses/README.md")
+        return
+    reviewed.add(group)
+    if f"lenses/{group}.md" not in text:
+        errors.append(f"{rel}: does not name its lens file, lenses/{group}.md")
+
+
+def check_groups(groups: list[str], reviewed: set[str], errors: list[str]) -> None:
+    """Every lens group has its review skill, and `agentic-review-full` names each of them."""
+    for group in groups:
+        if group not in reviewed:
+            errors.append(f"skills/: no {REVIEW}{group} skill for lens group '{group}'")
+    if not groups:
+        return
+    full = SKILLS / FULL / "SKILL.md"
+    if not full.is_file():
+        errors.append(f"skills/{FULL}/SKILL.md: missing; it runs every group's review")
+        return
+    text = full.read_text(encoding="utf-8")
+    for group in groups:
+        if not re.search(rf"(?<![\w-]){REVIEW}{group}(?![\w-])", text):
+            errors.append(f"skills/{FULL}/SKILL.md: does not name {REVIEW}{group}")
+
+
+def check_skill(folder: Path, errors: list[str], groups: list[str], reviewed: set[str]) -> int:
     """One plugin skill: its frontmatter, its tools, and every path it names from its folder. Returns its
     description's length, for the shared budget."""
     skill = folder / "SKILL.md"
@@ -367,6 +430,8 @@ def check_skill(folder: Path, errors: list[str]) -> int:
         errors.append(f"{rel}: description must be one double-quoted string")
     body = body_of(text)
     check_tools(fm.get("allowed-tools", ""), code_spans(body), rel, errors)
+    if folder.name.startswith(REVIEW):
+        check_review(folder, fm.get("allowed-tools", ""), text, groups, reviewed, errors)
     for file in sorted(folder.rglob("*.md")):
         where = str(file.relative_to(ROOT))
         for ref in references(body_of(file.read_text(encoding="utf-8"))):
@@ -460,9 +525,13 @@ def main(argv: Sequence[str] = ()) -> int:
     arguments(__doc__, argv)
     errors: list[str] = []
     skills = sorted(p for p in SKILLS.iterdir() if p.is_dir() and not p.name.startswith("_")) if SKILLS.is_dir() else []
-    total = sum(check_skill(folder, errors) for folder in skills)
+    groups = lens_groups()
+    reviewed: set[str] = set()
+    total = sum(check_skill(folder, errors, groups, reviewed) for folder in skills)
     if total > DESCRIPTIONS_TOTAL:
         errors.append(f"skills/: the descriptions total {total} characters, limit {DESCRIPTIONS_TOTAL}")
+    if SKILLS.is_dir():
+        check_groups(groups, reviewed, errors)
     copied = scaffold_skills()
     for skill in copied:
         check_scaffold_skill(skill, errors)
@@ -472,7 +541,7 @@ def main(argv: Sequence[str] = ()) -> int:
         print("\n".join(errors))
         print(f"\n{len(errors)} problem(s) in {len(skills)} skill(s) and {len(copied)} scaffold skill(s)")
         return 1
-    print(f"skills ok: {len(skills)} skills, {len(copied)} scaffold skills")
+    print(f"skills ok: {len(skills)} skills, {len(reviewed)} review groups, {len(copied)} scaffold skills")
     return 0
 
 

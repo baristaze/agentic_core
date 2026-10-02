@@ -49,9 +49,15 @@ it.
   `name` is its folder's and starts with `agentic-`, so it never
   collides with the guideline's `arch-*`. `scripts/check_skills.py`
   holds its frontmatter and the paths it names.
+- `skills/agentic-review-<group>/SKILL.md` is generated, one per row of
+  the group table in `lenses/README.md`, from
+  `skills/_template/review.SKILL.md` (`make gen-skills`). Edit the
+  template or the lens file, never the generated skill;
+  `make gen-skills-check` fails on a stale one.
 - `agents/agentic-<name>.md` is a Claude Code subagent a skill fans out
   to. `scripts/check_agents.py` holds its frontmatter and its
-  `maxTurns`.
+  `maxTurns`, and holds `agents/agentic-reviewer.md` to the review
+  template's procedure and report.
 - `scaffold/acme_root/` is the engine's domain-free core under the name
   `acme`, built on the guideline's scaffold. Its ADRs are numbered from
   1001, so they never meet the guideline's. Its skills sit in
