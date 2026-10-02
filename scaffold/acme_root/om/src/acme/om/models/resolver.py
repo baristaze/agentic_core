@@ -1,7 +1,7 @@
 """The resolver: what turns model roles into fills. It is injected, so the
 engine never picks a model; a product, a platform, or a tenant's own keys
 decide what it answers. Every fill it answers, fallbacks included, has a
-row in the one source of prices."""
+row in the one source of prices (`models.prices`)."""
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence

@@ -1,15 +1,14 @@
 """The resolver over a table: each model role's fill and its fallbacks,
-from options a root sets. It checks every fill in the table against the
-one source of prices when it is built, so a process with an unpriced model
-in its table does not start."""
+from options a root sets. Every fill it answers, fallbacks included, has a
+price row of its own: it asks before it answers."""
 
 from collections.abc import Sequence
 
 from acme.integrations.model_providers.types import Effort, ProviderName
 from acme.om.base import Platform
-from acme.om.budgets.pricing import PricingInterface
 from acme.om.context import TenantContext
 from acme.om.exceptions import UnpricedModel, UnresolvedRole
+from acme.om.models.prices import ModelPricesInterface
 from acme.om.models.resolver import ModelResolverInterface
 from acme.om.models.types.fill import (
     MAIN,
@@ -20,16 +19,9 @@ from acme.om.models.types.fill import (
     RoleFill,
 )
 
-
-class RoleTable(Platform):
-    """A model role's fill and the fallbacks it declares, in order."""
-
-    fill: Fill
-    fallbacks: tuple[Fill, ...] = ()
-
-
-DEFAULT_TABLE: dict[ModelRole, RoleTable] = {
-    MAIN: RoleTable(
+DEFAULT_TABLE: tuple[RoleFill, ...] = (
+    RoleFill(
+        role=MAIN,
         fill=Fill(
             provider=ProviderName.ANTHROPIC,
             model="claude-sonnet-5-5",
@@ -47,7 +39,8 @@ DEFAULT_TABLE: dict[ModelRole, RoleTable] = {
             ),
         ),
     ),
-    SUMMARIZER: RoleTable(
+    RoleFill(
+        role=SUMMARIZER,
         fill=Fill(
             provider=ProviderName.ANTHROPIC,
             model="claude-haiku-4-5",
@@ -64,26 +57,26 @@ DEFAULT_TABLE: dict[ModelRole, RoleTable] = {
             ),
         ),
     ),
-}
-"""The engine's two model roles, as a fresh copy resolves them. A product
-names its own roles and models in its options; each model needs a price
-row in the same change."""
+)
+"""The engine's two model roles, as a fresh copy resolves them: each role's
+fill and the fallbacks it declares, in order. A product names its own
+roles and models in its options; each model needs a price row of its
+own."""
 
 
 class ResolverOptions(Platform):
-    table: dict[ModelRole, RoleTable] = DEFAULT_TABLE
+    table: tuple[RoleFill, ...] = DEFAULT_TABLE
 
 
 class ModelResolverTableImpl(ModelResolverInterface):
-    def __init__(self, pricing: PricingInterface, options: ResolverOptions) -> None:
-        self._pricing = pricing
-        self._table = dict(options.table)
-        for entry in self._table.values():
-            for fill in (entry.fill, *entry.fallbacks):
-                self.check(fill)
+    def __init__(self, prices: ModelPricesInterface, options: ResolverOptions) -> None:
+        self._prices = prices
+        self._table = {entry.role: entry for entry in options.table}
+        if len(self._table) != len(options.table):
+            raise ValueError("the resolver's table names a model role twice")
 
     def check(self, fill: Fill) -> None:
-        if self._pricing.price(fill.provider, fill.model) is None:
+        if not self._prices.priced(fill.provider, fill.model):
             raise UnpricedModel(f"{fill.name} has no price row")
 
     async def resolve(

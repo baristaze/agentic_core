@@ -2,7 +2,6 @@
 once, a switch is a new version announced by a `switched` step naming both
 fills, and nothing a resolver can pick lacks a price row."""
 
-from decimal import Decimal
 from pathlib import Path
 from uuid import UUID
 
@@ -12,10 +11,8 @@ from contracts.fill_set_storage import HAIKU, SOL, SONNET
 from contracts.step_storage import make_message
 
 from acme.infra.impl.local import InfraLocalImpl
-from acme.integrations.model_providers.types import Effort, ProviderName, Usage
+from acme.integrations.model_providers.types import Effort, ProviderName
 from acme.om.base import new_id
-from acme.om.budgets.impl.pricing import LIST_PRICES, PricingTableImpl
-from acme.om.budgets.pricing import Price, Rates
 from acme.om.context import RequestContext, Role, TenantContext
 from acme.om.exceptions import (
     NotAuthorized,
@@ -28,12 +25,13 @@ from acme.om.exceptions import (
 )
 from acme.om.models import rules
 from acme.om.models.impl.manager import ModelsManagerImpl, ModelsOptions
+from acme.om.models.impl.prices import ModelPricesNullImpl
 from acme.om.models.impl.resolver import (
     DEFAULT_TABLE,
     ModelResolverTableImpl,
     ResolverOptions,
-    RoleTable,
 )
+from acme.om.models.prices import ModelPricesInterface
 from acme.om.models.storage.impl.memory import FillSetStorageMemoryImpl
 from acme.om.models.types.fill import (
     MAIN,
@@ -41,6 +39,7 @@ from acme.om.models.types.fill import (
     Eligibility,
     Fill,
     FillSet,
+    RoleFill,
     SwitchReason,
 )
 from acme.om.root import Managers, build_managers
@@ -55,15 +54,32 @@ UNLISTED = Fill(
     context_window=100_000,
 )
 REGIONAL = SOL.model_copy(update={"eligibility": Eligibility(region="eu", zero_retention=True)})
-TABLE = {
-    MAIN: RoleTable(fill=SONNET, fallbacks=(SOL, REGIONAL)),
-    SUMMARIZER: RoleTable(fill=HAIKU),
-}
+TABLE = (
+    RoleFill(role=MAIN, fill=SONNET, fallbacks=(SOL, REGIONAL)),
+    RoleFill(role=SUMMARIZER, fill=HAIKU),
+)
+DEFAULT_MAIN = next(entry for entry in DEFAULT_TABLE if entry.role == MAIN)
+
+
+class Priced(ModelPricesInterface):
+    """Prices that hold a row for each fill named, and for nothing else."""
+
+    def __init__(self, *fills: Fill) -> None:
+        self._rows = {(f.provider, f.model) for f in fills}
+
+    def priced(self, provider: ProviderName, model: str) -> bool:
+        return (provider, model) in self._rows
+
+    def describe(self) -> str:
+        return "model prices: the test's rows"
+
+
+EVERY_DEFAULT = Priced(*(f for entry in DEFAULT_TABLE for f in (entry.fill, *entry.fallbacks)))
 
 
 @pytest.fixture
 def managers(tmp_path: Path) -> Managers:
-    return build_managers(StorageMemoryImpl(), InfraLocalImpl(tmp_path))
+    return build_managers(StorageMemoryImpl(), InfraLocalImpl(tmp_path), model_prices=EVERY_DEFAULT)
 
 
 async def a_run(managers: Managers, ctx: TenantContext) -> tuple[UUID, int, UUID]:
@@ -83,30 +99,35 @@ async def switches(managers: Managers, ctx: TenantContext, session_id: UUID) -> 
 # The resolver and its one source of prices.
 
 
-def test_the_resolver_refuses_a_model_with_no_price_row() -> None:
-    pricing = PricingTableImpl()
+async def test_the_resolver_refuses_a_model_with_no_price_row() -> None:
+    ctx = context(Role.MEMBER)
+    prices = Priced(SONNET, SOL, HAIKU)
     for table in (
-        {MAIN: RoleTable(fill=UNLISTED)},
-        {MAIN: RoleTable(fill=SONNET, fallbacks=(UNLISTED,))},
+        (RoleFill(role=MAIN, fill=UNLISTED),),
+        (RoleFill(role=MAIN, fill=SONNET, fallbacks=(UNLISTED,)),),
     ):
+        resolver = ModelResolverTableImpl(prices, ResolverOptions(table=table))
         with pytest.raises(UnpricedModel):
-            ModelResolverTableImpl(pricing, ResolverOptions(table=table))
-    resolver = ModelResolverTableImpl(pricing, ResolverOptions())
+            await resolver.resolve(ctx, [MAIN], Eligibility())
+    resolver = ModelResolverTableImpl(prices, ResolverOptions(table=TABLE))
     with pytest.raises(UnpricedModel):
         resolver.check(UNLISTED)
+    with pytest.raises(ValueError, match="twice"):
+        ModelResolverTableImpl(prices, ResolverOptions(table=(*TABLE, TABLE[0])))
 
 
-def test_every_model_the_default_table_names_has_a_price_of_its_own() -> None:
-    pricing = PricingTableImpl()
-    for entry in DEFAULT_TABLE.values():
-        for fill in (entry.fill, *entry.fallbacks):
-            assert pricing.price(fill.provider, fill.model) is not None, fill.name
-    with pytest.raises(ValueError, match="two rows"):
-        PricingTableImpl((*LIST_PRICES, LIST_PRICES[0]))
+async def test_a_root_that_wired_no_prices_resolves_nothing(tmp_path: Path) -> None:
+    bare = build_managers(StorageMemoryImpl(), InfraLocalImpl(tmp_path))
+    ctx = context(Role.MEMBER)
+    with pytest.raises(UnpricedModel):
+        await bare.models.resolve_fill_set(ctx, new_id(), [MAIN], Eligibility())
+    resolver = ModelResolverTableImpl(ModelPricesNullImpl(), ResolverOptions())
+    with pytest.raises(UnpricedModel):
+        await resolver.resolve(ctx, [SUMMARIZER], Eligibility())
 
 
 async def test_a_role_resolves_within_the_sessions_eligibility() -> None:
-    resolver = ModelResolverTableImpl(PricingTableImpl(), ResolverOptions(table=TABLE))
+    resolver = ModelResolverTableImpl(Priced(SONNET, SOL, HAIKU), ResolverOptions(table=TABLE))
     ctx = context(Role.MEMBER)
     (main,) = await resolver.resolve(ctx, [MAIN], Eligibility(region="eu", zero_retention=True))
     assert (main.fill, main.fallbacks) == (REGIONAL, ()), "the one fill the session may run on"
@@ -117,40 +138,6 @@ async def test_a_role_resolves_within_the_sessions_eligibility() -> None:
         await resolver.resolve(ctx, ["title"], Eligibility())
     with pytest.raises(UnresolvedRole):
         await resolver.resolve(ctx, [SUMMARIZER], Eligibility(zero_retention=True))
-
-
-def test_a_price_costs_usage_in_its_classes_and_its_long_tier() -> None:
-    rates = Rates(
-        input=Decimal(2),
-        cache_read=Decimal("0.2"),
-        cache_write=Decimal("2.5"),
-        output=Decimal(10),
-        thinking=Decimal(10),
-    )
-    usage = Usage(
-        input=1_000_000, cache_read=1_000_000, cache_write=0, output=100_000, thinking=100_000
-    )
-    assert rates.cost(usage) == Decimal("4.2")
-    long = rates.model_copy(update={"input": Decimal(4)})
-    price = Price(
-        provider=ProviderName.OPENAI,
-        model="m",
-        rates=rates,
-        long_context_above=1_500_000,
-        long_context=long,
-        as_of=LIST_PRICES[0].as_of,
-    )
-    assert price.cost(usage) == Decimal("6.2"), "two million prompt tokens pass the tier"
-    assert price.rates_for(1_500_000) is rates and price.rates_for(1_500_001) is long
-    assert price.highest is long
-    with pytest.raises(ValueError):
-        Price(
-            provider=ProviderName.OPENAI,
-            model="m",
-            rates=rates,
-            long_context_above=10,
-            as_of=price.as_of,
-        )
 
 
 # A session's fill set, and its switches.
@@ -165,7 +152,7 @@ async def test_a_session_resolves_its_fills_once(managers: Managers) -> None:
         ctx, session_id, [MAIN, SUMMARIZER], Eligibility()
     )
     assert first.version == 1 and first.reason is None and first.switched_by is None
-    assert first.fill_for(MAIN) == DEFAULT_TABLE[MAIN].fill
+    assert first.fill_for(MAIN) == DEFAULT_MAIN.fill
     again = await managers.models.resolve_fill_set(
         ctx, session_id, [MAIN], Eligibility(region="eu")
     )
@@ -183,7 +170,7 @@ async def test_a_switch_writes_a_new_version_and_a_switched_step_naming_both_fil
     first = await managers.models.resolve_fill_set(
         ctx, session_id, [MAIN, SUMMARIZER], Eligibility()
     )
-    to = DEFAULT_TABLE[MAIN].fallbacks[0]
+    to = DEFAULT_MAIN.fallbacks[0]
     second = await managers.models.switch_fill(
         ctx, session_id, epoch, loop_id, MAIN, to, SwitchReason.FALLBACK
     )
@@ -219,7 +206,7 @@ async def test_a_run_that_lost_its_claim_switches_nothing(managers: Managers) ->
 @pytest.mark.parametrize(
     "role,to,refused",
     [
-        (MAIN, DEFAULT_TABLE[MAIN].fill, ValidationFailed),  # the fill it holds
+        (MAIN, DEFAULT_MAIN.fill, ValidationFailed),  # the fill it holds
         ("title", SOL, ValidationFailed),  # a role the set does not hold
         (MAIN, UNLISTED, UnpricedModel),
     ],
@@ -244,15 +231,14 @@ async def test_a_switch_stays_inside_the_sessions_eligibility(managers: Managers
     ineligible = SOL.model_copy(update={"eligibility": Eligibility(region="us")})
     eligible = SOL.model_copy(update={"eligibility": Eligibility(region="eu")})
     lighter = eligible.model_copy(update={"effort": Effort.LOW})
-    pricing = PricingTableImpl()
     models = ModelsManagerImpl(
         FillSetStorageMemoryImpl(),
         managers.steps,
         managers.tenancy,
         ModelResolverTableImpl(
-            pricing,
+            Priced(eligible, ineligible, lighter),
             ResolverOptions(
-                table={MAIN: RoleTable(fill=eligible, fallbacks=(ineligible, lighter))}
+                table=(RoleFill(role=MAIN, fill=eligible, fallbacks=(ineligible, lighter)),)
             ),
         ),
         ModelsOptions(),
@@ -272,7 +258,7 @@ async def test_a_fallback_takes_the_next_declared_fill_it_has_not_tried(managers
     ctx = context(Role.MEMBER)
     session_id, epoch, loop_id = await a_run(managers, ctx)
     head = await managers.models.resolve_fill_set(ctx, session_id, [MAIN], Eligibility())
-    declared = DEFAULT_TABLE[MAIN].fallbacks
+    declared = DEFAULT_MAIN.fallbacks
     assert rules.next_fallback(head, MAIN) == declared[0]
     assert rules.next_fallback(head, MAIN, tried=declared) is None
     assert rules.next_fallback(head, "title") is None
@@ -306,7 +292,7 @@ async def test_a_version_a_crash_left_unwritten_is_written_from_its_step(
         storage,
         managers.steps,
         managers.tenancy,
-        ModelResolverTableImpl(PricingTableImpl(), ResolverOptions()),
+        ModelResolverTableImpl(EVERY_DEFAULT, ResolverOptions()),
         ModelsOptions(),
     )
     await models.resolve_fill_set(ctx, session_id, [MAIN], Eligibility())
@@ -314,17 +300,18 @@ async def test_a_version_a_crash_left_unwritten_is_written_from_its_step(
         await models.switch_fill(ctx, session_id, epoch, loop_id, MAIN, SOL, SwitchReason.UPGRADE)
     (step,) = await switches(managers, ctx, session_id)
     assert (await models.get_fill_set(ctx, session_id)).version == 1, "the step is ahead"
-    settled = await models.settle_switch(ctx, step)
-    assert (settled.version, settled.switched_by, settled.fill_for(MAIN)) == (2, step.id, SOL)
-    assert await models.settle_switch(ctx, step) == settled, "settled twice, written once"
-    assert await models.get_fill_set(ctx, session_id) == settled
-    with pytest.raises(ValidationFailed):
-        await models.settle_switch(ctx, make_message(session_id))
     assert isinstance(step.header, SwitchedHeader)
-    later = step.header.fills.model_copy(update={"fill_set_version": 4})
-    ahead = step.model_copy(update={"id": new_id(), "header": SwitchedHeader(fills=later)})
+    fills, at = step.header.fills, step.created_at
+    settled = await models.settle_switch(ctx, session_id, step.id, fills, at)
+    assert (settled.version, settled.switched_by, settled.fill_for(MAIN)) == (2, step.id, SOL)
+    again = await models.settle_switch(ctx, session_id, step.id, fills, at)
+    assert again == settled, "settled twice, written once"
+    assert await models.get_fill_set(ctx, session_id) == settled
     with pytest.raises(PreconditionFailed):
-        await models.settle_switch(ctx, ahead)
+        await models.settle_switch(ctx, session_id, new_id(), fills, at)
+    later = fills.model_copy(update={"fill_set_version": 4})
+    with pytest.raises(PreconditionFailed):
+        await models.settle_switch(ctx, session_id, new_id(), later, at)
 
 
 async def test_a_viewer_reads_and_switches_nothing(managers: Managers) -> None:

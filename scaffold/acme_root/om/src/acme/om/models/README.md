@@ -17,8 +17,9 @@ is one of the kinds of thing [Acme is made of](../../../../README.md).
   and each switch makes the next.
 - **Resolver**: what picks a session's fills, from a table a product
   sets. The engine never picks a model itself.
-- **Price**: what a model's tokens cost at list price. Every model the
-  resolver can pick has one, kept with the budgets.
+- **Prices**: whether a model has a price of its own in the one source
+  of prices, which the budgets keep. The resolver asks before it picks
+  a model; a root that wires no prices lets no model be picked.
 
 ## What can happen
 

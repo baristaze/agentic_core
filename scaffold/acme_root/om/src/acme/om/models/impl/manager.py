@@ -1,4 +1,5 @@
 from collections.abc import Collection, Sequence
+from datetime import datetime
 from uuid import UUID
 
 from acme.om.base import Platform, new_id, utcnow
@@ -8,7 +9,14 @@ from acme.om.models import rules
 from acme.om.models.manager import ModelsManagerInterface
 from acme.om.models.resolver import ModelResolverInterface
 from acme.om.models.storage import FillSetStorageInterface
-from acme.om.models.types.fill import Eligibility, Fill, FillSet, ModelRole, SwitchReason
+from acme.om.models.types.fill import (
+    Eligibility,
+    Fill,
+    FillSet,
+    FillSwitch,
+    ModelRole,
+    SwitchReason,
+)
 from acme.om.steps import StepsManagerInterface
 from acme.om.steps.types.header import SwitchedHeader
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
@@ -81,6 +89,7 @@ class ModelsManagerImpl(ModelsManagerInterface):
         if refusal is not None:
             raise ValidationFailed(refusal)
         self._resolver.check(to)
+        fills = rules.fill_switch(head, role, to, reason)
         step = Step(
             id=new_id(),
             created_at=utcnow(),
@@ -89,12 +98,12 @@ class ModelsManagerImpl(ModelsManagerInterface):
             type=StepType.SWITCHED,
             actor=Actor.ENGINE,
             origin=Origin.ENGINE,
-            header=SwitchedHeader(fills=rules.fill_switch(head, role, to, reason)),
+            header=SwitchedHeader(fills=fills),
         )
         # The history first: a run that lost its claim is refused here, and
         # nothing changes. The version follows the step it announces.
         (stored,) = await self._steps.append_steps(ctx, session_id, epoch, [step])
-        return await self._record(ctx, head, stored)
+        return await self._record(ctx, head, stored.id, fills, stored.created_at)
 
     async def fall_back(
         self,
@@ -114,22 +123,27 @@ class ModelsManagerImpl(ModelsManagerInterface):
             ctx, session_id, epoch, loop_id, role, to, SwitchReason.FALLBACK
         )
 
-    async def settle_switch(self, ctx: TenantContext, step: Step) -> FillSet:
+    async def settle_switch(
+        self,
+        ctx: TenantContext,
+        session_id: UUID,
+        step_id: UUID,
+        fills: FillSwitch,
+        at: datetime,
+    ) -> FillSet:
         ctx.require(Permission.WRITE)
-        if not isinstance(step.header, SwitchedHeader):
-            raise ValidationFailed(f"step {step.id} is not a fill switch")
-        version = step.header.fills.fill_set_version
-        stored = await self._storage.read_fill_set(ctx.org_id, step.session_id, version)
+        version = fills.fill_set_version
+        stored = await self._storage.read_fill_set(ctx.org_id, session_id, version)
         if stored is not None:
-            if stored.switched_by != step.id:
-                raise PreconditionFailed(f"version {version} is another switch's than {step.id}")
+            if stored.switched_by != step_id:
+                raise PreconditionFailed(f"version {version} is another switch's than {step_id}")
             return stored
-        head = await self._head(ctx, step.session_id)
+        head = await self._head(ctx, session_id)
         if head.version != version - 1:
             raise PreconditionFailed(
-                f"step {step.id} announces version {version}, and the head is {head.version}"
+                f"step {step_id} announces version {version}, and the head is {head.version}"
             )
-        return await self._record(ctx, head, step)
+        return await self._record(ctx, head, step_id, fills, at)
 
     async def purge_tenant(self, ctx: TenantContext) -> int:
         ctx.require(Permission.WRITE)
@@ -143,11 +157,11 @@ class ModelsManagerImpl(ModelsManagerInterface):
             raise NotFound(f"session {session_id} has no fill set")
         return head
 
-    async def _record(self, ctx: TenantContext, head: FillSet, step: Step) -> FillSet:
-        """Writes the version `step` announces over `head`; written before, it
-        is answered as stored."""
-        if not isinstance(step.header, SwitchedHeader):
-            raise ValidationFailed(f"step {step.id} is not a fill switch")
-        version = rules.switched(head, step.header.fills, step.id, step.created_at)
+    async def _record(
+        self, ctx: TenantContext, head: FillSet, step_id: UUID, fills: FillSwitch, at: datetime
+    ) -> FillSet:
+        """Writes the version the step `step_id` announces over `head`; one
+        written before is answered as stored, since its id is the step's."""
+        version = rules.switched(head, fills, step_id, at)
         await self._storage.write_fill_set(ctx.org_id, version)
         return version

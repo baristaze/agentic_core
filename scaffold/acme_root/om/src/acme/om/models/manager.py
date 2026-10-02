@@ -11,11 +11,18 @@ its claim writes neither."""
 
 from abc import ABC, abstractmethod
 from collections.abc import Collection, Sequence
+from datetime import datetime
 from uuid import UUID
 
 from acme.om.context import TenantContext
-from acme.om.models.types.fill import Eligibility, Fill, FillSet, ModelRole, SwitchReason
-from acme.om.steps.types.step import Step
+from acme.om.models.types.fill import (
+    Eligibility,
+    Fill,
+    FillSet,
+    FillSwitch,
+    ModelRole,
+    SwitchReason,
+)
 
 
 class ModelsManagerInterface(ABC):
@@ -76,12 +83,21 @@ class ModelsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def settle_switch(self, ctx: TenantContext, step: Step) -> FillSet:
-        """The version a `switched` step announced, written when a crash came
-        between the step and it; the stored one when it is there. A step that
-        is not a fill switch is `ValidationFailed`. One that announces a
-        version past the next, or a version another switch holds, is
-        `PreconditionFailed`."""
+    async def settle_switch(
+        self,
+        ctx: TenantContext,
+        session_id: UUID,
+        step_id: UUID,
+        fills: FillSwitch,
+        at: datetime,
+    ) -> FillSet:
+        """The version the `switched` step `step_id` of the session
+        announced, as its header names it (`fills`) at the time it was
+        written (`at`): written when a crash came between the step and it,
+        the stored one when it is there. A step that announces a version
+        past the next, or a version another switch holds, is
+        `PreconditionFailed`. The manager names no step type, so a step's
+        header can name a fill without importing it."""
         ...
 
     @abstractmethod
