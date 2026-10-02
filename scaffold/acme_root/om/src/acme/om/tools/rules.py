@@ -263,12 +263,17 @@ def response(
     request: Step,
     text: str,
     failure: ToolFailure | None = None,
+    *,
+    limit: int,
 ) -> Step:
     """The response step to a request: a result, or a failure with its class
-    and the advice the model reads with it."""
+    and the advice the model reads with it. The text is bounded to `limit`
+    characters whatever it holds, a failure's included; the class and the
+    advice are never cut."""
     header = request.header
     if not isinstance(header, ToolRequestHeader):
         raise ValueError(f"step {request.id} is not a tool request")
+    text = bounded(text, limit)
     if failure is not None:
         text = f"{failure.value}: {text}\n{ADVICE[failure]}"
     return Step(

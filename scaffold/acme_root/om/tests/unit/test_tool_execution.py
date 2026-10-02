@@ -170,6 +170,30 @@ async def test_the_tree_ends_at_its_deadline_on_a_host_with_no_ps(
     assert not _running(int(pid))
 
 
+async def test_a_failures_text_is_bounded_as_a_result_is(tmp_path: Path) -> None:
+    """A command that prints a great deal and runs out of time: its failure
+    reaches the model cut to the bound, with its class and its advice."""
+    ctx = context(Role.SERVICE, make_org())
+    tools = on_the_host(tmp_path, ctx, ToolsOptions(max_output_chars=300))
+    registry = registry_of(Command("build", timeout=timedelta(hours=1)))
+    workspace = await tools.manager.prepare_workspace(ctx, new_id(), HOST_SPEC)
+    script = "head -c 100000 /dev/zero | tr '\\0' x; sleep 600"
+    found = await put_call(tools.steps, ctx, "build", {"argv": ["sh", "-c", script]}, "execute")
+    response = await tools.manager.execute(
+        ctx,
+        registry,
+        found.request,
+        found.call_input,
+        workspace,
+        epoch=found.epoch,
+        tree_deadline=utcnow() + timedelta(seconds=2),
+    )
+    text = result_text(response)
+    assert failure_of(response) is ToolFailure.TIMEOUT
+    assert "[cut: 300 of" in text and text.endswith(ADVICE[ToolFailure.TIMEOUT])
+    assert len(text) < 300 + 200
+
+
 def _running(pid: int) -> bool:
     for _ in range(30):
         try:

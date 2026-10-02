@@ -49,7 +49,6 @@ from acme.om.tools.rules import (
     DEFAULT_CEILINGS,
     STALE_STATUS,
     approver_roles,
-    bounded,
     call_deadline,
     command_text,
     decide,
@@ -269,8 +268,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         if not isinstance(output, tool.spec.output_model):
             detail = f"{tool.spec.name} answered {type(output).__name__}, not its output type"
             return self._answer(request, detail, ToolFailure.PERMANENT)
-        text = bounded(output.model_dump_json(), self._options.max_output_chars)
-        return self._answer(request, text)
+        return self._answer(request, output.model_dump_json())
 
     async def recover(
         self,
@@ -313,8 +311,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
             return self._answer(request, detail, ToolFailure.INTERRUPTED)
         if recorded.timed_out:
             return self._answer(request, command_text(recorded), ToolFailure.TIMEOUT)
-        text = bounded(recovered_text(recorded), self._options.max_output_chars)
-        return self._answer(request, text)
+        return self._answer(request, recovered_text(recorded))
 
     async def start_job(
         self,
@@ -521,7 +518,8 @@ class ToolsManagerImpl(ToolsManagerInterface):
                 return ToolFailure.PERMANENT, f"{tool.spec.name} failed: {type(error).__name__}"
 
     def _answer(self, request: Step, text: str, failure: ToolFailure | None = None) -> Step:
-        return response(new_id(), self._clock(), request, text, failure)
+        limit = self._options.max_output_chars
+        return response(new_id(), self._clock(), request, text, failure, limit=limit)
 
     def _seconds_until(self, moment: datetime) -> float:
         return max((moment - self._clock()).total_seconds(), 0.0)
