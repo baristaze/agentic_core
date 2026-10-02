@@ -18,11 +18,22 @@ class AgentSessions(IdentifiableMixin, TrackableMixin, Base):
         # status is cached for exactly this read.
         Index("ix_agent_sessions_org_id_id", "org_id", "id"),
         Index("ix_agent_sessions_org_id_status_id", "org_id", "status", "id"),
+        # A parent's children by id: the cancel that cascades reads them.
+        Index("ix_agent_sessions_org_id_parent_id_id", "org_id", "parent_id", "id"),
     )
     title: Mapped[str]
     participants: Mapped[list[str]]
+    kind: Mapped[str]
+    kind_version: Mapped[int]
+    authority: Mapped[dict[str, Any]]
+    tools: Mapped[list[str]]
     parent_id: Mapped[UUID | None]
     root_id: Mapped[UUID]
+    depth: Mapped[int]
+    handed_off_from: Mapped[UUID | None]
+    spender: Mapped[dict[str, Any] | None]
+    speaker: Mapped[dict[str, Any] | None]
+    untrusted: Mapped[bool]
     status: Mapped[str]
     park: Mapped[dict[str, Any] | None]
     # The same width as a step's seq.

@@ -3,13 +3,16 @@ from datetime import datetime
 from uuid import UUID
 
 from acme.om.agent_sessions.manager import AgentSessionsManagerInterface
-from acme.om.agent_sessions.rules import announces, projected
+from acme.om.agent_sessions.rules import announces, lineage, projected
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.types.agent_session import (
     AgentSession,
     AgentSessionPage,
     SessionStatus,
 )
+from acme.om.attribution.rules import fold
+from acme.om.attribution.types.authority import Authority
+from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import Platform, utcnow
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import NotFound, PreconditionFailed, TenantMismatch, ValidationFailed
@@ -44,21 +47,22 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
 
     async def create_session(self, ctx: TenantContext, session: AgentSession) -> AgentSession:
         ctx.require(Permission.WRITE)
-        root_id = session.id
-        if session.parent_id is not None:
-            parent = await self._storage.read_session(ctx.org_id, session.parent_id)
-            if parent is None:
-                raise ValidationFailed(f"no parent session {session.parent_id}")
-            root_id = parent.root_id
+        source: AgentSession | None = None
+        came_from = session.parent_id or session.handed_off_from
+        if came_from is not None:
+            found = await self._storage.read_session(ctx.org_id, came_from)
+            if found is None:
+                raise ValidationFailed(f"no agent session {came_from} to come from")
+            source = await self._at_head(ctx, found)
         now = self._clock()
         created = AgentSession.model_validate(
             {
                 **session.model_dump(),
+                **lineage(source, session),
                 "created_at": now,
                 "updated_at": now,
                 "created_by": ctx.user_id,
                 "updated_by": ctx.user_id,
-                "root_id": root_id,
                 "status": SessionStatus.IDLE,
                 "park": None,
                 "status_seq": 0,
@@ -79,6 +83,18 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
     async def get_session(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
         ctx.require(Permission.READ)
         return await self._read(ctx, session_id)
+
+    async def get_session_at_head(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
+        ctx.require(Permission.READ)
+        return await self._at_head(ctx, await self._read(ctx, session_id))
+
+    async def get_children(
+        self, ctx: TenantContext, parent_id: UUID, after: UUID | None, limit: int
+    ) -> AgentSessionPage:
+        ctx.require(Permission.READ)
+        limit = max(1, min(limit, self._options.max_limit))
+        rows = await self._storage.read_children(ctx.org_id, parent_id, after, limit + 1)
+        return AgentSessionPage(items=tuple(rows[:limit]), has_more=len(rows) > limit)
 
     async def get_sessions(
         self,
@@ -121,6 +137,29 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
             if not page.has_more:
                 return session
 
+    async def assign_principal(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
+        ctx.require(Permission.WRITE)
+        session = await self._read(ctx, session_id)
+        if session.parent_id is not None:
+            raise ValidationFailed(f"agent session {session_id} runs under its parent's principal")
+        principal = Principal(kind=PrincipalKind.PERSON, id=ctx.user_id)
+        if session.authority.principal == principal:
+            return session
+        now = self._clock()
+        taken = AgentSession.model_validate(
+            {
+                **session.model_dump(),
+                "authority": Authority(mode=session.authority.mode, principal=principal),
+                "version": session.version + 1,
+                "updated_at": now,
+                "updated_by": ctx.user_id,
+            }
+        )
+        rows = (versioned_row(ctx, UPDATED, taken.id, taken.version),)
+        await self._storage.write_session(ctx.org_id, taken, session.version, rows)
+        await self._relay_all(ctx, rows)
+        return taken
+
     async def archive_session(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
         ctx.require(Permission.WRITE)
         session = await self._read(ctx, session_id)
@@ -148,6 +187,18 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         if session is None:
             raise NotFound(f"agent session {session_id} not found")
         return session
+
+    async def _at_head(self, ctx: TenantContext, session: AgentSession) -> AgentSession:
+        """`session` with its speaker and mark folded over the steps after
+        its cache, page by page; nothing else changes."""
+        speaker, marked = session.speaker, session.untrusted
+        after = session.status_seq
+        while True:
+            page = await self._steps.get_steps(ctx, session.id, after, self._options.project_batch)
+            speaker, marked = fold(speaker, marked, page.items)
+            if not page.has_more or not page.items:
+                return session.model_copy(update={"speaker": speaker, "untrusted": marked})
+            after = page.items[-1].seq
 
     async def _relay_all(self, ctx: TenantContext, rows: tuple[OutboxRow, ...]) -> None:
         """The write has committed; a relay that fails is left to the sweep."""

@@ -22,6 +22,15 @@ class AgentSessionStorageMemoryImpl(MemoryStorageBase, AgentSessionStorageInterf
     async def read_session(self, org_id: UUID, session_id: UUID) -> AgentSession | None:
         return self._get(self._sessions, org_id, session_id)
 
+    async def read_children(
+        self, org_id: UUID, parent_id: UUID, after: UUID | None, limit: int
+    ) -> list[AgentSession]:
+        return [
+            s
+            for s in self._rows(self._sessions, org_id)
+            if s.parent_id == parent_id and (after is None or s.id > after)
+        ][:limit]
+
     async def read_sessions(
         self, org_id: UUID, status: SessionStatus | None, after: UUID | None, limit: int
     ) -> list[AgentSession]:

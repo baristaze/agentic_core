@@ -22,6 +22,14 @@ class AgentSessionStorageInterface(ABC):
     async def read_session(self, org_id: UUID, session_id: UUID) -> AgentSession | None: ...
 
     @abstractmethod
+    async def read_children(
+        self, org_id: UUID, parent_id: UUID, after: UUID | None, limit: int
+    ) -> list[AgentSession]:
+        """The sessions `parent_id` spawned, by id, strictly after `after`,
+        at most `limit` of them."""
+        ...
+
+    @abstractmethod
     async def read_sessions(
         self, org_id: UUID, status: SessionStatus | None, after: UUID | None, limit: int
     ) -> list[AgentSession]:

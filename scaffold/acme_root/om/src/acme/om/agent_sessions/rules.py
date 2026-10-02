@@ -1,5 +1,6 @@
-"""Pure rules of a session: its status as a projection of its steps. Values
-in, values out; no clock, no storage.
+"""Pure rules of a session: its status as a projection of its steps, and
+what a new session takes from the session it came from. Values in, values
+out; no clock, no storage.
 
 The status moves on the steps alone:
 
@@ -15,14 +16,22 @@ An archived session records what arrives and wakes for nothing else. A
 principal's message unarchives it, and wakes it as any input does. A
 message to a parked session waits for the resume; what decides that a
 message is the very thing the park waits for writes the control that
-clears it."""
+clears it.
+
+The cache keeps attribution's two answers beside the status, folded over
+the same steps (`attribution.rules.fold`): the speaker, which a principal's
+message moves, and the untrusted mark, which the first data sets for
+good."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
+from acme.om.attribution.rules import call_principal, fold, spender_of
+from acme.om.attribution.types.authority import Authority
 from acme.om.steps.types.header import (
     ControlCommand,
     ControlHeader,
@@ -90,6 +99,7 @@ def projected(
     state = Projection(session.status, session.park, session.archived_at is not None)
     for step in unread:
         state = after_step(state, step)
+    speaker, untrusted = fold(session.speaker, session.untrusted, unread)
     archived_at = session.archived_at if state.archived else None
     return AgentSession.model_validate(
         {
@@ -97,6 +107,8 @@ def projected(
             "status": state.status,
             "park": state.park,
             "archived_at": archived_at,
+            "speaker": speaker,
+            "untrusted": untrusted,
             "status_seq": unread[-1].seq,
             "version": session.version + 1,
             "updated_at": now,
@@ -113,6 +125,43 @@ def announces(before: AgentSession, after: AgentSession, steps: Sequence[Step]) 
         (before.status, before.park, before.archived_at)
         != (after.status, after.park, after.archived_at)
     ) or any(step.type is StepType.LOOP_ENDED and step.seq > before.status_seq for step in steps)
+
+
+def lineage(source: AgentSession | None, session: AgentSession) -> dict[str, Any]:
+    """What a new session takes, whatever its maker sent. `source` is the
+    session it came from, with its speaker and mark brought up to its
+    history, or None for a root.
+
+    A root starts on its own: depth 1, no spender, no speaker, unmarked. A
+    session that came from another takes its mark, and runs under the
+    principal that session's own calls run under, never one its maker
+    names. A child also joins its parent's tree one level down, pays as its
+    parent pays, and may call only the tools both its kind and its parent
+    may: no child holds more than its parent. A session handed over roots a
+    tree of its own, and pays as the principal who confirms its work."""
+    if source is None:
+        return {
+            "root_id": session.id,
+            "depth": 1,
+            "spender": None,
+            "speaker": None,
+            "untrusted": False,
+        }
+    principal = call_principal(source.authority, source.speaker)
+    taken = {
+        "speaker": None,
+        "untrusted": source.untrusted,
+        "authority": Authority(mode=session.authority.mode, principal=principal),
+    }
+    if session.parent_id is None:
+        return {**taken, "root_id": session.id, "depth": 1, "spender": None}
+    return {
+        **taken,
+        "root_id": source.root_id,
+        "depth": source.depth + 1,
+        "spender": spender_of(source.spender, source.speaker),
+        "tools": tuple(tool for tool in session.tools if tool in source.tools),
+    }
 
 
 def _seq(step: Step) -> int:

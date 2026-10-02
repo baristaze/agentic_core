@@ -2,9 +2,13 @@
 ends, and an input that wakes the session starts the next one.
 
 The entity holds what no step does: who made it, its title, its
-participants, its parent and its root. Its status is a projection of its
-steps, cached here for queries; the steps are the truth, and the cache is
-rebuilt from them (`agent_sessions.rules.projected`). In code it is
+participants, its agent kind and version, its authority and the tools it
+may call, its parent and its root, and the session that handed it over.
+Its status is a projection of its steps, cached here for queries; the
+steps are the truth, and the cache is rebuilt from them
+(`agent_sessions.rules.projected`). The cache also holds two answers of
+attribution: the speaker, the principal behind the latest
+principal-authored input, and the untrusted mark. In code it is
 `AgentSession`, never the sign-in `Session` of the tenancy namespace."""
 
 from datetime import datetime
@@ -14,6 +18,8 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
+from acme.om.attribution.types.authority import Authority
+from acme.om.attribution.types.principal import MAX_KIND, Principal
 from acme.om.base import Identifiable, Platform, Trackable
 from acme.om.steps.types.header import Park
 
@@ -33,13 +39,36 @@ class AgentSession(Identifiable, Trackable):
         "status_seq",
         "archived_at",
         "version",
+        "depth",
+        "spender",
+        "speaker",
+        "untrusted",
     )
-    """The root follows the parent, and the rest is the projection's."""
+    """The root, the depth, and the spender follow where the session came
+    from, and the rest is the projection's. A session that came from
+    another also takes its authority's principal and, for a child, the cut
+    of its tools from there (`agent_sessions.rules.lineage`)."""
 
     title: str = Field(min_length=1, max_length=200)
     participants: tuple[UUID, ...] = ()  # the users the session is shared with
+    kind: str = Field(min_length=1, max_length=MAX_KIND)  # its agent kind, pinned
+    kind_version: int = Field(ge=1)
+    authority: Authority  # whose authority its tool calls run under
+    # Its registry: the tools it may call, by name, its kind's, cut to its
+    # parent's for a child.
+    tools: tuple[str, ...] = ()
     parent_id: UUID | None = None  # the session that spawned this one
     root_id: UUID  # its tree's root; its own id when it has no parent
+    depth: int = Field(default=1, ge=1)  # 1 for a root; a child is its parent's plus one
+    handed_off_from: UUID | None = None  # the session whose agent handed it the work
+    # Who pays until a principal speaks in it: what a child's spawn passed.
+    spender: Principal | None = None
+    # The principal behind the latest principal-authored input the cache
+    # has read.
+    speaker: Principal | None = None
+    # The mark: set by the first data, passed from where it came, never
+    # cleared.
+    untrusted: bool = False
     status: SessionStatus = SessionStatus.IDLE
     park: Park | None = None  # what a parked loop waits on
     # The last seq the cached status has read: the projection goes on from
@@ -55,6 +84,12 @@ class AgentSession(Identifiable, Trackable):
     def _a_park_is_the_parked_status(self) -> Self:
         if (self.park is not None) != (self.status is SessionStatus.PARKED):
             raise ValueError("a session carries a park exactly while it is parked")
+        return self
+
+    @model_validator(mode="after")
+    def _one_lineage(self) -> Self:
+        if self.parent_id is not None and self.handed_off_from is not None:
+            raise ValueError("a session is spawned or handed over, not both")
         return self
 
 

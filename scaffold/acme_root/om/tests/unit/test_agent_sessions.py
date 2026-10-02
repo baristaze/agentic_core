@@ -10,7 +10,13 @@ import pytest
 from contracts.agent_session_storage import make_session
 from contracts.doubles import context
 from contracts.factories import make_org
-from contracts.step_storage import make_message, make_parked, make_request, make_response
+from contracts.step_storage import (
+    a_person,
+    make_message,
+    make_parked,
+    make_request,
+    make_response,
+)
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.om.agent_sessions.impl.manager import AgentSessionsManagerImpl, AgentSessionsOptions
@@ -77,7 +83,7 @@ def parked_state(reason: ParkReason) -> Projection:
 
 def test_an_input_that_wakes_starts_a_loop_on_an_idle_session_and_no_other() -> None:
     message = make_message(SESSION)
-    quiet = a_step(StepType.EVENT, InputHeader(waking=False))
+    quiet = a_step(StepType.EVENT, InputHeader(waking=False, principal=a_person()))
     assert after_step(IDLE, message) == PENDING
     assert after_step(IDLE, quiet) == IDLE
     assert after_step(RUNNING, message) == RUNNING
@@ -121,7 +127,7 @@ def test_a_control_clears_the_parks_it_names_and_no_other(
 
 def test_an_archived_session_records_events_and_a_message_unarchives_it() -> None:
     archived = Projection(SessionStatus.IDLE, None, archived=True)
-    event = a_step(StepType.EVENT, InputHeader(waking=True))
+    event = a_step(StepType.EVENT, InputHeader(waking=True, principal=a_person()))
     assert after_step(archived, event) == archived
     assert after_step(archived, make_message(SESSION)) == PENDING
 

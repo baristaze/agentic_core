@@ -21,16 +21,37 @@ class AgentSessionsManagerInterface(ABC):
     @abstractmethod
     async def create_session(self, ctx: TenantContext, session: AgentSession) -> AgentSession:
         """The create: the session lands idle, with no history yet, and is
-        announced. A session with a parent joins its parent's tree, and a
-        parent the tenant does not hold is `ValidationFailed`. The root, the
-        status, and the provenance are the manager's. An id written already
-        answers the session as stored."""
+        announced. A session with a parent joins its parent's tree, and one
+        handed over roots a tree of its own; a session to come from that the
+        tenant does not hold is `ValidationFailed`. What a session takes from
+        where it came is the manager's, read from that session's history as
+        it stands (`agent_sessions.rules.lineage`): its mark, the principal
+        its calls run under, and for a child its spender and the cut of its
+        tools, so no maker grants a child more than its parent holds. The
+        root, the depth, the status, and the provenance are the manager's
+        too. An id written already answers the session as stored."""
         ...
 
     @abstractmethod
     async def get_session(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
         """A session of the tenant; one another tenant holds is `NotFound`,
         as one that never existed is."""
+        ...
+
+    @abstractmethod
+    async def get_session_at_head(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
+        """The session with its speaker and its mark folded up to the head of
+        its history: the cache, then the steps after it. Nothing is written,
+        and the status and the version stay the cache's. What attribution
+        answers is read from it."""
+        ...
+
+    @abstractmethod
+    async def get_children(
+        self, ctx: TenantContext, parent_id: UUID, after: UUID | None, limit: int
+    ) -> AgentSessionPage:
+        """One page of the sessions `parent_id` spawned, by id, strictly
+        after `after`; `limit` is clamped."""
         ...
 
     @abstractmethod
@@ -53,6 +74,14 @@ class AgentSessionsManagerInterface(ABC):
         row that announces a change of status or the end of a loop. A writer
         that got there first is read again and the fold goes on from it.
         With nothing new, the session is answered as it is."""
+        ...
+
+    @abstractmethod
+    async def assign_principal(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
+        """The caller takes a session over: its tool calls run under them
+        from here. A steady session whose principal no longer holds parks
+        until a person does this. A child's principal is its parent's, and a
+        child is never taken over (`ValidationFailed`)."""
         ...
 
     @abstractmethod
