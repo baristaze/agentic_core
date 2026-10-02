@@ -207,6 +207,17 @@ def a_loop(session_id: UUID) -> list[Step]:
     return [message, request, response, call, result, make_parked(session_id, message.id)]
 
 
+def attributed(step: Step) -> Principal | None:
+    """Whom a step names: the principal of an input or a tool call, the
+    spender of a model request, and nobody for the rest."""
+    header = step.header
+    if isinstance(header, InputHeader | ToolRequestHeader):
+        return header.principal
+    if isinstance(header, ModelRequestHeader):
+        return header.spender
+    return None
+
+
 class StepStorageContract:
     @pytest.fixture
     def storage(self) -> StepStorageInterface:
@@ -249,6 +260,35 @@ class StepStorageContract:
             step.model_copy(update={"seq": n}) for n, step in enumerate(loop, start=1)
         ]
         assert await storage.read_steps(org, session, 0, 10) == list(appended)
+
+    async def test_a_loop_keeps_who_acted_on_whose_authority_and_who_paid(
+        self, storage: StepStorageInterface
+    ) -> None:
+        """What an audit reads survives the round trip: the actor of every
+        step, the principal of every input and tool call, the spender of
+        every model request, and the agent behind a tool call."""
+        org, session = new_id(), new_id()
+        asker, routed = a_person(), a_person()
+        message = make_message(session, principal=asker)
+        request = make_request(session, message.id, (message.id,), spender=asker)
+        response = make_response(session, message.id, request.id)
+        call = make_tool_request(session, message.id, response.id, principal=asker)
+        result = make_tool_response(session, message.id, call.id)
+        epoch = await storage.begin_run(org, session)
+        await storage.append_steps(org, session, epoch, [message, request, response, call, result])
+        await storage.append_inputs(org, session, [make_event(session, principal=routed)])
+        stored = await storage.read_steps(org, session, 0, 10)
+        assert [(step.actor, attributed(step)) for step in stored] == [
+            (Actor.PERSON, asker),
+            (Actor.ENGINE, asker),
+            (Actor.MODEL, None),
+            (Actor.AGENT, asker),
+            (Actor.ENGINE, None),
+            (Actor.EXTERNAL, routed),
+        ]
+        acted = stored[3].header
+        assert isinstance(acted, ToolRequestHeader)
+        assert acted.agent == AgentRef(kind="delivery", version=1, session_id=session)
 
     async def test_begin_run_takes_an_epoch_above_every_before(
         self, storage: StepStorageInterface
