@@ -75,9 +75,14 @@ LIST_PRICES = PriceTable(
         _openai("gpt-6-luna", ("0.10", "0.01", "0.125", "0.50"), ("0.20", "0.02", "0.25", "0.75")),
     ),
 )
-"""Anthropic's and OpenAI's list prices, read on 2 October 2026, for every
-model the engine's adapters name: the pinned Haiku snapshot beside its
-alias."""
+"""The list prices of every model the engine's adapters name, the pinned
+Haiku snapshot beside its alias, read on 2 October 2026 from the providers'
+own pricing pages: Anthropic's at
+https://platform.claude.com/docs/en/about-claude/pricing (a model of the 4.6
+generation or later bills its whole context at one rate) and OpenAI's at
+https://developers.openai.com/api/docs/pricing (its Standard tier, which
+lists a cache write and the rates past 272K prompt tokens). A new reading is
+a new version of the table."""
 
 
 class PricingTableImpl(PricingInterface):
