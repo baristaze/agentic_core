@@ -10,6 +10,7 @@ from starlette.requests import HTTPConnection
 
 from acme.services.api.services import (
     AdminServiceInterface,
+    AgentSessionsServiceInterface,
     EventsServiceInterface,
     MediaServiceInterface,
     RealtimeServiceInterface,
@@ -54,9 +55,14 @@ def realtime_service(connection: HTTPConnection) -> RealtimeServiceInterface:
     return services_of(connection).get_realtime_service()
 
 
+def agent_sessions_service(connection: HTTPConnection) -> AgentSessionsServiceInterface:
+    return services_of(connection).get_agent_sessions_service()
+
+
 TenancyService = Annotated[TenancyServiceInterface, Depends(tenancy_service)]
 AdminService = Annotated[AdminServiceInterface, Depends(admin_service)]
 EventsService = Annotated[EventsServiceInterface, Depends(events_service)]
 MediaService = Annotated[MediaServiceInterface, Depends(media_service)]
 RealtimeService = Annotated[RealtimeServiceInterface, Depends(realtime_service)]
 WebhooksService = Annotated[WebhooksServiceInterface, Depends(webhooks_service)]
+AgentSessionsService = Annotated[AgentSessionsServiceInterface, Depends(agent_sessions_service)]

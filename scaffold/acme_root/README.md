@@ -46,10 +46,10 @@ make migrate-check     # every role's ORM metadata against the migrated schema
 make test-integration  # the storage contracts over Postgres
 ```
 
-`scripts/dev.sh` runs the API, the worker, and the portal on the host
-with hot reload. A variable exported in the shell wins over `.env`, so
-a second checkout points the five `ACME_DATABASE_*` URLs at a
-database of its own. [deployment/local/README.md](deployment/local/README.md)
+`scripts/dev.sh` runs the API, the maintenance worker, the session
+runner, and the portal on the host with hot reload. A variable exported
+in the shell wins over `.env`, so a second checkout points the five
+`ACME_DATABASE_*` URLs at a database of its own. [deployment/local/README.md](deployment/local/README.md)
 works on one service at a time.
 
 ## Deploy and operate
@@ -73,6 +73,7 @@ follows by hand.
 - [integrations/](integrations/README.md): the identity provider, its twin, and the webhook check.
 - [services/api/](services/api/README.md): the API, its gateway, and the realtime socket.
 - [workers/maintenance/](workers/maintenance/README.md): the work queue's worker and the sweep.
+- [workers/session_runner/](workers/session_runner/README.md): the worker that runs the loops of agent sessions.
 - `apps/`: the [portal](apps/portal/README.md), the [CLI](apps/cli/README.md), and the
   [company site](apps/site/README.md).
 - `clients/`: [typescript/](clients/typescript/README.md), the one client every browser

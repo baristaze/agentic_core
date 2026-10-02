@@ -12,6 +12,7 @@ members = [
     "acme-maintenance",
     "acme-om",
     "acme-ops",
+    "acme-session-runner",
     "acme-workspace",
 ]
 
@@ -191,6 +192,27 @@ requires-dist = [
     { name = "aioboto3", specifier = ">=15.5" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pyyaml", specifier = ">=6.0" },
+]
+
+[[package]]
+name = "acme-session-runner"
+version = "0.1.0"
+source = { editable = "workers/session_runner" }
+dependencies = [
+    { name = "acme-infra" },
+    { name = "acme-integrations" },
+    { name = "acme-maintenance" },
+    { name = "acme-om" },
+    { name = "pydantic-settings" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "acme-infra", editable = "infra" },
+    { name = "acme-integrations", editable = "integrations" },
+    { name = "acme-maintenance", editable = "workers/maintenance" },
+    { name = "acme-om", editable = "om" },
+    { name = "pydantic-settings", specifier = ">=2.15" },
 ]
 
 [[package]]

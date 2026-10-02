@@ -8,6 +8,7 @@ from acme.integrations.root import IntegrationsInterface
 from acme.om.root import Managers
 from acme.services.api.services import (
     AdminServiceInterface,
+    AgentSessionsServiceInterface,
     EventsServiceInterface,
     MediaServiceInterface,
     RealtimeServiceInterface,
@@ -16,6 +17,7 @@ from acme.services.api.services import (
     WebhooksServiceInterface,
 )
 from acme.services.api.services.impl.admin import AdminServiceImpl
+from acme.services.api.services.impl.agent_sessions import AgentSessionsServiceImpl
 from acme.services.api.services.impl.events import EventsServiceImpl
 from acme.services.api.services.impl.media import MediaServiceImpl
 from acme.services.api.services.impl.realtime import RealtimeServiceImpl
@@ -32,6 +34,7 @@ class ServicesImpl(ServicesInterface):
         media: MediaServiceInterface,
         realtime: RealtimeServiceInterface,
         webhooks: WebhooksServiceInterface,
+        agent_sessions: AgentSessionsServiceInterface,
     ) -> None:
         self._tenancy = tenancy
         self._admin = admin
@@ -39,6 +42,7 @@ class ServicesImpl(ServicesInterface):
         self._media = media
         self._realtime = realtime
         self._webhooks = webhooks
+        self._agent_sessions = agent_sessions
 
     def get_tenancy_service(self) -> TenancyServiceInterface:
         return self._tenancy
@@ -58,6 +62,9 @@ class ServicesImpl(ServicesInterface):
     def get_webhooks_service(self) -> WebhooksServiceInterface:
         return self._webhooks
 
+    def get_agent_sessions_service(self) -> AgentSessionsServiceInterface:
+        return self._agent_sessions
+
 
 def build_services(
     managers: Managers,
@@ -76,4 +83,7 @@ def build_services(
             managers.tenancy, managers.events, infra.get_topics(), head_max_age
         ),
         webhooks=WebhooksServiceImpl(integrations.get_identity_provider(), infra.get_queues()),
+        agent_sessions=AgentSessionsServiceImpl(
+            managers.agent_sessions, managers.agents, managers.steps, managers.tools
+        ),
     )

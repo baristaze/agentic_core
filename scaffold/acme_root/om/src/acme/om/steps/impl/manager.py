@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from uuid import UUID
 
-from acme.om.attribution.rules import decided_by, principal_authored, said_by
+from acme.om.attribution.rules import decided_by, principal_authored, principal_of, said_by
 from acme.om.base import Platform
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import ValidationFailed
@@ -90,7 +90,8 @@ class StepsManagerImpl(StepsManagerInterface):
     def _said(self, ctx: TenantContext, steps: Sequence[Step]) -> list[Step]:
         """Each step in the name of the context that appends it: a principal's
         message is its user's, and a decision its user's, in its role."""
-        return [decided_by(said_by(step, ctx.user_id), ctx.user_id, ctx.role) for step in steps]
+        speaker = principal_of(ctx)
+        return [decided_by(said_by(step, speaker), ctx.user_id, ctx.role) for step in steps]
 
     def _bound(self, steps: Sequence[Step]) -> None:
         if len(steps) > self._options.max_append:

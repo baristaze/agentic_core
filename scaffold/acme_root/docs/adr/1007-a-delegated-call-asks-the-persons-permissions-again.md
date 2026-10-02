@@ -35,8 +35,14 @@ stop (`PrincipalLapsed`) until a person takes the session over.
 
 **The transition is the adopter's.** It is one operation of the
 adopter's tenancy manager, handed to the root. A root handed none wires
-the one that answers for nobody, so every tool call is refused rather
-than run on an authority nobody asked about.
+the tenancy manager's own, `member_context`: a person's role as their
+membership holds it at the call. It answers for no service principal,
+since the tenancy manager grants none, and for nobody who has left.
+
+**A key's cap holds at the call.** A message said on an API key records
+the key with its principal, whatever its caller wrote. A call made on it
+runs with the key as its credential and its role capped at the key's, and
+a key revoked or expired answers for nobody.
 
 **The decision is on the record.** A tool request names the principal it
 ran under and the mode that chose it.

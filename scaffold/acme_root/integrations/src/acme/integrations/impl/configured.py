@@ -21,6 +21,7 @@ from acme.integrations.model_providers.registry import (
     absent_model_providers,
     scripted_model_providers,
 )
+from acme.integrations.model_providers.scripted import read_script
 from acme.integrations.model_providers.types import ProviderName
 from acme.integrations.root import IntegrationsInterface
 from acme.integrations.settings import IntegrationsSettings
@@ -42,7 +43,8 @@ def model_providers_for(settings: IntegrationsSettings) -> ModelProvidersInterfa
     """Each provider's adapter, from settings. A live adapter with no platform
     key still serves a call that carries its own credential."""
     if settings.model_providers == "scripted":
-        return scripted_model_providers()
+        script = None if settings.model_script is None else read_script(settings.model_script)
+        return scripted_model_providers(script)
     if settings.model_providers == "live":
         timeout = timedelta(seconds=settings.model_timeout_seconds)
         return ModelProvidersOverImpl(

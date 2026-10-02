@@ -210,6 +210,16 @@ def lineage(source: AgentSession | None, session: AgentSession) -> dict[str, Any
     }
 
 
+def asks_for_run(before: AgentSession, after: AgentSession) -> bool:
+    """Whether a projection asks for a run of the session's loop: it made the
+    session pending, from idle, parked, or running. An input that wakes it,
+    an unlock that lets its park go, and a loop that ends with a waking input
+    undelivered each turn it pending once, so each asks once. A session
+    pending already has its run asked for, and a running one is held by the
+    run that writes its steps."""
+    return after.status is SessionStatus.PENDING and before.status is not SessionStatus.PENDING
+
+
 def wakes_at(before: AgentSession, after: AgentSession, steps: Sequence[Step]) -> Park | None:
     """The park a projection asks to be woken from at its retry time: one a
     `parked` step among the steps it read set, which the session still waits
