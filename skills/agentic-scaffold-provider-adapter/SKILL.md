@@ -47,7 +47,7 @@ the provider's is closer to, and its test.
 | `integrations/src/<name>/integrations/model_providers/types.py` | `<PROVIDER>` in `ProviderName` |
 | `integrations/src/<name>/integrations/impl/configured.py` | the adapter in the `live` registry of `model_providers_for` |
 | `integrations/src/<name>/integrations/settings.py` | `<provider>_api_key`, in the validator that reads empty or `off` as none, and `<provider>_base_url` |
-| `.env.example` | both settings under the model providers, as the others are |
+| `.env.example` | both settings under the model providers, as the others are, and the provider in the comment that names the `live` adapters |
 | `services/api/tests/test_settings.py`, `workers/maintenance/tests/test_settings.py` | both settings, with the reason the others give |
 | `integrations/tests/test_configured.py` | the live registry holds the adapter, and its key stays out of the settings' `repr` |
 | `integrations/src/<name>/integrations/model_providers/__init__.py`, `integrations/README.md` | the adapter beside the others |
@@ -58,8 +58,11 @@ the provider's is closer to, and its test.
    of the provider's own types leaves it. What does not survive is
    named as `Dropped`: thinking replays only to the model that thought
    it, with its signature, and a cache marker means nothing to a
-   provider that caches on its own. A stop reason the provider adds
-   later maps to none, so its reply is recorded as truncated.
+   provider that caches on its own, and an effort level the provider
+   has no word for is left out and named, as `Effort` says. A stop
+   reason the provider adds later maps to none, so its reply is
+   recorded as truncated; one that says the provider failed is a
+   failure, read into its kind.
 2. `classify` reads a failure's kind from its message as well as its
    status. The adapter retries nothing, and its client keeps no retries
    of its own. A call's credential, when it carries one, is used in
@@ -69,13 +72,17 @@ the provider's is closer to, and its test.
    `live` registry refuses a provider with no adapter.
 4. The tests read recorded payloads and reach no network: a real
    streamed response with tool use, recorded once by a person with a
-   key, or the provider's documented example where none was recorded;
-   each error the provider documents, read into its kind; usage in
+   key, or else the provider's documented examples, assembled into its
+   stream's shape where it documents no stream; each error the provider
+   documents, read into its kind, and each other kind by the status and
+   message `classify` reads, the fixture saying it is not the
+   provider's own; usage in
    disjoint classes; a request translated both ways, thinking from
    another provider dropped and named; and a credential on the call
    used in place of the platform's key.
-5. A model of this provider reaches a call only through a fill, and a
-   fill's model needs a price row: `agentic-scaffold-model-role`.
+5. This skill adds no fill and no price row. A model of this provider
+   reaches a call only through a fill, and a fill's model needs a price
+   row: `agentic-scaffold-model-role`.
 
 Then the gate, `make check`, as After writing in the conventions
 runs it.
