@@ -48,6 +48,8 @@ from acme.om.models.types.fill import (
     RoleFill,
     SwitchReason,
 )
+from acme.om.privacy.impl.artifacts import ArtifactSealKeysImpl
+from acme.om.privacy.impl.keys import SessionKeysImpl
 from acme.om.root import build_managers
 from acme.om.steps import StepsManagerInterface
 from acme.om.steps.types.content import Content, TextBlock, ToolResultBlock
@@ -64,7 +66,7 @@ from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.windows import rules
 from acme.om.windows.gate import CallGateInterface
 from acme.om.windows.impl.gate import CallGateNullImpl
-from acme.om.windows.impl.hashes import PromptHashMemoryImpl
+from acme.om.windows.impl.hashes import PromptHashMemoryImpl, PromptHashNullImpl
 from acme.om.windows.impl.manager import WindowsManagerImpl, WindowsOptions
 from acme.om.windows.types.kind import KindPrompts
 from acme.om.windows.types.policy import CompactionPolicy
@@ -200,15 +202,21 @@ def an_engine(tmp_path: Path, table: Sequence[RoleFill] = NARROWING) -> Engine:
     )
     providers = scripted_model_providers()
     gate, hashes = Gate(), PromptHashMemoryImpl()
+    seal = ArtifactSealKeysImpl(
+        SessionKeysImpl(storage.get_privacy_storage(), infra.get_keys()),
+        storage.get_privacy_storage(),
+    )
     windows = WindowsManagerImpl(
         storage.get_window_storage(),
         managers.steps,
+        managers.tenancy,
         models,
         Payer(),  # pyright: ignore[reportAbstractUsage] (a partial double)
         providers,
         infra.get_buckets(),
         gate,
         hashes,
+        seal,
         CompactionPolicy(),
         WindowsOptions(page=7),
     )
@@ -758,10 +766,44 @@ def test_a_step_that_names_an_artifact_holds_its_head_and_tail() -> None:
 # The root's own wiring.
 
 
-async def test_a_root_with_no_gate_or_key_service_refuses_to_hash_or_spend(
-    tmp_path: Path,
-) -> None:
+async def test_a_root_hashes_a_prompt_under_the_sessions_key(tmp_path: Path) -> None:
     managers = build_managers(StorageMemoryImpl(), InfraLocalImpl(tmp_path), model_prices=Priced())
+    ctx = context(Role.MEMBER)
+    history = History()
+    history.message("Find it.")
+    await managers.steps.append_inputs(ctx, history.session_id, history.steps)
+    epoch = await managers.steps.begin_run(ctx, history.session_id)
+    await managers.models.resolve_fill_set(
+        ctx, history.session_id, [MAIN, SUMMARIZER], Eligibility()
+    )
+    first, again = [
+        await managers.windows.render_request(
+            ctx, history.session_id, epoch, history.steps[0].id, KIND
+        )
+        for _ in range(2)
+    ]
+    assert first.prompt_hash == again.prompt_hash, "the same steps, the same hash"
+    other = History()
+    other.message("Find it.")
+    await managers.steps.append_inputs(ctx, other.session_id, other.steps)
+    epoch = await managers.steps.begin_run(ctx, other.session_id)
+    await managers.models.resolve_fill_set(ctx, other.session_id, [MAIN, SUMMARIZER], Eligibility())
+    elsewhere = await managers.windows.render_request(
+        ctx, other.session_id, epoch, other.steps[0].id, KIND
+    )
+    assert elsewhere.call == first.call and elsewhere.prompt_hash != first.prompt_hash, (
+        "keyed by the session: one prompt in two sessions hashes apart"
+    )
+
+
+async def test_a_root_with_the_nulls_wired_refuses_to_hash_or_spend(tmp_path: Path) -> None:
+    managers = build_managers(
+        StorageMemoryImpl(),
+        InfraLocalImpl(tmp_path),
+        model_prices=Priced(),
+        call_gate=CallGateNullImpl(),
+        prompt_hash=PromptHashNullImpl(),
+    )
     ctx = context(Role.MEMBER)
     history = History()
     history.message("Find it.")

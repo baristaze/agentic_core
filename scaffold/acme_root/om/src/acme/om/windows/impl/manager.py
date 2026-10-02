@@ -14,6 +14,7 @@ from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import (
     CompactionFailed,
     ContextOverflow,
+    KeyRevoked,
     NotFound,
     PreconditionFailed,
     ValidationFailed,
@@ -29,10 +30,12 @@ from acme.om.steps.types.header import (
     ToolResponseHeader,
 )
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
+from acme.om.tenancy import TenancyManagerInterface
 from acme.om.windows import rules
 from acme.om.windows.gate import CallGateInterface
 from acme.om.windows.hashes import PromptHashInterface
 from acme.om.windows.manager import WindowsManagerInterface
+from acme.om.windows.seal import ArtifactSealInterface
 from acme.om.windows.storage import WindowStorageInterface
 from acme.om.windows.types.artifact import Artifact, ArtifactPage
 from acme.om.windows.types.kind import KindPrompts
@@ -40,11 +43,14 @@ from acme.om.windows.types.policy import CompactionPolicy
 from acme.om.windows.types.window import ContextWindow, RenderedRequest
 
 BUCKET = Buckets.ARTIFACTS
-CONTENT_TYPE = "text/plain; charset=utf-8"
+CONTENT_TYPE = "application/octet-stream"
+"""An artifact's text is sealed before it is stored, so the store holds
+bytes no reader can take for text."""
 
 
 class WindowsOptions(Platform):
     page: int = Field(default=200, gt=0)  # steps one read of the history asks for
+    purge_batch: int = Field(default=200, gt=0)  # artifacts one read of a purge takes
 
 
 class WindowsManagerImpl(WindowsManagerInterface):
@@ -52,23 +58,27 @@ class WindowsManagerImpl(WindowsManagerInterface):
         self,
         storage: WindowStorageInterface,
         steps: StepsManagerInterface,
+        tenancy: TenancyManagerInterface,
         models: ModelsManagerInterface,
         attribution: AttributionManagerInterface,
         providers: ModelProvidersInterface,
         buckets: BucketsInterface,
         gate: CallGateInterface,
         hashes: PromptHashInterface,
+        seal: ArtifactSealInterface,
         policy: CompactionPolicy,
         options: WindowsOptions,
     ) -> None:
         self._storage = storage
         self._steps = steps
+        self._tenancy = tenancy
         self._models = models
         self._attribution = attribution
         self._providers = providers
         self._buckets = buckets
         self._gate = gate
         self._hashes = hashes
+        self._seal = seal
         self._policy = policy
         self._options = options
 
@@ -91,8 +101,9 @@ class WindowsManagerImpl(WindowsManagerInterface):
             draft = _drafted(
                 lambda: rules.render_side(steps, kind, role, fill, fill_set.version, self._policy)
             )
-            return await self._hashed(ctx, session_id, draft)
+            return await self._hashed(ctx, session_id, draft, steps)
         draft = self._main(steps, kind, fill, fill_set.version, plan)
+        read: Sequence[Step] = steps
         fits = rules.fits(draft.window, fill)
         # Near its limit, a window compacts once, unless an attempt since the
         # latest summary failed and the window still fits: then it is read
@@ -112,7 +123,8 @@ class WindowsManagerImpl(WindowsManagerInterface):
                 compacted = None
             if compacted is not None:
                 draft = self._main(compacted, kind, fill, fill_set.version, plan)
-        return await self._hashed(ctx, session_id, draft)
+                read = compacted
+        return await self._hashed(ctx, session_id, draft, read)
 
     async def render_after_overflow(
         self,
@@ -138,7 +150,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
         if compacted is None:
             raise ContextOverflow("the window holds nothing more to fold")
         draft = self._main(compacted, kind, fill, fill_set.version, plan)
-        rendered = await self._hashed(ctx, session_id, draft)
+        rendered = await self._hashed(ctx, session_id, draft, compacted)
         return rendered.model_copy(update={"overflow_retry": True})
 
     async def bound_tool_response(self, ctx: TenantContext, session_id: UUID, step: Step) -> Step:
@@ -156,11 +168,16 @@ class WindowsManagerImpl(WindowsManagerInterface):
         # Derived from the step, so a run that keeps the same response twice
         # writes the same artifact once.
         artifact_id = derived_id(step.id, step.created_at, "artifact")
+        # Sealed like the step it came from. A session that keeps no content
+        # at rest keeps no artifact: its result stays whole in its step.
+        sealed = await self._seal.seal(ctx, session_id, artifact_id, whole.encode("utf-8"))
+        if sealed is None:
+            return step
         await self._buckets.put(
             ctx.org_id,
             BUCKET,
             rules.artifact_key(session_id, artifact_id),
-            whole.encode("utf-8"),
+            sealed,
             CONTENT_TYPE,
             deadline=ctx.deadline,
         )
@@ -194,7 +211,10 @@ class WindowsManagerImpl(WindowsManagerInterface):
         if artifact is None:
             raise NotFound(f"artifact {artifact_id} not found")
         key = rules.artifact_key(session_id, artifact_id)
-        data = await self._buckets.get(ctx.org_id, BUCKET, key, deadline=ctx.deadline)
+        sealed = await self._buckets.get(ctx.org_id, BUCKET, key, deadline=ctx.deadline)
+        data = await self._seal.open(ctx, session_id, artifact_id, sealed)
+        if data is None:
+            raise KeyRevoked(f"the content of artifact {artifact_id} is erased with its key")
         text = data.decode("utf-8")
         page, more = rules.artifact_page(text, offset, limit, self._policy)
         return ArtifactPage(
@@ -204,6 +224,33 @@ class WindowsManagerImpl(WindowsManagerInterface):
             characters=len(text),
             has_more=more,
         )
+
+    async def purge_artifacts(self, org_id: UUID, session_id: UUID) -> int:
+        return await self._purge(org_id, session_id)
+
+    async def purge_tenant(self, ctx: TenantContext) -> int:
+        ctx.require(Permission.WRITE)
+        if not await self._tenancy.tenant_expired(ctx):
+            return 0
+        return await self._purge(ctx.org_id, None)
+
+    async def _purge(self, org_id: UUID, session_id: UUID | None) -> int:
+        """The session's artifacts, or the tenant's, a batch at a time: each
+        object first, then the records, so a failure between the two leaves
+        a record the next pass finds, never an object no record names. A
+        tenant's purge takes one batch a call, as every sweep step does; a
+        session's takes them all, since its row goes once this returns."""
+        purged = 0
+        while True:
+            batch = await self._storage.read_artifacts(
+                org_id, session_id, self._options.purge_batch
+            )
+            for artifact in batch:
+                key = rules.artifact_key(artifact.session_id, artifact.id)
+                await self._buckets.delete(org_id, BUCKET, key)
+            purged += await self._storage.purge_artifacts(org_id, [a.id for a in batch])
+            if session_id is None or len(batch) < self._options.purge_batch:
+                return purged
 
     def _main(
         self,
@@ -220,8 +267,10 @@ class WindowsManagerImpl(WindowsManagerInterface):
         )
 
     async def _hashed(
-        self, ctx: TenantContext, session_id: UUID, draft: rules.Draft
+        self, ctx: TenantContext, session_id: UUID, draft: rules.Draft, read: Sequence[Step]
     ) -> RenderedRequest:
+        """The request over `read`, the steps it was rendered from, with its
+        prompt's keyed hash and the range attribution reads."""
         value = rules.prompt_bytes(draft.call, draft.attachments)
         return RenderedRequest(
             call=draft.call,
@@ -229,6 +278,8 @@ class WindowsManagerImpl(WindowsManagerInterface):
             delivers=draft.delivers,
             attachments=draft.attachments,
             prompt_hash=await self._hashes.keyed_hash(ctx, session_id, value),
+            previous_request=rules.latest_request_seq(read),
+            read_through=read[-1].seq if read else 0,
         )
 
     async def _history(self, ctx: TenantContext, session_id: UUID) -> list[Step]:
@@ -275,14 +326,21 @@ class WindowsManagerImpl(WindowsManagerInterface):
             summary_id=None if previous is None else previous.id,
         )
         draft = rules.Draft(call, window, (), ())
-        rendered = await self._hashed(ctx, session_id, draft)
-        # The summarizer delivers nothing: it is paid for by the spender the
-        # latest model request named, as attribution answers for it.
-        latest = max((s.seq for s in steps if s.type is StepType.MODEL_REQUEST), default=0)
-        paid = await self._attribution.attribute_request(ctx, session_id, latest, latest)
-        request = rules.request_step(rendered, paid, session_id, loop_id, new_id(), utcnow())
+        rendered = await self._hashed(ctx, session_id, draft, steps)
+        # The summarizer delivers nothing. It makes room for the request it
+        # comes before, so it is paid for by whoever that request will name:
+        # attribution reads the inputs since the latest model request through
+        # the steps read here. The main request after it then reads its
+        # speaker from this one, and a principal whose message waits is
+        # neither dropped nor charged twice.
+        paid = await self._attribution.attribute_request(
+            ctx, session_id, rendered.previous_request, rendered.read_through
+        )
         hold = await self._gate.authorize(
             ctx, session_id, paid.spender, SUMMARIZER, summarizer, call
+        )
+        request = rules.request_step(
+            rendered, paid, session_id, loop_id, new_id(), utcnow(), hold_id=hold
         )
         try:
             (request,) = await self._steps.append_steps(ctx, session_id, epoch, [request])

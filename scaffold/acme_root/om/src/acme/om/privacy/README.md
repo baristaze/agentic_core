@@ -8,7 +8,9 @@ of](../../../../README.md).
 
 - **Content and shape**: what a step says is its content: the messages,
   the tool inputs and outputs, the model's thinking, the attachments'
-  names. Everything else is its shape: its ids, its type, its place in
+  names. A tool's result kept whole as an
+  [artifact](../windows/README.md) is content too. Everything else is its
+  shape: its ids, its type, its place in
   the history, who wrote it, and its header. Content is sealed; shape is
   not.
 - **Session key**: one per session, in versions. Each version is a key
@@ -27,11 +29,13 @@ of](../../../../README.md).
 - **Choose a policy.** Once, before anything is written to the history.
 - **Seal and open.** Each step that says something is sealed on its way
   into storage and opened on its way out. Nothing else in the engine
-  sees it happen.
+  sees it happen. An artifact's text is sealed the same way, under the
+  same key, before it reaches the object store.
 - **Add a version.** What comes after is sealed under it.
 - **Revoke the key.** Every version is destroyed at once. The content
   becomes unreadable and the shape stays: every step keeps its place,
-  its type, and its cost, and reads as absent. It cannot be undone, and
+  its type, and its cost, and reads as absent. An artifact keeps its
+  record, and its text is noise. It cannot be undone, and
   the session takes no content again.
 - **Rotate the tenant's key.** Each version is wrapped again under the
   new one. No content is read or rewritten.
@@ -47,15 +51,17 @@ of](../../../../README.md).
 - **A hash in the shape is keyed by the session**, so once the key is
   revoked a hash confirms nothing about what it stood for.
 - **A memory-only session leaves nothing it said at rest**, sealed or
-  not.
+  not. It keeps no artifact: a large result stays whole in its step.
 - **Every record and key belongs to one org.** Another org that names a
   session finds nothing of it.
 
 <!-- agents-only
 The sealing layer is `impl/sealed_steps.py`, the memory-only layer
 `impl/memory_only_steps.py`, and the router `impl/routed_steps.py`;
-`root.private_history` wires all three over the one history. A data key
-is in the clear only inside `impl/keys.py`. Revocation is
+`root.private_history` wires all three over the one history. The
+artifacts' seal is `impl/artifacts.py`, which the root wires behind the
+windows' `ArtifactSealInterface`. A data key is in the clear only inside
+`impl/keys.py`. Revocation is
 `PrivacyStorageInterface.revoke`, one commit (ADR 1004).
 -->
 

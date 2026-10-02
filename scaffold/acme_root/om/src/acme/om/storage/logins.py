@@ -12,9 +12,8 @@ every row-level security policy and the policies are the second fence.
 - The system login is the runtime login's twin for the system scope. The
   listed system-scope methods run under it, on a pool of their own, and the
   policies admit the system scope to it alone.
-- The purge login deletes a session, its history, its authority, and its
-  tree (`PURGED_TABLES`), which
-  no serving login may. It holds SELECT and DELETE on those tables and
+- The purge login deletes a session, its history and its artifacts, its
+  authority, and its tree (`PURGED_TABLES`), which no serving login may. It holds SELECT and DELETE on those tables and
   nothing else, the tenant fence admits it within the tenant its transaction
   names and never under the system scope, and only the maintenance worker
   holds its URL (ADR 1010).
