@@ -10,11 +10,13 @@ from acme.infra.root import InfraInterface
 from acme.integrations.identity import IdentityProviderInterface
 from acme.integrations.identity.twin import IdentityProviderTwinImpl
 from acme.integrations.impl.configured import IntegrationsConfiguredImpl, IntegrationsOverImpl
+from acme.integrations.model_providers.registry import absent_model_providers
 from acme.integrations.root import IntegrationsInterface
 from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
 from acme.om.events.impl.manager import EventsOptions
 from acme.om.idempotency.impl.manager import IdempotencyOptions
 from acme.om.media.impl.manager import MediaOptions
+from acme.om.models.impl.manager import ModelsOptions
 from acme.om.orchestrations.impl.manager import OrchestrationsOptions
 from acme.om.root import Managers, build_managers
 from acme.om.steps.impl.manager import StepsOptions
@@ -84,6 +86,7 @@ def worker_managers(
             retention=timedelta(days=settings.agent_session_retention_days),
             purge_sessions=AGENT_SESSION_PURGE_BATCH,
         ),
+        models_options=ModelsOptions(purge_batch=batch),
     )
 
 
@@ -142,7 +145,9 @@ class WorkerContainer:
         settings = settings or MaintenanceSettings.model_validate(
             {"_env_file": None, "environment": "test", "worker_id": "maintenance-test"}
         )
-        integrations = integrations or IntegrationsOverImpl(IdentityProviderTwinImpl())
+        integrations = integrations or IntegrationsOverImpl(
+            IdentityProviderTwinImpl(), absent_model_providers()
+        )
         return cls(
             settings,
             storage,

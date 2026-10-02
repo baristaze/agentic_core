@@ -11,6 +11,13 @@ from acme.infra.buckets import Buckets
 from acme.infra.cache import CacheScope
 from acme.infra.queues import Queues
 from acme.infra.topics import Topics
+from acme.integrations.model_providers.types import (
+    Effort,
+    ErrorAnswer,
+    ErrorKind,
+    ProviderName,
+    StopReason,
+)
 from acme.om.agent_sessions.types.agent_session import SessionStatus
 from acme.om.context import (
     AppType,
@@ -21,6 +28,7 @@ from acme.om.context import (
     Role,
 )
 from acme.om.media.types.file import FilePurpose, FileStatus
+from acme.om.models.types.fill import OutputShape, SwitchReason
 from acme.om.orchestrations.types.orchestration import OrchestrationKind, OrchestrationStatus
 from acme.om.steps.types.header import ControlCommand, LoopOutcome, ParkReason
 from acme.om.steps.types.step import Actor, Origin, StepFamily, StepType
@@ -55,6 +63,13 @@ ENUMS = [
     ControlCommand,
     LoopOutcome,
     ParkReason,
+    ProviderName,
+    Effort,
+    StopReason,
+    ErrorKind,
+    ErrorAnswer,
+    OutputShape,
+    SwitchReason,
 ]
 
 

@@ -84,6 +84,7 @@ def build_loop(container: WorkerContainer, lane: str | None = None) -> WorkerLoo
             "tenancy": managers.tenancy.purge_tenant,
             "events": managers.events.purge_tenant,
             "orchestrations": managers.orchestrations.purge_tenant,
+            "models": managers.models.purge_tenant,
             # The history, then its sessions, both under the purge login: a
             # tenant is marked purged only once a pass finds none of either.
             "steps": managers.steps.purge_tenant,

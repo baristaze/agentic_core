@@ -33,6 +33,7 @@ from acme.infra.secrets import SecretsInterface
 from acme.integrations.identity import IdentityProviderInterface
 from acme.integrations.identity.workos import CREDENTIAL_CHECK_CODE, IdentityProviderWorkOSImpl
 from acme.integrations.impl.configured import IntegrationsOverImpl
+from acme.integrations.model_providers.registry import absent_model_providers
 from acme.services.api.app import create_app
 from acme.services.api.container import AppContainer
 from acme.services.api.gateway.auth import Rctx
@@ -136,7 +137,7 @@ def over(tmp_path: Path, workos: WorkOS, deadline: float) -> AppContainer:
     )
     return build_container(
         tmp_path,
-        integrations=IntegrationsOverImpl(provider),
+        integrations=IntegrationsOverImpl(provider, absent_model_providers()),
         request_deadline_seconds=deadline,
     )
 
