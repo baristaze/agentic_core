@@ -69,6 +69,13 @@ stays readable. **Revoking** a session's key erases its content and
 keeps its shape, so the history keeps its holes in known places. A
 session may instead keep its content in **memory only**.
 
+## Models
+
+A **model role** is a job an agent session hands a model: the agent's
+own turns, or a summary. A **fill** is the model that does it, and how. A
+session's **fill set** holds its fills, one per model role; a **switch**
+gives it a new version, and the session's history records each one.
+
 ## What the platform writes for itself
 
 No person creates these and no screen shows them, but each belongs to
@@ -103,6 +110,8 @@ arrive twice, so the second copy gets the first one's answer.
 - A work item, an orchestration, an idempotency record, an event, and
   an outbox row each name their org, so the fence between orgs holds
   for them too.
+- An agent session's fill set names the model for each of its jobs, and
+  each switch of it is a step of the session's history.
 - An agent session's steps are its truth. Its status is read off them,
   and a change of it writes an outbox row like any other change. A
   session and its steps name their org.
@@ -116,6 +125,7 @@ arrive twice, so the second copy gets the first one's answer.
 - [Agent sessions](src/acme/om/agent_sessions/README.md)
 - [Steps](src/acme/om/steps/README.md)
 - [Privacy](src/acme/om/privacy/README.md)
+- [Models](src/acme/om/models/README.md)
 - [Events](src/acme/om/events/README.md)
 - [Outbox rows](src/acme/om/outbox/README.md)
 - [Work items](src/acme/om/work/README.md)

@@ -8,6 +8,8 @@ from acme.om.idempotency.storage import IdempotencyStorageInterface
 from acme.om.idempotency.storage.impl.memory import IdempotencyStorageMemoryImpl
 from acme.om.media.storage import MediaStorageInterface
 from acme.om.media.storage.impl.memory import MediaStorageMemoryImpl
+from acme.om.models.storage import FillSetStorageInterface
+from acme.om.models.storage.impl.memory import FillSetStorageMemoryImpl
 from acme.om.orchestrations.storage import OrchestrationsStorageInterface
 from acme.om.orchestrations.storage.impl.memory import OrchestrationsStorageMemoryImpl
 from acme.om.outbox.storage import OutboxStorageInterface
@@ -38,6 +40,7 @@ class StorageMemoryImpl(StorageInterface):
         self._steps = StepStorageMemoryImpl()
         self._agent_sessions = AgentSessionStorageMemoryImpl(self._outbox)
         self._privacy = PrivacyStorageMemoryImpl(self._outbox)
+        self._fill_sets = FillSetStorageMemoryImpl()
 
     def get_tenancy_storage(self) -> TenancyStorageInterface:
         return self._tenancy
@@ -68,6 +71,9 @@ class StorageMemoryImpl(StorageInterface):
 
     def get_privacy_storage(self) -> PrivacyStorageInterface:
         return self._privacy
+
+    def get_fill_set_storage(self) -> FillSetStorageInterface:
+        return self._fill_sets
 
     async def healthcheck(self) -> bool:
         return True

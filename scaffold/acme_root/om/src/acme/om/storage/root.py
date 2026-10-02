@@ -6,6 +6,7 @@ from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.events.storage import EventStorageInterface
 from acme.om.idempotency.storage import IdempotencyStorageInterface
 from acme.om.media.storage import MediaStorageInterface
+from acme.om.models.storage import FillSetStorageInterface
 from acme.om.orchestrations.storage import OrchestrationsStorageInterface
 from acme.om.outbox.storage import OutboxStorageInterface
 from acme.om.privacy.storage import PrivacyStorageInterface
@@ -44,6 +45,9 @@ class StorageInterface(ABC):
 
     @abstractmethod
     def get_privacy_storage(self) -> PrivacyStorageInterface: ...
+
+    @abstractmethod
+    def get_fill_set_storage(self) -> FillSetStorageInterface: ...
 
     @abstractmethod
     async def healthcheck(self) -> bool: ...

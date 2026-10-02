@@ -34,6 +34,7 @@ TABLE_ROLES: dict[str, DatabaseRole] = {
     "step_cursors": DatabaseRole.ACTIVITY,
     "session_privacy": DatabaseRole.CORE,
     "session_keys": DatabaseRole.CORE,
+    "fill_sets": DatabaseRole.CORE,
 }
 
 APPEND_ONLY_TABLES: frozenset[str] = frozenset({"steps"})

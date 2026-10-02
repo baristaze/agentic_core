@@ -21,8 +21,9 @@ served to it. Exposure is by listing, never by folder.
 - [Agent sessions](om/src/acme/om/agent_sessions/README.md): sessions as a series of loops over one history, and the status read off their steps
 - [Steps](om/src/acme/om/steps/README.md): the history, written once and numbered with no gaps, and the epoch that refuses a stale run
 - [Privacy](om/src/acme/om/privacy/README.md): content sealed per session under a versioned key, the storage policies, and the revocation that erases content and keeps shape
+- [Models](om/src/acme/om/models/README.md): model roles, fills, fill sets and their switches, the resolver, and prices
 - [Infrastructure](infra/README.md): cache, buckets, topics, queues, secrets, observability; what each promises and which twin runs where
-- [Integrations](integrations/README.md): the identity provider, its twin, the absent provider, and the webhook check
+- [Integrations](integrations/README.md): the identity provider, its twin, the absent provider, and the webhook check; the model providers, their adapters, and the scripted twin
 - [The API process](services/api/README.md): the routes by area, the gateway's guarantees, the subcommands
 - [The maintenance worker](workers/maintenance/README.md): the work queue's loop, the provider deliveries, and the sweep
 - [Deployment](deployment/README.md): what runs where, locally and in the cloud, and the branch convention
