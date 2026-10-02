@@ -1,7 +1,7 @@
 ---
 name: agentic-review-full
 description: "Full engine review: the nine lens groups of the agentic_core spec run in parallel and merge into one report. Use before a pull request to engine code, or when a change crosses groups."
-allowed-tools: Read, Grep, Glob, Agent, Bash(git diff:*), Bash(git show:*), Bash(git log:*), Bash(git status:*), Bash(git rev-parse:*), Bash(git merge-base:*), Bash(git symbolic-ref:*)
+allowed-tools: Read, Grep, Glob, Agent, Bash(git diff:*), Bash(git show:*), Bash(git log:*), Bash(git status:*), Bash(git rev-parse:*), Bash(git merge-base:*), Bash(git symbolic-ref:*), Bash(git ls-files:*)
 ---
 
 # agentic-review-full
@@ -23,10 +23,15 @@ description (the list of files, or the range or commit) and hand the
 same description to every reviewer so the nine reports cover the same
 ground. A range or a commit is handed over as the ref, with its list of
 files, and the reviewer reads each file at the range's end or the
-commit, never from the working tree. An empty scope is reported as "nothing to review" and the
-skill stops. `all` costs nine full reads of the repository, one per
-reviewer; a path or a range is the cheaper question whenever the change
-is narrower than the tree.
+commit, never from the working tree. `all` and a path or a glob,
+which can be large, are handed over as the path or the glob (`.` for
+`all`), the commit `HEAD` is at, and the count of files the
+`git ls-files` call gave, never as a list: each reviewer lists them
+itself with the same call. An empty
+scope is reported as "nothing to review" and the skill stops. `all`
+costs nine full reads of the repository, one per reviewer; a path or
+a range is the cheaper question whenever the change is narrower than
+the tree.
 
 ## Procedure
 
