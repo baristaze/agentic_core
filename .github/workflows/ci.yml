@@ -106,10 +106,11 @@ jobs:
       - name: make setup
         working-directory: ${{ env.COPY }}
         run: make setup
-      # arch-check runs at the guideline release the copy pins.
-      - name: make check
+      # arch-check runs at the guideline release the copy pins, and
+      # agentic-check from this checkout's checkers/, on the copy's Python.
+      - name: make check, with agentic-check from this checkout
         working-directory: ${{ env.COPY }}
-        run: make check
+        run: make check AGENTIC_CHECK="uv run --no-project --python $(cat .python-version) python $GITHUB_WORKSPACE/checkers/agentic_check.py"
       - name: the integration suite over the copy's compose stack
         working-directory: ${{ env.COPY }}
         run: |

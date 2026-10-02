@@ -71,6 +71,11 @@ markers = [
     "telemetry: needs the devx profile",
 ]
 
+# The engine's static checker (`make agentic-check`). The layout is the
+# scaffold's, so only the package is named.
+[tool.agentic-check]
+package = "acme"
+
 # The guideline's static checker (`make arch-check`). The layout is the
 # guideline's, so only the package and the project's own lists are named.
 [tool.arch-check]
