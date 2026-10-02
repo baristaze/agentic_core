@@ -48,6 +48,7 @@ def local_settings(tmp_path: Path, **overrides: object) -> InfraSettings:
         ("buckets_backend", "local"),
         ("queues_backend", "memory"),
         ("keys_backend", "memory"),
+        ("workspace_backend", "host"),
     ],
 )
 def test_deployed_environments_refuse_local_backends(

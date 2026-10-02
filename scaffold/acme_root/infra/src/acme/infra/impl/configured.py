@@ -52,6 +52,10 @@ UNSAFE_IN_CLOUD: tuple[tuple[str, str, str], ...] = (
     ("buckets_backend", "local", "ACME_BUCKETS_BACKEND"),
     ("queues_backend", "memory", "ACME_QUEUES_BACKEND"),
     ("keys_backend", "memory", "ACME_KEYS_BACKEND"),
+    # A directory on the host confines files only: a tenant's command would
+    # reach other tenants' workspaces, the records, and this process's own
+    # environment. A deployed process runs tools in containers, or none.
+    ("workspace_backend", "host", "ACME_WORKSPACE_BACKEND"),
 )
 
 
