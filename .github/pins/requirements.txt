@@ -1,0 +1,7 @@
+# The Python tools make and CI run, at the versions they run. The
+# Makefile and the workflow read each pin from this file, so a release
+# moves in one place. Nothing installs it.
+uv==0.12.17
+pytest==9.1.1
+ruff==0.16.8
+mypy==2.3.1
