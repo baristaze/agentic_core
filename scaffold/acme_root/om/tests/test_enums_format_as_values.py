@@ -11,6 +11,8 @@ from acme.infra.buckets import Buckets
 from acme.infra.cache import CacheScope
 from acme.infra.queues import Queues
 from acme.infra.topics import Topics
+from acme.infra.transports import SecretVia
+from acme.infra.workspaces import EgressMode, IsolationMode
 from acme.integrations.model_providers.types import (
     Effort,
     ErrorAnswer,
@@ -30,10 +32,13 @@ from acme.om.context import (
 from acme.om.media.types.file import FilePurpose, FileStatus
 from acme.om.models.types.fill import OutputShape, SwitchReason
 from acme.om.orchestrations.types.orchestration import OrchestrationKind, OrchestrationStatus
-from acme.om.steps.types.header import ControlCommand, LoopOutcome, ParkReason
+from acme.om.steps.types.header import ControlCommand, LoopOutcome, ParkReason, ToolFailure
 from acme.om.steps.types.step import Actor, Origin, StepFamily, StepType
 from acme.om.storage.roles import DatabaseRole
 from acme.om.storage.scopes import ScopeKind
+from acme.om.tools.types.call import GateOutcome, Verdict
+from acme.om.tools.types.policy import Decision
+from acme.om.tools.types.tool import Effect, ToolClass, ToolMode
 from acme.om.work.types.work_item import WorkKind, WorkStatus
 
 ENUMS = [
@@ -70,6 +75,16 @@ ENUMS = [
     ErrorAnswer,
     OutputShape,
     SwitchReason,
+    ToolFailure,
+    Effect,
+    ToolMode,
+    ToolClass,
+    Decision,
+    Verdict,
+    GateOutcome,
+    IsolationMode,
+    EgressMode,
+    SecretVia,
 ]
 
 
