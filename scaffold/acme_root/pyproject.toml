@@ -77,9 +77,12 @@ markers = [
 ]
 
 # The engine's static checker (`make agentic-check`). The layout is the
-# scaffold's, so only the package is named.
+# scaffold's, so only the package is named, and the Python client's types,
+# generated from the committed OpenAPI document by `make openapi` and never
+# hand-edited, are left out, as the linter leaves them.
 [tool.agentic-check]
 package = "acme"
+exclude = ["clients/python/src/acme/client/schema.py"]
 
 # The guideline's static checker (`make arch-check`). The layout is the
 # guideline's, so only the package and the project's own lists are named.
