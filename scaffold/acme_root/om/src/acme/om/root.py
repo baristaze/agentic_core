@@ -138,11 +138,11 @@ async def purge_held(
     managers: Managers, org_id: UUID, session_id: UUID, tree_id: UUID | None
 ) -> None:
     """What the windows, the tools, attribution, and the agents hold of a
-    session the sweep purges: its artifacts and its transport's records,
-    which go with its history, its authority, and its tree when it was the
-    tree's last session."""
+    session the sweep purges: its artifacts, and its workspace with its
+    transport's records, which go with its history, its authority, and its
+    tree when it was the tree's last session."""
     await managers.windows.purge_artifacts(org_id, session_id)
-    await managers.tools.purge_records(org_id, session_id)
+    await managers.tools.purge_workspace(org_id, session_id)
     await managers.attribution.purge_authority(org_id, session_id)
     if tree_id is not None:
         await managers.agents.purge_tree(org_id, tree_id)

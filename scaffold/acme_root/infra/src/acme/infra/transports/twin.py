@@ -117,9 +117,12 @@ class TransportTwinImpl(TransportInterface):
         return None if record is None else await opened_result(record, seal)
 
     async def purge_records(self, workspace_id: UUID) -> None:
+        """Its records and its epoch, and its files, which the twin keeps
+        in place of the workspace's own storage."""
         for kept in [kept for kept in self.records if kept[0] == workspace_id]:
             del self.records[kept]
         self._epochs.pop(workspace_id, None)
+        self._files.pop(workspace_id, None)
 
     async def read_file(self, workspace: Workspace, path: str, max_bytes: int) -> bytes:
         self._serve(workspace)

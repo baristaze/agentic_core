@@ -37,10 +37,10 @@ class WorkspaceHostImpl(WorkspaceProviderInterface):
     async def release(self, workspace: Workspace) -> None:
         await end_stragglers(self._directory(workspace.org_id, workspace.id))
 
-    async def purge(self, workspace: Workspace) -> None:
-        directory = self._directory(workspace.org_id, workspace.id)
+    async def purge(self, org_id: UUID, workspace_id: UUID) -> None:
+        directory = self._directory(org_id, workspace_id)
         await end_stragglers(directory)
-        await asyncio.to_thread(shutil.rmtree, directory, ignore_errors=True)
+        await asyncio.to_thread(_removed, directory)
 
     def describe(self) -> str:
         return f"workspaces=host({self._root})"
@@ -54,3 +54,12 @@ class WorkspaceHostImpl(WorkspaceProviderInterface):
     def _directory(self, org_id: UUID, workspace_id: UUID) -> Path:
         """Named by ids alone, so no name climbs out of the root."""
         return self._root.resolve() / org_id.hex / workspace_id.hex
+
+
+def _removed(directory: Path) -> None:
+    """The directory and everything in it gone; one already gone is no
+    error, and a file that cannot be removed is."""
+    try:
+        shutil.rmtree(directory)
+    except FileNotFoundError:
+        return

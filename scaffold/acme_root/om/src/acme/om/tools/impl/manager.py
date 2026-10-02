@@ -467,8 +467,10 @@ class ToolsManagerImpl(ToolsManagerInterface):
         (stored,) = await self._steps.append_inputs(ctx, session_id, [decision])
         return stored
 
-    async def purge_records(self, org_id: UUID, session_id: UUID) -> None:
-        # A session's workspace is prepared under the session's id.
+    async def purge_workspace(self, org_id: UUID, session_id: UUID) -> None:
+        # A session's workspace is prepared under the session's id. Its files
+        # go first: what still runs there ends with them.
+        await self._workspaces.purge(org_id, session_id)
         await self._transport.purge_records(session_id)
 
     async def purge_tenant(self, ctx: TenantContext) -> int:

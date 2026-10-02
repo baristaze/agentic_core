@@ -48,8 +48,9 @@ thing [Acme is made of](../../../../README.md).
 - **Recover.** After a crash, a call that is safe to repeat runs again; one
   that is not is never repeated: the workspace's own record says how it
   ended, or the agent is told its outcome is unknown. The record keeps
-  what the command printed sealed under the session's key, and goes when
-  the session is purged.
+  what the command printed sealed under the session's key.
+- **Purge.** When a deleted session is purged, its workspace and the
+  records of its commands go with its history.
 
 ## The rules
 

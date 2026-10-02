@@ -1,10 +1,12 @@
 """What a tool call keeps of its session's content goes under the session's
 key, over the memory roots as a process wires them. The transport's record
 of a command, on the twin and on this host, keeps how it ended readable and
-its output sealed: it opens under its session's key alone, is noise once
-that key is revoked, and goes with the session when the sweep purges it. A
-tool input's hash, as the loop writes it, is keyed by its session."""
+its output sealed: it opens under its session's key alone, and is noise
+once that key is revoked. When the sweep purges the session, its
+workspace's files and its records go. A tool input's hash, as the loop
+writes it, is keyed by its session."""
 
+import asyncio
 import hashlib
 import sys
 from datetime import timedelta
@@ -27,6 +29,7 @@ from contracts.tools import (
     result_text,
 )
 
+from acme.infra.exceptions import InfraNotFound
 from acme.infra.impl.local import InfraLocalImpl
 from acme.infra.transports import RecordSeal, TransportInterface
 from acme.infra.transports.local import DEFAULT_PATH, TransportLocalImpl
@@ -56,7 +59,8 @@ REGISTRY = registry_of(Command("deploy", effect=Effect.UNSAFE))
 
 class HostInfra(InfraLocalImpl):
     """The local root with a directory on this host for each workspace, and
-    the transport that runs its commands as processes here."""
+    the transport that runs its commands as processes here, its records
+    under `records`."""
 
     def __init__(self, root: Path) -> None:
         super().__init__(root)
@@ -127,6 +131,17 @@ class Roots:
         folder = self.infra.records / workspace_id.hex
         return b"".join(path.read_bytes() for path in sorted(folder.glob("*.json")))
 
+    async def holds_files(self, workspace: Workspace) -> bool:
+        """Whether anything of the workspace's files is left where they were
+        kept: a directory on this host, or the twin's memory."""
+        if isinstance(self.infra, HostInfra):
+            return await asyncio.to_thread(Path(workspace.location).exists)
+        try:
+            await self.transport.read_file(workspace, "notes.txt", 10)
+        except InfraNotFound:
+            return False
+        return True
+
     def seal(self, session_id: UUID, key: UUID) -> RecordSeal:
         """The seal a command of the session under `key` goes with, bound as
         the tools manager binds it, over the root's own keys."""
@@ -196,17 +211,21 @@ async def test_a_memory_only_sessions_record_keeps_how_its_command_ended_alone(
     assert recorded is not None and (recorded.exit_code, recorded.stdout) == (0, "")
 
 
-async def test_a_purged_sessions_records_are_gone_from_the_host(roots: Roots) -> None:
+async def test_a_purged_sessions_workspace_and_records_are_gone_from_the_host(
+    roots: Roots,
+) -> None:
     session, other = await roots.session(), await roots.session()
-    gone, _ = await roots.ran(session)
-    stays, _ = await roots.ran(other)
-    assert roots.at_rest(gone.id) and roots.at_rest(stays.id)
+    (gone, made), (stays, kept) = await roots.ran(session), await roots.ran(other)
+    for workspace, call in ((gone, made), (stays, kept)):
+        await roots.transport.write_file(workspace, "notes.txt", LINE.encode(), call.epoch)
+        assert await roots.holds_files(workspace) and roots.at_rest(workspace.id)
     await roots.managers.agent_sessions.delete_session(roots.ctx, session)
     assert await roots.managers.agent_sessions.purge_across_tenants() == 1
-    assert roots.at_rest(gone.id) == b"", "the purged session's records go"
+    assert not await roots.holds_files(gone), "the purged session's files go"
+    assert roots.at_rest(gone.id) == b"", "and its records"
     if isinstance(roots.infra, HostInfra):
         assert not (roots.infra.records / gone.id.hex).exists()
-    assert roots.at_rest(stays.id), "another session's stay"
+    assert await roots.holds_files(stays) and roots.at_rest(stays.id), "another session's stay"
 
 
 async def calls_lookup(loop: Loop) -> tuple[UUID, str]:

@@ -418,7 +418,7 @@ class TestTransportContainer(TransportContract):
         )
         workspace = await provider.prepare(new_id(), new_id(), spec)
         yield provider, workspace
-        await provider.purge(workspace)
+        await provider.purge(workspace.org_id, workspace.id)
 
     @pytest.fixture
     def workspace(self, provided: tuple[WorkspaceProviderInterface, Workspace]) -> Workspace:
@@ -449,6 +449,18 @@ class TestTransportContainer(TransportContract):
         result = await transport.run(workspace, command("sh", "-c", script, env=env), seal=SEAL)
         assert result.exit_code == 0, result.stderr
         assert result.stdout.splitlines() == ["/workspace/home", "/usr/bin:/bin"]
+
+    async def test_a_purged_workspace_takes_its_files_with_it(
+        self,
+        transport: TransportInterface,
+        provided: tuple[WorkspaceProviderInterface, Workspace],
+    ) -> None:
+        provider, workspace = provided
+        await transport.write_file(workspace, "kept.txt", b"kept", epoch=1)
+        await provider.purge(workspace.org_id, workspace.id)
+        again = await provider.prepare(workspace.org_id, workspace.id, workspace.spec)
+        with pytest.raises(InfraNotFound):
+            await transport.read_file(again, "kept.txt", 10)
 
     async def test_a_released_workspace_keeps_its_files_for_the_next_instance(
         self,

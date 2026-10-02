@@ -16,6 +16,7 @@ import pytest
 
 from acme.infra.base import new_id
 from acme.infra.docker import DockerReply
+from acme.infra.exceptions import BackendFailed
 from acme.infra.impl.configured import InfraConfiguredImpl
 from acme.infra.impl.settings import InfraSettings
 from acme.infra.workspaces import (
@@ -28,7 +29,7 @@ from acme.infra.workspaces import (
     Workspace,
     WorkspaceProviderInterface,
 )
-from acme.infra.workspaces.container import WorkspaceContainerImpl
+from acme.infra.workspaces.container import WorkspaceContainerImpl, container_name
 from acme.infra.workspaces.host import WorkspaceHostImpl
 from acme.infra.workspaces.twin import WorkspaceNullImpl, WorkspaceTwinImpl
 
@@ -80,7 +81,7 @@ async def test_a_host_directory_meets_the_host_mode_and_keeps_its_files_past_a_r
     await provider.release(workspace)
     again = await provider.prepare(org, workspace_id, spec(IsolationMode.HOST))
     assert (Path(again.location) / "notes.txt").read_text() == "kept"
-    await provider.purge(again)
+    await provider.purge(org, workspace_id)
     assert not await asyncio.to_thread(Path(again.location).exists)
 
 
@@ -149,7 +150,7 @@ async def test_a_host_purge_ends_what_runs_there_before_its_files_go(tmp_path: P
     workspace = await provider.prepare(new_id(), new_id(), spec(IsolationMode.HOST))
     left = await left_behind(Path(workspace.location))
     try:
-        await provider.purge(workspace)
+        await provider.purge(workspace.org_id, workspace.id)
         assert not await running(left)
         assert not await asyncio.to_thread(Path(workspace.location).exists)
     finally:
@@ -223,6 +224,28 @@ async def test_a_running_container_is_reused_only_under_the_spec_it_was_started_
     run = docker.calls[-1]
     assert run[run.index("--network") + 1] == "none", "the new container holds the tighter spec"
     assert not any(call[:2] == ("volume", "rm") for call in docker.calls), "its files stay"
+
+
+async def test_a_container_purge_by_ids_removes_its_container_and_its_files(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A purge needs no workspace in hand: the container and its volume are
+    named by the workspace's id. A Docker that cannot remove them fails the
+    purge, so nothing is left behind as if it went."""
+    docker = LocalDocker()
+    monkeypatch.setattr("acme.infra.workspaces.container.docker", docker)
+    provider = WorkspaceContainerImpl("python:3.14-slim", timedelta(seconds=5))
+    workspace_id = new_id()
+    name = container_name(workspace_id)
+    await provider.purge(new_id(), workspace_id)
+    assert docker.calls == [("rm", "-f", name), ("volume", "rm", "-f", name)]
+
+    async def unreachable(*args: str, **_: object) -> DockerReply:
+        return DockerReply(1, b"", b"Cannot connect to the Docker daemon")
+
+    monkeypatch.setattr("acme.infra.workspaces.container.docker", unreachable)
+    with pytest.raises(BackendFailed):
+        await provider.purge(new_id(), workspace_id)
 
 
 async def test_a_container_spec_with_no_docker_is_refused_and_never_swapped_for_a_directory(

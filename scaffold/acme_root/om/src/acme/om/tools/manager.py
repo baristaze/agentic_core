@@ -193,10 +193,12 @@ class ToolsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def purge_records(self, org_id: UUID, session_id: UUID) -> None:
-        """Platform-internal: what the transport keeps of a session the sweep
-        has claimed for its purge goes with its history: how each command
-        in its workspace ended. For no principal."""
+    async def purge_workspace(self, org_id: UUID, session_id: UUID) -> None:
+        """Platform-internal: what a session the sweep has claimed for its
+        purge left where its tools ran goes with its history: its workspace,
+        files and instance, and the transport's records of how each command
+        there ended. For no principal. A process with no workspace provider
+        or transport holds none of it, and removes nothing."""
         ...
 
     @abstractmethod

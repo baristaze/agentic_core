@@ -37,8 +37,8 @@ class WorkspaceTwinImpl(WorkspaceProviderInterface):
     async def release(self, workspace: Workspace) -> None:
         self.live.discard(workspace.id)
 
-    async def purge(self, workspace: Workspace) -> None:
-        self.live.discard(workspace.id)
+    async def purge(self, org_id: UUID, workspace_id: UUID) -> None:
+        self.live.discard(workspace_id)
 
     def describe(self) -> str:
         return "workspaces=twin"
@@ -62,7 +62,7 @@ class WorkspaceNullImpl(WorkspaceProviderInterface):
     async def release(self, workspace: Workspace) -> None:
         return None
 
-    async def purge(self, workspace: Workspace) -> None:
+    async def purge(self, org_id: UUID, workspace_id: UUID) -> None:
         return None
 
     def describe(self) -> str:
