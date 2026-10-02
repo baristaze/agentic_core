@@ -330,6 +330,27 @@ async def test_a_window_near_its_limit_compacts_into_a_summary_that_references_i
     assert all(b.kind == "text" and b.text.startswith("<data ") for b in asked.messages[0].blocks)
 
 
+async def test_the_summarizer_is_asked_where_the_agent_stopped_and_for_no_instruction(
+    engine: Engine,
+) -> None:
+    """The default prompt asks for the sections that let the agent go on:
+    what it did, found, decided, and left unchecked, and what it was doing
+    where the record ends; bounded, invented from nothing, and with no
+    instruction of its own."""
+    session = await a_session(engine, a_long_history())
+    engine.summarizer.add(a_summary())
+    await engine.windows.render_request(
+        engine.ctx, session.id, session.epoch, session.loop_id, KIND
+    )
+    (asked,) = engine.summarizer.calls
+    prompt = asked.system[0].text
+    for section in ("## Done", "## Known", "## Decided", "## State", "## Next"):
+        assert f"\n{section}\n" in prompt
+    assert "was doing where the record ends" in prompt and "not yet checked" in prompt
+    assert "invent nothing" in prompt and "under 1,500 words" in prompt
+    assert "write no instruction of your own" in prompt and "do not restate them" in prompt
+
+
 async def test_a_compacted_window_does_not_compact_again(engine: Engine) -> None:
     session = await a_session(engine, a_long_history())
     engine.summarizer.add(a_summary())
