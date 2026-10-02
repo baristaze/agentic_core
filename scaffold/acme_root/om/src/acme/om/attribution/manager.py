@@ -39,9 +39,10 @@ class AttributionManagerInterface(ABC):
         caller names the mode, its kind's, and nothing else: a root runs
         under the person who made it; a session made from another runs
         under the principal that session's calls run under, carries its
-        mark, and, for a child, pays as its parent pays. A session to come
-        from that holds no authority is `ValidationFailed`. Asked again, it
-        answers the authority as stored."""
+        mark, and, for a child, pays as its parent pays. Only the session's
+        maker opens it (`NotAuthorized`), and a session to come from that
+        holds no authority is `ValidationFailed`. Asked again, it answers
+        the authority as stored."""
         ...
 
     @abstractmethod

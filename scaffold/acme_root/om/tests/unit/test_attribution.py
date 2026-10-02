@@ -575,6 +575,8 @@ async def test_a_viewer_reads_attribution_and_takes_over_nothing(managers: Manag
     await say(managers, member, sid, person_of(member))
     assert await managers.attribution.spender_for(viewer, sid) == person_of(member)
     with pytest.raises(NotAuthorized):
+        await managers.attribution.authorize_call(viewer, sid, OUTWARD)
+    with pytest.raises(NotAuthorized):
         await managers.attribution.assign_principal(viewer, sid)
 
 
@@ -583,8 +585,9 @@ async def test_a_session_with_no_authority_runs_no_call_and_spends_nothing(
 ) -> None:
     """A session made around the agents swimlane has no authority until one
     is opened for it, and nothing runs on it meanwhile; a session made from
-    one that holds none gets none."""
-    ctx = context(Role.MEMBER)
+    one that holds none gets none, and only its maker opens one."""
+    org = make_org()
+    ctx, other = context(Role.MEMBER, org), context(Role.MEMBER, org)
     bare = await managers.agent_sessions.create_session(ctx, make_session())
     await say(managers, ctx, bare.id, person_of(ctx))
     with pytest.raises(NotFound):
@@ -594,6 +597,8 @@ async def test_a_session_with_no_authority_runs_no_call_and_spends_nothing(
     orphan = await managers.agent_sessions.create_session(ctx, make_session(parent=bare))
     with pytest.raises(ValidationFailed):
         await managers.attribution.open_authority(ctx, orphan.id, AuthorityMode.STEADY)
+    with pytest.raises(NotAuthorized):
+        await managers.attribution.open_authority(other, bare.id, AuthorityMode.STEADY)
     opened = await managers.attribution.open_authority(ctx, bare.id, AuthorityMode.DELEGATED)
     assert opened.principal == person_of(ctx) and opened.spender is None
     again = await managers.attribution.open_authority(ctx, bare.id, AuthorityMode.STEADY)

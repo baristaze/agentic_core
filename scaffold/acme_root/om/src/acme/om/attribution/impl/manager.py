@@ -73,6 +73,8 @@ class AttributionManagerImpl(AttributionManagerInterface):
         if found is not None:
             return found
         session = await self._sessions.get_session(ctx, session_id)
+        if session.created_by != ctx.user_id:
+            raise NotAuthorized(f"only the maker of agent session {session_id} opens its authority")
         came_from = session.parent_id or session.handed_off_from
         if came_from is None:
             principal = Principal(kind=PrincipalKind.PERSON, id=session.created_by)
@@ -155,7 +157,7 @@ class AttributionManagerImpl(AttributionManagerInterface):
     async def authorize_call(
         self, ctx: TenantContext, session_id: UUID, reach: CallReach
     ) -> CallAuthority:
-        ctx.require(Permission.READ)
+        ctx.require(Permission.WRITE)
         authority = await self._authority(ctx, session_id)
         speaker, marked = await self._at_head(ctx, session_id)
         principal = call_principal(authority, speaker)
