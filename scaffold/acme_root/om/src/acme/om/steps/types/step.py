@@ -112,7 +112,7 @@ HEADER_KINDS: dict[StepType, str] = {
     StepType.PARKED: "parked",
     StepType.RESUMED: "mark",
     StepType.LOOP_ENDED: "loop_ended",
-    StepType.SWITCHED: "mark",
+    StepType.SWITCHED: "switched",
     StepType.ENVIRONMENT_CHANGED: "mark",
 }
 """The header each type holds."""

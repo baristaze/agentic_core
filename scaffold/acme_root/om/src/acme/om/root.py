@@ -13,12 +13,16 @@ from acme.integrations.root import IntegrationsInterface
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.impl.manager import AgentSessionsManagerImpl, AgentSessionsOptions
 from acme.om.base import utcnow
+from acme.om.budgets.impl.pricing import PricingTableImpl
 from acme.om.events import EventsManagerInterface
 from acme.om.events.impl.manager import EventsManagerImpl, EventsOptions
 from acme.om.idempotency import IdempotencyManagerInterface
 from acme.om.idempotency.impl.manager import IdempotencyManagerImpl, IdempotencyOptions
 from acme.om.media import MediaManagerInterface
 from acme.om.media.impl.manager import MediaManagerImpl, MediaOptions
+from acme.om.models.impl.manager import ModelsManagerImpl
+from acme.om.models.impl.resolver import ModelResolverTableImpl, ResolverOptions
+from acme.om.models.manager import ModelsManagerInterface
 from acme.om.orchestrations import OrchestrationsManagerInterface
 from acme.om.orchestrations.impl.manager import OrchestrationsManagerImpl, OrchestrationsOptions
 from acme.om.outbox import OutboxRelayInterface
@@ -52,6 +56,7 @@ class Managers:
     orchestrations: OrchestrationsManagerInterface
     steps: StepsManagerInterface
     agent_sessions: AgentSessionsManagerInterface
+    models: ModelsManagerInterface
 
 
 def build_tenancy(
@@ -172,6 +177,13 @@ def build_managers(
     agent_sessions = AgentSessionsManagerImpl(
         storage.get_agent_session_storage(), steps, outbox, AgentSessionsOptions()
     )
+    # A session's fills, resolved from the one source of prices: the
+    # resolver refuses at boot a model in its table with no price row.
+    models = ModelsManagerImpl(
+        storage.get_fill_set_storage(),
+        steps,
+        ModelResolverTableImpl(PricingTableImpl(), ResolverOptions()),
+    )
     idempotency = IdempotencyManagerImpl(
         storage.get_idempotency_storage(), idempotency_options or IdempotencyOptions()
     )
@@ -198,5 +210,6 @@ def build_managers(
         orchestrations=orchestrations,
         steps=steps,
         agent_sessions=agent_sessions,
+        models=models,
     )
     return managers
