@@ -22,6 +22,7 @@ import pkgutil
 
 from contracts import (
     agent_session_storage,
+    agent_tree_storage,
     event_storage,
     idempotency_storage,
     media_storage,
@@ -102,6 +103,7 @@ STORAGE_EXCEPTIONS: frozenset[tuple[str, str]] = frozenset(
 
 CROSS_TENANT_CASES: dict[str, frozenset[str]] = {
     "AgentSessionStorageInterface": agent_session_storage.CROSS_TENANT_CASES,
+    "AgentTreeStorageInterface": agent_tree_storage.CROSS_TENANT_CASES,
     "EventStorageInterface": event_storage.CROSS_TENANT_CASES,
     "IdempotencyStorageInterface": idempotency_storage.CROSS_TENANT_CASES,
     "MediaStorageInterface": media_storage.CROSS_TENANT_CASES,

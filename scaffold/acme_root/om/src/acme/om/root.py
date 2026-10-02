@@ -12,6 +12,12 @@ from acme.integrations.identity.absent import IdentityProviderAbsentImpl
 from acme.integrations.root import IntegrationsInterface
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.impl.manager import AgentSessionsManagerImpl, AgentSessionsOptions
+from acme.om.agents import AgentsManagerInterface, ResultGateInterface
+from acme.om.agents.impl.gate import ResultGateNullImpl
+from acme.om.agents.impl.manager import AgentsManagerImpl, AgentsOptions
+from acme.om.agents.types.kind import AgentKind, AgentKindCatalog
+from acme.om.attribution import AttributionManagerInterface, PrincipalContext
+from acme.om.attribution.impl.manager import AttributionManagerImpl, no_principal_context
 from acme.om.base import utcnow
 from acme.om.events import EventsManagerInterface
 from acme.om.events.impl.manager import EventsManagerImpl, EventsOptions
@@ -52,6 +58,8 @@ class Managers:
     orchestrations: OrchestrationsManagerInterface
     steps: StepsManagerInterface
     agent_sessions: AgentSessionsManagerInterface
+    attribution: AttributionManagerInterface
+    agents: AgentsManagerInterface
 
 
 def build_tenancy(
@@ -113,6 +121,9 @@ def build_managers(
     events_options: EventsOptions | None = None,
     work_options: WorkOptions | None = None,
     orchestrations_options: OrchestrationsOptions | None = None,
+    agent_kinds: tuple[AgentKind, ...] = (),
+    principal_context: PrincipalContext | None = None,
+    result_gate: ResultGateInterface | None = None,
 ) -> Managers:
     """`integrations` is the root of the hosted services the managers front:
     the identity provider, which the tenancy manager signs people in and
@@ -121,7 +132,14 @@ def build_managers(
 
     The options after `integrations` are what the process that sweeps sets
     on the managers it purges through: each one's retention and batch. None
-    keeps that manager's defaults."""
+    keeps that manager's defaults.
+
+    The last three are the adopter's for its agents: the agent kinds it
+    declares, every version it still runs; the transition of its tenancy
+    manager that answers for a principal's live permissions, which every
+    tool call asks; and the gate a result passes. None wires the transition
+    that answers for nobody, so every tool call is refused, and the null
+    gate, which accepts a result and marks it unverified."""
     # The relay every core-role manager hands its outbox rows to. It reaches
     # the work manager through the root below, because a row of kind
     # `work.<kind>` is enqueued there: the work manager needs the tenancy
@@ -172,6 +190,19 @@ def build_managers(
     agent_sessions = AgentSessionsManagerImpl(
         storage.get_agent_session_storage(), steps, outbox, AgentSessionsOptions()
     )
+    attribution = AttributionManagerImpl(
+        agent_sessions, principal_context or no_principal_context
+    )
+    agents = AgentsManagerImpl(
+        storage.get_agent_tree_storage(),
+        agent_sessions,
+        steps,
+        attribution,
+        result_gate or ResultGateNullImpl(),
+        AgentKindCatalog(kinds=agent_kinds),
+        outbox,
+        AgentsOptions(),
+    )
     idempotency = IdempotencyManagerImpl(
         storage.get_idempotency_storage(), idempotency_options or IdempotencyOptions()
     )
@@ -198,5 +229,7 @@ def build_managers(
         orchestrations=orchestrations,
         steps=steps,
         agent_sessions=agent_sessions,
+        attribution=attribution,
+        agents=agents,
     )
     return managers

@@ -12,6 +12,10 @@ from acme.infra.cache import CacheScope
 from acme.infra.queues import Queues
 from acme.infra.topics import Topics
 from acme.om.agent_sessions.types.agent_session import SessionStatus
+from acme.om.agents.types.kind import DoneRule
+from acme.om.agents.types.result import Claim, Turn
+from acme.om.attribution.types.authority import AuthorityMode, Trust
+from acme.om.attribution.types.principal import PrincipalKind
 from acme.om.context import (
     AppType,
     CredentialKind,
@@ -55,6 +59,12 @@ ENUMS = [
     ControlCommand,
     LoopOutcome,
     ParkReason,
+    PrincipalKind,
+    AuthorityMode,
+    Trust,
+    DoneRule,
+    Turn,
+    Claim,
 ]
 
 

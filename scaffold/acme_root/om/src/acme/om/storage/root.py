@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
+from acme.om.agents.storage import AgentTreeStorageInterface
 from acme.om.events.storage import EventStorageInterface
 from acme.om.idempotency.storage import IdempotencyStorageInterface
 from acme.om.media.storage import MediaStorageInterface
@@ -40,6 +41,9 @@ class StorageInterface(ABC):
 
     @abstractmethod
     def get_agent_session_storage(self) -> AgentSessionStorageInterface: ...
+
+    @abstractmethod
+    def get_agent_tree_storage(self) -> AgentTreeStorageInterface: ...
 
     @abstractmethod
     async def healthcheck(self) -> bool: ...
