@@ -11,7 +11,8 @@ A path that starts with `../` is read from this skill's folder as
 Conventions: `../_shared/scaffold-conventions.md`.
 Sections of `../../agentic_core_spec.md`: Tools (The Tool Contract, The
 Registry, Authorization Classes, Policy, Execution, Long-Running Jobs,
-Failures the Model Reads, Secrets Never Enter a Step), The Runtime.
+Failures the Model Reads, Secrets Never Enter a Step), The Runtime,
+Identity, Trust, and Attribution (Bound What a Convinced Model Can Do).
 Lenses: `../../lenses/tools.md`.
 
 ## Input
@@ -76,7 +77,12 @@ contract.
    mid-run would leave a half-done effect.
 3. `target` reads what the call acts on from the system it acts on,
    never from the input, and answers an empty `Target` when the call
-   acts on nothing in particular. `preflight` refuses a call that cannot
+   acts on nothing in particular. A call that changes external state
+   beyond the session's own work product, or reaches past its egress
+   allowlist, answers `outward: True` among its target's attributes:
+   `DEFAULT_CEILINGS` in `om/src/<name>/om/tools/rules.py` keys on it,
+   so a person approves the call whatever a tenant allows. The shapes
+   `Command` and `PushBranch` carry no such mark. `preflight` refuses a call that cannot
    succeed with `ToolFailed`, before anyone is asked to approve it; its
    runtime is read-only. A tool with nothing to check returns. An error
    the runtime raises is an infra exception, read by its `http_status`,
@@ -99,6 +105,9 @@ contract.
      refusal when it has one;
    - its target read from the system whatever the input claims, when it
      has one, shape the target case of `om/tests/unit/test_tool_policy.py`;
+   - an outward call, under a tenant layer that allows its class, still
+     decided `APPROVE`, shape `test_no_tenant_rule_loosens_a_call_past_a_ceiling`
+     in that file;
    - by its effect after a crash, shape `om/tests/unit/test_tool_recovery.py`:
      a repeatable call runs again under the same key, and an `unsafe`
      one is answered from the transport's record and never run again.
