@@ -9,6 +9,8 @@ from acme.infra.cache import CacheInterface, CacheScope
 from acme.infra.cache.memory import CacheMemoryImpl
 from acme.infra.keys import KeyServiceInterface
 from acme.infra.keys.memory import KeyServiceMemoryImpl
+from acme.infra.outages import OutageSignalInterface
+from acme.infra.outages.shared import OutageSignalCacheImpl
 from acme.infra.queues import QueuesInterface
 from acme.infra.queues.memory import QueueMemoryImpl
 from acme.infra.root import InfraInterface
@@ -34,6 +36,7 @@ class InfraLocalImpl(InfraInterface):
         self._queues = QueueMemoryImpl()
         self._secrets = SecretsLocalImpl(root / "secrets.env")
         self._keys = KeyServiceMemoryImpl()
+        self._outages = OutageSignalCacheImpl(self._caches[CacheScope.OUTAGE])
         self._workspaces = WorkspaceTwinImpl()
         self._broker = BrokerTwinImpl()
         self._transport = TransportTwinImpl(self._secrets, self._broker)
@@ -56,6 +59,9 @@ class InfraLocalImpl(InfraInterface):
     def get_keys(self) -> KeyServiceInterface:
         return self._keys
 
+    def get_outages(self) -> OutageSignalInterface:
+        return self._outages
+
     def get_workspaces(self) -> WorkspaceProviderInterface:
         return self._workspaces
 
@@ -73,6 +79,7 @@ class InfraLocalImpl(InfraInterface):
             self._queues.describe(),
             self._secrets.describe(),
             self._keys.describe(),
+            self._outages.describe(),
             self._workspaces.describe(),
             self._transport.describe(),
             self._broker.describe(),
@@ -81,12 +88,14 @@ class InfraLocalImpl(InfraInterface):
     async def start(self) -> None:
         for capability in (self._topics, self._buckets, self._queues, self._secrets, self._keys):
             await capability.start()
+        await self._outages.start()
         for runtime in (self._broker, self._workspaces, self._transport):
             await runtime.start()
 
     async def close(self) -> None:
         for runtime in (self._transport, self._workspaces, self._broker):
             await runtime.close()
+        await self._outages.close()
         for cache in self._caches.values():
             await cache.close()
         for capability in (self._keys, self._secrets, self._queues, self._buckets, self._topics):

@@ -19,6 +19,8 @@ from acme.infra.impl.valkey import ValkeyConnection
 from acme.infra.keys import KeyServiceInterface
 from acme.infra.keys.kms import KeyServiceKmsImpl
 from acme.infra.keys.memory import KeyServiceMemoryImpl, root_key
+from acme.infra.outages import OutageSignalInterface
+from acme.infra.outages.shared import OutageSignalCacheImpl
 from acme.infra.queues import QueuesInterface
 from acme.infra.queues.memory import QueueMemoryImpl
 from acme.infra.queues.sqs import QueueSqsImpl
@@ -109,6 +111,12 @@ class InfraConfiguredImpl(InfraInterface):
         self._caches: dict[CacheScope, CacheInterface] = {
             scope: self._build_cache(scope) for scope in CacheScope
         }
+        # The outage signal follows the cache: one process's own over the
+        # memory cache, which a deployed process refuses, and the fleet's
+        # over Valkey, behind the same breaker.
+        self._outages: OutageSignalInterface = OutageSignalCacheImpl(
+            self._caches[CacheScope.OUTAGE]
+        )
 
         if settings.buckets_backend == "s3":
             self._buckets: BucketsInterface = BucketsS3Impl(
@@ -221,6 +229,9 @@ class InfraConfiguredImpl(InfraInterface):
     def get_keys(self) -> KeyServiceInterface:
         return self._keys
 
+    def get_outages(self) -> OutageSignalInterface:
+        return self._outages
+
     def get_workspaces(self) -> WorkspaceProviderInterface:
         return self._workspaces
 
@@ -238,6 +249,7 @@ class InfraConfiguredImpl(InfraInterface):
             self._queues.describe(),
             self._secrets.describe(),
             self._keys.describe(),
+            self._outages.describe(),
             self._workspaces.describe(),
             self._transport.describe(),
             self._broker.describe(),
@@ -248,6 +260,7 @@ class InfraConfiguredImpl(InfraInterface):
             await self._valkey.start()
         for capability in (self._topics, self._buckets, self._queues, self._secrets, self._keys):
             await capability.start()
+        await self._outages.start()
         for runtime in (self._broker, self._workspaces, self._transport):
             await runtime.start()
 
@@ -256,6 +269,7 @@ class InfraConfiguredImpl(InfraInterface):
         last, once nothing holds it."""
         for runtime in (self._transport, self._workspaces, self._broker):
             await runtime.close()
+        await self._outages.close()
         for cache in self._caches.values():
             await cache.close()
         for capability in (self._keys, self._secrets, self._queues, self._buckets, self._topics):

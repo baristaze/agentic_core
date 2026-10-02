@@ -1,8 +1,9 @@
 # Infrastructure
 
 The capabilities the platform asks for and never implements itself:
-cache, buckets, topics, queues, secrets, keys, observability, and where an
-agent's tools run: workspaces and the transport. Each is an
+cache, buckets, topics, queues, secrets, keys, the outage signal,
+observability, and where an agent's tools run: workspaces and the
+transport. Each is an
 interface with a twin that runs on a laptop and an implementation that
 runs in the cloud. The object model sees the interface alone, and
 infra imports nothing from the object model.
@@ -17,6 +18,7 @@ infra imports nothing from the object model.
 | Queues | Work whose producer is outside the platform: `webhooks`, what a provider sends; at least once, so the consumer is idempotent | In-process, or ElasticMQ | SQS, with a dead-letter queue |
 | Secrets | Get, has, put, and delete by name; the object model holds a name, never a value | The settings, from `.env` and the environment | Secrets Manager |
 | Keys | Make, unwrap, and re-wrap a data key bound to its tenant, its key, and its version; keeps no copy | In-process, derived from a root key | KMS, under the account's key |
+| Outage signal | A provider known to be failing for one credential, until its retry time; keyed by provider and credential; fails open | On the in-process cache, or on Valkey | On Valkey, shared by the fleet |
 | Observability | Structured logs, Prometheus metrics, OpenTelemetry traces, error reports | Prometheus, Grafana, Jaeger, GlitchTip | CloudWatch, X-Ray, a Sentry-compatible backend |
 | Workspaces | Prepare, release, and purge the place an agent works, to an isolation spec (a mode, an egress policy, limits); a spec the provider cannot meet is refused, never weakened | A directory on this host, a container on the local Docker, or the twin | A container per workspace, or none; a directory on the host is refused at boot |
 | Transport | Run a command in a workspace, streamed, and read, write, and list its files; its whole process tree ends at its deadline; a secret is brokered, or injected into the one process and redacted from all it prints ([ADR 1003](../docs/adr/1003-a-secret-that-cannot-be-brokered-is-injected-into-one-process.md)) | This process, `docker exec`, or the twin | `docker exec` |
@@ -24,6 +26,23 @@ infra imports nothing from the object model.
 The environment name decides what a process may use: `local` and `test`
 may use the in-process and compose backends, and every other
 environment refuses them at boot.
+
+## The outage signal
+
+A provider that fails fast costs a session its retries before it parks.
+The outage signal spares the others: the first session to learn of an
+outage reports it, with its retry time, and every session that would call
+the same provider on the same credential parks at once until then. The
+key is the provider and the credential together, so one tenant's broken
+key is no outage of the platform's own.
+
+The signal lives on the shared cache, in a scope of its own. In one
+process it is the in-process cache, and a fleet shares it on Valkey; it
+follows the cache backend, so a deployed process, which refuses the
+in-process cache, always shares it. Its null never signals: one process
+needs none, since its sessions learn of an outage from the provider's
+own errors. A cache that cannot be reached is a miss, so the signal
+fails open, and those errors still park.
 
 ## What every capability holds to
 
