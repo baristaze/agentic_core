@@ -65,13 +65,15 @@ class ToolsManagerInterface(ABC):
         workspace: Workspace,
         *,
         holds_private: bool = True,
+        tree_deadline: datetime | None = None,
     ) -> Gate:
         """Where a call stands before it runs. A tool the registry does not
         hold, an input its schema refuses, and a preflight that refuses are
-        answered at once. Then attribution answers whose authority the call
-        runs under, asked again of the adopter's transition (`denied` for a
-        delegated principal who no longer holds it; `PrincipalLapsed` for a
-        steady one), and the rule of two: whether the session is marked,
+        answered at once; the preflight runs by the call's own time, never
+        past `tree_deadline`. Then attribution answers whose authority the
+        call runs under, asked again of the adopter's transition (`denied`
+        for a delegated principal who no longer holds it; `PrincipalLapsed`
+        for a steady one), and the rule of two: whether the session is marked,
         `holds_private` (its private data or credentials), and whether the
         call acts outward, read from its target. Then policy decides from the
         tool, its class, its effect, and its target's attributes (`defaults`

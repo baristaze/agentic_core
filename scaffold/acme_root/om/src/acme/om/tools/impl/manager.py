@@ -193,6 +193,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         workspace: Workspace,
         *,
         holds_private: bool = True,
+        tree_deadline: datetime | None = None,
     ) -> Gate:
         ctx.require(Permission.WRITE)
         resolved = self._resolve(registry, request, call_input)
@@ -205,7 +206,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
                 f"and {tool.spec.name} is {tool.spec.authorization_class}"
             )
         now = self._clock()
-        deadline = call_deadline(now, tool.spec.timeout, self._options.engine_limit, None)
+        deadline = call_deadline(now, tool.spec.timeout, self._options.engine_limit, tree_deadline)
         runtime = self._runtime(ctx, request, tool, workspace, 0, deadline, None, read_only=True)
         try:
             async with asyncio.timeout(self._seconds_until(deadline)):
@@ -353,8 +354,10 @@ class ToolsManagerImpl(ToolsManagerInterface):
         deadline = job_deadline(self._clock(), tool.spec.timeout, tree_deadline)
         runtime = self._runtime(ctx, request, tool, workspace, epoch, deadline, None)
         try:
-            # Starting is quick; the work runs by its own deadline.
-            async with asyncio.timeout(self._options.engine_limit.total_seconds()):
+            # Starting is quick, and never outlasts the engine's limit or the
+            # job's deadline; the work runs by that deadline.
+            start_by = min(deadline, self._clock() + self._options.engine_limit)
+            async with asyncio.timeout(self._seconds_until(start_by)):
                 started = await tool.run(ctx, parsed, runtime)
         except Exception as error:
             failure, detail = self._classify(error, tool)

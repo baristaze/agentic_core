@@ -622,6 +622,7 @@ class LoopManagerImpl(LoopManagerInterface):
                 use.input,
                 run.workspace,
                 holds_private=rules.holds_private(run.kind, run.registry),
+                tree_deadline=run.deadline,
             )
         except PrincipalLapsed:
             if not fresh:
