@@ -6,18 +6,35 @@ tree's; cancelling the loop, or any other end of it, cancels the job; a
 completion that names another session's job, or one settled already, is
 refused and wakes nothing; a job that spends passes the budget gate
 before it starts, and its hold is released only when its start was refused
-before any work began; and a completion that reports more than any job
-costs is refused as invalid input."""
+before any work began; a run lost after it wrote a job's request is
+recovered by one start under one hold, parked on that job, and a budget
+that refuses the recovered call parks the loop on the gate's one answer;
+the lost run's calls after that job are settled by their effect before
+the loop parks on it, and a cancel met there cancels the job too; and a
+completion that reports more than any job costs is refused as
+invalid input."""
 
+import asyncio
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 import pytest
 from contracts.budget_storage import make_budget
 from contracts.doubles import context
 from contracts.factories import make_org
-from contracts.loops import ASSISTANT, BUILDER, DELIVERY, Loop, call, loop_over, reply, said
+from contracts.loops import (
+    ASSISTANT,
+    BUILDER,
+    DELIVERY,
+    Lookup,
+    Loop,
+    call,
+    loop_over,
+    reply,
+    said,
+)
 from pydantic import ValidationError
 
 from acme.infra.exceptions import InfraException
@@ -39,7 +56,8 @@ from acme.om.steps.types.header import (
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.tools.tool import ToolRuntime
 from acme.om.tools.types.call import MAX_JOB_COST_MICROS, JobCompletion
-from acme.om.tools.types.tool import ToolInput
+from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule
+from acme.om.tools.types.tool import Effect, ToolClass, ToolInput
 
 
 def builder_loop(tmp_path: Path) -> Loop:
@@ -332,6 +350,224 @@ async def test_a_spending_job_its_tool_refused_before_it_began_releases_its_hold
     assert "the cluster has no machine free" in text_of(answer)
     assert spend.held_cost_micros == 0, "the hold settled"
     assert spend.spent_cost_micros < 7_200_000, "released: nothing ran"
+
+
+class Lost(Exception):
+    """The process a run lives in ends where this is raised."""
+
+
+def lose_once(monkeypatch: pytest.MonkeyPatch, manager: object, method: str) -> None:
+    """The next call of `manager.method` loses its run; the one after runs."""
+    real = getattr(manager, method)
+
+    async def lost(*args: object, **kwargs: object) -> None:
+        monkeypatch.setattr(manager, method, real)
+        raise Lost(method)
+
+    monkeypatch.setattr(manager, method, lost)
+
+
+async def lost_after_its_request(
+    loop: Loop, monkeypatch: pytest.MonkeyPatch, manager: object, method: str, cost_micros: int
+) -> tuple[UUID, UUID, Step]:
+    """A session whose run wrote a spending job's request and was lost at
+    the first call of `manager.method`, with its budget line and the open
+    request."""
+    session_id = await loop.start("builder")
+    line = await loop.managers.budgets.create_budget(
+        loop.owner, make_budget(BudgetScopeKind.SESSION, str(session_id), cost_micros=cost_micros)
+    )
+    await loop.say(session_id, "Start it.")
+    loop.anthropic.add(reply(call("compute", q="everything")), reply(said("It is done.")))
+    lose_once(monkeypatch, manager, method)
+    with pytest.raises(Lost):
+        await loop.loops.run(loop.owner, session_id)
+    steps = await loop.history(session_id)
+    (request,) = of_type(steps, StepType.TOOL_REQUEST)
+    assert not [step for step in steps if step.responds_to == request.id], "left open"
+    return session_id, line.id, request
+
+
+@pytest.mark.parametrize(
+    ("manager", "method"),
+    [("tools", "gate"), ("agent_sessions", "park")],
+    ids=["before-its-hold", "before-its-park"],
+)
+async def test_a_run_lost_before_its_jobs_park_is_recovered_by_one_start_and_one_hold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, manager: str, method: str
+) -> None:
+    """The run that recovers the call starts the job once, under one hold
+    of its own, and parks on it; the job's completion settles that hold.
+    A hold the lost run took stays open."""
+    loop = builder_loop(tmp_path)
+    compute = loop.jobs["compute"]  # 3.6 units an hour, for two hours: 7.2 held
+    session_id, line_id, request = await lost_after_its_request(
+        loop, monkeypatch, getattr(loop.managers, manager), method, 100_000_000
+    )
+    starts = len(compute.deadlines)
+    held = (await loop.managers.budgets.get_spend(loop.owner, line_id)).held_cost_micros
+
+    recovered = await loop.loops.run(loop.owner, session_id)
+
+    assert recovered.park is not None and recovered.park.job is not None
+    assert recovered.park.job.key == request.id, "parked on the job it started"
+    assert recovered.park.job.hold_id is not None
+    assert len(compute.deadlines) == starts + 1, "started once"
+    spend = await loop.managers.budgets.get_spend(loop.owner, line_id)
+    assert spend.held_cost_micros == held + 7_200_000, "under one hold of its own"
+    session = await loop.managers.agent_sessions.get_session(loop.owner, session_id)
+    assert session.park == recovered.park
+
+    completion = JobCompletion(key=request.id, handle="compute-1", text="done", cost_micros=1_234)
+    await loop.loops.complete_job(loop.owner, session_id, completion)
+    done = await loop.loops.run(loop.owner, session_id)
+
+    assert done.outcome is LoopOutcome.SUCCEEDED
+    settled = await loop.managers.budgets.get_spend(loop.owner, line_id)
+    assert settled.held_cost_micros == held, "its own hold settled"
+    assert len(compute.deadlines) == starts + 1, "never started again"
+
+
+async def test_a_budget_park_met_while_recovering_a_call_is_kept_and_its_gate_asked_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The run that recovers a spending job's call, on a budget too small
+    for it, parks on the gate's refusal without asking it again; a raise
+    then starts the job once."""
+    loop = builder_loop(tmp_path)
+    compute = loop.jobs["compute"]
+    session_id, line_id, request = await lost_after_its_request(
+        loop, monkeypatch, loop.managers.tools, "gate", 5_000_000
+    )
+    gate = loop.managers.budget_gate
+    authorize = gate.authorize
+    asked: list[object] = []
+
+    async def counted(*args: Any, **kwargs: Any) -> Any:
+        answer = await authorize(*args, **kwargs)
+        asked.append(answer)
+        return answer
+
+    monkeypatch.setattr(gate, "authorize", counted)
+
+    parked = await loop.loops.run(loop.owner, session_id)
+
+    assert parked.park is not None and parked.park.reason is ParkReason.BUDGET
+    assert len(asked) == 1, "the gate is asked once"
+    assert compute.started == {}, "no job started"
+    session = await loop.managers.agent_sessions.get_session(loop.owner, session_id)
+    assert session.park == parked.park
+
+    line = await loop.managers.budgets.get_budget(loop.owner, line_id)
+    raised = Amount(cost_micros=50_000_000)
+    await loop.managers.budgets.change_amount(loop.owner, line_id, raised, line.version)
+    await loop.managers.agent_sessions.wake_parked(loop.owner, ParkReason.BUDGET)
+    started = await loop.loops.run(loop.owner, session_id)
+
+    assert started.park is not None and started.park.job is not None
+    assert started.park.job.key == request.id
+    assert len(compute.deadlines) == 1, "started once"
+
+
+APPROVER = BUILDER.model_copy(
+    update={
+        "name": "approver",
+        "tools": ("build", "compute", "poke"),
+        "policy": PolicyLayer(
+            rules=(
+                PolicyRule(authorization_class=ToolClass.WRITE, decision=Decision.ALLOW),
+                PolicyRule(tool="build", decision=Decision.APPROVE),
+                PolicyRule(tool="compute", decision=Decision.APPROVE),
+            )
+        ),
+    }
+)
+"""A kind whose jobs wait for a person's approval, and whose `poke` runs."""
+
+
+async def handed_over_mid_turn(
+    tmp_path: Path, job: str, cost_micros: int = 100_000_000
+) -> tuple[Loop, Lookup, UUID, UUID, Step, Step]:
+    """A session whose run asked about `job` and was running `poke`, an
+    unsafe call, when a person took the environment over, with the job then
+    approved and the environment given back: its loop, `poke`, its budget
+    line, and the two open requests."""
+    poke = Lookup("poke", effect=Effect.UNSAFE, authorization_class=ToolClass.WRITE, holds=True)
+    loop = loop_over(tmp_path, kinds=(APPROVER,), extra=(poke,))
+    session_id = await loop.start("approver")
+    line = await loop.managers.budgets.create_budget(
+        loop.owner, make_budget(BudgetScopeKind.SESSION, str(session_id), cost_micros=cost_micros)
+    )
+    await loop.say(session_id, "Start it, and poke it.")
+    loop.anthropic.add(reply(call(job, q="everything"), call("poke", q="once")))
+    running = asyncio.ensure_future(loop.loops.run(loop.owner, session_id))
+    await poke.started.wait()
+    await loop.loops.take_over(loop.owner, session_id)
+    poke.release.set()
+    assert (await running).end is RunEnd.STALE
+    steps = await loop.history(session_id)
+    asked, poked = of_type(steps, StepType.TOOL_REQUEST)
+    assert not [step for step in steps if step.responds_to in (asked.id, poked.id)], "both open"
+    assert len(poke.ran_as) == 1
+    await loop.managers.tools.decide_call(loop.owner, session_id, asked.seq, approve=True)
+    await loop.loops.give_back(loop.owner, session_id, "Approved it.")
+    return loop, poke, session_id, line.id, asked, poked
+
+
+async def test_a_lost_runs_call_after_the_job_it_recovers_is_settled_by_its_effect_and_run_once(
+    tmp_path: Path,
+) -> None:
+    """The run that recovers the turn parks on the job it starts only once
+    the unsafe call after it is settled from what the lost run left: the
+    call never runs again, and the job never starts again."""
+    loop, poke, session_id, _, asked, poked = await handed_over_mid_turn(tmp_path, "build")
+    build = loop.jobs["build"]
+
+    recovered = await loop.loops.run(loop.owner, session_id)
+
+    assert recovered.park is not None and recovered.park.job is not None
+    assert recovered.park.job.key == asked.id, "parked on the job it started"
+    answer = answer_to(await loop.history(session_id), poked)
+    assert getattr(answer.header, "failure", None) is ToolFailure.INTERRUPTED, "outcome unknown"
+    assert len(poke.ran_as) == 1, "never run again"
+
+    completion = JobCompletion(key=asked.id, handle="build-1", text="built")
+    await loop.loops.complete_job(loop.owner, session_id, completion)
+    loop.anthropic.add(reply(said("It is done.")))
+    done = await loop.loops.run(loop.owner, session_id)
+
+    assert done.outcome is LoopOutcome.SUCCEEDED
+    assert len(poke.ran_as) == 1, "never run again"
+    assert len(build.deadlines) == 1, "started once"
+
+
+async def test_a_cancel_met_while_recovering_cancels_the_job_the_recovery_started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A spending job the recovery started, which it has not yet parked on,
+    is cancelled with the loop when a later call of the turn meets a
+    cancel, and its hold counts whole."""
+    loop, _, session_id, line_id, asked, poked = await handed_over_mid_turn(tmp_path, "compute")
+    compute = loop.jobs["compute"]  # 3.6 units an hour, for two hours: 7.2 held
+    held = (await loop.managers.budgets.get_spend(loop.owner, line_id)).held_cost_micros
+
+    async def cancelled(*args: Any, **kwargs: Any) -> Any:
+        await loop.managers.steps.append_inputs(loop.owner, session_id, [cancel(loop, session_id)])
+        return ControlCommand.CANCEL
+
+    monkeypatch.setattr(loop.managers.tools, "recover", cancelled)
+
+    ended = await loop.loops.run(loop.owner, session_id)
+
+    assert ended.outcome is LoopOutcome.CANCELLED
+    assert compute.started == {asked.id: "compute-1"}
+    assert [job.key for job in compute.cancelled] == [asked.id], "the job is cancelled"
+    steps = await loop.history(session_id)
+    assert "the job was cancelled" in text_of(answer_to(steps, asked))
+    assert answer_to(steps, poked)
+    spend = await loop.managers.budgets.get_spend(loop.owner, line_id)
+    assert spend.held_cost_micros == held, "its hold settled"
+    assert spend.spent_cost_micros >= 7_200_000, "counted whole"
 
 
 async def test_a_completion_past_the_most_a_job_costs_is_refused_and_the_session_runs_on(

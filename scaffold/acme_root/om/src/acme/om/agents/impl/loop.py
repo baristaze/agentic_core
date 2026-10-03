@@ -625,7 +625,12 @@ class LoopManagerImpl(LoopManagerInterface):
         the loop does anything else: none of them is ever run as new. A call
         that would wait for a person, or whose principal lapsed, is answered
         as stopped with its outcome unknown, rather than parked open. A
-        cancel that waits answers them all so."""
+        cancel that waits answers them all so. The first call that parks the
+        loop as it is settled, on the job it started or on the budget that
+        refused one, parks it there once every other call is settled, so
+        nothing asks or starts it a second time. A job's call after it is
+        left open for the run that resumes, whose start of it attaches to
+        the work under its key."""
         history = await self._history(run.ctx, run.session_id)
         response = rules.latest_response(history, run.loop_id)
         if response is None:
@@ -636,10 +641,17 @@ class LoopManagerImpl(LoopManagerInterface):
         loop = rules.OpenLoop(run.loop_id, run.start_seq, None)
         if rules.asked(history, loop, ControlCommand.CANCEL) is not None:
             return await self._cancelled(run)
+        park: Park | None = None
         for use, request in lost:
+            tool = run.registry.get(use.name)
+            if park is not None and tool is not None and tool.spec.mode is ToolMode.JOB:
+                continue
             settled = await self._settle_call(run, history, use, request, fresh=False)
             if settled.cancelled:
-                return await self._cancelled(run)
+                return await self._cancelled(run, park)
+            park = park or settled.park
+        if park is not None:
+            return await self._park(run, park)
         return None
 
     async def _requests(
@@ -1021,12 +1033,16 @@ class LoopManagerImpl(LoopManagerInterface):
 
     # How a run stops.
 
-    async def _cancelled(self, run: _Run) -> LoopRun:
+    async def _cancelled(self, run: _Run, park: Park | None = None) -> LoopRun:
         """A principal's cancel: every call still open is answered as stopped,
         so the history holds no open call, and the loop ends `cancelled`,
-        and so do its children's."""
+        and so do its children's. Every job the loop started is cancelled
+        with it, one whose `park` this run has not yet written as well."""
         history = await self._history(run.ctx, run.session_id)
         jobs = rules.started_jobs(history, run.loop_id)
+        if park is not None and park.job is not None and park.job.key not in jobs:
+            request = next(step for step in history if step.id == park.job.key)
+            jobs[park.job.key] = rules.StartedJob(request, park, None)
         why = f"stopped by a principal's {ControlCommand.CANCEL.value}; the job was cancelled"
         await self._stop_jobs(run, list(jobs.values()), why)
         response = rules.latest_response(history, run.loop_id)
