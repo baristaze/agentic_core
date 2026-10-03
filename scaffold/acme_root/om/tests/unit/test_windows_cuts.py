@@ -69,7 +69,7 @@ def generated(seed: int) -> History:
             if rng.random() < 0.3:
                 pending.append(history.message(f"a steer {len(history.steps)}"))
             if rng.random() < 0.2:
-                history.changed("a person moved the arm")
+                history.changed("a person changed the retry settings")
             history.result(call, "r" * rng.randint(1, 300))
     return history
 

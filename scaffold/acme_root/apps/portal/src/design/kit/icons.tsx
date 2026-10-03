@@ -162,7 +162,7 @@ export function EyeIcon() {
   );
 }
 
-/** A robot: a service account. */
+/** A bot: a service account. */
 export function BotIcon() {
   return (
     <LucideIcon>
