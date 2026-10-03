@@ -70,7 +70,9 @@ thing [Acme is made of](../../../../README.md).
   history as one more version. The latest is shown to the agent at the
   end of each request, and a person reads it among the session's steps.
 - **Read an attachment** a range of lines or pages at a time, at most a
-  bounded amount a call. How a file turns into text is the product's.
+  bounded amount a call. A line or page longer than one read is read on
+  from the offset the read before stopped at. How a file turns into text
+  is the product's.
 - **Purge.** When a deleted session is purged, its workspace and the
   records of its commands go with its history.
 

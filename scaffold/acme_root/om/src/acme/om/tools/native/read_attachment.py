@@ -4,7 +4,9 @@ whole. The attachment is found in the history of the session the call was
 made in (`ToolRuntime.session_id`), never one the input names, so an id
 another session holds answers as one that never existed. Its text comes
 from the adopter's reader (`tools.attachments`), and a range wider than the
-bound is refused, so one read never floods the window."""
+bound is refused, so one read never floods the window. A line or page longer
+than one read is read on within it, from the character offset the answer
+before gave."""
 
 from collections.abc import Sequence
 from datetime import timedelta
@@ -33,7 +35,10 @@ DESCRIPTION = (
     "Read part of a file attached to this session: a range of its lines, or "
     "of its pages, numbered from 1, both ends included. Name the file by the "
     "attachment id its label shows. Read a large file a range at a time; the "
-    "answer says how many lines or pages the file has, and where it stopped."
+    "answer says how many lines or pages the file has, and where it stopped. "
+    "When one line or page alone is longer than one read, the answer stops "
+    "within it and gives an offset: read on with that line or page as both "
+    "first and last, and that offset."
 )
 
 
@@ -53,6 +58,7 @@ class ReadAttachmentInput(ToolInput):
     unit: Unit = "lines"
     first: int = Field(ge=1)
     last: int = Field(ge=1)
+    offset: int = Field(default=0, ge=0)  # characters into `first`, to read on from
 
     @model_validator(mode="after")
     def _a_range_runs_forward(self) -> Self:
@@ -60,11 +66,19 @@ class ReadAttachmentInput(ToolInput):
             raise ValueError("last is at or after first")
         return self
 
+    @model_validator(mode="after")
+    def _an_offset_reads_within_one(self) -> Self:
+        if self.offset and self.last != self.first:
+            raise ValueError("an offset reads within one line or page: first and last are the same")
+        return self
+
 
 class AttachmentRange(Platform):
     """What one read answers: the lines or pages from `first` to `last`, of
     the `total` the file has. `cut` says the text stopped at the bound of
-    one read before the range's end: read on from `last`."""
+    one read before the range's end: read on from `last`. `offset` is there
+    only when the text stopped within a line or page: the characters of
+    `last` read so far, the offset to read on from."""
 
     attachment_id: UUID
     name: str
@@ -74,6 +88,7 @@ class AttachmentRange(Platform):
     total: int
     text: str
     cut: bool
+    offset: int | None = Field(default=None, exclude_if=lambda offset: offset is None)
 
 
 class ReadAttachmentToolImpl(ToolInterface):
@@ -137,6 +152,15 @@ class ReadAttachmentToolImpl(ToolInterface):
                 f"{call_input.first} is past its end",
             )
         last = min(call_input.last, len(items))
+        span = list(items[call_input.first - 1 : last])
+        start = call_input.offset
+        if start and start >= len(span[0]):
+            raise ToolFailed(
+                ToolFailure.INVALID_INPUT,
+                f"{call_input.unit[:-1]} {call_input.first} of {attachment.name} has "
+                f"{len(span[0])} characters; offset {start} is at or past its end",
+            )
+        span[0] = span[0][start:]
         empty = AttachmentRange(
             attachment_id=attachment.id,
             name=attachment.name,
@@ -150,9 +174,16 @@ class ReadAttachmentToolImpl(ToolInterface):
         # What the answer holds beside its text, at its widest: a cut range
         # ends no later and says `true`, one character shorter than `false`.
         room = self._options.max_chars - len(empty.model_dump_json())
-        chosen, cut = _within(
-            items[call_input.first - 1 : last], call_input.unit, call_input.first, room
-        )
+        chosen, cut = _within(span, call_input.unit, call_input.first, room)
+        offset = None
+        if not chosen:
+            # The first line or page alone is past one read: it is kept up to
+            # the room left beside the offset the answer gives, no wider than
+            # the line or page's own length.
+            stops = empty.model_copy(update={"cut": True, "offset": start + len(span[0])})
+            room = self._options.max_chars - len(stops.model_dump_json())
+            fits = _prefix(span[0], call_input.unit, call_input.first, room)
+            chosen, offset = [span[0][:fits]], start + fits
         return AttachmentRange(
             attachment_id=attachment.id,
             name=attachment.name,
@@ -162,6 +193,7 @@ class ReadAttachmentToolImpl(ToolInterface):
             total=len(items),
             text=_joined(chosen, call_input.unit, call_input.first),
             cut=cut,
+            offset=offset,
         )
 
     def _bound(self, unit: Unit) -> int:
@@ -213,16 +245,14 @@ def _escaped(text: str) -> int:
 
 
 def _within(items: Sequence[str], unit: Unit, first: int, room: int) -> tuple[list[str], bool]:
-    """The items from the start of the range whose text, escaped as the
-    answer's JSON escapes it, fits `room`, and whether the range was cut. A
-    first item alone past it is kept up to it."""
+    """The whole items from the start of the range whose text, escaped as
+    the answer's JSON escapes it, fits `room`, and whether the range was cut:
+    none, when the first alone is past it."""
     chosen: list[str] = []
     used = 0
     for n, item in enumerate(items):
         size = _escaped(_labelled(item, unit, first + n)) + (2 if chosen else 0)  # "\n" joins
         if used + size > room:
-            if not chosen:
-                chosen.append(item[: _prefix(item, unit, first, room)])
             return chosen, True
         chosen.append(item)
         used += size
