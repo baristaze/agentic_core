@@ -15,12 +15,10 @@ import pytest
 from contracts.budget_storage import make_budget
 from contracts.doubles import context
 from contracts.factories import make_org
-from contracts.loops import ALLOWED, ASSISTANT, DELIVERY, Loop, call, loop_over, reply, said
+from contracts.loops import ASSISTANT, BUILDER, DELIVERY, Loop, call, loop_over, reply, said
 
 from acme.om.agent_sessions.types.agent_session import SessionStatus
-from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
 from acme.om.agents.types.run import RunEnd
-from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.base import new_id
 from acme.om.budgets.types.amount import Amount
 from acme.om.budgets.types.budget import BudgetScopeKind
@@ -35,17 +33,6 @@ from acme.om.steps.types.header import (
 )
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.tools.types.call import JobCompletion
-
-BUILDER = AgentKind(
-    name="builder",
-    version=1,
-    tools=("lookup", "build", "compute"),
-    done_rule=DoneRule.ANSWER,
-    authority=AuthorityMode.DELEGATED,
-    tree=TreeLimits(height=2, count=4),
-    prompts=("You start the work the person asks for, and say how it ended.",),
-    policy=ALLOWED,
-)
 
 
 def builder_loop(tmp_path: Path) -> Loop:

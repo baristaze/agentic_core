@@ -204,6 +204,18 @@ DELIVERY = AgentKind(
     policy=ALLOWED,
 )
 
+BUILDER = AgentKind(
+    name="builder",
+    version=1,
+    tools=("lookup", "build", "compute"),
+    done_rule=DoneRule.ANSWER,
+    authority=AuthorityMode.DELEGATED,
+    tree=TreeLimits(height=2, count=4),
+    prompts=("You start the work the person asks for, and say how it ended.",),
+    policy=ALLOWED,
+)
+"""A kind that starts jobs: `build`, and `compute`, which spends."""
+
 HELPER = AgentKind(
     name="helper",
     version=1,
