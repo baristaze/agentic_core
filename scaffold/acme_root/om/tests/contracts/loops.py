@@ -320,11 +320,14 @@ def loop_over(
     sink: StreamSinkMemoryImpl | None = None,
     jitter: Callable[[], float] = random.random,
     reader: AttachmentReaderInterface | None = None,
+    extra: tuple[ToolInterface, ...] = (),
 ) -> Loop:
     """`storage` None is the memory storage, and `owner` None a fresh
     tenant's owner; a suite over Postgres hands in both. `jitter` is what
     the loop draws its retry waits from. The loop's catalog holds the
-    engine's tools before the suite's, over `reader`, None the null."""
+    engine's tools before the suite's, over `reader`, None the null, and
+    `extra` after them: a product's own tool, which a kind of `kinds`
+    names."""
     infra = InfraLocalImpl(tmp_path)
     anthropic = ModelProviderScriptedImpl(ProviderName.ANTHROPIC)
     openai = ModelProviderScriptedImpl(ProviderName.OPENAI)
@@ -334,7 +337,7 @@ def loop_over(
     integrations = IntegrationsOverImpl(IdentityProviderAbsentImpl(), providers)
     catalog = tools()
     jobs = {"build": Build(), "compute": Build("compute", rate=3_600_000)}
-    every = (*catalog.values(), *jobs.values())
+    every = (*catalog.values(), *jobs.values(), *extra)
     storage = storage or StorageMemoryImpl()
     reader = reader or AttachmentReaderNullImpl()
     managers = build_managers(
