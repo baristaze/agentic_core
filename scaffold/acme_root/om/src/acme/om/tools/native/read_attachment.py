@@ -12,6 +12,7 @@ from typing import Literal, Self
 from uuid import UUID
 
 from pydantic import Field, model_validator
+from pydantic_core import to_json
 
 from acme.om.base import Platform
 from acme.om.context import TenantContext
@@ -37,8 +38,9 @@ DESCRIPTION = (
 
 
 class ReadAttachmentOptions(Platform):
-    """The bound of one read. `max_chars` stays under the window's result
-    bound, so an answer is kept in its step whole."""
+    """The bound of one read. `max_chars` bounds the answer as the model
+    reads it, its JSON with every quote and newline escaped, and stays under
+    the window's result bound, so an answer is kept in its step whole."""
 
     max_lines: int = Field(default=400, gt=0)
     max_pages: int = Field(default=10, gt=0)
@@ -135,11 +137,21 @@ class ReadAttachmentToolImpl(ToolInterface):
                 f"{call_input.first} is past its end",
             )
         last = min(call_input.last, len(items))
+        empty = AttachmentRange(
+            attachment_id=attachment.id,
+            name=attachment.name,
+            unit=call_input.unit,
+            first=call_input.first,
+            last=last,
+            total=len(items),
+            text="",
+            cut=False,
+        )
+        # What the answer holds beside its text, at its widest: a cut range
+        # ends no later and says `true`, one character shorter than `false`.
+        room = self._options.max_chars - len(empty.model_dump_json())
         chosen, cut = _within(
-            items[call_input.first - 1 : last],
-            call_input.unit,
-            call_input.first,
-            self._options.max_chars,
+            items[call_input.first - 1 : last], call_input.unit, call_input.first, room
         )
         return AttachmentRange(
             attachment_id=attachment.id,
@@ -195,18 +207,35 @@ def _joined(items: Sequence[str], unit: Unit, first: int) -> str:
     return "\n".join(_labelled(item, unit, first + n) for n, item in enumerate(items))
 
 
-def _within(items: Sequence[str], unit: Unit, first: int, max_chars: int) -> tuple[list[str], bool]:
-    """The items from the start of the range that fit the bound together,
-    and whether the range was cut. A first item alone past the bound is
-    kept up to it."""
+def _escaped(text: str) -> int:
+    """The characters `text` takes in the answer's JSON, its quotes aside."""
+    return len(to_json(text).decode()) - 2
+
+
+def _within(items: Sequence[str], unit: Unit, first: int, room: int) -> tuple[list[str], bool]:
+    """The items from the start of the range whose text, escaped as the
+    answer's JSON escapes it, fits `room`, and whether the range was cut. A
+    first item alone past it is kept up to it."""
     chosen: list[str] = []
     used = 0
     for n, item in enumerate(items):
-        size = len(_labelled(item, unit, first + n)) + (1 if chosen else 0)
-        if used + size > max_chars:
+        size = _escaped(_labelled(item, unit, first + n)) + (2 if chosen else 0)  # "\n" joins
+        if used + size > room:
             if not chosen:
-                chosen.append(item[: max(max_chars - len(_labelled("", unit, first)), 0)])
+                chosen.append(item[: _prefix(item, unit, first, room)])
             return chosen, True
         chosen.append(item)
         used += size
     return chosen, False
+
+
+def _prefix(item: str, unit: Unit, number: int, room: int) -> int:
+    """The longest start of `item` whose labelled text, escaped, fits `room`."""
+    fits, past = 0, len(item) + 1
+    while past - fits > 1:
+        middle = (fits + past) // 2
+        if _escaped(_labelled(item[:middle], unit, number)) <= room:
+            fits = middle
+        else:
+            past = middle
+    return fits

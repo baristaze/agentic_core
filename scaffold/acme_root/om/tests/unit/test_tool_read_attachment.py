@@ -1,6 +1,7 @@
 """`read_attachment` through the loop: it answers the asked range of lines or
 pages within its bound, refuses a range wider than the bound and one past
-the file's end, cuts a range at the bound of one read, and never reads an
+the file's end, cuts a range at the bound of one read, measured as the
+model reads it, so a full read is kept whole, and never reads an
 attachment another session or another tenant holds: such an id answers as
 one that never existed, and the reader is never asked."""
 
@@ -27,6 +28,7 @@ from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.tools.attachments import AttachmentReaderInterface, AttachmentText
 
 LINES = "\n".join(f"line {n}" for n in range(1, 451)) + "\n"
+QUOTED = "".join(f'"{n}",' + ",".join(['"a ""quoted"" cell"'] * 6) + "\n" for n in range(1, 401))
 
 
 class Reader(AttachmentReaderInterface):
@@ -141,6 +143,31 @@ async def test_a_read_answers_its_range_within_the_bound_and_refuses_one_past_it
     assert held["text"].split("\n")[-1] == "x" * 60 + f" {held['last']}", "whole lines only"
     # A range wider than the bound is refused before the file is read.
     assert reader.asked == [(session_id, report.id)] * 3 + [(session_id, long.id)]
+
+
+async def test_a_quoted_range_that_fills_the_bound_is_answered_whole_never_as_a_preview(
+    tmp_path: Path,
+) -> None:
+    """Every quote doubles in the answer's JSON, so the bound is measured
+    there: past it, the window would keep the read as an artifact and show
+    only its head and tail."""
+    sheet = a_file("weekly.csv")
+    reader = Reader({sheet.id: AttachmentText(pages=(QUOTED,))})
+    loop = loop_over(tmp_path, kinds=(ASSISTANT, DELIVERY, HELPER), reader=reader)
+    session_id = await loop.start("helper")
+    await attach(loop, session_id, sheet)
+    loop.anthropic.add(reply(read(sheet.id, "lines", 1, 400)), reply(said("I read it.")))
+
+    run = await loop.loops.run(loop.owner, session_id)
+
+    assert run.outcome is LoopOutcome.SUCCEEDED
+    (response,) = [s for s in await loop.history(session_id) if s.type is StepType.TOOL_RESPONSE]
+    assert isinstance(response.header, ToolResponseHeader) and response.header.artifact is None
+    ((failure, text),) = answers([response])
+    assert failure is None and len(text) <= 20_000, "within the bound as the model reads it"
+    held = json.loads(text)
+    assert held["cut"] is True and held["first"] == 1 and held["last"] < 400
+    assert held["text"].split("\n") == QUOTED.split("\n")[: held["last"]], "whole lines only"
 
 
 async def test_a_read_never_reaches_another_sessions_or_another_tenants_attachment(
