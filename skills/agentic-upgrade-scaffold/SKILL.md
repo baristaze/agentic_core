@@ -1,7 +1,7 @@
 ---
 name: agentic-upgrade-scaffold
 description: "Move a platform's base to a later engine release: a product rendered from the engine's scaffold, or a layer that takes its scaffold/ folder unchanged. Runs the guideline's arch-upgrade-scaffold with the engine as its source, so one move takes both foundations, and adds what the engine's layer holds: its releases, its ADR numbers, its migrations, and a layer's gates in a copy."
-allowed-tools: Read, Grep, Glob, Edit, Write, Bash(curl:*), Bash(gh api:*), Bash(gh release view:*), Bash(python3:*), Bash(git status:*), Bash(git fetch:*), Bash(git rev-parse:*), Bash(git symbolic-ref:*), Bash(git switch:*), Bash(git log:*), Bash(git show:*), Bash(git diff:*), Bash(git merge:*), Bash(git merge-base:*), Bash(git checkout:*), Bash(git rm:*), Bash(git add:*), Bash(git commit:*), Bash(git ls-files:*), Bash(git ls-tree:*), Bash(grep:*), Bash(uv lock:*), Bash(pnpm install:*), Bash(docker info:*), Bash(lsof:*), Bash(make setup), Bash(make check), Bash(make openapi), Bash(make infra-up), Bash(make migrate), Bash(make migrate-check), Bash(make test-integration)
+allowed-tools: Read, Grep, Glob, Edit, Write, Bash(curl:*), Bash(gh api:*), Bash(gh release view:*), Bash(python3:*), Bash(git status:*), Bash(git fetch:*), Bash(git rev-parse:*), Bash(git symbolic-ref:*), Bash(git switch:*), Bash(git log:*), Bash(git show:*), Bash(git diff:*), Bash(git merge:*), Bash(git merge-base:*), Bash(git checkout:*), Bash(git rm:*), Bash(git add:*), Bash(git commit:*), Bash(git ls-files:*), Bash(git ls-tree:*), Bash(grep:*), Bash(uv lock:*), Bash(pnpm install:*), Bash(docker info:*), Bash(docker compose ls:*), Bash(lsof:*), Bash(make setup), Bash(make check), Bash(make openapi), Bash(make infra-up), Bash(make migrate), Bash(make migrate-check), Bash(make test-integration)
 ---
 
 # agentic-upgrade-scaffold
@@ -87,7 +87,10 @@ read as the guideline's skill reads them, with these differences.
 - **A layer's gates** (its step 8). A layer runs its scaffold's gates in
   a copy, as the engine's CI does, never in `<root>`. From the
   checkout's root, `python3 scaffold/new.py <dir>/<name>` copies it into
-  a folder outside the checkout. In the copy, `make setup` and
+  a folder outside the checkout. `<name>` is also the compose project
+  the copy's stack runs under, so it is one `docker compose ls --all`
+  does not list: `make infra-up` then starts a stack of its own, never
+  one already there. In the copy, `make setup` and
   `make check`; when `docker info` exits 0, `.env.example` copied whole
   to `.env`, each port in it that `lsof -i :<port>` finds taken moved to
   a free one, then `make infra-up`, `make migrate`, `make migrate-check`,
