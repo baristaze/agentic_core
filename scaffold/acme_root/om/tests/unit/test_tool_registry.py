@@ -43,7 +43,7 @@ from acme.om.tools.mcp import McpToolImpl
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.rules import definition_hash
 from acme.om.tools.tool import JobToolInterface, ToolRuntime
-from acme.om.tools.types.call import JobHandle, JobStarted
+from acme.om.tools.types.call import JobHandle, JobNotStarted, JobStarted
 from acme.om.tools.types.mcp import McpBinding, McpToolDefinition
 from acme.om.tools.types.policy import Target
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolMode, ToolSpec
@@ -412,4 +412,6 @@ async def test_a_job_that_will_not_start_is_answered_with_its_failure(tmp_path: 
         epoch=found.epoch,
         tree_deadline=utcnow(),
     )
-    assert not isinstance(answered, JobHandle) and failure_of(answered) is ToolFailure.INVALID_INPUT
+    # Refused before the tool ran: nothing started, which releases a hold.
+    assert isinstance(answered, JobNotStarted)
+    assert failure_of(answered.response) is ToolFailure.INVALID_INPUT

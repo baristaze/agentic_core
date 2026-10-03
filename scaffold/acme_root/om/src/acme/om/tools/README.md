@@ -28,8 +28,10 @@ thing [Acme is made of](../../../../README.md).
   network is open acts outside too.
 - **Approval**: a person's yes or no to one exact call, the tool and its
   input. It expires.
-- **Job**: work that outlives a run, such as a long build. The
-  agent waits for it without holding anything.
+- **Job**: work that outlives a run, such as a long build. Its tool
+  starts it and names it, and the agent waits for it without holding
+  anything. It has a deadline of its own, never later than the whole
+  task's. A job that costs money by the hour says how much, at most.
 - **The engine's own tools**: three a kind may name, each acting on
   nothing outside the session: asking its person, writing its plan, and
   reading part of a file attached to the session. They read and keep
@@ -53,6 +55,14 @@ thing [Acme is made of](../../../../README.md).
   that is not is never repeated: the workspace's own record says how it
   ended, or the agent is told its outcome is unknown. The record keeps
   what the command printed sealed under the session's key.
+- **Wait on a job.** A job's call starts the work and the agent's loop
+  waits on it. The system the job runs on reports how it ended, naming
+  the job; the report wakes the agent, which reads it as the call's
+  answer before anything else. A job that costs money is checked against
+  the budgets before it starts, and a job that would pass one never
+  starts. A job with no report by its deadline is stopped and answered
+  as out of time, and so is one whose agent is stopped or whose loop
+  ends any other way (ADR 1013).
 - **Ask the person.** The agent asks its person a question, or stops
   and says what it needs. Its loop waits, holding nothing, and the
   person's next message is the answer it goes on with.
@@ -81,6 +91,10 @@ thing [Acme is made of](../../../../README.md).
   agent sees, and the engine's own credentials never reach a tool.
 - **Isolation is never weakened.** A workspace that cannot be had as the
   session asks is refused, never swapped for something weaker.
+- **A report wakes only its own job.** A job's report counts only when
+  it names a job the agent waits on, by the tool's name for it, in the
+  session it is sent to, and only the first one does. Any other is
+  refused, with nothing written and nothing woken.
 - **A call reads its own session.** A tool that reads the session's
   records reads the one the call was made in, never one its input names:
   a file another session holds answers as one that does not exist.

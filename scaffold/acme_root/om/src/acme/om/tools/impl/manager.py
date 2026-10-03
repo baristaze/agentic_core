@@ -23,6 +23,7 @@ from acme.om.events import EventsManagerInterface
 from acme.om.events.manager import audit_event
 from acme.om.exceptions import (
     AuthorityRevoked,
+    JobRefused,
     NotAuthorized,
     NotFound,
     PlatformException,
@@ -70,7 +71,14 @@ from acme.om.tools.rules import (
 from acme.om.tools.seal import RecordSealInterface
 from acme.om.tools.storage import ToolStorageInterface
 from acme.om.tools.tool import JobToolInterface, ToolInterface, ToolRuntime
-from acme.om.tools.types.call import Gate, GateOutcome, JobHandle, JobStarted, Verdict
+from acme.om.tools.types.call import (
+    Gate,
+    GateOutcome,
+    JobHandle,
+    JobNotStarted,
+    JobStarted,
+    Verdict,
+)
 from acme.om.tools.types.policy import Decision, PolicyCall, PolicyLayer, ToolPolicy
 from acme.om.tools.types.tool import ToolInput, ToolMode
 
@@ -387,11 +395,11 @@ class ToolsManagerImpl(ToolsManagerInterface):
         *,
         epoch: int,
         tree_deadline: datetime | None,
-    ) -> JobHandle | Step:
+    ) -> JobHandle | JobNotStarted | Step:
         ctx.require(Permission.WRITE)
         resolved = await self._resolve(ctx, registry, request, call_input)
         if isinstance(resolved, Step):
-            return resolved
+            return JobNotStarted(response=resolved)  # refused before its tool ran
         tool, parsed = resolved
         if not isinstance(tool, JobToolInterface):
             raise ValidationFailed(f"{tool.spec.name} is not a job")
@@ -403,7 +411,10 @@ class ToolsManagerImpl(ToolsManagerInterface):
             start_by = min(deadline, self._clock() + self._options.engine_limit)
             async with asyncio.timeout(self._seconds_until(start_by)):
                 started = await tool.run(ctx, parsed, runtime)
+        except JobRefused as refused:
+            return JobNotStarted(response=self._answer(request, refused.message, refused.failure))
         except Exception as error:
+            # Its tool ran: whatever it raised, the work may have started.
             failure, detail = self._classify(error, tool)
             return self._answer(request, detail, failure)
         if not isinstance(started, JobStarted):

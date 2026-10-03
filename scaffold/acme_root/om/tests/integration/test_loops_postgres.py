@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
-from contracts.loops import loop_over, reply, said, use
+from contracts.loops import ASSISTANT, BUILDER, DELIVERY, call, loop_over, reply, said, use
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -17,10 +17,11 @@ from acme.om.agents.types.run import RunEnd
 from acme.om.base import new_id
 from acme.om.context import AppContext, AppType, RequestContext, TenantContext
 from acme.om.root import build_managers
-from acme.om.steps.types.header import LoopOutcome
+from acme.om.steps.types.header import LoopOutcome, ParkReason
 from acme.om.steps.types.step import StepType
 from acme.om.storage.impl.postgres import StoragePostgresImpl
 from acme.om.storage.settings import MigrationSettings
+from acme.om.tools.types.call import JobCompletion
 
 pytestmark = pytest.mark.integration
 
@@ -119,3 +120,32 @@ async def test_a_new_run_over_postgres_refuses_the_lost_one_and_settles_its_call
     assert note.ran_as == [] and len(slow.ran_as) == 2
     answers = [s for s in await loop.history(session_id) if s.type is StepType.TOOL_RESPONSE]
     assert len(answers) == 2
+
+
+async def test_a_job_park_and_its_completion_round_trip_through_postgres(
+    storage: StoragePostgresImpl, tmp_path: Path
+) -> None:
+    """The park keeps the job in the stored step and the session's row, and
+    the completion read back answers the call."""
+    owner = await an_owner(storage, tmp_path)
+    loop = loop_over(tmp_path, storage=storage, owner=owner, kinds=(ASSISTANT, DELIVERY, BUILDER))
+    session_id = await loop.start("builder")
+    await loop.say(session_id, "Start it.")
+    loop.anthropic.add(reply(call("build", q="everything")), reply(said("It is done.")))
+
+    parked = await loop.loops.run(owner, session_id)
+
+    assert parked.park is not None and parked.park.reason is ParkReason.JOB
+    (request,) = [s for s in await loop.history(session_id) if s.type is StepType.TOOL_REQUEST]
+    session = await loop.managers.agent_sessions.get_session(owner, session_id)
+    assert session.park == parked.park
+    job = parked.park.job
+    assert job is not None and (job.key, job.handle) == (request.id, "build-1")
+    completion = JobCompletion(key=request.id, handle="build-1", text="3 targets built")
+    await loop.loops.complete_job(owner, session_id, completion)
+    done = await loop.loops.run(owner, session_id)
+
+    assert done.outcome is LoopOutcome.SUCCEEDED
+    steps = await loop.history(session_id)
+    answer = next(s for s in steps if s.responds_to == request.id)
+    assert answer.as_tool_response().parts[0].text == "3 targets built"  # type: ignore[union-attr]

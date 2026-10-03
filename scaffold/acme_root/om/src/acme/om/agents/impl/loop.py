@@ -54,18 +54,20 @@ from acme.om.exceptions import (
 from acme.om.models.manager import ModelsManagerInterface
 from acme.om.models.types.fill import MAIN, SUMMARIZER, Eligibility, Fill
 from acme.om.steps import StepsManagerInterface
-from acme.om.steps.rules import origin_of
+from acme.om.steps.rules import completion_step, origin_of
 from acme.om.steps.types.content import Content, TextBlock, ToolUseBlock
 from acme.om.steps.types.header import (
     AcceptedResult,
     ControlCommand,
     InputHeader,
+    JobPark,
     LoopOutcome,
     ModelRequestHeader,
     ModelResponseHeader,
     Park,
     ParkReason,
     ToolFailure,
+    ToolRequestHeader,
     ToolResponseHeader,
 )
 from acme.om.steps.types.step import Actor, Step, StepType
@@ -73,9 +75,21 @@ from acme.om.steps.types.stream import StreamPart, ToolOutputPart
 from acme.om.tools import ToolsManagerInterface
 from acme.om.tools.native.write_plan import current_plan
 from acme.om.tools.registry import ToolRegistry
-from acme.om.tools.rules import ISOLATION_REFUSED, response, response_id, tool_request
+from acme.om.tools.rules import (
+    ISOLATION_REFUSED,
+    job_deadline,
+    response,
+    response_id,
+    tool_request,
+)
 from acme.om.tools.tool import ToolInterface
-from acme.om.tools.types.call import GateOutcome
+from acme.om.tools.types.call import (
+    MAX_REPORT,
+    GateOutcome,
+    JobCompletion,
+    JobHandle,
+    JobNotStarted,
+)
 from acme.om.tools.types.tool import ToolMode
 from acme.om.windows import WindowsManagerInterface
 from acme.om.windows.gate import CallGateInterface
@@ -88,9 +102,6 @@ Sleep = Callable[[float], Awaitable[None]]
 """How the loop waits, injected beside its clock, so a test never sleeps."""
 
 HANDOVER_UNLOCK = "give_back"
-NO_JOBS = (
-    "this engine starts no job: a job tool's work and its completion are not wired to its loop yet"
-)
 
 
 class LoopOptions(Platform):
@@ -137,6 +148,9 @@ class _Run:
     tried: list[Fill] = field(default_factory=lambda: [])
     refused: RenderedRequest | None = None  # a request the provider refused as too long
     sink_failed: bool = False  # the stream sink refused a part; it is logged once
+    # The jobs the loop parked on whose calls were open when the run began,
+    # by key: whatever the run has not answered goes with its loop's end.
+    jobs: dict[UUID, rules.StartedJob] = field(default_factory=lambda: {})
 
     @property
     def session_id(self) -> UUID:
@@ -247,6 +261,7 @@ class LoopManagerImpl(LoopManagerInterface):
             started_at=self._clock(),
             resumed=resumed,
             deadline=tree.deadline,
+            jobs={} if loop is None else rules.started_jobs(history, loop_id),
         )
         try:
             await self._models.resolve_fill_set(ctx, session_id, kind.roles, Eligibility())
@@ -299,7 +314,7 @@ class LoopManagerImpl(LoopManagerInterface):
             if response is not None:
                 calls = rules.open_calls(history, response)
                 if calls:
-                    stopped = await self._tool_turn(run, response, calls)
+                    stopped = await self._tool_turn(run, history, response, calls)
                     if stopped is not None:
                         return stopped
                     continue
@@ -571,7 +586,11 @@ class LoopManagerImpl(LoopManagerInterface):
     # The tool calls a response asked for.
 
     async def _tool_turn(
-        self, run: _Run, response: Step, calls: Sequence[tuple[ToolUseBlock, Step | None]]
+        self,
+        run: _Run,
+        history: Sequence[Step],
+        response: Step,
+        calls: Sequence[tuple[ToolUseBlock, Step | None]],
     ) -> LoopRun | None:
         """Every open call of a response: its request persisted first, then
         each one gated, run or recovered, and answered, in the order the
@@ -581,7 +600,7 @@ class LoopManagerImpl(LoopManagerInterface):
         asked = False
         for use, request in requests:
             settled = await self._settle_call(
-                run, use, request, fresh=self._never_ran(run, request)
+                run, history, use, request, fresh=self._never_ran(run, request)
             )
             if settled.cancelled:
                 return await self._cancelled(run)
@@ -618,7 +637,7 @@ class LoopManagerImpl(LoopManagerInterface):
         if rules.asked(history, loop, ControlCommand.CANCEL) is not None:
             return await self._cancelled(run)
         for use, request in lost:
-            settled = await self._settle_call(run, use, request, fresh=False)
+            settled = await self._settle_call(run, history, use, request, fresh=False)
             if settled.cancelled:
                 return await self._cancelled(run)
         return None
@@ -657,10 +676,17 @@ class LoopManagerImpl(LoopManagerInterface):
         return [(use, request or by_use[use.id]) for use, request in calls]
 
     async def _settle_call(
-        self, run: _Run, use: ToolUseBlock, request: Step, *, fresh: bool
+        self, run: _Run, history: Sequence[Step], use: ToolUseBlock, request: Step, *, fresh: bool
     ) -> _Settled:
         ctx = run.ctx
         assert run.workspace is not None
+        tool = run.registry.get(use.name)
+        if tool is not None and tool.spec.mode is ToolMode.JOB:
+            started = rules.started_jobs(history, run.loop_id).get(request.id)
+            if started is not None:
+                # A job a run started is settled by the job alone: it is never
+                # asked about, gated, or started again.
+                return await self._settle_job(run, started)
         try:
             gate = await self._tools.gate(
                 ctx,
@@ -691,11 +717,11 @@ class LoopManagerImpl(LoopManagerInterface):
             return _Settled(asked=True)
         if use.name == run.kind.result_tool:
             return await self._submit(run, request, use)
-        tool = run.registry.get(use.name)
         assert tool is not None  # the gate resolved it
         if tool.spec.mode is ToolMode.JOB:
-            await self._answer(run, request, self._stopped(request, NO_JOBS, ToolFailure.PERMANENT))
-            return _Settled()
+            return await self._start_job(
+                run, gate.authority.context, tool, request, use.input, history
+            )
         # The call runs under the live context of the principal attribution
         # answered for it, asked again for this call.
         call_ctx = gate.authority.context
@@ -770,6 +796,144 @@ class LoopManagerImpl(LoopManagerInterface):
         finally:
             if not task.done():
                 task.cancel()
+
+    # A job.
+
+    async def _start_job(
+        self,
+        run: _Run,
+        call_ctx: TenantContext,
+        tool: ToolInterface,
+        request: Step,
+        call_input: Mapping[str, Any],
+        history: Sequence[Step],
+    ) -> _Settled:
+        """Starts a job its gate let run, by a deadline of its own never later
+        than the tree's, and parks the loop on it. A job that spends passes
+        the budget gate first, paid for by whoever its call was asked for: a
+        refusal parks on the budget, and nothing starts. A job that will not
+        start is answered with its failure, and its hold released only when
+        the start was refused before any work began."""
+        assert run.workspace is not None
+        now = self._clock()
+        deadline = job_deadline(now, tool.spec.timeout, run.deadline)
+        if deadline <= now:
+            text = "the task's deadline has passed, so the job was not started"
+            await self._answer(run, request, self._stopped(request, text, ToolFailure.TIMEOUT))
+            return _Settled()
+        hold: UUID | None = None
+        rate = tool.spec.rate_micros_per_hour
+        if rate is not None:
+            spender = rules.asked_by(history, request)
+            if spender is None:
+                return _Settled(park=Park(reason=ParkReason.PERSON, unlock=rules.SPENDER_UNLOCK))
+            try:
+                hold = await self._gate.authorize_job(
+                    run.ctx, run.session_id, spender, tool.spec.name, rate, deadline
+                )
+            except BudgetRefused as refused:
+                return _Settled(park=budget_park(refused.refusal, self._clock()))
+        try:
+            started = await self._tools.start_job(
+                call_ctx,
+                run.registry,
+                request,
+                call_input,
+                run.workspace,
+                epoch=run.epoch,
+                tree_deadline=deadline,
+            )
+        except BaseException:
+            if hold is not None:
+                with contextlib.suppress(Exception):
+                    await self._gate.settle_job(run.ctx, hold, None, started=True)
+            raise
+        if isinstance(started, JobNotStarted):
+            if hold is not None:
+                # Refused before any work began: nothing ran.
+                await self._gate.settle_job(run.ctx, hold, None, started=False)
+            await self._answer(run, request, started.response)
+            return _Settled()
+        if isinstance(started, Step):
+            if hold is not None:
+                # Its tool ran and failed, whatever the class: the work may
+                # have started, so its hold counts whole.
+                await self._gate.settle_job(run.ctx, hold, None, started=True)
+            await self._answer(run, request, started)
+            return _Settled()
+        job = JobPark(key=started.key, handle=started.handle, hold_id=hold)
+        park = Park(
+            reason=ParkReason.JOB, unlock=str(started.key), retry_at=started.deadline, job=job
+        )
+        return _Settled(park=park)
+
+    async def _settle_job(self, run: _Run, started: rules.StartedJob) -> _Settled:
+        """A started job's call, when the loop takes it up again: answered
+        from its completion once one arrived; cancelled and answered as out of
+        time once its deadline passed; otherwise the loop parks on it again,
+        since a woken loop trusts nothing that woke it."""
+        if started.completion is not None:
+            await self._close_job(run, started, None)
+            return _Settled()
+        retry_at = started.park.retry_at
+        assert retry_at is not None  # a job park tries again at its deadline
+        if self._clock() >= retry_at:
+            await self._close_job(run, started, (rules.JOB_DEADLINE, ToolFailure.TIMEOUT))
+            return _Settled()
+        return _Settled(park=started.park)
+
+    async def _close_job(
+        self, run: _Run, started: rules.StartedJob, stopped: tuple[str, ToolFailure] | None
+    ) -> None:
+        """Answers a started job's call. With no reason to stop, from what its
+        completion says, its hold settled at the cost it reported; with one,
+        the work is cancelled first, its hold counted whole, and the call
+        answered with the reason and its class. The hold settles before the
+        answer is written, so a run lost between them settles it again, and
+        the first settlement counts."""
+        job, request, completion = started.job, started.request, started.completion
+        if stopped is None:
+            assert completion is not None
+            text = completion.text or "the job completed and reported nothing"
+            answer = response(
+                new_id(), self._clock(), request, text, completion.failure, limit=MAX_REPORT
+            )
+            cost = completion.cost_micros
+        else:
+            await self._cancel_job(run, started)
+            answer = self._stopped(request, *stopped)
+            cost = None
+        if job.hold_id is not None:
+            await self._gate.settle_job(run.ctx, job.hold_id, cost, started=True)
+        await self._answer(run, request, answer)
+        run.jobs.pop(job.key, None)
+
+    async def _cancel_job(self, run: _Run, started: rules.StartedJob) -> None:
+        """Ends the work. A tool that fails to end it is logged and the loop
+        goes on: the work was started to end by its deadline, which bounds
+        it whatever happens here."""
+        header = started.request.header
+        assert isinstance(header, ToolRequestHeader)
+        handle = JobHandle(
+            tool=header.tool,
+            key=started.job.key,
+            handle=started.job.handle,
+            deadline=started.park.retry_at or self._clock(),
+        )
+        try:
+            await self._tools.cancel_job(run.ctx, run.registry, handle)
+        except StaleWriter:
+            raise
+        except Exception:
+            log.exception("session %s: job %s was not cancelled", run.session_id, handle.key)
+
+    async def _stop_jobs(self, run: _Run, jobs: Sequence[rules.StartedJob], why: str) -> None:
+        """Every job the loop still waits on, as the loop stops: one that
+        completed is answered from its completion; any other is cancelled
+        and answered with `why`, so no job outlives its loop."""
+        for started in jobs:
+            stopped = None if started.completion is not None else (why, ToolFailure.INTERRUPTED)
+            await self._close_job(run, started, stopped)
 
     async def _submit(self, run: _Run, request: Step, use: ToolUseBlock) -> _Settled:
         """A result submitted through the kind's result tool: refused without
@@ -862,9 +1026,16 @@ class LoopManagerImpl(LoopManagerInterface):
         so the history holds no open call, and the loop ends `cancelled`,
         and so do its children's."""
         history = await self._history(run.ctx, run.session_id)
+        jobs = rules.started_jobs(history, run.loop_id)
+        why = f"stopped by a principal's {ControlCommand.CANCEL.value}; the job was cancelled"
+        await self._stop_jobs(run, list(jobs.values()), why)
         response = rules.latest_response(history, run.loop_id)
         if response is not None:
-            calls = rules.open_calls(history, response)
+            calls = [
+                (use, request)
+                for use, request in rules.open_calls(history, response)
+                if request is None or request.id not in jobs
+            ]
             if calls:
                 requests = await self._requests(run, response, calls)
                 answers = [
@@ -886,6 +1057,9 @@ class LoopManagerImpl(LoopManagerInterface):
         return self._lost(request)
 
     async def _end(self, run: _Run, outcome: LoopOutcome) -> LoopRun:
+        if run.jobs:
+            why = f"the loop ended {outcome.value}; the job was cancelled"
+            await self._stop_jobs(run, list(run.jobs.values()), why)
         step = rules.ended_step(new_id(), self._clock(), run.session_id, run.loop_id, outcome)
         await self._steps.append_steps(run.ctx, run.session_id, run.epoch, [step])
         await self._sessions.project_status(run.ctx, run.session_id)
@@ -972,6 +1146,39 @@ class LoopManagerImpl(LoopManagerInterface):
         )
         unlock = unlock_step(new_id(), session_id, now)
         await self._steps.append_inputs(ctx, session_id, [message, unlock])
+        return await self._sessions.project_status(ctx, session_id)
+
+    # A job's completion.
+
+    async def complete_job(
+        self, ctx: TenantContext, session_id: UUID, completion: JobCompletion
+    ) -> AgentSession:
+        ctx.require(Permission.WRITE)
+        # Another tenant's session, or a deleted one, is not found here.
+        await self._sessions.project_status(ctx, session_id)
+        history = await self._history(ctx, session_id)
+        loop = rules.open_loop(history)
+        started = None if loop is None else rules.started_jobs(history, loop.loop_id)
+        waiting = None if started is None else started.get(completion.key)
+        if (
+            loop is None
+            or waiting is None
+            or waiting.job.handle != completion.handle
+            or waiting.completion is not None
+        ):
+            raise NotFound(f"no job {completion.key} waits in agent session {session_id}")
+        now = self._clock()
+        event = completion_step(
+            new_id(), now, ctx, session_id, completion.key, completion.model_dump_json()
+        )
+        inputs = [event]
+        park = loop.park
+        if park is not None and park.job is not None and park.job.key == completion.key:
+            # The loop still waits on this job: its park is cleared. A loop
+            # that parked since for another reason reads the completion when
+            # that park clears.
+            inputs.append(unlock_step(new_id(), session_id, now))
+        await self._steps.append_inputs(ctx, session_id, inputs)
         return await self._sessions.project_status(ctx, session_id)
 
     # The history.

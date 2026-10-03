@@ -24,7 +24,7 @@ from acme.infra.workspaces import IsolationSpec, Workspace
 from acme.om.context import TenantContext
 from acme.om.steps.types.step import Step
 from acme.om.tools.registry import ToolRegistry
-from acme.om.tools.types.call import Gate, JobHandle
+from acme.om.tools.types.call import Gate, JobHandle, JobNotStarted
 from acme.om.tools.types.policy import PolicyLayer, ToolPolicy
 
 KeyedHash = Callable[[TenantContext, UUID, bytes], Awaitable[str]]
@@ -161,11 +161,13 @@ class ToolsManagerInterface(ABC):
         *,
         epoch: int,
         tree_deadline: datetime | None,
-    ) -> JobHandle | Step:
+    ) -> JobHandle | JobNotStarted | Step:
         """Starts a `job` call its gate let run, under the request's id, by a
         deadline of its own never later than the tree's, and answers the
-        handle the loop parks on; a job that will not start is answered with
-        its failure. Starting it again attaches to the work it started."""
+        handle the loop parks on. A start refused before any work began, its
+        input's refusal or the tool's `JobRefused`, answers `JobNotStarted`;
+        any other failure answers the call's response, since the work may
+        have started. Starting it again attaches to the work it started."""
         ...
 
     @abstractmethod

@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import UUID
 
+from pydantic import ValidationError
+
 from acme.integrations.model_providers.calls import (
     ModelReply,
     TextDelta,
@@ -23,14 +25,17 @@ from acme.integrations.model_providers.calls import (
 from acme.integrations.model_providers.calls import StreamPart as ProviderPart
 from acme.om.agents.types.kind import AgentKind
 from acme.om.attribution.types.principal import Principal
+from acme.om.steps.rules import completes
 from acme.om.steps.types.content import Children, Content, TextBlock, ToolUseBlock
 from acme.om.steps.types.header import (
     ControlCommand,
     ControlHeader,
     InputHeader,
+    JobPark,
     LoopEndedHeader,
     LoopOutcome,
     MarkHeader,
+    ModelRequestHeader,
     ModelResponseHeader,
     Park,
     ParkedHeader,
@@ -42,6 +47,7 @@ from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.steps.types.stream import StreamPart, TextPart, ThinkingPart, ToolInputPart
 from acme.om.tools.native.ask_person import ASK_PERSON
 from acme.om.tools.registry import ToolRegistry
+from acme.om.tools.types.call import JobCompletion
 from acme.om.windows.rules import exchanges
 from acme.om.windows.types.kind import KindPrompts
 
@@ -83,6 +89,88 @@ SPENDER_UNLOCK = "spender"
 PRINCIPAL_UNLOCK = "principal"
 """What a person-park the loop writes waits on: a decision on a call, a
 principal who can pay, a principal who holds the calls."""
+
+
+JOB_DEADLINE = "the job did not complete by its deadline, and was cancelled"
+"""What a job's call answers when its deadline passes with no completion."""
+
+
+@dataclass(frozen=True)
+class StartedJob:
+    """A job a loop parked on whose call no response answers yet: the
+    call's request, the park that names the job, and the first completion
+    that names it by its key and handle, when one arrived."""
+
+    request: Step
+    park: Park
+    completion: JobCompletion | None
+
+    @property
+    def job(self) -> JobPark:
+        assert self.park.job is not None
+        return self.park.job
+
+
+def started_jobs(steps: Sequence[Step], loop_id: UUID) -> dict[UUID, StartedJob]:
+    """Each job the loop parked on whose call is still open, by its key. A
+    completion counts only when it is the event that names the call's
+    request, and what it holds names the same key and the handle the park
+    keeps: anything else that claims to end the job ends nothing."""
+    requests: dict[UUID, Step] = {}
+    answered: set[UUID] = set()
+    parks: dict[UUID, Park] = {}
+    reports: dict[UUID, list[Step]] = {}
+    for step in steps:
+        header = step.header
+        if isinstance(header, ToolRequestHeader) and step.loop_id == loop_id:
+            requests[step.id] = step
+        elif step.type is StepType.TOOL_RESPONSE and step.responds_to is not None:
+            answered.add(step.responds_to)
+        elif isinstance(header, ParkedHeader) and step.loop_id == loop_id:
+            if header.park.job is not None:
+                parks.setdefault(header.park.job.key, header.park)
+        else:
+            ended = completes(step)
+            if ended is not None:
+                reports.setdefault(ended, []).append(step)
+    found: dict[UUID, StartedJob] = {}
+    for key, park in parks.items():
+        request = requests.get(key)
+        if request is None or key in answered or park.job is None:
+            continue
+        handle = park.job.handle
+        completion = next(
+            (
+                said
+                for said in (_completion(step) for step in reports.get(key, ()))
+                if said is not None and said.key == key and said.handle == handle
+            ),
+            None,
+        )
+        found[key] = StartedJob(request, park, completion)
+    return found
+
+
+def _completion(step: Step) -> JobCompletion | None:
+    try:
+        return JobCompletion.model_validate_json(step.as_text())
+    except ValidationError:
+        return None
+
+
+def asked_by(steps: Sequence[Step], request: Step) -> Principal | None:
+    """Who pays for a job a call starts: the spender of the model request
+    whose response asked for the call. None when the history holds no
+    such request."""
+    by_id = {step.id: step for step in steps}
+    for ref in request.refs:
+        response = by_id.get(ref)
+        if response is None or response.responds_to is None:
+            continue
+        asked = by_id.get(response.responds_to)
+        if asked is not None and isinstance(asked.header, ModelRequestHeader):
+            return asked.header.spender
+    return None
 
 
 @dataclass(frozen=True)
