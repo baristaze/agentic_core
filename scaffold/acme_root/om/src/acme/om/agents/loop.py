@@ -18,6 +18,7 @@ from uuid import UUID
 from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.agents.types.run import LoopRun
 from acme.om.context import TenantContext
+from acme.om.tools.types.call import JobCompletion
 
 
 class LoopManagerInterface(ABC):
@@ -50,4 +51,20 @@ class LoopManagerInterface(ABC):
         the caller's message, and the hand-over park is unlocked, so the
         next run continues the loop and its first request delivers both. A
         session not parked on a hand-over is `ValidationFailed`."""
+        ...
+
+    @abstractmethod
+    async def complete_job(
+        self, ctx: TenantContext, session_id: UUID, completion: JobCompletion
+    ) -> AgentSession:
+        """A job's completion arrives: the system the job ran on reports how
+        it ended. It is kept only when the session's open loop parked on a
+        job of that key and handle whose call no response answers yet, and
+        no completion for it arrived before: then it lands in the history as
+        an event, and when the loop still waits on that job, the control
+        that clears the park lands with it, so the next run writes the
+        call's response from it before any model call. Anything else is
+        `NotFound`, with nothing written and nothing woken: a key of another
+        session, or of another tenant, a handle that is not the job's, and
+        a job answered or reported already."""
         ...

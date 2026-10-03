@@ -157,6 +157,22 @@ class Gate(CallGateInterface):
         assert hold_id in self.holds
         self.settled.append((hold_id, usage, billed))
 
+    async def authorize_job(
+        self,
+        ctx: TenantContext,
+        session_id: UUID,
+        spender: Principal,
+        tool: str,
+        rate_micros_per_hour: int,
+        deadline: datetime,
+    ) -> UUID:
+        raise AssertionError("a compaction starts no job")
+
+    async def settle_job(
+        self, ctx: TenantContext, hold_id: UUID, cost_micros: int | None, *, started: bool
+    ) -> None:
+        raise AssertionError("a compaction starts no job")
+
 
 PAYER = Principal(kind=PrincipalKind.PERSON, id=new_id())
 

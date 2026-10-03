@@ -1,12 +1,16 @@
+from collections.abc import Callable
+from datetime import datetime
 from uuid import UUID
 
 from acme.integrations.model_providers.calls import ModelCall
 from acme.integrations.model_providers.types import Usage
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.attribution.types.principal import Principal
+from acme.om.base import utcnow
 from acme.om.budgets import BudgetGateInterface
 from acme.om.budgets.pricing import ModelPrice, PricingInterface
-from acme.om.budgets.rules import call_exposure, usage_spend
+from acme.om.budgets.rules import call_exposure, job_exposure, usage_spend
+from acme.om.budgets.types.amount import Spend
 from acme.om.budgets.types.breach import Refusal
 from acme.om.budgets.types.budget import BudgetScope, BudgetScopeKind
 from acme.om.budgets.types.hold import (
@@ -45,6 +49,22 @@ class CallGateNullImpl(CallGateInterface):
     ) -> None:
         raise Unavailable("no budget gate is wired, so there is no hold to settle")
 
+    async def authorize_job(
+        self,
+        ctx: TenantContext,
+        session_id: UUID,
+        spender: Principal,
+        tool: str,
+        rate_micros_per_hour: int,
+        deadline: datetime,
+    ) -> UUID:
+        raise Unavailable("no budget gate is wired, so no job that spends is started")
+
+    async def settle_job(
+        self, ctx: TenantContext, hold_id: UUID, cost_micros: int | None, *, started: bool
+    ) -> None:
+        raise Unavailable("no budget gate is wired, so there is no hold to settle")
+
 
 class CallGateBudgetImpl(CallGateInterface):
     """The budgets' gate behind the narrow face the windows and the loop
@@ -54,17 +74,22 @@ class CallGateBudgetImpl(CallGateInterface):
     and the tenant. A refusal raises `BudgetRefused`, listing every breach,
     with nothing held. A settlement prices the usage the provider reported
     at the same list price; a call the provider never processed releases
-    its hold."""
+    its hold. A spending job is held on the same scopes at its rate until
+    its deadline (`budgets.rules.job_exposure`), and settles at the cost
+    its runner reported, else whole; a job its tool refused to start
+    releases its hold."""
 
     def __init__(
         self,
         gate: BudgetGateInterface,
         pricing: PricingInterface,
         sessions: AgentSessionsManagerInterface,
+        clock: Callable[[], datetime] = utcnow,
     ) -> None:
         self._gate = gate
         self._pricing = pricing
         self._sessions = sessions
+        self._clock = clock
         self._prices: dict[UUID, ModelPrice | None] = {}
 
     async def authorize(
@@ -102,6 +127,40 @@ class CallGateBudgetImpl(CallGateInterface):
             bill = BillUnknown()
         else:
             bill = Billed(usage=usage_spend(usage, price))
+        await self._gate.settle(ctx, hold_id, bill)
+
+    async def authorize_job(
+        self,
+        ctx: TenantContext,
+        session_id: UUID,
+        spender: Principal,
+        tool: str,
+        rate_micros_per_hour: int,
+        deadline: datetime,
+    ) -> UUID:
+        session = await self._sessions.get_session(ctx, session_id)
+        request = HoldRequest(
+            spender_id=spender.id,
+            scopes=scopes_of(ctx.org_id, session_id, session.root_id, spender),
+            exposure=job_exposure(rate_micros_per_hour, self._clock(), deadline),
+            session_id=session_id,
+            purpose=tool,
+        )
+        answer = await self._gate.authorize(ctx, request)
+        if isinstance(answer, Refusal):
+            raise BudgetRefused(answer)
+        return answer.id
+
+    async def settle_job(
+        self, ctx: TenantContext, hold_id: UUID, cost_micros: int | None, *, started: bool
+    ) -> None:
+        bill: Bill
+        if not started:
+            bill = NotBilled(proof=NotBilledProof.REFUSED_BEFORE_PROCESSING)
+        elif cost_micros is None:
+            bill = BillUnknown()
+        else:
+            bill = Billed(usage=Spend(cost_micros=cost_micros, tokens=0))
         await self._gate.settle(ctx, hold_id, bill)
 
 

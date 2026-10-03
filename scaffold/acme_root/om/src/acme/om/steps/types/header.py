@@ -75,21 +75,35 @@ PERSON_ONLY = frozenset({ParkReason.PERSON, ParkReason.HANDOVER, ParkReason.PAUS
 """The reasons only a person clears: a question, a hand-over, a pause."""
 
 
+class JobPark(Platform):
+    """The job a loop parks on: its key, the id of the call's request; the
+    tool's own name for the work; and the budget hold it started under,
+    when it spends. Ids and a name, never what the work said."""
+
+    key: UUID
+    handle: Stored = Field(min_length=1, max_length=MAX_NAME)
+    hold_id: UUID | None = None
+
+
 class Park(Platform):
     """What a parked loop waits on: its reason, what clears it, and when it
     tries again by itself. No retry time means only a person can unblock it,
-    so a park only a person clears carries none."""
+    so a park only a person clears carries none. A park on a started job
+    names it, and tries again at the job's deadline."""
 
     reason: ParkReason
     unlock: Stored = Field(min_length=1, max_length=MAX_NAME)
     """What clears the park, named as a kind or an id (`approval`, a job's
     id), never as content."""
     retry_at: datetime | None = None
+    job: JobPark | None = None
 
     @model_validator(mode="after")
     def _a_person_sets_no_clock(self) -> Self:
         if self.retry_at is not None and self.reason in PERSON_ONLY:
             raise ValueError(f"a {self.reason.value} park is cleared by a person, never by a time")
+        if self.job is not None and (self.reason is not ParkReason.JOB or self.retry_at is None):
+            raise ValueError("only a job park names a job, and it tries again at its deadline")
         return self
 
 

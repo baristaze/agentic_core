@@ -104,3 +104,42 @@ def control_step(
         refs=() if call is None else (call,),
         header=ControlHeader(command=command),
     )
+
+
+# A job's completion.
+
+
+def completion_step(
+    step_id: UUID,
+    now: datetime,
+    ctx: TenantContext,
+    session_id: UUID,
+    request_id: UUID,
+    report: str,
+) -> Step:
+    """A job's completion as the history keeps it: an event from the system
+    the job ran on, on the authority of the context that delivered it, that
+    names the request of the call it ends and holds what it reported. It
+    wakes nothing by itself: the control that clears the job's park does."""
+    return Step(
+        id=step_id,
+        created_at=now,
+        session_id=session_id,
+        loop_id=step_id,
+        type=StepType.EVENT,
+        actor=Actor.EXTERNAL,
+        origin=Origin.INTEGRATION,
+        refs=(request_id,),
+        header=InputHeader(waking=False, principal=principal_of(ctx)),
+        content=Content(blocks=(TextBlock(text=report),)),
+    )
+
+
+def completes(step: Step) -> UUID | None:
+    """The request of the call a step ends, when it is a job's completion:
+    the one kind of event that names a step. The response written from it
+    delivers what it says, so no model request delivers it as an input as
+    well. None for any other step."""
+    if step.type is StepType.EVENT and len(step.refs) == 1:
+        return step.refs[0]
+    return None

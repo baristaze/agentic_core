@@ -7,8 +7,9 @@ the model within a bound."""
 
 from datetime import timedelta
 from enum import StrEnum
+from typing import Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from acme.infra.transports import SecretUse
 from acme.om.base import FrozenMapping, Platform
@@ -57,7 +58,11 @@ class ToolInput(Platform):
 
 class ToolSpec(Platform):
     """What a tool declares. `secrets` names what its process may be given,
-    by name, never by value; a call that uses one is audited by its name."""
+    by name, never by value; a call that uses one is audited by its name.
+    `rate_micros_per_hour` is what a job that spends (compute, a leased
+    machine) costs an hour at most, at reference cost: its hold is that
+    rate until its deadline. A job that spends nothing, and every `sync`
+    tool, declares none."""
 
     name: str = Field(pattern=TOOL_NAME)
     description: str = Field(min_length=1)
@@ -69,6 +74,13 @@ class ToolSpec(Platform):
     interruptible: bool
     mode: ToolMode = ToolMode.SYNC
     secrets: tuple[SecretUse, ...] = ()
+    rate_micros_per_hour: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def _only_a_job_spends_by_the_hour(self) -> Self:
+        if self.rate_micros_per_hour is not None and self.mode is not ToolMode.JOB:
+            raise ValueError(f"{self.name}: only a job declares a rate")
+        return self
 
 
 class ToolDefinition(Platform):

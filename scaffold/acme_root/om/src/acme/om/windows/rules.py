@@ -31,6 +31,7 @@ from acme.om.attribution.rules import trust_of
 from acme.om.attribution.types.authority import RequestAttribution, Trust
 from acme.om.budgets.types.exposure import CacheWrite, CallShape, PromptCount, PromptSize
 from acme.om.models.types.fill import MAIN, SUMMARIZER, Fill, ModelRole, OutputShape
+from acme.om.steps.rules import completes
 from acme.om.steps.types.content import (
     Attachment,
     Block,
@@ -81,6 +82,12 @@ CONTINUE = "Go on from the record above."
 DELIVERABLE = frozenset({StepType.MESSAGE, StepType.EVENT, StepType.ENVIRONMENT_CHANGED})
 """What a model request delivers to the model: what arrived from outside the
 loop, and the notice that the world under it changed."""
+
+
+def delivers(step: Step) -> bool:
+    """Whether a model request delivers a step: it is `DELIVERABLE`, and no
+    job's completion, which the response written from it delivers."""
+    return step.type in DELIVERABLE and completes(step) is None
 
 
 Role = Literal["user", "assistant"]
@@ -253,15 +260,13 @@ def exchanges(steps: Sequence[Step]) -> Exchanges:
             answers[(asked, call.header.tool_use_id)] = step
     delivered_by = {
         request_id: tuple(
-            by_id[ref]
-            for ref in requests[request_id].refs
-            if ref in by_id and by_id[ref].type in DELIVERABLE
+            by_id[ref] for ref in requests[request_id].refs if ref in by_id and delivers(by_id[ref])
         )
         for request_id in responses
     }
     delivered = frozenset(step.id for carried in delivered_by.values() for step in carried)
     rendered = frozenset(
-        {step.id for step in steps if step.type in DELIVERABLE}
+        {step.id for step in steps if delivers(step)}
         | answered
         | {step.id for step in answers.values()}
     )
@@ -638,7 +643,7 @@ def _conversation(
             )
             results.append(walk.result(use, answer, elided))
         walk.emit("user", results)
-    new = [step for step in window if step.type in DELIVERABLE and step.id not in ex.delivered]
+    new = [step for step in window if delivers(step) and step.id not in ex.delivered]
     return walk, new
 
 
@@ -924,7 +929,7 @@ def fold_cut(
     unread = [
         index
         for index in range(start, len(steps))
-        if steps[index].type in DELIVERABLE and steps[index].id not in ex.delivered
+        if delivers(steps[index]) and steps[index].id not in ex.delivered
     ]
     latest = max((at[request_id] for request_id in ex.responses), default=None)
     bounds: list[int] = [*unread, len(steps)] if latest is None else [*unread, latest, len(steps)]
@@ -965,7 +970,7 @@ def _clipped(text: str, step: Step, policy: CompactionPolicy) -> str:
 
 def _transcript(step: Step, ex: Exchanges, policy: CompactionPolicy) -> TextBlock:
     """One step of a fold as the summarizer reads it: data, clipped."""
-    if step.type in DELIVERABLE:
+    if delivers(step):
         text = _clipped(step.as_text(), step, policy)
         return data_block(
             _origin(step), text, seq=step.seq, actor=step.actor.value, via=step.origin.value
