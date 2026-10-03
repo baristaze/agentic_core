@@ -40,6 +40,7 @@ from acme.om.steps.types.header import (
 )
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.steps.types.stream import StreamPart, TextPart, ThinkingPart, ToolInputPart
+from acme.om.tools.native.ask_person import ASK_PERSON
 from acme.om.tools.registry import ToolRegistry
 from acme.om.windows.rules import exchanges
 from acme.om.windows.types.kind import KindPrompts
@@ -233,6 +234,36 @@ def pause_waits(steps: Sequence[Step], loop: OpenLoop) -> bool:
             if header.command in (ControlCommand.PAUSE, ControlCommand.RESUME):
                 latest = header.command
     return latest is ControlCommand.PAUSE
+
+
+def question_waits(steps: Sequence[Step], response: Step) -> bool:
+    """Whether the agent asked its person in `response` and waits for the
+    answer: the history answers an `ask_person` call of the response
+    without a failure, and no principal's message has landed since the
+    request the response answers, so none is one the model read."""
+    asked = {
+        step.id
+        for step in steps
+        if isinstance(step.header, ToolRequestHeader)
+        and step.header.tool == ASK_PERSON
+        and response.id in step.refs
+    }
+    answered = any(
+        isinstance(step.header, ToolResponseHeader)
+        and step.header.failure is None
+        and step.responds_to in asked
+        for step in steps
+    )
+    if not answered:
+        return False
+    since = next((step.seq for step in steps if step.id == response.responds_to), response.seq)
+    return not any(
+        step.seq > since
+        and step.type is StepType.MESSAGE
+        and isinstance(step.header, InputHeader)
+        and step.header.waking
+        for step in steps
+    )
 
 
 def stops_call(steps: Sequence[Step], request: Step, interruptible: bool) -> ControlCommand | None:

@@ -43,13 +43,16 @@ uses it runs."""
 class ToolRuntime:
     """One call's way into its workspace. A preflight's is read-only. Its
     command goes with the seal its record keeps the output under: its
-    session's."""
+    session's. `session_id` is the session the call was made in, read from
+    its request: a tool that reads the session's own records reads this
+    one, never one its input names."""
 
     def __init__(
         self,
         transport: TransportInterface,
         workspace: Workspace,
         *,
+        session_id: UUID,
         seal: RecordSeal,
         key: UUID,
         epoch: int,
@@ -62,6 +65,7 @@ class ToolRuntime:
         answer_chars: int = 50_000,
     ) -> None:
         self._answer_chars = answer_chars  # the bound of what the model reads of an answer
+        self.session_id = session_id
         self._transport = transport
         self._workspace = workspace
         self._seal = seal
