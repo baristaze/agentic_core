@@ -6,7 +6,8 @@ tree's; cancelling the loop, or any other end of it, cancels the job; a
 completion that names another session's job, or one settled already, is
 refused and wakes nothing; a job that spends passes the budget gate
 before it starts, and its hold is released only when its start was refused
-before any work began."""
+before any work began; and a completion that reports more than any job
+costs is refused as invalid input."""
 
 from datetime import timedelta
 from pathlib import Path
@@ -17,6 +18,7 @@ from contracts.budget_storage import make_budget
 from contracts.doubles import context
 from contracts.factories import make_org
 from contracts.loops import ASSISTANT, BUILDER, DELIVERY, Loop, call, loop_over, reply, said
+from pydantic import ValidationError
 
 from acme.infra.exceptions import InfraException
 from acme.om.agent_sessions.types.agent_session import SessionStatus
@@ -36,7 +38,7 @@ from acme.om.steps.types.header import (
 )
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.tools.tool import ToolRuntime
-from acme.om.tools.types.call import JobCompletion
+from acme.om.tools.types.call import MAX_JOB_COST_MICROS, JobCompletion
 from acme.om.tools.types.tool import ToolInput
 
 
@@ -330,3 +332,35 @@ async def test_a_spending_job_its_tool_refused_before_it_began_releases_its_hold
     assert "the cluster has no machine free" in text_of(answer)
     assert spend.held_cost_micros == 0, "the hold settled"
     assert spend.spent_cost_micros < 7_200_000, "released: nothing ran"
+
+
+async def test_a_completion_past_the_most_a_job_costs_is_refused_and_the_session_runs_on(
+    tmp_path: Path,
+) -> None:
+    """A cost no tally can count is refused before it reaches the loop; a
+    cost at the bound is counted, and the session goes on."""
+    loop = builder_loop(tmp_path)
+    session_id = await loop.start("builder")
+    line = await loop.managers.budgets.create_budget(
+        loop.owner,
+        make_budget(BudgetScopeKind.SESSION, str(session_id), cost_micros=2 * MAX_JOB_COST_MICROS),
+    )
+    await loop.say(session_id, "Start it.")
+    loop.anthropic.add(reply(call("compute", q="everything")))
+    parked = await loop.loops.run(loop.owner, session_id)
+    assert parked.park is not None and parked.park.job is not None
+    key = parked.park.job.key
+
+    with pytest.raises(ValidationError):
+        JobCompletion.model_validate({"key": str(key), "handle": "compute-1", "cost_micros": 2**63})
+    session = await loop.managers.agent_sessions.get_session(loop.owner, session_id)
+    assert session.status is SessionStatus.PARKED, "nothing woken"
+
+    most = JobCompletion(key=key, handle="compute-1", text="done", cost_micros=MAX_JOB_COST_MICROS)
+    await loop.loops.complete_job(loop.owner, session_id, most)
+    loop.anthropic.add(reply(said("It is done.")))
+    done = await loop.loops.run(loop.owner, session_id)
+
+    assert done.outcome is LoopOutcome.SUCCEEDED
+    spend = await loop.managers.budgets.get_spend(loop.owner, line.id)
+    assert spend.spent_cost_micros >= MAX_JOB_COST_MICROS

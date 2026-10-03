@@ -74,6 +74,11 @@ MAX_REPORT = 1_000_000
 """The most a job's completion may say, in characters. What the model reads
 of it is bounded again when its call is answered."""
 
+MAX_JOB_COST_MICROS = 1_000_000_000_000_000
+"""The most a job's completion may report it cost, in micros at reference
+cost: a billion units, past any job's, and far inside the 64-bit tallies the
+cost is counted in."""
+
 
 class JobCompletion(Platform):
     """How a job ended, as its completion event says. It names the job by
@@ -87,4 +92,4 @@ class JobCompletion(Platform):
     handle: str = Field(min_length=1, max_length=MAX_NAME)
     text: str = Field(default="", max_length=MAX_REPORT)
     failure: ToolFailure | None = None
-    cost_micros: int | None = Field(default=None, ge=0)
+    cost_micros: int | None = Field(default=None, ge=0, le=MAX_JOB_COST_MICROS)
