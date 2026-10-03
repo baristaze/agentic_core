@@ -325,11 +325,11 @@ async def test_a_message_through_the_api_is_run_by_the_runner_model_tool_model_t
     person = await owner_of(stack)
     stack.runner(
         "runner-one",
-        [runs("echo", "the grip opens at 0.4 s"), answers("The grip opens before the place.")],
+        [runs("echo", "the order drops at 0.4 s"), answers("The order drops before its payment.")],
     )
     session_id = await started(stack, person)
 
-    await say(stack, person, session_id, "Why does the robot drop the object?")
+    await say(stack, person, session_id, "Why does the checkout drop the order?")
     session = await settled(stack, person, session_id)
 
     steps = await history(stack, person, session_id)
@@ -338,8 +338,8 @@ async def test_a_message_through_the_api_is_run_by_the_runner_model_tool_model_t
     assert session["status"] == "idle" and session["park"] is None
     assert steps[-1]["outcome"] == "succeeded"
     assert steps[3]["tool"] == "run_command" and steps[4]["failure"] is None
-    assert "the grip opens at 0.4 s" in steps[4]["text"]
-    assert steps[-2]["text"] == "The grip opens before the place."
+    assert "the order drops at 0.4 s" in steps[4]["text"]
+    assert steps[-2]["text"] == "The order drops before its payment."
 
 
 async def test_a_runner_killed_mid_tool_call_is_followed_by_a_new_epoch_that_settles_the_call(

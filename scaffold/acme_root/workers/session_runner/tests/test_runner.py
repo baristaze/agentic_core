@@ -279,7 +279,7 @@ async def test_the_runner_claims_a_woken_sessions_loop_and_runs_it_to_its_end(
 ) -> None:
     container, owner = await signed_in(tmp_path)
     twin = container.integrations.get_model_providers().get(ProviderName.ANTHROPIC)
-    twin.add(answers("It drops it when the grip is released early."))  # pyright: ignore[reportAttributeAccessIssue]
+    twin.add(answers("It drops it when its payment confirms late."))  # pyright: ignore[reportAttributeAccessIssue]
     managers = container.managers
     session = await managers.agents.start_session(
         owner, Start(id=new_id(), kind="assistant", title="the dropped object")
