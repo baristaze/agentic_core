@@ -83,7 +83,13 @@ from acme.om.tools.rules import (
     tool_request,
 )
 from acme.om.tools.tool import ToolInterface
-from acme.om.tools.types.call import MAX_REPORT, GateOutcome, JobCompletion, JobHandle
+from acme.om.tools.types.call import (
+    MAX_REPORT,
+    GateOutcome,
+    JobCompletion,
+    JobHandle,
+    JobNotStarted,
+)
 from acme.om.tools.types.tool import ToolMode
 from acme.om.windows import WindowsManagerInterface
 from acme.om.windows.gate import CallGateInterface
@@ -806,8 +812,8 @@ class LoopManagerImpl(LoopManagerInterface):
         than the tree's, and parks the loop on it. A job that spends passes
         the budget gate first, paid for by whoever its call was asked for: a
         refusal parks on the budget, and nothing starts. A job that will not
-        start is answered with its failure, and its hold released unless it
-        may have started."""
+        start is answered with its failure, and its hold released only when
+        the start was refused before any work began."""
         assert run.workspace is not None
         now = self._clock()
         deadline = job_deadline(now, tool.spec.timeout, run.deadline)
@@ -842,13 +848,17 @@ class LoopManagerImpl(LoopManagerInterface):
                 with contextlib.suppress(Exception):
                     await self._gate.settle_job(run.ctx, hold, None, started=True)
             raise
+        if isinstance(started, JobNotStarted):
+            if hold is not None:
+                # Refused before any work began: nothing ran.
+                await self._gate.settle_job(run.ctx, hold, None, started=False)
+            await self._answer(run, request, started.response)
+            return _Settled()
         if isinstance(started, Step):
             if hold is not None:
-                # Its tool answered that it started nothing, unless it ran out
-                # of time or was cut off while it started.
-                failure = getattr(started.header, "failure", None)
-                maybe = failure in (ToolFailure.TIMEOUT, ToolFailure.INTERRUPTED)
-                await self._gate.settle_job(run.ctx, hold, None, started=maybe)
+                # Its tool ran and failed, whatever the class: the work may
+                # have started, so its hold counts whole.
+                await self._gate.settle_job(run.ctx, hold, None, started=True)
             await self._answer(run, request, started)
             return _Settled()
         job = JobPark(key=started.key, handle=started.handle, hold_id=hold)

@@ -4,8 +4,9 @@ park, wakes the loop, which answers the call from it before any model call;
 a completion that never comes ends at the job's deadline, never past the
 tree's; cancelling the loop, or any other end of it, cancels the job; a
 completion that names another session's job, or one settled already, is
-refused and wakes nothing; and a job that spends passes the budget gate
-before it starts."""
+refused and wakes nothing; a job that spends passes the budget gate
+before it starts, and its hold is released only when its start was refused
+before any work began."""
 
 from datetime import timedelta
 from pathlib import Path
@@ -17,13 +18,15 @@ from contracts.doubles import context
 from contracts.factories import make_org
 from contracts.loops import ASSISTANT, BUILDER, DELIVERY, Loop, call, loop_over, reply, said
 
+from acme.infra.exceptions import InfraException
 from acme.om.agent_sessions.types.agent_session import SessionStatus
 from acme.om.agents.types.run import RunEnd
-from acme.om.base import new_id
+from acme.om.base import Platform, new_id
 from acme.om.budgets.types.amount import Amount
 from acme.om.budgets.types.budget import BudgetScopeKind
-from acme.om.context import Role
-from acme.om.exceptions import NotFound, UnresolvedRole
+from acme.om.budgets.types.hold import Tally
+from acme.om.context import Role, TenantContext
+from acme.om.exceptions import JobRefused, NotFound, UnresolvedRole
 from acme.om.steps.types.header import (
     ControlCommand,
     ControlHeader,
@@ -32,7 +35,9 @@ from acme.om.steps.types.header import (
     ToolFailure,
 )
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
+from acme.om.tools.tool import ToolRuntime
 from acme.om.tools.types.call import JobCompletion
+from acme.om.tools.types.tool import ToolInput
 
 
 def builder_loop(tmp_path: Path) -> Loop:
@@ -265,3 +270,63 @@ async def test_a_spending_job_passes_the_budget_gate_first_and_a_refusal_starts_
     spent = await loop.managers.budgets.get_spend(loop.owner, line.id)
     assert spent.held_cost_micros == 0, "the hold settled"
     assert spent.spent_cost_micros >= 1_234
+
+
+async def failed_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, raised: Exception, *, began: bool
+) -> tuple[Tally, Step]:
+    """A spending job whose tool raised `raised`, after it began the work
+    when `began`: the spend of the session's budget once the loop answered
+    the call, and that answer."""
+    loop = builder_loop(tmp_path)
+    compute = loop.jobs["compute"]  # 3.6 units an hour, for two hours: 7.2 held
+    begin = compute.run
+
+    async def run(ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> Platform:
+        if began:
+            await begin(ctx, call_input, runtime)
+        raise raised
+
+    monkeypatch.setattr(compute, "run", run)
+    session_id = await loop.start("builder")
+    line = await loop.managers.budgets.create_budget(
+        loop.owner, make_budget(BudgetScopeKind.SESSION, str(session_id), cost_micros=50_000_000)
+    )
+    await loop.say(session_id, "Start it.")
+    loop.anthropic.add(reply(call("compute", q="everything")), reply(said("It failed.")))
+
+    ended = await loop.loops.run(loop.owner, session_id)
+
+    assert ended.outcome is LoopOutcome.SUCCEEDED
+    assert bool(compute.started) is began
+    (request,) = of_type(await loop.history(session_id), StepType.TOOL_REQUEST)
+    answer = answer_to(await loop.history(session_id), request)
+    return await loop.managers.budgets.get_spend(loop.owner, line.id), answer
+
+
+async def test_a_spending_job_whose_tool_failed_after_it_began_keeps_its_whole_hold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The system the work runs on dropped its answer after it took the
+    work: the tool ran, so the work may be running, and the hold counts
+    whole whatever class the failure has."""
+    dropped = InfraException("the job system dropped its answer")  # a 500
+
+    spend, answer = await failed_start(tmp_path, monkeypatch, dropped, began=True)
+
+    assert getattr(answer.header, "failure", None) is ToolFailure.PERMANENT
+    assert spend.held_cost_micros == 0, "the hold settled"
+    assert spend.spent_cost_micros >= 7_200_000, "counted at its whole hold"
+
+
+async def test_a_spending_job_its_tool_refused_before_it_began_releases_its_hold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    refused = JobRefused(ToolFailure.TRANSIENT, "the cluster has no machine free")
+
+    spend, answer = await failed_start(tmp_path, monkeypatch, refused, began=False)
+
+    assert getattr(answer.header, "failure", None) is ToolFailure.TRANSIENT
+    assert "the cluster has no machine free" in text_of(answer)
+    assert spend.held_cost_micros == 0, "the hold settled"
+    assert spend.spent_cost_micros < 7_200_000, "released: nothing ran"

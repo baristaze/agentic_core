@@ -64,7 +64,7 @@ class CallGateInterface(ABC):
         self, ctx: TenantContext, hold_id: UUID, cost_micros: int | None, *, started: bool
     ) -> None:
         """Closes a job's hold once: released when `started` is False, which
-        the caller says only when the tool refused to start the work;
-        otherwise counted at the cost its runner reported, or at the whole
-        hold when none is reported."""
+        the caller says only when the start was refused before any work
+        began (`JobNotStarted`); otherwise counted at the cost its runner
+        reported, or at the whole hold when none is reported."""
         ...

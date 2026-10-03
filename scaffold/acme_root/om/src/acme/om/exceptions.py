@@ -428,6 +428,16 @@ class ToolFailed(ToolsException, ValidationFailed):
         self.failure = failure
 
 
+class JobRefused(ToolFailed):
+    """A job tool's refusal to start its work, raised from `run` before it
+    starts anything, as when the system the work runs on refuses it. Nothing
+    ran, so the hold the job was started under is released. Any other
+    failure of a job's start may have started the work, and its hold counts
+    whole."""
+
+    code = "job_refused"
+
+
 class McpDefinitionChanged(ToolsException, Conflict):
     """A server's tool no longer matches the definition its binding pinned:
     it is not served until the change is reviewed and the pin moved."""

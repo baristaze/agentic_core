@@ -76,7 +76,7 @@ class CallGateBudgetImpl(CallGateInterface):
     at the same list price; a call the provider never processed releases
     its hold. A spending job is held on the same scopes at its rate until
     its deadline (`budgets.rules.job_exposure`), and settles at the cost
-    its runner reported, else whole; a job its tool refused to start
+    its runner reported, else whole; a job refused before any work began
     releases its hold."""
 
     def __init__(

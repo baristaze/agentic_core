@@ -61,6 +61,15 @@ class JobHandle(Platform):
     deadline: datetime  # never later than the tree's
 
 
+class JobNotStarted(Platform):
+    """A job whose start was refused before any work began: its input,
+    refused before its tool ran, or the tool's own `JobRefused`. `response`
+    answers its call. Nothing ran, so its hold is released; a start that
+    failed any other way may have started the work."""
+
+    response: Step
+
+
 MAX_REPORT = 1_000_000
 """The most a job's completion may say, in characters. What the model reads
 of it is bounded again when its call is answered."""
