@@ -55,8 +55,9 @@ of](../../../../README.md).
 - **End, park, or yield.** A loop ends on the kind's done rule, a bound,
   a principal's cancel, or an error no park can clear. It parks when it
   cannot go on yet, holding no workspace while it waits: on its person,
-  when the agent asked them, until a message answers. A run whose time
-  is up yields, and the next run goes on.
+  when the agent asked them, until a message answers; on a job its tool
+  started, until the job's report arrives or its deadline passes. A run
+  whose time is up yields, and the next run goes on.
 - **Steer.** A message that lands while the loop runs is delivered by its
   next request. A cancel or a pause cuts in between steps, and a cancel
   or an interrupt stops a running tool.
@@ -102,6 +103,9 @@ of](../../../../README.md).
 - **A stopped loop never restarts itself.** A loop that ended in an
   error, or that a principal cancelled, starts no new loop on an input
   it left undelivered.
+- **A job ends with its loop.** A job's call is answered from its
+  report before the next model call. A cancel, the job's deadline, and
+  any other end of its loop stop the work, and the call says so.
 - **A question waits for its answer.** Once the agent asks its person,
   the loop calls no model until a principal's message answers it, and
   the history says so, so a run that takes up a lost one waits too.
@@ -128,6 +132,7 @@ result through the gate; spawn and hand-off are called from the tools
 that offer them. The session runner calls the loop's one operation with
 the session and the context its claim built: once each time the session
 turns pending, and again when a run's time is up. Nothing else drives a
-loop.
+loop. A job's report comes in through the loop too, from whatever the
+product connects to the system the job runs on.
 Each session is an [agent session](../agent_sessions/README.md); what it
 may do and who pays is [attribution](../attribution/README.md)'s.

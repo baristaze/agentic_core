@@ -237,8 +237,10 @@ the job.
 
 **Source.** Tools, Long-Running Jobs.
 
-**Look for.** How a job is started, awaited, and completed; its deadline
-against the tree's; what cancelling the loop does to it.
+**Look for.** How a job is started, awaited, and completed; how its
+completion is checked against the job the loop waits on before it wakes
+anything; its deadline against the tree's; what cancelling the loop does
+to it.
 
 **Violation.** A runtime held open while a job works; a job with no
 deadline (the hold it under-covers is BND-03), or one past the tree's; a
@@ -248,7 +250,7 @@ recovery is STP-11, and a spending job that skips the gate is BND-02.)
 **Severity.** medium
 
 **Shape.** `scaffold/acme_root/om/src/acme/om/tools/tool.py` and
-`scaffold/acme_root/om/src/acme/om/tools/types/call.py`
+`scaffold/acme_root/om/src/acme/om/agents/impl/loop.py`
 
 **Check.** review
 

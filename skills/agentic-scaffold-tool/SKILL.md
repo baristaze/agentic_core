@@ -17,7 +17,7 @@ Lenses: `../../lenses/tools.md`.
 
 ## Input
 
-`<tool_name> --class <class> --effect read_only|idempotent|unsafe [--mode sync|job] [--timeout <seconds>] [--secret <name>] [--kinds <kind,...>]`,
+`<tool_name> --class <class> --effect read_only|idempotent|unsafe [--mode sync|job] [--rate <micros an hour>] [--timeout <seconds>] [--secret <name>] [--kinds <kind,...>]`,
 and what the tool does, in the arguments or in the conversation.
 
 Example: `run_tests --class execute --effect idempotent --kinds fixer`,
@@ -31,11 +31,17 @@ failed".
   own, which policy keys on as a name like any other.
 - `--effect` is what a repeat of the call does. When it is not given,
   ask; unattended, a call that creates, sends, or charges is `unsafe`.
-- `--mode` is `sync` unless the work outlives a run.
+- `--mode` is `sync` unless the work outlives a run: a long build, a
+  load test, a run on a leased machine. Then it is `job`.
+- `--rate` is, for a `job` that costs money while it works, the most it
+  costs an hour at reference cost, in millionths. Unattended, a job
+  that leases a machine or buys compute has one: ask its price.
 - `--timeout` is the tool's own ceiling, below the engine's limit,
   `engine_limit` of `ToolsOptions` in
   `om/src/<name>/om/tools/impl/manager.py`. Unattended, it is the
-  longest a call of the tool should take.
+  longest a call of the tool should take. A `job`'s is the longest its
+  work should take, which no engine limit caps: the tree's deadline
+  does.
 - `--secret` names a secret the tool's process needs, by name. Ask how
   it travels: brokered to a destination, or injected into one variable.
 - `--kinds` names the agent kinds that call the tool.
@@ -52,7 +58,7 @@ contract.
 |------|-------|
 | `om/src/<name>/om/tools/native/<tool_name>.py` | `<Tool>Input(ToolInput)`, the output model, and `<Tool>ToolImpl(ToolInterface)` with its `ToolSpec`; a `job` tool is a `JobToolInterface` that answers `JobStarted`, shape `Reindex` in `om/tests/unit/test_tool_registry.py` |
 | `om/src/<name>/om/tools/native/__init__.py` (the first tool) | empty |
-| `om/tests/unit/test_tool_<tool_name>.py` | the cases of step 5, over the helpers of `om/tests/contracts/tools.py` |
+| `om/tests/unit/test_tool_<tool_name>.py` | the cases of step 6, over the helpers of `om/tests/contracts/tools.py`; a `job` tool's loop cases over `om/tests/contracts/loops.py` |
 
 ## Changed
 
@@ -87,13 +93,27 @@ contract.
    runtime is read-only. A tool with nothing to check returns. An error
    the runtime raises is an infra exception, read by its `http_status`,
    never caught by its class, as the guideline's DEL-29 holds.
-4. `run` answers the output model, or raises `ToolFailed` with the class
-   of `ToolFailure` that fits, decided where the failure happens. A
-   result the call exists to report, such as a test that fails, is the
+4. A `job` tool's `run` starts the work and answers `JobStarted` at
+   once; it never waits for the work. The work runs under
+   `runtime.key`, so a start under a key that started before attaches
+   to it, and ends by `runtime.deadline`. The handle is the tool's own
+   name for the work, at most 200 characters, and the work's system
+   keeps the key beside it. That system reports the end, naming the key
+   and the handle, through `complete_job` of the loop
+   (`om/src/<name>/om/agents/loop.py`), as a `JobCompletion` with what
+   it says, the failure's class when it failed, and its cost when it
+   knows it. The product wires that report to the system, the way it
+   wires any event from outside. `cancel` ends the work, and a cancel
+   of work that ended already does nothing. With `--rate`, the spec
+   declares it as `rate_micros_per_hour`: the loop holds that rate
+   until the job's deadline before the work starts.
+5. `run` answers the output model, a job's `JobStarted`, or raises
+   `ToolFailed` with the class of `ToolFailure` that fits, decided
+   where the failure happens. A result the call exists to report, such as a test that fails, is the
    output, not a failure. A secret goes by name: declared in the spec's
    `secrets` as a `SecretUse`, and passed by name to `runtime.run`.
    An `unsafe` tool runs one command a call.
-5. The tests build the tool and run it through the tools manager over
+6. The tests build the tool and run it through the tools manager over
    the twin transport, as the loop runs a call:
    - a registry holds it, `ToolRegistry([...])`, with the product's
      class declared in `domain_classes` when it has one, and the schema
@@ -110,11 +130,21 @@ contract.
      in that file;
    - by its effect after a crash, shape `om/tests/unit/test_tool_recovery.py`:
      a repeatable call runs again under the same key, and an `unsafe`
-     one is answered from the transport's record and never run again.
-6. With `--kinds`, read `../agentic-scaffold-agent-kind/SKILL.md` and
+     one is answered from the transport's record and never run again;
+   - for a `job` tool, its start under the call's key, a second start
+     that attaches, and its cancel, shape
+     `test_a_job_starts_by_a_deadline_no_later_than_the_trees` in
+     `om/tests/unit/test_tool_registry.py`; then, through the loop over
+     a double that keeps its starts and cancels, shape `Build` in
+     `om/tests/contracts/loops.py`, the cases of
+     `om/tests/unit/test_loop_jobs.py`: its call parks the loop on the
+     job and a completion answers it, its deadline cancels it, a
+     cancel cancels it, and with `--rate`, a refused hold starts
+     nothing.
+7. With `--kinds`, read `../agentic-scaffold-agent-kind/SKILL.md` and
    change each kind as it says. A kind that does not exist yet is
    written by that skill first. Its gates are not run there.
-7. A class of the product's own is declared wherever a registry is
+8. A class of the product's own is declared wherever a registry is
    built, as `domain_classes`, as `om/tests/unit/test_tool_registry.py`
    declares one. When a call of that class must always wait for a
    person, add its row to `DEFAULT_CEILINGS`.
