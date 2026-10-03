@@ -31,11 +31,17 @@ failed".
   own, which policy keys on as a name like any other.
 - `--effect` is what a repeat of the call does. When it is not given,
   ask; unattended, a call that creates, sends, or charges is `unsafe`.
+  A `job` is `idempotent`, whatever its work spends: a start under a
+  key that started before attaches to that work (step 4), so a repeat
+  starts nothing.
 - `--mode` is `sync` unless the work outlives a run: a long build, a
   load test, a run on a leased machine. Then it is `job`.
 - `--rate` is, for a `job` that costs money while it works, the most it
-  costs an hour at reference cost, in millionths. Unattended, a job
-  that leases a machine or buys compute has one: ask its price.
+  costs an hour at reference cost, in millionths. A job that leases a
+  machine or buys compute has one. When it is not given, ask;
+  unattended, stop and report that its rate is missing. Such a job is
+  never written without a rate, which would let it spend outside every
+  budget.
 - `--timeout` is the tool's own ceiling, below the engine's limit,
   `engine_limit` of `ToolsOptions` in
   `om/src/<name>/om/tools/impl/manager.py`. Unattended, it is the
@@ -103,14 +109,22 @@ contract.
    (`om/src/<name>/om/agents/loop.py`), as a `JobCompletion` with what
    it says, the failure's class when it failed, and its cost when it
    knows it. The product wires that report to the system, the way it
-   wires any event from outside. `cancel` ends the work, and a cancel
-   of work that ended already does nothing. With `--rate`, the spec
-   declares it as `rate_micros_per_hour`: the loop holds that rate
-   until the job's deadline before the work starts.
+   wires any event from outside. A report can come before the loop has
+   written its park, and `complete_job` refuses it as `NotFound`: the
+   wiring tries it again, backing off, until the job's deadline, and
+   drops it after, when the loop has answered the call as out of time.
+   `cancel` ends the work, and a cancel of work that ended already does
+   nothing. With `--rate`, the spec declares it as
+   `rate_micros_per_hour`: the loop holds that rate until the job's
+   deadline before the work starts.
 5. `run` answers the output model, a job's `JobStarted`, or raises
    `ToolFailed` with the class of `ToolFailure` that fits, decided
    where the failure happens. A result the call exists to report, such as a test that fails, is the
-   output, not a failure. A secret goes by name: declared in the spec's
+   output, not a failure. For a job, the class is chosen for the
+   model's next move alone: any failure of `run` keeps the job's hold
+   whole, since the work may have started. Only `JobRefused`, raised
+   before `run` starts anything, as when the work's system refuses the
+   job, releases it. A secret goes by name: declared in the spec's
    `secrets` as a `SecretUse`, and passed by name to `runtime.run`.
    An `unsafe` tool runs one command a call.
 6. The tests build the tool and run it through the tools manager over
@@ -120,7 +134,8 @@ contract.
      it renders refuses unknown fields;
    - a call `gate` lets run, shape the gate's cases in
      `om/tests/unit/test_tool_policy.py`, then `execute` answers its
-     output, shape `om/tests/unit/test_tool_execution.py`;
+     output, shape `om/tests/unit/test_tool_execution.py`; `execute`
+     refuses a `job` tool, whose cases are the last bullet's;
    - each `ToolFailed` the tool's own code raises, and its preflight's
      refusal when it has one;
    - its target read from the system whatever the input claims, when it
@@ -131,12 +146,17 @@ contract.
    - by its effect after a crash, shape `om/tests/unit/test_tool_recovery.py`:
      a repeatable call runs again under the same key, and an `unsafe`
      one is answered from the transport's record and never run again;
-   - for a `job` tool, its start under the call's key, a second start
-     that attaches, and its cancel, shape
-     `test_a_job_starts_by_a_deadline_no_later_than_the_trees` in
-     `om/tests/unit/test_tool_registry.py`; then, through the loop over
-     a double that keeps its starts and cancels, shape `Build` in
-     `om/tests/contracts/loops.py`, the cases of
+     a `job` tool's is in the next bullet;
+   - for a `job` tool, through `start_job` and `cancel_job` of the
+     tools manager: its start under the call's key; its crash case, a
+     second start under that key that attaches to the work and starts
+     none; each `JobRefused`, answered as `JobNotStarted`; and its
+     cancel, shape `test_a_job_starts_by_a_deadline_no_later_than_the_trees`
+     in `om/tests/unit/test_tool_registry.py`. Then, through the loop,
+     the tool over a double of the work's system that keeps its starts
+     and cancels, as `Build` in `om/tests/contracts/loops.py` keeps
+     them, joined to the loop's catalog by `loop_over`'s `extra`, with
+     a kind in `kinds` that names it: the cases of
      `om/tests/unit/test_loop_jobs.py`: its call parks the loop on the
      job and a completion answers it, its deadline cancels it, a
      cancel cancels it, and with `--rate`, a refused hold starts
