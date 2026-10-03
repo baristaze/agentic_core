@@ -1,6 +1,6 @@
 {
   "name": "agentic-core",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "The agentic engine's spec with lens-based review skills and scaffolding skills, in the shape of the Software Design and Architecture Guidelines",
   "author": {
     "name": "Baris Taze",

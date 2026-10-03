@@ -8,4 +8,4 @@ the code it checks. Standard library only.
 engine's `scripts/check_version.py` holds equal to its plugin manifest.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
