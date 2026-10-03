@@ -625,7 +625,9 @@ class LoopManagerImpl(LoopManagerInterface):
         the loop does anything else: none of them is ever run as new. A call
         that would wait for a person, or whose principal lapsed, is answered
         as stopped with its outcome unknown, rather than parked open. A
-        cancel that waits answers them all so."""
+        cancel that waits answers them all so. A call that parks the loop as
+        it is settled, on the job it started or on the budget that refused
+        one, parks it there, so nothing asks or starts it a second time."""
         history = await self._history(run.ctx, run.session_id)
         response = rules.latest_response(history, run.loop_id)
         if response is None:
@@ -640,6 +642,8 @@ class LoopManagerImpl(LoopManagerInterface):
             settled = await self._settle_call(run, history, use, request, fresh=False)
             if settled.cancelled:
                 return await self._cancelled(run)
+            if settled.park is not None:
+                return await self._park(run, settled.park)
         return None
 
     async def _requests(

@@ -6,11 +6,15 @@ tree's; cancelling the loop, or any other end of it, cancels the job; a
 completion that names another session's job, or one settled already, is
 refused and wakes nothing; a job that spends passes the budget gate
 before it starts, and its hold is released only when its start was refused
-before any work began; and a completion that reports more than any job
-costs is refused as invalid input."""
+before any work began; a run lost after it wrote a job's request is
+recovered by one start under one hold, parked on that job, and a budget
+that refuses the recovered call parks the loop on the gate's one answer;
+and a completion that reports more than any job costs is refused as
+invalid input."""
 
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 import pytest
@@ -332,6 +336,123 @@ async def test_a_spending_job_its_tool_refused_before_it_began_releases_its_hold
     assert "the cluster has no machine free" in text_of(answer)
     assert spend.held_cost_micros == 0, "the hold settled"
     assert spend.spent_cost_micros < 7_200_000, "released: nothing ran"
+
+
+class Lost(Exception):
+    """The process a run lives in ends where this is raised."""
+
+
+def lose_once(monkeypatch: pytest.MonkeyPatch, manager: object, method: str) -> None:
+    """The next call of `manager.method` loses its run; the one after runs."""
+    real = getattr(manager, method)
+
+    async def lost(*args: object, **kwargs: object) -> None:
+        monkeypatch.setattr(manager, method, real)
+        raise Lost(method)
+
+    monkeypatch.setattr(manager, method, lost)
+
+
+async def lost_after_its_request(
+    loop: Loop, monkeypatch: pytest.MonkeyPatch, manager: object, method: str, cost_micros: int
+) -> tuple[UUID, UUID, Step]:
+    """A session whose run wrote a spending job's request and was lost at
+    the first call of `manager.method`, with its budget line and the open
+    request."""
+    session_id = await loop.start("builder")
+    line = await loop.managers.budgets.create_budget(
+        loop.owner, make_budget(BudgetScopeKind.SESSION, str(session_id), cost_micros=cost_micros)
+    )
+    await loop.say(session_id, "Start it.")
+    loop.anthropic.add(reply(call("compute", q="everything")), reply(said("It is done.")))
+    lose_once(monkeypatch, manager, method)
+    with pytest.raises(Lost):
+        await loop.loops.run(loop.owner, session_id)
+    steps = await loop.history(session_id)
+    (request,) = of_type(steps, StepType.TOOL_REQUEST)
+    assert not [step for step in steps if step.responds_to == request.id], "left open"
+    return session_id, line.id, request
+
+
+@pytest.mark.parametrize(
+    ("manager", "method"),
+    [("tools", "gate"), ("agent_sessions", "park")],
+    ids=["before-its-hold", "before-its-park"],
+)
+async def test_a_run_lost_before_its_jobs_park_is_recovered_by_one_start_and_one_hold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, manager: str, method: str
+) -> None:
+    """The run that recovers the call starts the job once, under one hold
+    of its own, and parks on it; the job's completion settles that hold.
+    A hold the lost run took stays open."""
+    loop = builder_loop(tmp_path)
+    compute = loop.jobs["compute"]  # 3.6 units an hour, for two hours: 7.2 held
+    session_id, line_id, request = await lost_after_its_request(
+        loop, monkeypatch, getattr(loop.managers, manager), method, 100_000_000
+    )
+    starts = len(compute.deadlines)
+    held = (await loop.managers.budgets.get_spend(loop.owner, line_id)).held_cost_micros
+
+    recovered = await loop.loops.run(loop.owner, session_id)
+
+    assert recovered.park is not None and recovered.park.job is not None
+    assert recovered.park.job.key == request.id, "parked on the job it started"
+    assert recovered.park.job.hold_id is not None
+    assert len(compute.deadlines) == starts + 1, "started once"
+    spend = await loop.managers.budgets.get_spend(loop.owner, line_id)
+    assert spend.held_cost_micros == held + 7_200_000, "under one hold of its own"
+    session = await loop.managers.agent_sessions.get_session(loop.owner, session_id)
+    assert session.park == recovered.park
+
+    completion = JobCompletion(key=request.id, handle="compute-1", text="done", cost_micros=1_234)
+    await loop.loops.complete_job(loop.owner, session_id, completion)
+    done = await loop.loops.run(loop.owner, session_id)
+
+    assert done.outcome is LoopOutcome.SUCCEEDED
+    settled = await loop.managers.budgets.get_spend(loop.owner, line_id)
+    assert settled.held_cost_micros == held, "its own hold settled"
+    assert len(compute.deadlines) == starts + 1, "never started again"
+
+
+async def test_a_budget_park_met_while_recovering_a_call_is_kept_and_its_gate_asked_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The run that recovers a spending job's call, on a budget too small
+    for it, parks on the gate's refusal without asking it again; a raise
+    then starts the job once."""
+    loop = builder_loop(tmp_path)
+    compute = loop.jobs["compute"]
+    session_id, line_id, request = await lost_after_its_request(
+        loop, monkeypatch, loop.managers.tools, "gate", 5_000_000
+    )
+    gate = loop.managers.budget_gate
+    authorize = gate.authorize
+    asked: list[object] = []
+
+    async def counted(*args: Any, **kwargs: Any) -> Any:
+        answer = await authorize(*args, **kwargs)
+        asked.append(answer)
+        return answer
+
+    monkeypatch.setattr(gate, "authorize", counted)
+
+    parked = await loop.loops.run(loop.owner, session_id)
+
+    assert parked.park is not None and parked.park.reason is ParkReason.BUDGET
+    assert len(asked) == 1, "the gate is asked once"
+    assert compute.started == {}, "no job started"
+    session = await loop.managers.agent_sessions.get_session(loop.owner, session_id)
+    assert session.park == parked.park
+
+    line = await loop.managers.budgets.get_budget(loop.owner, line_id)
+    raised = Amount(cost_micros=50_000_000)
+    await loop.managers.budgets.change_amount(loop.owner, line_id, raised, line.version)
+    await loop.managers.agent_sessions.wake_parked(loop.owner, ParkReason.BUDGET)
+    started = await loop.loops.run(loop.owner, session_id)
+
+    assert started.park is not None and started.park.job is not None
+    assert started.park.job.key == request.id
+    assert len(compute.deadlines) == 1, "started once"
 
 
 async def test_a_completion_past_the_most_a_job_costs_is_refused_and_the_session_runs_on(
