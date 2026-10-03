@@ -479,7 +479,9 @@ class Driven:
         attached = said.model_copy(
             update={
                 "content": said.content.model_copy(
-                    update={"blocks": (*said.content.blocks, DocumentBlock(attachment_id=self.file.id))}
+                    update={
+                        "blocks": (*said.content.blocks, DocumentBlock(attachment_id=self.file.id))
+                    }
                 ),
                 "children": Children(attachments=(self.file,)),
             }
@@ -530,7 +532,9 @@ def test_a_runner_booted_through_main_reads_an_attachment_with_the_products_read
     monkeypatch.setattr(runner_main, "boot", lambda _: None)
     monkeypatch.setattr(runner_main, "WorkerHttpServer", Quiet)
     monkeypatch.setattr(runner_main, "build_runner", driving)
-    monkeypatch.setattr(runner_container, "StoragePostgresImpl", lambda *_, **__: StorageMemoryImpl())
+    monkeypatch.setattr(
+        runner_container, "StoragePostgresImpl", lambda *_, **__: StorageMemoryImpl()
+    )
     monkeypatch.setattr(runner_container, "InfraConfiguredImpl", lambda _: InfraLocalImpl(tmp_path))
     monkeypatch.setattr(
         runner_container,
