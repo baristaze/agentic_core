@@ -18,7 +18,7 @@ from acme.om.steps.types.header import ToolRequestHeader, ToolResponseHeader
 from acme.om.steps.types.step import Step, StepType
 from acme.om.tools.tool import ToolInterface, ToolRuntime
 from acme.om.tools.types.policy import Target
-from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolSpec
+from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolMode, ToolSpec
 
 WRITE_PLAN = "write_plan"
 PLAN_CHARS = 8_000
@@ -64,6 +64,7 @@ class WritePlanToolImpl(ToolInterface):
             authorization_class=ToolClass.READ,
             effect=Effect.IDEMPOTENT,
             interruptible=True,
+            mode=ToolMode.SYNC,
         )
 
     @property

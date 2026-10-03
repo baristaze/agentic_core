@@ -22,7 +22,7 @@ from acme.om.steps.types.header import ToolFailure
 from acme.om.tools.attachments import AttachmentReaderInterface
 from acme.om.tools.tool import ToolInterface, ToolRuntime
 from acme.om.tools.types.policy import Target
-from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolSpec
+from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolMode, ToolSpec
 
 READ_ATTACHMENT = "read_attachment"
 
@@ -93,6 +93,7 @@ class ReadAttachmentToolImpl(ToolInterface):
             authorization_class=ToolClass.READ,
             effect=Effect.READ_ONLY,
             interruptible=True,
+            mode=ToolMode.SYNC,
         )
 
     @property

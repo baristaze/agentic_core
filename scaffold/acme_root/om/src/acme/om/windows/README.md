@@ -35,8 +35,11 @@ reads, sized for the model that reads it.
 
 - **Render.** The next request of a model role is drawn from the history.
   The agent's own model reads the active window: everything since the
-  latest summary. A side task, such as a title, reads the latest steps
-  its own smaller model holds.
+  latest summary, then the plan it kept last, however far back it wrote
+  it. A side task, such as a title, reads the latest steps its own
+  smaller model holds. A file an input carries renders after a label
+  that names it as data, with the attachment's id, which a read of part
+  of it names.
 - **Compact.** When the active window nears its limit, a person asks for
   it, or the agent's model moves to a smaller one, the oldest part is
   folded into a summary before the next request. The latest exchange

@@ -13,7 +13,7 @@ from acme.om.base import Platform
 from acme.om.context import TenantContext
 from acme.om.tools.tool import ToolInterface, ToolRuntime
 from acme.om.tools.types.policy import Target
-from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolSpec
+from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolMode, ToolSpec
 
 ASK_PERSON = "ask_person"
 QUESTION_CHARS = 4_000
@@ -50,6 +50,7 @@ class AskPersonToolImpl(ToolInterface):
             authorization_class=ToolClass.READ,
             effect=Effect.IDEMPOTENT,
             interruptible=True,
+            mode=ToolMode.SYNC,
         )
 
     @property
