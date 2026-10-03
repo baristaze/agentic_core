@@ -40,7 +40,9 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
   it asks for a run of its loop, which the session runner takes up.
 - **Work.** Once the agent writes a step, the session is running.
 - **Park.** A loop that cannot go on yet parks; what clears it makes the
-  session pending again, for the agent to take up.
+  session pending again, for the agent to take up. A loop parked on the
+  agent's question is cleared by the next message a principal sends: it
+  is the answer.
 - **Wake by itself.** A park with a time to try again is woken at that
   time from the work queue, and a raised budget wakes every session
   parked on a budget. A woken session is pending; the run that takes it

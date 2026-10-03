@@ -28,13 +28,15 @@ from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import Platform, new_id, utcnow
 from acme.om.context import CredentialKind, RequestContext, Role, TenantContext, build_context
-from acme.om.root import Managers, build_managers
+from acme.om.root import Managers, build_managers, engine_tools
 from acme.om.steps.types.content import TextBlock, ToolUseBlock
 from acme.om.steps.types.header import LoopOutcome, ParkReason
 from acme.om.steps.types.step import Step, StepType
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.storage.root import StorageInterface
 from acme.om.tenancy.rules import permissions_of
+from acme.om.tools.attachments import AttachmentReaderInterface
+from acme.om.tools.impl.attachments import AttachmentReaderNullImpl
 from acme.om.tools.tool import ToolInterface, ToolRuntime
 from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule, Target
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolSpec
@@ -155,6 +157,18 @@ DELIVERY = AgentKind(
     policy=ALLOWED,
 )
 
+HELPER = AgentKind(
+    name="helper",
+    version=1,
+    tools=("lookup", "ask_person", "write_plan", "read_attachment"),
+    done_rule=DoneRule.ANSWER,
+    authority=AuthorityMode.DELEGATED,
+    tree=TreeLimits(height=1, count=0),
+    prompts=("You work on the records, and ask your person what you cannot find.",),
+    policy=ALLOWED,
+)
+"""A kind that names the engine's own tools."""
+
 
 class Clock:
     def __init__(self) -> None:
@@ -245,10 +259,12 @@ def loop_over(
     owner: TenantContext | None = None,
     sink: StreamSinkMemoryImpl | None = None,
     jitter: Callable[[], float] = random.random,
+    reader: AttachmentReaderInterface | None = None,
 ) -> Loop:
     """`storage` None is the memory storage, and `owner` None a fresh
     tenant's owner; a suite over Postgres hands in both. `jitter` is what
-    the loop draws its retry waits from."""
+    the loop draws its retry waits from. The loop's catalog holds the
+    engine's tools before the suite's, over `reader`, None the null."""
     infra = InfraLocalImpl(tmp_path)
     anthropic = ModelProviderScriptedImpl(ProviderName.ANTHROPIC)
     openai = ModelProviderScriptedImpl(ProviderName.OPENAI)
@@ -258,6 +274,7 @@ def loop_over(
     integrations = IntegrationsOverImpl(IdentityProviderAbsentImpl(), providers)
     catalog = tools()
     storage = storage or StorageMemoryImpl()
+    reader = reader or AttachmentReaderNullImpl()
     managers = build_managers(
         storage,
         infra,
@@ -265,6 +282,7 @@ def loop_over(
         agent_kinds=kinds,
         principal_context=live,
         tool_catalog=tuple(catalog.values()),
+        attachment_reader=reader,
     )
     clock = Clock()
 
@@ -286,7 +304,7 @@ def loop_over(
         providers,
         outages or infra.get_outages(),
         sink,
-        tuple(catalog.values()),
+        engine_tools(managers.steps, reader) + tuple(catalog.values()),
         options or LoopOptions(control_poll=timedelta(milliseconds=1)),
         clock,
         sleep,
@@ -310,6 +328,11 @@ def reply(*blocks: TextBlock | ToolUseBlock, model: str = SONNET) -> ModelReply:
 
 def use(name: str, q: str = "the total", use_id: str | None = None) -> ToolUseBlock:
     return ToolUseBlock(id=use_id or f"use_{name}_{new_id().hex[:8]}", name=name, input={"q": q})
+
+
+def call(name: str, **call_input: object) -> ToolUseBlock:
+    """A call of any tool, with the input the model wrote."""
+    return ToolUseBlock(id=f"use_{name}_{new_id().hex[:8]}", name=name, input=call_input)
 
 
 def said(text: str) -> TextBlock:

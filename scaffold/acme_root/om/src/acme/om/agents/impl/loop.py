@@ -21,7 +21,7 @@ from acme.integrations.model_providers.failures import ModelCallFailed
 from acme.integrations.model_providers.types import ErrorAnswer, ErrorKind, StopReason
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.limits import Limit, Trip, tally_loop, tripped
-from acme.om.agent_sessions.rules import unlock_step
+from acme.om.agent_sessions.rules import QUESTION, unlock_step
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
 from acme.om.agents import AgentsManagerInterface
 from acme.om.agents import loop_rules as rules
@@ -71,6 +71,7 @@ from acme.om.steps.types.header import (
 from acme.om.steps.types.step import Actor, Step, StepType
 from acme.om.steps.types.stream import StreamPart, ToolOutputPart
 from acme.om.tools import ToolsManagerInterface
+from acme.om.tools.native.write_plan import current_plan
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.rules import ISOLATION_REFUSED, response, response_id, tool_request
 from acme.om.tools.tool import ToolInterface
@@ -307,6 +308,11 @@ class LoopManagerImpl(LoopManagerInterface):
                     # The result gate accepted a result this turn submitted,
                     # and every call of the turn is answered.
                     return await self._end(run, accepted)
+                if rules.question_waits(history, response):
+                    # The agent asked its person, and every call of the turn
+                    # is answered: no model call until a principal's message
+                    # answers it, after a lost run as well.
+                    return await self._park(run, QUESTION)
                 if not response.as_tool_uses() and not rules.judged(history, response):
                     stopped = await self._judge(run, history, response)
                     if stopped is not None:
@@ -329,7 +335,7 @@ class LoopManagerImpl(LoopManagerInterface):
             if repeated is not None:
                 # Written before the next request, which reads it.
                 await self._notice(run, repeated)
-            stopped = await self._model_turn(run)
+            stopped = await self._model_turn(run, history)
             if stopped is not None:
                 return stopped
 
@@ -344,7 +350,7 @@ class LoopManagerImpl(LoopManagerInterface):
 
     # A turn of the model.
 
-    async def _model_turn(self, run: _Run) -> LoopRun | None:
+    async def _model_turn(self, run: _Run, history: Sequence[Step]) -> LoopRun | None:
         ctx = run.ctx
         fill_set = await self._models.get_fill_set(ctx, run.session_id)
         fill = fill_set.fill_for(MAIN)
@@ -358,14 +364,18 @@ class LoopManagerImpl(LoopManagerInterface):
         if outage is not None:
             return await self._park(run, provider_park(fill, outage.retry_at))
         prompts = rules.kind_prompts(run.kind, run.registry)
+        # The agent's current plan, read off the whole history, so a summary
+        # that folded the call that wrote it still leaves it in view.
+        kept = current_plan(history)
+        plan = None if kept is None else kept.text
         try:
             if run.refused is not None:
                 rendered = await self._windows.render_after_overflow(
-                    ctx, run.session_id, run.epoch, run.loop_id, prompts, run.refused
+                    ctx, run.session_id, run.epoch, run.loop_id, prompts, run.refused, plan=plan
                 )
             else:
                 rendered = await self._windows.render_request(
-                    ctx, run.session_id, run.epoch, run.loop_id, prompts, MAIN
+                    ctx, run.session_id, run.epoch, run.loop_id, prompts, MAIN, plan=plan
                 )
         except ModelCallFailed as failed:
             # The compaction's call to the summarizer failed: its own

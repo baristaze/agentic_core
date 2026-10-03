@@ -30,6 +30,10 @@ thing [Acme is made of](../../../../README.md).
   input. It expires.
 - **Job**: work that outlives a run, such as a long build. The
   agent waits for it without holding anything.
+- **The engine's own tools**: three a kind may name, each acting on
+  nothing outside the session: asking its person, writing its plan, and
+  reading part of a file attached to the session. They read and keep
+  the session's own records, so their class is reading.
 
 ## What can happen
 
@@ -49,6 +53,14 @@ thing [Acme is made of](../../../../README.md).
   that is not is never repeated: the workspace's own record says how it
   ended, or the agent is told its outcome is unknown. The record keeps
   what the command printed sealed under the session's key.
+- **Ask the person.** The agent asks its person a question, or stops
+  and says what it needs. Its loop waits, holding nothing, and the
+  person's next message is the answer it goes on with.
+- **Keep a plan.** Each plan the agent writes is kept in the session's
+  history as one more version. The latest is shown to the agent at the
+  end of each request, and a person reads it among the session's steps.
+- **Read an attachment** a range of lines or pages at a time, at most a
+  bounded amount a call. How a file turns into text is the product's.
 - **Purge.** When a deleted session is purged, its workspace and the
   records of its commands go with its history.
 
@@ -67,6 +79,9 @@ thing [Acme is made of](../../../../README.md).
   agent sees, and the engine's own credentials never reach a tool.
 - **Isolation is never weakened.** A workspace that cannot be had as the
   session asks is refused, never swapped for something weaker.
+- **A call reads its own session.** A tool that reads the session's
+  records reads the one the call was made in, never one its input names:
+  a file another session holds answers as one that does not exist.
 - **Every policy belongs to one org.**
 
 ## How another namespace composes it

@@ -25,6 +25,7 @@ from acme.infra.observability import (
 )
 from acme.infra.trust import install_trust_store
 from acme.om.agents.types.kind import AgentKind
+from acme.om.tools.attachments import AttachmentReaderInterface
 from acme.om.tools.tool import ToolInterface
 from acme.om.work.types.work_item import WorkKind
 from acme.workers.maintenance.health import Probe, WorkerHttpServer
@@ -85,6 +86,7 @@ async def serve(
     *,
     agent_kinds: tuple[AgentKind, ...] = (),
     tool_catalog: tuple[ToolInterface, ...] = (),
+    attachment_reader: AttachmentReaderInterface | None = None,
     domain_classes: tuple[str, ...] = (),
 ) -> int:
     settings = SessionRunnerSettings()
@@ -93,6 +95,7 @@ async def serve(
         settings,
         agent_kinds=agent_kinds,
         tool_catalog=tool_catalog,
+        attachment_reader=attachment_reader,
         domain_classes=domain_classes,
     )
     await container.start()
@@ -142,11 +145,12 @@ def main(
     *,
     agent_kinds: tuple[AgentKind, ...] = (),
     tool_catalog: tuple[ToolInterface, ...] = (),
+    attachment_reader: AttachmentReaderInterface | None = None,
     domain_classes: tuple[str, ...] = (),
 ) -> int:
-    """`agent_kinds`, `tool_catalog`, and `domain_classes` are the product's:
-    a product's own entry point passes them, as its containers pass them to
-    the managers."""
+    """`agent_kinds`, `tool_catalog`, `attachment_reader`, and
+    `domain_classes` are the product's: a product's own entry point passes
+    them, as its containers pass them to the managers."""
     parser = argparse.ArgumentParser(prog="acme-session-runner")
     sub = parser.add_subparsers(dest="command", required=True)
     p_serve = sub.add_parser("serve", help="claim the loops of agent sessions and run them")
@@ -160,6 +164,7 @@ def main(
             args.lane,
             agent_kinds=agent_kinds,
             tool_catalog=tool_catalog,
+            attachment_reader=attachment_reader,
             domain_classes=domain_classes,
         )
     )

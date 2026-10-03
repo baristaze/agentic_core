@@ -523,7 +523,8 @@ class _Walk:
 
     def labelled(self, step: Step) -> list[Block]:
         """An input's files, each after a label that names it as data: its
-        name, the input it came with, and that input's step."""
+        name, the input it came with, that input's step, and the
+        attachment's id, which a bounded read of it names."""
         self.files_of(step, step.content.blocks)
         labelled: list[Block] = []
         for block in _files(step.content.blocks):
@@ -534,6 +535,7 @@ class _Walk:
                 of=_origin(step),
                 seq=step.seq,
                 step=step.id,
+                attachment=attachment.id,
                 media_type=attachment.media_type,
             )
             labelled.extend((label, block))

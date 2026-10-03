@@ -54,7 +54,8 @@ of](../../../../README.md).
   decided and each answer before the next call.
 - **End, park, or yield.** A loop ends on the kind's done rule, a bound,
   a principal's cancel, or an error no park can clear. It parks when it
-  cannot go on yet, holding no workspace while it waits. A run whose time
+  cannot go on yet, holding no workspace while it waits: on its person,
+  when the agent asked them, until a message answers. A run whose time
   is up yields, and the next run goes on.
 - **Steer.** A message that lands while the loop runs is delivered by its
   next request. A cancel or a pause cuts in between steps, and a cancel
@@ -101,6 +102,9 @@ of](../../../../README.md).
 - **A stopped loop never restarts itself.** A loop that ended in an
   error, or that a principal cancelled, starts no new loop on an input
   it left undelivered.
+- **A question waits for its answer.** Once the agent asks its person,
+  the loop calls no model until a principal's message answers it, and
+  the history says so, so a run that takes up a lost one waits too.
 - **A nudge is a step.** When a delivery agent's turn calls no tool, the
   engine's notice is written before the next request, so no request
   holds two of the model's turns in a row. A reply cut by its output

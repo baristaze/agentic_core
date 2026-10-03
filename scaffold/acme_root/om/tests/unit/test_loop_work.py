@@ -12,7 +12,7 @@ from contracts.doubles import context
 from contracts.step_storage import make_request, make_response
 
 from acme.infra.impl.local import InfraLocalImpl
-from acme.om.agent_sessions.rules import asks_for_run
+from acme.om.agent_sessions.rules import QUESTION, asks_for_run, parked_step
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
 from acme.om.agents.loop_rules import ended_step
 from acme.om.attribution.impl.manager import members_context
@@ -97,7 +97,45 @@ def with_status(status: SessionStatus) -> AgentSession:
 def test_a_run_is_asked_for_each_time_a_session_turns_pending(
     before: SessionStatus, after: SessionStatus, asks: bool
 ) -> None:
-    assert asks_for_run(with_status(before), with_status(after)) is asks
+    assert asks_for_run(with_status(before), with_status(after), ()) is asks
+
+
+@pytest.mark.parametrize("read", [StepType.PARKED, StepType.LOOP_ENDED, None])
+def test_a_pending_session_asks_again_once_it_reads_the_end_of_the_run_it_asked_for(
+    read: StepType | None,
+) -> None:
+    """A park or a loop's end read with the input after it, from a status
+    still pending: the run that was asked for holds the session no longer."""
+    session_id, loop_id, now = new_id(), new_id(), utcnow()
+    ends = {
+        StepType.PARKED: parked_step(new_id(), session_id, loop_id, QUESTION, now),
+        StepType.LOOP_ENDED: ended_step(new_id(), now, session_id, loop_id, LoopOutcome.SUCCEEDED),
+    }
+    steps = () if read is None else (ends[read].model_copy(update={"seq": 1}),)
+    pending = with_status(SessionStatus.PENDING)
+
+    assert asks_for_run(pending, pending, steps) is (read is not None)
+
+
+async def test_an_answer_read_with_the_park_it_answers_asks_for_the_run_that_takes_it_up(
+    engine: Engine,
+) -> None:
+    """A run parks on its question before any model call, and the person's
+    answer lands before the park is projected: one projection reads both,
+    from pending to pending, and still asks for the next run."""
+    ctx = context(Role.MEMBER)
+    session = await engine.session(ctx)
+    await engine.say(ctx, session.id, "Draft the weekly report.")
+    steps = engine.managers.steps
+    epoch = await steps.begin_run(ctx, session.id)
+    (message,) = (await steps.get_steps(ctx, session.id, 0, 10)).items
+    park = parked_step(new_id(), session.id, message.loop_id, QUESTION, utcnow())
+    await steps.append_steps(ctx, session.id, epoch, [park])
+
+    answered = await engine.say(ctx, session.id, "The week of the 28th.")
+
+    assert (answered.status, answered.park) == (SessionStatus.PENDING, None)
+    assert len(engine.runs(session.id)) == 2, "the answer asks for the run that delivers it"
 
 
 async def test_a_waking_message_lands_with_the_one_run_that_takes_it_up(engine: Engine) -> None:

@@ -372,7 +372,7 @@ def test_a_file_an_input_carries_renders_as_data_labelled_with_its_origin() -> N
     assert said == TextBlock(text="See the plot.") and image == ImageBlock(attachment_id=plot.id)
     assert isinstance(plot_label, TextBlock) and plot_label.text == (
         f'<data origin="file" of="message" seq="{asked.seq}" step="{asked.id}" '
-        'media_type="image/png">\ngrip.png\n</data>'
+        f'attachment="{plot.id}" media_type="image/png">\ngrip.png\n</data>'
     )
     assert isinstance(quoted, TextBlock) and quoted.text.startswith('<data origin="event"')
     assert isinstance(report_label, TextBlock) and report_label.text.startswith(

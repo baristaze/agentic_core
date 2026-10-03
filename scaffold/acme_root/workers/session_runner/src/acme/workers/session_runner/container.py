@@ -16,6 +16,7 @@ from acme.om.agents.types.kind import AgentKind
 from acme.om.root import Managers, build_managers
 from acme.om.storage.impl.postgres import StoragePostgresImpl
 from acme.om.storage.root import StorageInterface
+from acme.om.tools.attachments import AttachmentReaderInterface
 from acme.om.tools.tool import ToolInterface
 from acme.workers.session_runner.settings import SessionRunnerSettings
 
@@ -44,11 +45,13 @@ class RunnerContainer:
         *,
         agent_kinds: tuple[AgentKind, ...] = (),
         tool_catalog: tuple[ToolInterface, ...] = (),
+        attachment_reader: AttachmentReaderInterface | None = None,
         domain_classes: tuple[str, ...] = (),
     ) -> RunnerContainer:
         """Over the database, the infra, and the providers the settings
-        name. `agent_kinds`, `tool_catalog`, and `domain_classes` are the
-        product's, as every process that builds the managers passes them."""
+        name. `agent_kinds`, `tool_catalog`, `attachment_reader`, and
+        `domain_classes` are the product's, as every process that builds the
+        managers passes them; None for the reader refuses every read."""
         storage = StoragePostgresImpl(
             settings.role_urls(),
             settings.role_pools(),
@@ -65,6 +68,7 @@ class RunnerContainer:
             integrations,
             agent_kinds=agent_kinds,
             tool_catalog=tool_catalog,
+            attachment_reader=attachment_reader,
             domain_classes=domain_classes,
         )
 
@@ -78,6 +82,7 @@ class RunnerContainer:
         *,
         agent_kinds: tuple[AgentKind, ...] = (),
         tool_catalog: tuple[ToolInterface, ...] = (),
+        attachment_reader: AttachmentReaderInterface | None = None,
         domain_classes: tuple[str, ...] = (),
     ) -> RunnerContainer:
         """The managers over whichever roots the caller chose."""
@@ -88,6 +93,7 @@ class RunnerContainer:
             environment=settings.environment,
             agent_kinds=agent_kinds,
             tool_catalog=tool_catalog,
+            attachment_reader=attachment_reader,
             domain_classes=domain_classes,
         )
         return cls(settings, storage, infra, integrations, managers)

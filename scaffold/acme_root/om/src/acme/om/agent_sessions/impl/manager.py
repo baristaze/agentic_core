@@ -162,7 +162,7 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
             waiting = wakes_at(session, after, page.items)
             if waiting is not None:
                 rows += (wake_row(ctx, after, waiting),)
-            if asks_for_run(session, after):
+            if asks_for_run(session, after, page.items):
                 rows += (loop_row(ctx, after),)
             try:
                 await self._storage.write_session(ctx.org_id, after, session.version, rows)

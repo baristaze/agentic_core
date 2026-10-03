@@ -15,13 +15,15 @@ The status moves on the steps alone:
   the next request delivers it with whatever wakes the session next;
 - a control that clears the park makes a parked session pending, for a
   run to take up: `unlock` and `cancel` clear any park, `resume` a pause,
-  and `approve` or `deny` a person's.
+  and `approve` or `deny` a person's;
+- a principal's message clears a park on a question (`QUESTION`): it is
+  the answer the park waits for, and the resumed loop delivers it.
 
 An archived session records what arrives and wakes for nothing else. A
 principal's message unarchives it, and wakes it as any input does. A
-message to a parked session waits for the resume; what decides that a
-message is the very thing the park waits for writes the control that
-clears it.
+message to a parked session waits for the resume, unless the park waits
+on a question; on any other park, what decides that a message is the
+very thing the park waits for writes the control that clears it.
 
 A waking input stays undelivered until a model request that references it
 has a complete response: neither truncated nor abandoned. A request
@@ -66,6 +68,14 @@ UNPARKS: dict[ControlCommand, frozenset[ParkReason]] = {
 }
 """The parks each control clears. A control not named here clears none."""
 
+QUESTION = Park(reason=ParkReason.PERSON, unlock="answer")
+"""The park of a loop whose agent asked its person a question, or stood
+down and said what it needs: a principal's message is the answer, and
+clears it."""
+
+RUN_ENDS = frozenset({StepType.PARKED, StepType.LOOP_ENDED})
+"""The steps after which a run holds its session no longer."""
+
 STOPPED = frozenset({LoopOutcome.ERRORED, LoopOutcome.CANCELLED})
 """The outcomes after which a loop wakes on nothing it already held: an
 error no park can clear would meet the same input again, and a principal
@@ -91,10 +101,12 @@ def after_step(state: Projection, step: Step) -> Projection:
         if not header.waking or archived:
             return replace(state, archived=archived)
         idle = state.status is SessionStatus.IDLE
-        status = SessionStatus.PENDING if idle else state.status
+        answered = state.park == QUESTION and step.type is StepType.MESSAGE
+        status = SessionStatus.PENDING if idle or answered else state.status
         return replace(
             state,
             status=status,
+            park=None if answered else state.park,
             archived=archived,
             pending_input=step.id,
             delivering_request=None,
@@ -210,14 +222,22 @@ def lineage(source: AgentSession | None, session: AgentSession) -> dict[str, Any
     }
 
 
-def asks_for_run(before: AgentSession, after: AgentSession) -> bool:
+def asks_for_run(before: AgentSession, after: AgentSession, steps: Sequence[Step]) -> bool:
     """Whether a projection asks for a run of the session's loop: it made the
-    session pending, from idle, parked, or running. An input that wakes it,
-    an unlock that lets its park go, and a loop that ends with a waking input
-    undelivered each turn it pending once, so each asks once. A session
-    pending already has its run asked for, and a running one is held by the
-    run that writes its steps."""
-    return after.status is SessionStatus.PENDING and before.status is not SessionStatus.PENDING
+    session pending, from idle, parked, or running, or it read a run's end
+    among `steps`, a park or a loop's end, and left the session pending. An
+    input that wakes it, an unlock or an answer that lets its park go, and a
+    loop that ends with a waking input undelivered each turn it pending
+    once, so each asks once. A session pending already has its run asked
+    for, unless that run ended since, and a running one is held by the run
+    that writes its steps. Read off the steps, as `wakes_at` is, so an
+    answer that lands between a run's last step and its projection still
+    asks."""
+    if after.status is not SessionStatus.PENDING:
+        return False
+    if before.status is not SessionStatus.PENDING:
+        return True
+    return any(step.type in RUN_ENDS and step.seq > before.status_seq for step in steps)
 
 
 def wakes_at(before: AgentSession, after: AgentSession, steps: Sequence[Step]) -> Park | None:
