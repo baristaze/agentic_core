@@ -113,7 +113,7 @@ KIND = KindPrompts(
     prompts=("You investigate faults.",),
     tools=(ToolSpec(name="read_log"),),
 )
-SUMMARY = "The gripper releases at 4.2 s, before the placement location."
+SUMMARY = "The order is dropped at 4.2 s, before its payment confirms."
 assert MAIN_FILL == WIDE.name
 
 
@@ -268,8 +268,8 @@ async def a_session(engine: Engine, history: History) -> Session:
 
 def a_long_history(turns: int = 4, size: int = 2_000) -> History:
     history = History()
-    objective = history.message("Find why the robot drops the object, and fix it.")
-    history.turn((objective,), "Reading the gripper log.", [("read_log", "g" * size)])
+    objective = history.message("Find why the checkout drops the order, and fix it.")
+    history.turn((objective,), "Reading the checkout log.", [("read_log", "g" * size)])
     for n in range(turns - 1):
         history.turn((), f"Reading part {n}.", [("read_log", str(n) * size)])
     return history
@@ -477,8 +477,8 @@ async def test_a_switch_inside_a_tool_use_cycle_thinks_again_once_the_cycle_clos
     table = (RoleFill(role=MAIN, fill=thinking, fallbacks=(fallback,)), *WIDENING[1:])
     engine = an_engine(tmp_path, table)
     history = History()
-    objective = history.message("Find why the robot drops the object.")
-    history.turn((objective,), "Reading the gripper log.", [("read_log", "released at 4.2 s")])
+    objective = history.message("Find why the checkout drops the order.")
+    history.turn((objective,), "Reading the checkout log.", [("read_log", "dropped at 4.2 s")])
     session = await a_session(engine, history)
     assert (await render_main(engine, session)).call.thinking_budget == 1_024
     await engine.models.switch_fill(
@@ -675,14 +675,14 @@ async def test_a_summarizer_call_that_never_left_the_process_releases_its_hold(
 
 async def test_a_summary_whose_stream_broke_is_billed_and_recorded_cut(engine: Engine) -> None:
     session = await a_session(engine, a_long_history())
-    arrived = a_summary(text="The grip", stop_reason=None, truncated=True)
+    arrived = a_summary(text="The order", stop_reason=None, truncated=True)
     engine.summarizer.add(ScriptedFailure(kind=ErrorKind.TRANSIENT, partial=arrived))
     with pytest.raises(ModelCallFailed):
         await render_main(engine, session)
     assert [(usage, billed) for _, usage, billed in engine.gate.settled] == [(None, True)]
     cut = (await history_of(engine, session))[-1]
     assert isinstance(cut.header, ModelResponseHeader) and cut.header.truncated
-    assert cut.as_text() == "The grip"
+    assert cut.as_text() == "The order"
 
 
 async def test_a_refused_gate_calls_no_model_and_writes_nothing(engine: Engine) -> None:
@@ -746,7 +746,7 @@ async def test_re_rendering_each_recorded_request_reproduces_its_prompt_hash(
 ) -> None:
     engine = an_engine(tmp_path, WIDENING)
     history = History()
-    history.message("Find why the robot drops the object.")
+    history.message("Find why the checkout drops the order.")
     session = await a_session(engine, history)
     for n in range(3):
         rendered = await engine.windows.render_request(

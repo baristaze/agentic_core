@@ -173,7 +173,7 @@ async def test_a_message_to_a_running_loop_asks_for_no_run_until_the_loop_ends(
     ctx = context(Role.MEMBER)
     session, epoch, loop_id = await running(engine, ctx)
 
-    later = await engine.say(ctx, session.id, "And check the gripper.")
+    later = await engine.say(ctx, session.id, "And check the payment webhook.")
     assert session.status is SessionStatus.RUNNING and later.status is SessionStatus.RUNNING
     assert len(engine.runs(session.id)) == 1, "the run that holds the loop delivers it"
 

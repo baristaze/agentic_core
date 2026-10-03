@@ -28,7 +28,7 @@ guideline's [How to Read This][g-read]:
 - Statements in the present tense are rules. A **Principle** box closes
   most sections; the boxes alone are a checklist for a review.
 - *Example* lines use one running example. They illustrate and never
-  add a rule. The nouns are borrowed from a robotics product; the shapes
+  add a rule. The nouns are borrowed from a checkout service; the shapes
   are domain-free.
 - Nuance only an agent needs sits in an `agents-only` comment, which a
   rendered page hides.
@@ -120,12 +120,12 @@ flowchart BT
 
 ## The Running Example
 
-> A person writes: *"The robot sometimes drops the object before
-> reaching the placement location. Investigate and fix it."* The agent reads logs,
-> forms three hypotheses, and spawns three sub-agents to test them. A
-> teammate steers mid-run: *"Don't touch the controller gains."* The
-> session parks for an approval before touching real hardware, for a
-> provider outage, and for a budget cap. A week later a review comment
+> A person writes: *"The checkout service sometimes drops an order
+> before its payment confirms. Investigate and fix it."* The agent reads
+> logs, forms three hypotheses, and spawns three sub-agents to test them.
+> A teammate steers mid-run: *"Don't touch the retry settings."* The
+> session parks for an approval before touching the production database,
+> for a provider outage, and for a budget cap. A week later a review comment
 > revives it; months later a newer model continues it. When the project
 > ends, the session's content is destroyed by revoking its key, while its
 > shape stays on record.
@@ -543,7 +543,7 @@ never a source of instructions and renders as data. The agent's **plan**,
 which it keeps through a plan tool, is not pinned: it renders last, as
 the agent's own notes ([Rendering](#rendering)).
 
-*Example:* "Don't touch the controller gains" is a standing instruction.
+*Example:* "Don't touch the retry settings" is a standing instruction.
 From the next summary on it sits in the pinned zone, however many
 compactions follow.
 
@@ -738,7 +738,7 @@ before the registry serves it.
 
 A **policy** gives a call one of three decisions: allow, require
 approval, or deny. It keys on the tool, its class, its effect, and the
-attributes of what the call targets (a station's kind, a branch's
+attributes of what the call targets (an environment's kind, a branch's
 protection), never on what the model says about the call. It is layered:
 the agent kind's defaults, narrowed or loosened by the tenant, never past
 the platform's ceilings. Most development work runs unattended; what is
@@ -763,7 +763,7 @@ An approval is a person's decision, never the model's.
   rest of the loop or until a deadline, never for a destructive or
   physical class.
 - A policy may bind an approval to a target chosen later, such as any
-  station of one pool, for one candidate and one procedure, and keep it
+  host of one pool, for one candidate and one procedure, and keep it
   while the session waits for that target.
 - An approver holds the approve permission for that class in the
   tenant. A policy may require someone other than the requester, or two
@@ -786,7 +786,7 @@ tool runs ([Streams](#streams)).
 
 `optional`
 
-A training run, a station run, or a long build never holds a runtime
+A training run, a load test, or a long build never holds a runtime
 while it works. A `job`-mode tool starts the work and returns a handle,
 and the loop parks on the job ([Parking](#parking)), releasing its
 runtime. The job's completion arrives as an event that wakes the
@@ -1272,7 +1272,7 @@ loop is not trusted: its gates run again, as the scaffold's
 [ADR 0039][g-adr-0039] holds. The engine adds what a loop needs: the
 reasons, the one action that clears each, and a park that holds no
 runtime and no work lease while it waits, beyond what is declared (a
-memory-only session's runtime, a station lease's hold time).
+memory-only session's runtime, a host lease's hold time).
 
 | Reason | Examples | Unlock | Unlocks without a person |
 |---|---|---|---|
@@ -1293,7 +1293,7 @@ now" as "this did not work" throws away a long conversation and its
 evidence.
 
 *Example:* in its first week the session parks five times, for an
-approval, a provider, a budget, a busy test station, and a question, and
+approval, a provider, a budget, a busy staging database, and a question, and
 resumes each time without anyone restarting it.
 
 > **Principle:** "Not now" is not "failed". A park names its reason, its
@@ -1545,7 +1545,7 @@ own tools and data.
 
 [`distro_gentic`][d] embeds this engine in a
 closed-loop, distributed platform: runners and hosts, placement,
-stations, evidence, trust across a customer's wall, and money.
+evidence, trust across a customer's wall, and money.
 
 [g]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md
 [g-read]: https://github.com/baristaze/swe_guidelines/blob/v0.48.0/architecture.md#how-to-read-this
