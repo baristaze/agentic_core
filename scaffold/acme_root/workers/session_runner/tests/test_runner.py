@@ -1,9 +1,10 @@
 """The session runner over memory: the handler of `LOOP`, the claim loop
 that runs a woken session's loop to its end, the role a call made on what
-a key said runs with, the kinds each worker claims, and the knobs it
-reads."""
+a key said runs with, the product's reader `main` hands down, the kinds
+each worker claims, and the knobs it reads."""
 
 import asyncio
+import json
 import re
 from collections.abc import Callable
 from datetime import timedelta
@@ -37,10 +38,13 @@ from acme.om.context import (
 )
 from acme.om.exceptions import NotFound, UnknownAgentKind
 from acme.om.steps.rules import message_step
-from acme.om.steps.types.header import LoopOutcome
+from acme.om.steps.types.content import Attachment, Children, DocumentBlock
+from acme.om.steps.types.content import TextBlock as KeptText
+from acme.om.steps.types.header import LoopOutcome, ToolResponseHeader
 from acme.om.steps.types.step import StepType
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.tenancy.rules import ROLE_PERMISSIONS
+from acme.om.tools.attachments import AttachmentReaderInterface, AttachmentText
 from acme.om.tools.tool import ToolInterface, ToolRuntime
 from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule, Target
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolSpec
@@ -54,6 +58,8 @@ from acme.om.work.types.work_item import (
 )
 from acme.workers.maintenance.container import WorkerContainer
 from acme.workers.maintenance.main import build_loop
+from acme.workers.session_runner import container as runner_container
+from acme.workers.session_runner import main as runner_main
 from acme.workers.session_runner.container import RunnerContainer
 from acme.workers.session_runner.main import build_runner, loop_options
 from acme.workers.session_runner.runs import LoopHandlerImpl
@@ -409,3 +415,132 @@ async def test_a_call_made_on_what_a_key_said_runs_no_higher_than_the_key(
         CredentialKind.API_KEY,
         issued.api_key.id,
     )
+
+
+class Reader(AttachmentReaderInterface):
+    """A product's reader: the text of the one file it holds, and every
+    read it was asked for."""
+
+    def __init__(self, attachment_id: UUID, text: str) -> None:
+        self._attachment_id = attachment_id
+        self._text = text
+        self.asked: list[UUID] = []
+
+    async def read_text(
+        self, ctx: TenantContext, session_id: UUID, attachment: Attachment
+    ) -> AttachmentText | None:
+        self.asked.append(attachment.id)
+        return AttachmentText(pages=(self._text,)) if attachment.id == self._attachment_id else None
+
+
+READING = ASKING.model_copy(update={"tools": ("read_attachment",)})
+
+
+class Driven:
+    """The runner `serve` builds over its container, run through one session
+    whose person attached a file, then stopped."""
+
+    def __init__(self, container: RunnerContainer, lane: str | None, file: Attachment) -> None:
+        self.container = container
+        self.runner = build_runner(container, lane)
+        self.file = file
+        self.answered: list[str] = []
+
+    def stop(self) -> None:
+        self.runner.stop()
+
+    def alive(self) -> bool:
+        return self.runner.alive()
+
+    async def run(self) -> None:
+        managers = self.container.managers
+        owner, _ = await managers.tenancy.bootstrap(
+            RequestContext(request_id=new_id(), app=APP), "Ajax", "ajax", "ann@example.test", "Ann"
+        )
+        twin = self.container.integrations.get_model_providers().get(ProviderName.ANTHROPIC)
+        reads = ToolUseBlock(
+            id=f"use_{new_id().hex[:12]}",
+            name="read_attachment",
+            input={"attachment_id": str(self.file.id), "unit": "lines", "first": 2, "last": 2},
+        )
+        twin.add(  # pyright: ignore[reportAttributeAccessIssue]
+            ModelReply(
+                blocks=(TextBlock(text="Reading."), reads),
+                stop_reason=StopReason.TOOL_USE,
+                usage=Usage(input=10, output=5),
+                model=SONNET,
+            )
+        )
+        twin.add(answers("The total is 12."))  # pyright: ignore[reportAttributeAccessIssue]
+        session = await managers.agents.start_session(
+            owner, Start(id=new_id(), kind="assistant", title="the weekly report")
+        )
+        said = message_step(new_id(), utcnow(), session.id, owner, "Read the file.")
+        attached = said.model_copy(
+            update={
+                "content": said.content.model_copy(
+                    update={"blocks": (*said.content.blocks, DocumentBlock(attachment_id=self.file.id))}
+                ),
+                "children": Children(attachments=(self.file,)),
+            }
+        )
+        await managers.agent_sessions.receive(owner, session.id, [attached])
+        running = asyncio.create_task(self.runner.run())
+        try:
+            await settled(self.container, owner, session.id)
+        finally:
+            self.runner.stop()
+            await running
+        page = await managers.steps.get_steps(owner, session.id, 0, 50)
+        for step in page.items:
+            if isinstance(step.header, ToolResponseHeader):
+                parts = step.as_tool_response().parts
+                self.answered.extend(p.text for p in parts if isinstance(p, KeptText))
+
+
+class Quiet:
+    """The probe's server, never bound."""
+
+    def __init__(self, *args: object) -> None:
+        pass
+
+    def start(self) -> None:
+        pass
+
+    def stop(self) -> None:
+        pass
+
+
+def test_a_runner_booted_through_main_reads_an_attachment_with_the_products_reader(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`main` hands the product's reader down to the managers: the read tool
+    answers from it, never from the null that refuses. Only the roots are
+    memory ones, and the probe binds no port."""
+    file = Attachment(id=new_id(), name="weekly.csv", media_type="text/csv", size=9, hash="k:1")
+    reader = Reader(file.id, "week,total\n2026-W39,12\n")
+    providers = scripted_model_providers()
+    driven: list[Driven] = []
+
+    def driving(container: RunnerContainer, lane: str | None = None) -> Driven:
+        driven.append(Driven(container, lane, file))
+        return driven[-1]
+
+    monkeypatch.setattr(runner_main, "SessionRunnerSettings", settings)
+    monkeypatch.setattr(runner_main, "boot", lambda _: None)
+    monkeypatch.setattr(runner_main, "WorkerHttpServer", Quiet)
+    monkeypatch.setattr(runner_main, "build_runner", driving)
+    monkeypatch.setattr(runner_container, "StoragePostgresImpl", lambda *_, **__: StorageMemoryImpl())
+    monkeypatch.setattr(runner_container, "InfraConfiguredImpl", lambda _: InfraLocalImpl(tmp_path))
+    monkeypatch.setattr(
+        runner_container,
+        "IntegrationsConfiguredImpl",
+        lambda *_: IntegrationsOverImpl(IdentityProviderAbsentImpl(), providers),
+    )
+
+    assert runner_main.main(["serve"], agent_kinds=(READING,), attachment_reader=reader) == 0
+
+    (run,) = driven
+    (answer,) = run.answered
+    assert json.loads(answer)["text"] == "2026-W39,12"
+    assert reader.asked == [file.id]
