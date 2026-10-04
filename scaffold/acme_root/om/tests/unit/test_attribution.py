@@ -19,6 +19,7 @@ from contracts.step_storage import (
     make_response,
     make_tool_response,
 )
+from contracts.tools import stand_ins
 from pydantic import ValidationError
 
 from acme.infra.impl.local import InfraLocalImpl
@@ -106,6 +107,7 @@ ASSISTANT = AgentKind(
     authority=AuthorityMode.DELEGATED,
     tree=TreeLimits(height=2, count=2),
 )
+TOOLS = stand_ins(*DELIVERY.tools, *ASSISTANT.tools)
 OUTWARD = CallReach(outward=True, holds_private=True)
 
 
@@ -353,6 +355,7 @@ def managers(tmp_path: Path, transition: Transition) -> Managers:
         StorageMemoryImpl(),
         InfraLocalImpl(tmp_path),
         agent_kinds=(DELIVERY, ASSISTANT),
+        tool_catalog=TOOLS,
         principal_context=asked,
     )
 
@@ -717,7 +720,10 @@ async def test_a_transition_that_answers_for_someone_else_answers_nothing(
 
 async def test_with_no_transition_wired_no_call_runs(tmp_path: Path) -> None:
     managers = build_managers(
-        StorageMemoryImpl(), InfraLocalImpl(tmp_path), agent_kinds=(DELIVERY, ASSISTANT)
+        StorageMemoryImpl(),
+        InfraLocalImpl(tmp_path),
+        agent_kinds=(DELIVERY, ASSISTANT),
+        tool_catalog=TOOLS,
     )
     ctx = context(Role.MEMBER)
     delegated = (await start(managers, ctx, ASSISTANT)).id

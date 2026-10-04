@@ -12,13 +12,16 @@ from contracts.agent_session_storage import make_session
 from contracts.doubles import context, model_request
 from contracts.factories import make_org
 from contracts.step_storage import make_message, make_parked, make_request, make_response
+from contracts.tools import stand_ins
 from pydantic import ValidationError
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
 from acme.om.agent_sessions.limits import deadline_park
+from acme.om.agent_sessions.rules import lineage
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
 from acme.om.agents import ResultGateInterface
+from acme.om.agents.loop_rules import holds_private
 from acme.om.agents.rules import after_turn, claim_refusal, tree_refusal
 from acme.om.agents.types.kind import AgentKind, AgentKindCatalog, DoneRule, TreeLimits
 from acme.om.agents.types.request import Handoff, Spawn, Start
@@ -48,6 +51,7 @@ from acme.om.steps.types.header import (
 )
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.storage.impl.memory import StorageMemoryImpl
+from acme.om.tools.registry import ToolRegistry
 
 DELIVERY = AgentKind(
     name="delivery",
@@ -81,7 +85,10 @@ ASSISTANT = AgentKind(
 REPORTER = HELPER.model_copy(
     update={"name": "reporter", "tools": ("read_log", "report"), "result_tool": "report"}
 )
-KINDS = (OLDER, DELIVERY, HELPER, ASSISTANT, REPORTER)
+# A kind that reads no tenant record and no person's words.
+RESEARCHER = HELPER.model_copy(update={"name": "researcher", "private_data": False})
+KINDS = (OLDER, DELIVERY, HELPER, ASSISTANT, REPORTER, RESEARCHER)
+TOOLS = stand_ins(*(tool for kind in KINDS for tool in kind.tools))
 
 
 def person_of(ctx: TenantContext) -> Principal:
@@ -179,7 +186,9 @@ class Refusing(ResultGateInterface):
 
 @pytest.fixture
 def managers(tmp_path: Path) -> Managers:
-    return build_managers(StorageMemoryImpl(), InfraLocalImpl(tmp_path), agent_kinds=KINDS)
+    return build_managers(
+        StorageMemoryImpl(), InfraLocalImpl(tmp_path), agent_kinds=KINDS, tool_catalog=TOOLS
+    )
 
 
 async def start(managers: Managers, ctx: TenantContext, kind: str = "delivery") -> AgentSession:
@@ -443,6 +452,24 @@ async def test_a_handoff_carries_its_mark(managers: Managers) -> None:
     assert handed.untrusted
 
 
+async def test_a_child_of_a_session_holding_private_data_holds_it_too(
+    managers: Managers,
+) -> None:
+    """A kind that reads no private data holds it under a parent that does:
+    the parent may write its records into the objective, so the rule of two
+    holds in the child as in the parent, whatever the child's maker sent."""
+    ctx = context(Role.MEMBER)
+    parent = await start(managers, ctx)
+    child = await managers.agents.spawn(ctx, parent.id, spawn("researcher"))
+    alone = await start(managers, ctx, "researcher")
+    assert parent.holds_private and child.holds_private and not alone.holds_private
+    registry = ToolRegistry(stand_ins(*RESEARCHER.tools))
+    assert holds_private(child, RESEARCHER, registry)
+    assert not holds_private(alone, RESEARCHER, registry)
+    sent = make_session(parent=parent).model_copy(update={"holds_private": False})
+    assert lineage(parent, sent)["holds_private"]
+
+
 async def test_a_result_passes_the_gate_and_the_null_gate_marks_it_unverified(
     tmp_path: Path, managers: Managers
 ) -> None:
@@ -456,11 +483,42 @@ async def test_a_result_passes_the_gate_and_the_null_gate_marks_it_unverified(
     failed = Result(claim=Claim.FAILED, evidence=(new_id(),))
     assert (await managers.agents.judge_result(ctx, sid, failed)).outcome is LoopOutcome.FAILED
     gated = build_managers(
-        StorageMemoryImpl(), InfraLocalImpl(tmp_path), agent_kinds=KINDS, result_gate=Refusing()
+        StorageMemoryImpl(),
+        InfraLocalImpl(tmp_path),
+        agent_kinds=KINDS,
+        tool_catalog=TOOLS,
+        result_gate=Refusing(),
     )
     gated_sid = (await start(gated, ctx)).id
     verdict = await gated.agents.judge_result(ctx, gated_sid, cited)
     assert (verdict.accepted, verdict.reason) == (False, "the cited run did not pass")
+
+
+async def test_a_tool_the_catalog_cannot_class_starts_nothing(tmp_path: Path) -> None:
+    """A kind that names a tool the catalog lacks offers a call no one can
+    check: its start is refused, and so is a message to a session that
+    names one, never let through as a tool with no class."""
+    unlisted = AgentKind(
+        name="unlisted",
+        version=1,
+        tools=("read_log", "grant_admin"),
+        done_rule=DoneRule.ANSWER,
+        authority=AuthorityMode.DELEGATED,
+        tree=TreeLimits(height=1, count=0),
+    )
+    managers = build_managers(
+        StorageMemoryImpl(),
+        InfraLocalImpl(tmp_path),
+        agent_kinds=(unlisted,),
+        tool_catalog=stand_ins("read_log"),
+    )
+    owner = context(Role.OWNER)
+    with pytest.raises(NotAuthorized, match="grant_admin"):
+        await start(managers, owner, "unlisted")
+    stored = make_session().model_copy(update={"tools": ("read_log", "grant_admin")})
+    await managers.agent_sessions.create_session(owner, stored)
+    with pytest.raises(NotAuthorized, match="grant_admin"):
+        await managers.agents.require_instructor(owner, stored.id)
 
 
 async def test_a_viewer_reads_a_tree_and_spawns_nothing(managers: Managers) -> None:
@@ -485,6 +543,7 @@ async def test_a_purged_session_leaves_no_authority_or_tree_behind(tmp_path: Pat
         storage,
         InfraLocalImpl(tmp_path),
         agent_kinds=KINDS,
+        tool_catalog=TOOLS,
         agent_sessions_options=AgentSessionsOptions(retention=timedelta(0)),
     )
     ctx = context(Role.MEMBER)

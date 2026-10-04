@@ -20,6 +20,14 @@ MOUNT = "/workspace"
 LIMIT_FLAGS = {"cpus": "--cpus", "memory_mb": "--memory", "processes": "--pids-limit"}
 
 
+OPEN_NETWORK = "acme-ws-open"
+"""The bridge every workspace with open egress joins, made with traffic
+between its containers off: a workspace reaches out, never into another
+tenant's workspace."""
+
+ICC = "com.docker.network.bridge.enable_icc"
+"""The bridge option that lets its containers reach each other."""
+
 SPEC_LABEL = "acme.spec"
 """The label that names the spec a container was started to."""
 
@@ -51,7 +59,10 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
 
     The container drops every capability, takes no new privileges, and
     keeps nothing of the engine's environment: its variables are the
-    image's."""
+    image's. With no egress it has no network; with open egress it joins
+    `OPEN_NETWORK`, where no container reaches another. What the host
+    itself answers on the bridge, its metadata service included, is the
+    host's to close (ADR 1017)."""
 
     def __init__(self, image: str, timeout: timedelta) -> None:
         self._image = image
@@ -86,6 +97,8 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
         made = await docker("volume", "create", *labels, name, bound=self._timeout)
         if not made.ok:
             raise BackendFailed("docker", "volume create", made.reason())
+        if spec.egress.mode is EgressMode.OPEN:
+            await self._open_network()
         started = await docker(
             "run",
             "--detach",
@@ -127,6 +140,44 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
     def describe(self) -> str:
         return f"workspaces=container({self._image})"
 
+    async def _open_network(self) -> None:
+        """`OPEN_NETWORK`, made once, with traffic between its containers
+        off. One that stands with that traffic on, however it was made, is
+        refused: a workspace that joined it could reach every other."""
+        icc = await self._icc()
+        if icc is None:
+            made = await docker(
+                "network",
+                "create",
+                "--driver",
+                "bridge",
+                "--opt",
+                f"{ICC}=false",
+                OPEN_NETWORK,
+                bound=self._timeout,
+            )
+            # Another prepare may have made it first; it is read again.
+            icc = "false" if made.ok else await self._icc()
+            if icc is None:
+                raise BackendFailed("docker", "network create", made.reason())
+        if icc != "false":
+            raise IsolationRefused(
+                f"the network {OPEN_NETWORK} lets its containers reach each other"
+            )
+
+    async def _icc(self) -> str | None:
+        """What `OPEN_NETWORK` says of traffic between its containers, or
+        None when it does not stand."""
+        shown = await docker(
+            "network",
+            "inspect",
+            "--format",
+            '{{index .Options "' + ICC + '"}}',
+            OPEN_NETWORK,
+            bound=self._timeout,
+        )
+        return shown.stdout.decode().strip() if shown.ok else None
+
     async def start(self) -> None:
         return None
 
@@ -135,7 +186,10 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
 
 
 def _network(spec: IsolationSpec) -> tuple[str, ...]:
-    return ("--network", "none") if spec.egress.mode is EgressMode.NONE else ()
+    """No network with no egress, and the shared bridge where no container
+    reaches another with open egress: never Docker's default bridge, where
+    every container reaches every other."""
+    return ("--network", "none" if spec.egress.mode is EgressMode.NONE else OPEN_NETWORK)
 
 
 def _limits(spec: IsolationSpec) -> tuple[str, ...]:

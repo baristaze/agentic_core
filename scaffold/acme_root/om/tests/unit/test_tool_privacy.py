@@ -27,6 +27,7 @@ from contracts.tools import (
     put_call,
     registry_of,
     result_text,
+    stand_ins,
 )
 
 from acme.infra.exceptions import InfraNotFound
@@ -94,7 +95,10 @@ class Roots:
         # Marked today, purged today: the retention is not what is tested.
         options = AgentSessionsOptions(retention=timedelta(0))
         self.managers: Managers = build_managers(
-            self.storage, self.infra, agent_sessions_options=options
+            self.storage,
+            self.infra,
+            agent_sessions_options=options,
+            tool_catalog=stand_ins("read_log", "run_tests"),
         )
         self.ctx: TenantContext = context(Role.MEMBER)
 

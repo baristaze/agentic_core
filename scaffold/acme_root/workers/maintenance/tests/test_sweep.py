@@ -677,13 +677,13 @@ async def test_a_deleted_tenants_session_keys_go_with_it_and_never_hold_its_mark
     assert marked is not None and marked.purged_at is not None
 
 
-async def test_a_deleted_tenants_budgets_go_and_it_stays_unmarked_while_its_ledger_remains(
+async def test_a_deleted_tenants_budgets_go_and_it_is_marked_purged_while_its_ledger_stays(
     tmp_path: Path,
 ) -> None:
     """A tenant's budgets go with its other rows. What its calls held and
-    spent cannot: no serving login deletes a hold or a settlement, so the
-    ledger's purge reports what is left, and the tenant is never marked
-    purged while any of it remains."""
+    spent stays: no serving login deletes a hold or a settlement. The
+    tenant is marked purged once its other rows are gone, so the sweep
+    leaves it out from then on."""
     container = build_container(tmp_path)
     org_id, _ = await deleted_org(container, days_ago=40)
     budgets, ledger = container.storage.get_budget_storage(), container.storage.get_ledger_storage()
@@ -716,8 +716,8 @@ async def test_a_deleted_tenants_budgets_go_and_it_stays_unmarked_while_its_ledg
         await loop._sweep_once()  # pyright: ignore[reportPrivateUsage]
     assert await budgets.read_budgets(org_id, None, 10) == []
     assert await ledger.count_tenant(org_id, 10) == 2, "the hold and its tally stay"
-    kept = await tenancy.read_org(org_id)
-    assert kept is not None and kept.purged_at is None, "its ledger remains"
+    marked = await tenancy.read_org(org_id)
+    assert marked is not None and marked.purged_at is not None
 
 
 async def test_a_pass_reads_no_org_row_to_ask_whether_a_tenant_expired(

@@ -52,8 +52,10 @@ class AgentsManagerImpl(AgentsManagerInterface):
         clock: Callable[[], datetime] = utcnow,
         *,
         tool_classes: Mapping[str, str],
+        secret_tools: frozenset[str],
     ) -> None:
         self._tool_classes = tool_classes
+        self._secret_tools = secret_tools
         self._storage = storage
         self._sessions = sessions
         self._steps = steps
@@ -214,10 +216,14 @@ class AgentsManagerImpl(AgentsManagerInterface):
         return await self._storage.purge_tenant(ctx.org_id, self._options.purge_batch)
 
     def _may_instruct(self, ctx: TenantContext, tools: Iterable[str]) -> None:
-        """A registry is the tools the catalog holds of those named, and the
-        classes they offer are what its sender must be able to make."""
-        classes = [self._tool_classes[name] for name in tools if name in self._tool_classes]
-        refusal = instruct_refusal(ctx, classes)
+        """The classes a registry offers are what its sender must be able to
+        make. A name the catalog cannot class offers a call no one can
+        check, so it is refused, never skipped."""
+        names = tuple(tools)
+        unknown = sorted(name for name in names if name not in self._tool_classes)
+        if unknown:
+            raise NotAuthorized(f"no tool of the catalog classes {', '.join(unknown)}")
+        refusal = instruct_refusal(ctx, [self._tool_classes[name] for name in names])
         if refusal is not None:
             raise NotAuthorized(refusal)
 
@@ -233,8 +239,9 @@ class AgentsManagerImpl(AgentsManagerInterface):
         handed_off_from: UUID | None = None,
     ) -> AgentSession:
         """A session as its maker sends it: the kind pinned at its version,
-        and its tools. What it takes from where it came from is the
-        create's to set."""
+        its tools, and whether they hold private data: its kind says so, or
+        one of its tools is given a secret. What it takes from where it came
+        from is the create's to set."""
         now = self._clock()
         return AgentSession(
             id=session_id,
@@ -247,6 +254,7 @@ class AgentsManagerImpl(AgentsManagerInterface):
             kind=kind.name,
             kind_version=kind.version,
             tools=kind.tools,
+            holds_private=kind.private_data or not self._secret_tools.isdisjoint(kind.tools),
             parent_id=parent_id,
             root_id=session_id,
             handed_off_from=handed_off_from,

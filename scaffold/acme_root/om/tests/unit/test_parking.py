@@ -12,6 +12,7 @@ from contracts.agent_session_storage import make_session
 from contracts.budget_storage import make_budget
 from contracts.doubles import context
 from contracts.step_storage import make_message, make_request
+from contracts.tools import stand_ins
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.om.agent_sessions.limits import step_guard_park
@@ -37,13 +38,19 @@ from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
 from acme.om.work.types.work_item import WakeSessionPayload, WorkItem, WorkKind
 
+# What `make_session` names, so the agents manager classes every tool it
+# offers.
+TOOLS = stand_ins("read_log", "run_tests")
+
 
 class Engine:
     """The managers over one memory storage, and what its queue holds."""
 
     def __init__(self, tmp_path: Path) -> None:
         self.storage = StorageMemoryImpl()
-        self.managers: Managers = build_managers(self.storage, InfraLocalImpl(tmp_path))
+        self.managers: Managers = build_managers(
+            self.storage, InfraLocalImpl(tmp_path), tool_catalog=TOOLS
+        )
 
     def queued(self, kind: WorkKind) -> list[WorkItem]:
         """The items of a kind in the queue, whatever their time: the worker

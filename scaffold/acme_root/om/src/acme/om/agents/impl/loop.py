@@ -305,7 +305,9 @@ class LoopManagerImpl(LoopManagerInterface):
             if stopped is not None:
                 return stopped
         while True:
-            history = await self._history(run.ctx, run.session_id)
+            # The run read its history whole once; each turn reads only what
+            # was added since, so a long session costs a turn no more.
+            history = await self._history(run.ctx, run.session_id, history)
             loop = rules.OpenLoop(run.loop_id, run.start_seq, None)
             if rules.asked(history, loop, ControlCommand.CANCEL) is not None:
                 return await self._cancelled(run)
@@ -351,6 +353,7 @@ class LoopManagerImpl(LoopManagerInterface):
             if repeated is not None:
                 # Written before the next request, which reads it.
                 await self._notice(run, repeated)
+                history = await self._history(run.ctx, run.session_id, history)
             stopped = await self._model_turn(run, history)
             if stopped is not None:
                 return stopped
@@ -387,11 +390,25 @@ class LoopManagerImpl(LoopManagerInterface):
         try:
             if run.refused is not None:
                 rendered = await self._windows.render_after_overflow(
-                    ctx, run.session_id, run.epoch, run.loop_id, prompts, run.refused, plan=plan
+                    ctx,
+                    run.session_id,
+                    run.epoch,
+                    run.loop_id,
+                    prompts,
+                    run.refused,
+                    plan=plan,
+                    history=history,
                 )
             else:
                 rendered = await self._windows.render_request(
-                    ctx, run.session_id, run.epoch, run.loop_id, prompts, MAIN, plan=plan
+                    ctx,
+                    run.session_id,
+                    run.epoch,
+                    run.loop_id,
+                    prompts,
+                    MAIN,
+                    plan=plan,
+                    history=history,
                 )
         except ModelCallFailed as failed:
             # The compaction's call to the summarizer failed: its own
@@ -716,7 +733,7 @@ class LoopManagerImpl(LoopManagerInterface):
                 request,
                 use.input,
                 run.workspace,
-                holds_private=rules.holds_private(run.kind, run.registry),
+                holds_private=rules.holds_private(run.session, run.kind, run.registry),
                 # A fresh call's preflight keeps the tree's deadline. A call a
                 # lost run may have started is settled by its effect, which
                 # the transport's record answers whatever the time.
@@ -1222,8 +1239,12 @@ class LoopManagerImpl(LoopManagerInterface):
 
     # The history.
 
-    async def _history(self, ctx: TenantContext, session_id: UUID) -> list[Step]:
-        steps: list[Step] = []
+    async def _history(
+        self, ctx: TenantContext, session_id: UUID, read: Sequence[Step] = ()
+    ) -> list[Step]:
+        """The session's whole history, in `seq` order: `read`, what was read
+        of it already, and every step after it."""
+        steps = list(read)
         while True:
             after = steps[-1].seq if steps else 0
             page = await self._steps.get_steps(ctx, session_id, after, self._options.page)

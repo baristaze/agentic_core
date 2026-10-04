@@ -191,7 +191,8 @@ class ToolsManagerInterface(ABC):
         model reads. Only a person whose role the tenant lets approve the
         call's class decides it (`NotAuthorized` otherwise), and the
         decision records that role; `NotFound` when no tool request is at
-        that place."""
+        that place. A decision sent on an API key is recorded as a
+        program's, and no verdict counts it: an approval is a person's."""
         ...
 
     @abstractmethod

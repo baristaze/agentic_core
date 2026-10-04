@@ -16,8 +16,10 @@ from uuid import UUID
 
 import pytest
 from contracts.loops import (
+    ALLOWED,
     ASSISTANT,
     DELIVERY,
+    Lookup,
     Loop,
     loop_over,
     outage_parks_at_once_and_resumes_at_the_retry_time,
@@ -39,6 +41,7 @@ from acme.om.agents.types.request import Handoff, Spawn
 from acme.om.agents.types.run import RunEnd
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
+from acme.om.context import TenantContext
 from acme.om.exceptions import StaleWriter
 from acme.om.models.types.fill import MAIN, SUMMARIZER, Eligibility
 from acme.om.steps.types.content import UNPARSED, TextBlock, ToolResultBlock, ToolUseBlock
@@ -53,9 +56,13 @@ from acme.om.steps.types.header import (
     ToolRequestHeader,
     ToolResponseHeader,
 )
+from acme.om.steps.types.page import StepPage
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.steps.types.stream import StreamPart, TextPart, ToolInputPart
 from acme.om.tools.registry import ToolRegistry
+from acme.om.tools.rules import DEFAULT_CEILINGS
+from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule
+from acme.om.tools.types.tool import ToolClass
 from acme.om.windows.impl.gate import CallGateBudgetImpl
 from acme.om.windows.rules import request_step
 
@@ -576,20 +583,65 @@ async def test_a_marked_session_holding_private_data_asks_a_person_before_it_act
 
 
 async def test_a_session_holding_no_private_data_acts_outward_unattended(tmp_path: Path) -> None:
+    """The rule of two holds back only a session that holds private data.
+    The platform's outward ceiling holds back every outward call, so the
+    session acts unattended only where its adopter lifts that ceiling."""
     public = ASSISTANT.model_copy(update={"name": "public", "private_data": False})
-    loop = loop_over(tmp_path, kinds=(public,))
-    session_id = await loop.start("public")
-    await loop.say(session_id, "Find the total and send it.")
-    loop.anthropic.add(
-        reply(use("lookup", use_id="use_lookup")),
-        reply(use("send", use_id="use_send")),
-        reply(said("Sent.")),
+    destructive_only = PolicyLayer(
+        rules=tuple(r for r in DEFAULT_CEILINGS.rules if r.authorization_class is not None)
     )
+    ran: dict[bool, RunEnd] = {}
+    for lifted in (False, True):
+        loop = loop_over(
+            tmp_path / str(lifted), kinds=(public,), ceilings=destructive_only if lifted else None
+        )
+        session_id = await loop.start("public")
+        await loop.say(session_id, "Find the total and send it.")
+        loop.anthropic.add(
+            reply(use("lookup", use_id="use_lookup")),
+            reply(use("send", use_id="use_send")),
+            reply(said("Sent.")),
+        )
+        ran[lifted] = (await loop.loops.run(loop.owner, session_id)).end
+        assert loop.tools["send"].ran_as == ([loop.owner.user_id] if lifted else []), lifted
 
-    run = await loop.loops.run(loop.owner, session_id)
+    assert ran == {False: RunEnd.PARKED, True: RunEnd.ENDED}
 
-    assert run.outcome is LoopOutcome.SUCCEEDED
-    assert loop.tools["send"].ran_as == [loop.owner.user_id]
+
+async def test_a_command_under_open_egress_runs_unattended_until_the_session_is_marked(
+    tmp_path: Path,
+) -> None:
+    """A command in a workspace whose egress is open acts outward for the
+    rule of two, and for nothing else: a session that holds private data
+    but is not marked runs it as its kind's policy decides, and once a tool
+    result marks the session, the same command waits for a person."""
+    worker = ASSISTANT.model_copy(
+        update={
+            "name": "worker",
+            "tools": ("lookup", "shell"),
+            "isolation": IsolationSpec(
+                mode=IsolationMode.TWIN, egress=EgressPolicy(mode=EgressMode.OPEN)
+            ),
+            "policy": PolicyLayer(
+                rules=(
+                    *ALLOWED.rules,
+                    PolicyRule(authorization_class=ToolClass.EXECUTE, decision=Decision.ALLOW),
+                )
+            ),
+        }
+    )
+    ran: dict[bool, RunEnd] = {}
+    for marked in (False, True):
+        shell = Lookup("shell", authorization_class=ToolClass.EXECUTE)
+        loop = loop_over(tmp_path / str(marked), kinds=(worker,), extra=(shell,))
+        session_id = await loop.start("worker")
+        await loop.say(session_id, "Run the build.")
+        first = (reply(use("lookup", use_id="use_lookup")),) if marked else ()
+        loop.anthropic.add(*first, reply(use("shell", use_id="use_shell")), reply(said("Built.")))
+        ran[marked] = (await loop.loops.run(loop.owner, session_id)).end
+        assert shell.ran_as == ([] if marked else [loop.owner.user_id]), marked
+
+    assert ran == {False: RunEnd.ENDED, True: RunEnd.PARKED}
 
 
 # Recovery before any park, a cut reply, attribution by delivery, a stale
@@ -986,6 +1038,41 @@ async def test_a_sink_that_fails_costs_the_live_view_never_the_call(tmp_path: Pa
         "The total is 12."
     )
     assert len(of_type(steps, StepType.TOOL_RESPONSE)) == 1
+
+
+async def test_each_turn_reads_only_the_steps_added_since_the_last(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run reads its history whole once; each turn after reads only what
+    was added since. So the rows four more tool turns read are the same
+    over a session of 400 earlier steps as over one of none: what a turn
+    reads does not grow with the history."""
+
+    async def rows_read(earlier: int, turns: int) -> int:
+        loop = loop_over(tmp_path / f"earlier-{earlier}-turns-{turns}")
+        session_id = await loop.start()
+        for n in range(earlier):
+            await loop.say(session_id, f"note {n}")
+        await loop.say(session_id, "What is the total?")
+        loop.anthropic.add(*(reply(use("lookup")) for _ in range(turns - 1)), reply(said("42")))
+        read: list[int] = []
+        get_steps = loop.managers.steps.get_steps
+
+        async def counted(
+            ctx: TenantContext, session_id: UUID, after_seq: int, limit: int
+        ) -> StepPage:
+            page = await get_steps(ctx, session_id, after_seq, limit)
+            read.append(len(page.items))
+            return page
+
+        monkeypatch.setattr(loop.managers.steps, "get_steps", counted)
+        run = await loop.loops.run(loop.owner, session_id)
+        assert run.outcome is LoopOutcome.SUCCEEDED and len(loop.anthropic.calls) == turns
+        return sum(read)
+
+    short = await rows_read(0, 5) - await rows_read(0, 1)
+    long = await rows_read(400, 5) - await rows_read(400, 1)
+    assert long == short, f"four more turns read {long} rows over 400 steps, {short} over none"
 
 
 async def test_a_call_that_keeps_failing_earns_a_notice_before_the_streak_ends_the_loop(

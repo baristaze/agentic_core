@@ -22,6 +22,7 @@ from acme.om.tenancy.rules import totp_code, totp_step
 from acme.om.tenancy.types.identity import Identity
 from acme.om.tenancy.types.membership import Membership
 from acme.om.tenancy.types.user import User
+from acme.om.tools.tool import ToolInterface
 from acme.services.api.container import AppContainer
 from acme.services.api.settings import ApiSettings
 
@@ -41,13 +42,15 @@ def build_container(
     integrations: IntegrationsInterface | None = None,
     *,
     agent_kinds: tuple[AgentKind, ...] = (),
+    tool_catalog: tuple[ToolInterface, ...] = (),
     **overrides: object,
 ) -> AppContainer:
     """The test container over the memory storage root and the local infra
     root, with the local sign-in on, and the agent kinds a case runs. A test
     that needs a bound or a deadline of its own names the settings it
     overrides, one that needs storage to behave a certain way passes its own
-    root, and one that signs in through the identity provider passes the
+    root, one whose kinds name the product's tools passes them, and one
+    that signs in through the identity provider passes the
     integrations root over the twin. The developer's `.env` is never read:
     its DSN would send every error a test raises on purpose to the local
     tracker."""
@@ -66,6 +69,7 @@ def build_container(
         settings,
         integrations,
         agent_kinds=agent_kinds,
+        tool_catalog=tool_catalog,
     )
 
 

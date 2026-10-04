@@ -23,6 +23,7 @@ from acme.integrations.model_providers.calls import (
     ToolUseDelta,
 )
 from acme.integrations.model_providers.calls import StreamPart as ProviderPart
+from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.agents.types.kind import AgentKind
 from acme.om.attribution.types.principal import Principal
 from acme.om.steps.rules import completes
@@ -413,11 +414,16 @@ def repeated_failure(steps: Sequence[Step], loop_id: UUID, every: int) -> str | 
     return REPEATED.format(tool=last[0], count=count)
 
 
-def holds_private(kind: AgentKind, registry: ToolRegistry) -> bool:
+def holds_private(session: AgentSession, kind: AgentKind, registry: ToolRegistry) -> bool:
     """Whether a session holds private data or credentials, for the rule of
-    two: its kind says it holds private data, or a tool it may call is given
-    a secret."""
-    return kind.private_data or any(tool.spec.secrets for tool in registry.tools())
+    two: its kind says it holds private data, a tool it may call is given a
+    secret, or it took the mark from a session it came from that holds
+    either."""
+    return (
+        session.holds_private
+        or kind.private_data
+        or any(tool.spec.secrets for tool in registry.tools())
+    )
 
 
 def kind_prompts(kind: AgentKind, registry: ToolRegistry) -> KindPrompts:

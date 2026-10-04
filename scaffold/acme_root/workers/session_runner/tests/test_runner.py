@@ -12,7 +12,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from runner_support import ABSENT, SONNET, answers
+from runner_support import ABSENT, SONNET, TOOLS, answers
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.integrations.identity.absent import IdentityProviderAbsentImpl
@@ -166,6 +166,7 @@ async def test_a_runner_that_lacks_the_kind_leaves_the_loop_to_a_retry(tmp_path:
         infra,
         IntegrationsOverImpl(IdentityProviderAbsentImpl(), scripted_model_providers()),
         agent_kinds=ABSENT,
+        tool_catalog=TOOLS,
     )
     lacking = RunnerContainer.over(
         settings(),
@@ -253,6 +254,7 @@ def runner_over(tmp_path: Path) -> RunnerContainer:
         InfraLocalImpl(tmp_path),
         IntegrationsOverImpl(IdentityProviderAbsentImpl(), providers),
         agent_kinds=ABSENT,
+        tool_catalog=TOOLS,
     )
 
 

@@ -16,6 +16,7 @@ from contracts.tools import (
     PushBranch,
     put_call,
     registry_of,
+    result_text,
     tools_over,
     twin_transport,
 )
@@ -39,6 +40,7 @@ from acme.om.tools.rules import (
     instruct_refusal,
     permissions_for,
     reaches_outward,
+    with_reach,
 )
 from acme.om.tools.types.call import GateOutcome
 from acme.om.tools.types.policy import (
@@ -248,7 +250,9 @@ async def test_the_target_comes_from_the_system_and_not_from_what_the_input_clai
     gate = await tools.manager.gate(
         ctx, registry, KIND_DEFAULTS, open_branch.request, open_branch.call_input, workspace
     )
-    assert gate.outcome is GateOutcome.RUN and gate.decision is ALLOW
+    # Not denied, since the branch is open; a push acts outward, so the
+    # platform's ceiling still holds it for a person.
+    assert gate.outcome is GateOutcome.ASK and gate.decision is APPROVE
     assert push.pushed == [], "the gate runs nothing"
 
 
@@ -344,3 +348,71 @@ def test_a_registry_asks_its_sender_for_every_permission_its_calls_need() -> Non
     assert instruct_refusal(member, ["configuration"]) is not None
     assert instruct_refusal(admin, ["configuration", "credentials"]) is None
     assert instruct_refusal(context(Role.VIEWER, org), ["read"]) is None
+
+
+async def test_a_permission_taken_away_stops_the_next_call_of_its_class(tmp_path: Path) -> None:
+    """The class's permission is asked of the principal's live context at
+    every call: an admin demoted to a member between two `configuration`
+    calls is denied the second, though the kind's policy allows the class."""
+    tools = tools_over(twin_transport(tmp_path)[0])
+    org = make_org()
+    admin = context(Role.ADMIN, org)
+    configure = Command("set_role", authorization_class=ToolClass.CONFIGURATION)
+    allowed = PolicyLayer(
+        rules=(PolicyRule(authorization_class=ToolClass.CONFIGURATION, decision=ALLOW),)
+    )
+    workspace = Workspace.absent(org.id, new_id())
+    gates = []
+    for role in (Role.ADMIN, Role.MEMBER):
+        tools.attribution.role = role
+        found = await put_call(
+            tools.manager, tools.steps, admin, "set_role", {"argv": ["admin"]}, "configuration"
+        )
+        gates.append(
+            await tools.manager.gate(
+                admin, registry_of(configure), allowed, found.request, found.call_input, workspace
+            )
+        )
+
+    # The admin's call goes on to the outward ceiling and waits for a
+    # person; the member's never gets there.
+    assert [gate.outcome for gate in gates] == [GateOutcome.ASK, GateOutcome.REFUSE]
+    denied = gates[1].response
+    assert denied is not None and isinstance(denied.header, ToolResponseHeader)
+    assert denied.header.failure is ToolFailure.DENIED
+    assert "member lacks manage_members" in result_text(denied)
+
+
+async def test_the_outward_ceiling_holds_a_call_whose_target_does_not_say(
+    tmp_path: Path,
+) -> None:
+    """A `network` call whose target is empty acts outward by its class: a
+    tenant rule that allows the class unattended still meets the platform's
+    outward ceiling, and the call waits for a person."""
+    tools = tools_over(twin_transport(tmp_path)[0])
+    org = make_org()
+    admin = context(Role.ADMIN, org)
+    policy = await tools.manager.get_policy(admin)
+    rules = (PolicyRule(authorization_class=ToolClass.NETWORK, decision=ALLOW),)
+    await tools.manager.write_policy(admin, policy.model_copy(update={"rules": rules}))
+    fetch = Command("fetch_url", authorization_class=ToolClass.NETWORK)
+    found = await put_call(
+        tools.manager, tools.steps, admin, "fetch_url", {"argv": ["https://x.test"]}, "network"
+    )
+
+    gate = await tools.manager.gate(
+        admin,
+        registry_of(fetch),
+        PolicyLayer(),
+        found.request,
+        found.call_input,
+        Workspace.absent(org.id, new_id()),
+    )
+
+    assert (gate.outcome, gate.decision) == (GateOutcome.ASK, APPROVE)
+    empty = PolicyCall(tool="fetch_url", authorization_class="network", effect=Effect.READ_ONLY)
+    tenant = PolicyLayer(rules=rules)
+    assert decide(empty, DEFAULTS, tenant, DEFAULT_CEILINGS) is ALLOW, "unread, it escapes"
+    read = with_reach(empty)
+    assert read.target.attributes == {"outward": True}
+    assert decide(read, DEFAULTS, tenant, DEFAULT_CEILINGS) is APPROVE

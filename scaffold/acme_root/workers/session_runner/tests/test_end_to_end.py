@@ -32,7 +32,7 @@ import httpx
 import pytest
 from api_support import seed_request, sign_in_as
 from httpx import ASGITransport
-from runner_support import KINDS, answers, runs
+from runner_support import KINDS, TOOLS, answers, runs
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -210,6 +210,7 @@ async def stack(emptied: None, tmp_path: Path) -> AsyncIterator[Stack]:
         InfraConfiguredImpl(settings),
         absent_integrations(),
         agent_kinds=KINDS,
+        tool_catalog=TOOLS,
     )
     app = create_app(container)
     workspaces = tmp_path / "workspaces"

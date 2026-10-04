@@ -55,7 +55,8 @@ authority. The rest is read off the session and its
   refused. A steady session whose person left waits until someone takes
   it over.
 - **Mark.** The first outside data a session reads marks it, for good.
-  Its sub-agents and the work it hands over carry the mark too.
+  Its sub-agents and the work it hands over carry the mark too, and hold
+  private data where it holds any.
 - **Hold back.** A marked session that holds private data or
   credentials needs a person to approve any call that reaches outside
   its own work.

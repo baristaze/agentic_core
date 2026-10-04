@@ -427,6 +427,7 @@ def build_managers(
         outbox,
         agents_options or AgentsOptions(),
         tool_classes={tool.spec.name: tool.spec.authorization_class for tool in catalog},
+        secret_tools=frozenset(tool.spec.name for tool in catalog if tool.spec.secrets),
     )
     # What a model request reads: rendered from the history, compacted by
     # the summarizer through the model providers, behind the gate, paid for

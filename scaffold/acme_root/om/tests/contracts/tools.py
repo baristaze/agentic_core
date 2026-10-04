@@ -30,7 +30,7 @@ from acme.om.attribution import AttributionManagerInterface
 from acme.om.attribution.types.authority import AuthorityMode, CallAuthority, CallReach
 from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
 from acme.om.base import Platform, new_id, utcnow
-from acme.om.context import TenantContext
+from acme.om.context import Role, TenantContext, build_context
 from acme.om.events import EventsManagerInterface
 from acme.om.events.impl.manager import EventsManagerImpl, EventsOptions
 from acme.om.exceptions import ToolFailed
@@ -43,6 +43,7 @@ from acme.om.steps.types.content import Content, TextBlock, ToolUseBlock
 from acme.om.steps.types.header import ModelResponseHeader, ToolFailure, ToolResponseHeader
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.storage.impl.memory import StorageMemoryImpl
+from acme.om.tenancy.rules import permissions_of
 from acme.om.tools.impl.manager import ToolsManagerImpl, ToolsOptions
 from acme.om.tools.manager import ToolsManagerInterface
 from acme.om.tools.registry import ToolRegistry
@@ -203,22 +204,34 @@ class Clock:
 
 class Answering(AttributionManagerInterface):
     """Just enough attribution for the gate: every call runs under the
-    person who asks, in the context that asks, and the rule of two holds
-    when `needs_person` says so. A partial double: only `authorize_call` is
-    reached, so the abstract set is cleared below."""
+    person who asks, in the context that asks or, once `role` is set, in
+    the role the adopter's transition answers for them now; the rule of two
+    holds when `needs_person` says so. A partial double: only
+    `authorize_call` is reached, so the abstract set is cleared below."""
 
     def __init__(self) -> None:
         self.needs_person = False
+        self.role: Role | None = None
         self.reaches: list[CallReach] = []
 
     async def authorize_call(
         self, ctx: TenantContext, session_id: UUID, reach: CallReach
     ) -> CallAuthority:
         self.reaches.append(reach)
+        live = ctx
+        if self.role is not None:
+            live = build_context(
+                ctx,
+                user_id=ctx.user_id,
+                org_id=ctx.org_id,
+                role=self.role,
+                permissions=permissions_of(self.role),
+                credential_kind=ctx.credential_kind,
+            )
         return CallAuthority(
             principal=Principal(kind=PrincipalKind.PERSON, id=ctx.user_id),
             mode=AuthorityMode.STEADY,
-            context=ctx,
+            context=live,
             needs_person=self.needs_person,
         )
 
@@ -351,6 +364,20 @@ async def put_call(
 
 def registry_of(*tools: ToolInterface) -> ToolRegistry:
     return ToolRegistry(tools)
+
+
+def stand_ins(*names: str) -> tuple[ToolInterface, ...]:
+    """A `Command` under each name, for a case whose kinds or sessions name
+    tools it never calls: the agents manager classes every tool a registry
+    offers and refuses a name the catalog lacks. A `read_` name reads,
+    `spawn` spawns, and any other runs code."""
+
+    def class_of(name: str) -> str:
+        if name == "spawn":
+            return ToolClass.SPAWN
+        return ToolClass.READ if name.startswith("read_") else ToolClass.EXECUTE
+
+    return tuple(Command(name, authorization_class=class_of(name)) for name in dict.fromkeys(names))
 
 
 def echoing(env_name: str | None = None) -> TwinHandler:

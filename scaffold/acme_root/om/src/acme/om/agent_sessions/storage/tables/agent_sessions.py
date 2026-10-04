@@ -41,6 +41,7 @@ class AgentSessions(IdentifiableMixin, TrackableMixin, SoftDeletableMixin, Base)
     handed_off_from: Mapped[UUID | None]
     speaker: Mapped[dict[str, Any] | None]
     untrusted: Mapped[bool]
+    holds_private: Mapped[bool]
     status: Mapped[str]
     park: Mapped[dict[str, Any] | None]
     # The same width as a step's seq.

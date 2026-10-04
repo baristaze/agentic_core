@@ -101,11 +101,12 @@ class WindowsManagerImpl(WindowsManagerInterface):
         role: ModelRole = MAIN,
         *,
         plan: str | None = None,
+        history: Sequence[Step] | None = None,
     ) -> RenderedRequest:
         ctx.require(Permission.WRITE)
         fill_set = await self._models.get_fill_set(ctx, session_id)
         fill = _fill(fill_set, role)
-        steps = await self._history(ctx, session_id)
+        steps = await self._history(ctx, session_id) if history is None else history
         if role != MAIN:
             draft = _drafted(
                 lambda: rules.render_side(steps, kind, role, fill, fill_set.version, self._policy)
@@ -145,6 +146,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
         refused: RenderedRequest,
         *,
         plan: str | None = None,
+        history: Sequence[Step] | None = None,
     ) -> RenderedRequest:
         ctx.require(Permission.WRITE)
         if refused.overflow_retry:
@@ -153,7 +155,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
             raise ContextOverflow(f"a {refused.window.role} request reads a suffix; none compacts")
         fill_set = await self._models.get_fill_set(ctx, session_id)
         fill = _fill(fill_set, MAIN)
-        steps = await self._history(ctx, session_id)
+        steps = await self._history(ctx, session_id) if history is None else history
         self._main(steps, kind, fill, fill_set.version, plan)
         compacted = await self._compact(ctx, session_id, epoch, loop_id, steps, fill_set)
         if compacted is None:

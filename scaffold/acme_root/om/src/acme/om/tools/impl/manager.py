@@ -36,7 +36,7 @@ from acme.om.exceptions import (
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.types.row import OutboxRow, versioned_row
 from acme.om.steps import StepsManagerInterface
-from acme.om.steps.rules import origin_of
+from acme.om.steps.rules import actor_of, origin_of
 from acme.om.steps.types.content import UNPARSED, Content, TextBlock
 from acme.om.steps.types.header import (
     ControlCommand,
@@ -45,7 +45,7 @@ from acme.om.steps.types.header import (
     ToolFailure,
     ToolRequestHeader,
 )
-from acme.om.steps.types.step import Actor, Step, StepType
+from acme.om.steps.types.step import Step, StepType
 from acme.om.tenancy import TenancyManagerInterface
 from acme.om.tools.manager import KeyedHash, ToolsManagerInterface
 from acme.om.tools.registry import ToolRegistry
@@ -57,6 +57,7 @@ from acme.om.tools.rules import (
     approver_roles,
     bounded_json,
     call_deadline,
+    call_refusal,
     canonical_input,
     command_text,
     decide,
@@ -67,6 +68,7 @@ from acme.om.tools.rules import (
     recovered_text,
     response,
     verdict,
+    with_reach,
 )
 from acme.om.tools.seal import RecordSealInterface
 from acme.om.tools.storage import ToolStorageInterface
@@ -242,12 +244,13 @@ class ToolsManagerImpl(ToolsManagerInterface):
         except Exception as error:
             failure, detail = self._classify(error, tool)
             return Gate(outcome=GateOutcome.REFUSE, response=self._answer(request, detail, failure))
-        call = PolicyCall(
+        asked = PolicyCall(
             tool=tool.spec.name,
             authorization_class=tool.spec.authorization_class,
             effect=tool.spec.effect,
             target=target,
         )
+        call = with_reach(asked)
         # Whose authority the call runs under, asked of the adopter's
         # transition on every call, and the rule of two: a marked session
         # holding private data that acts outward waits for a person, however
@@ -255,12 +258,18 @@ class ToolsManagerImpl(ToolsManagerInterface):
         # call is answered `denied`; a steady one that lapsed raises, and the
         # loop waits for a person to take the session over.
         reach = CallReach(
-            outward=reaches_outward(call, workspace.spec.egress.mode), holds_private=holds_private
+            outward=reaches_outward(asked, workspace.spec.egress.mode), holds_private=holds_private
         )
         try:
             authority = await self._attribution.authorize_call(ctx, request.session_id, reach)
         except AuthorityRevoked as revoked:
             denied = self._answer(request, revoked.message, ToolFailure.DENIED)
+            return Gate(outcome=GateOutcome.REFUSE, response=denied)
+        # The class's permission, asked of that live context: a principal
+        # who still holds a place but lost what the call needs is denied.
+        refusal = call_refusal(authority.context, call.authorization_class)
+        if refusal is not None:
+            denied = self._answer(request, refusal, ToolFailure.DENIED)
             return Gate(outcome=GateOutcome.REFUSE, response=denied)
         policy = await self._policy(ctx)
         decision = decide(call, defaults, policy.layer(), self._options.ceilings)
@@ -460,7 +469,9 @@ class ToolsManagerImpl(ToolsManagerInterface):
             session_id=session_id,
             loop_id=request.loop_id,
             type=StepType.CONTROL,
-            actor=Actor.PERSON,
+            # A decision sent on an API key is a program's: it is recorded as
+            # one, and `decides` never counts it as a person's approval.
+            actor=actor_of(ctx.credential_kind),
             origin=origin_of(ctx.app.type),
             refs=(request.id,),
             header=ControlHeader(
