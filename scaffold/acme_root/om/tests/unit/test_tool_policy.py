@@ -413,6 +413,6 @@ async def test_the_outward_ceiling_holds_a_call_whose_target_does_not_say(
     empty = PolicyCall(tool="fetch_url", authorization_class="network", effect=Effect.READ_ONLY)
     tenant = PolicyLayer(rules=rules)
     assert decide(empty, DEFAULTS, tenant, DEFAULT_CEILINGS) is ALLOW, "unread, it escapes"
-    read = with_reach(empty, EgressMode.NONE)
+    read = with_reach(empty)
     assert read.target.attributes == {"outward": True}
     assert decide(read, DEFAULTS, tenant, DEFAULT_CEILINGS) is APPROVE

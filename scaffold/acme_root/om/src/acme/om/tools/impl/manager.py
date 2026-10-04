@@ -244,15 +244,13 @@ class ToolsManagerImpl(ToolsManagerInterface):
         except Exception as error:
             failure, detail = self._classify(error, tool)
             return Gate(outcome=GateOutcome.REFUSE, response=self._answer(request, detail, failure))
-        call = with_reach(
-            PolicyCall(
-                tool=tool.spec.name,
-                authorization_class=tool.spec.authorization_class,
-                effect=tool.spec.effect,
-                target=target,
-            ),
-            workspace.spec.egress.mode,
+        asked = PolicyCall(
+            tool=tool.spec.name,
+            authorization_class=tool.spec.authorization_class,
+            effect=tool.spec.effect,
+            target=target,
         )
+        call = with_reach(asked)
         # Whose authority the call runs under, asked of the adopter's
         # transition on every call, and the rule of two: a marked session
         # holding private data that acts outward waits for a person, however
@@ -260,7 +258,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         # call is answered `denied`; a steady one that lapsed raises, and the
         # loop waits for a person to take the session over.
         reach = CallReach(
-            outward=reaches_outward(call, workspace.spec.egress.mode), holds_private=holds_private
+            outward=reaches_outward(asked, workspace.spec.egress.mode), holds_private=holds_private
         )
         try:
             authority = await self._attribution.authorize_call(ctx, request.session_id, reach)

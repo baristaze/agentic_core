@@ -207,13 +207,18 @@ def reaches_outward(call: PolicyCall, egress: EgressMode) -> bool:
     return call.authorization_class not in INWARD_CLASSES
 
 
-def with_reach(call: PolicyCall, egress: EgressMode) -> PolicyCall:
+def with_reach(call: PolicyCall) -> PolicyCall:
     """The call as policy reads it: its target says whether it acts outward,
-    in the target's own word or, where the target does not say, by
-    `reaches_outward`. So the platform's outward ceiling, and any rule keyed
-    on `outward`, meets every call the rule of two counts as outward, not
-    only one whose target marks it."""
-    attributes = {**call.target.attributes, "outward": reaches_outward(call, egress)}
+    in the target's own word or, where the target does not say, by its class
+    alone. So the platform's outward ceiling, and any rule keyed on
+    `outward`, meets a call of an outward class whose target does not mark
+    it. A call that runs code in a workspace whose egress is open is not
+    stamped outward here: that is a leg of the rule of two, which
+    `reaches_outward` answers from the call as its target gave it, and a
+    session that lacks the other leg runs it under its class's policy."""
+    said = call.target.attributes.get("outward")
+    outward = said if isinstance(said, bool) else call.authorization_class not in INWARD_CLASSES
+    attributes = {**call.target.attributes, "outward": outward}
     return call.model_copy(update={"target": Target(kind=call.target.kind, attributes=attributes)})
 
 

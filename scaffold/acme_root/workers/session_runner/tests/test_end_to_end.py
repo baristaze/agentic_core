@@ -3,9 +3,7 @@ over the database, the cache, and the stores its settings name, and the
 session runner as a process of its own, on the scripted model, running
 commands in a directory on this host. A person's message goes in through
 the API, the runner claims the loop's work and runs it, and the history is
-read back through the API. A command on this host acts outward, since
-nothing holds its egress, so each call waits for the person to approve it
-through the API.
+read back through the API.
 
 The runner is killed for real, mid tool call, with a signal: the next
 runner takes the loop under a new epoch once the lease runs out, the lost
@@ -292,32 +290,22 @@ async def settled(stack: Stack, person: Person, session_id: str) -> dict[str, An
     pytest.fail(f"session {session_id} never settled\n{logs}")
 
 
-def of_type(steps: list[dict[str, Any]], kind: str) -> list[dict[str, Any]]:
-    return [step for step in steps if step["type"] == kind]
-
-
-async def approved(stack: Stack, person: Person, session_id: str) -> None:
-    """The session's parked call approved by `person`, once the session runs
-    again: a command in a workspace whose egress is open acts outward, and
-    the platform's ceiling holds it for a person."""
-    session = await settled(stack, person, session_id)
-    assert session["status"] == "parked", session
-    request = of_type(await history(stack, person, session_id), "tool_request")[-1]
-    decided = await stack.client.post(
-        f"/v1/agent-sessions/{session_id}/calls/{request['seq']}/decision",
-        headers=created(person.headers),
-        json={"approve": True},
-    )
-    assert decided.status_code == 201, decided.text
+async def until_steps(
+    stack: Stack, person: Person, session_id: str, *types: str
+) -> list[dict[str, Any]]:
+    """The history once it holds a step of each type named."""
     deadline = asyncio.get_running_loop().time() + SETTLE_SECONDS
     while asyncio.get_running_loop().time() < deadline:
-        read = await stack.client.get(f"/v1/agent-sessions/{session_id}", headers=person.headers)
-        assert read.status_code == 200, read.text
-        if read.json()["status"] != "parked":
-            return
-        await asyncio.sleep(0.1)
+        steps = await history(stack, person, session_id)
+        if set(types) <= {step["type"] for step in steps}:
+            return steps
+        await asyncio.sleep(0.2)
     logs = "\n\n".join(f"{r.log.name}:\n{r.tail()}" for r in stack.runners)
-    pytest.fail(f"session {session_id} never ran its approved call\n{logs}")
+    pytest.fail(f"session {session_id} never held {types}\n{logs}")
+
+
+def of_type(steps: list[dict[str, Any]], kind: str) -> list[dict[str, Any]]:
+    return [step for step in steps if step["type"] == kind]
 
 
 MODEL_TOOL_MODEL = [
@@ -325,9 +313,6 @@ MODEL_TOOL_MODEL = [
     "model_request",
     "model_response",
     "tool_request",
-    "parked",
-    "control",
-    "resumed",
     "tool_response",
     "model_request",
     "model_response",
@@ -346,16 +331,15 @@ async def test_a_message_through_the_api_is_run_by_the_runner_model_tool_model_t
     session_id = await started(stack, person)
 
     await say(stack, person, session_id, "Why does the checkout drop the order?")
-    await approved(stack, person, session_id)
     session = await settled(stack, person, session_id)
 
     steps = await history(stack, person, session_id)
     assert [step["type"] for step in steps] == MODEL_TOOL_MODEL
-    assert [step["seq"] for step in steps] == list(range(1, 12))
+    assert [step["seq"] for step in steps] == list(range(1, 9))
     assert session["status"] == "idle" and session["park"] is None
     assert steps[-1]["outcome"] == "succeeded"
-    assert steps[3]["tool"] == "run_command" and steps[7]["failure"] is None
-    assert "the order drops at 0.4 s" in steps[7]["text"]
+    assert steps[3]["tool"] == "run_command" and steps[4]["failure"] is None
+    assert "the order drops at 0.4 s" in steps[4]["text"]
     assert steps[-2]["text"] == "The order drops before its payment."
 
 
@@ -366,7 +350,7 @@ async def test_a_runner_killed_mid_tool_call_is_followed_by_a_new_epoch_that_set
     lost = stack.runner("runner-lost", [runs("sh", "-c", "echo ran >> marker && exec sleep 15")])
     session_id = await started(stack, person)
     await say(stack, person, session_id, "Note the fix, then tell me.")
-    await approved(stack, person, session_id)
+    await until_steps(stack, person, session_id, "tool_request")
     for _ in range(int(SETTLE_SECONDS * 10)):
         if list(stack.workspaces.rglob("marker")):
             break
@@ -412,7 +396,7 @@ async def test_a_message_sent_mid_run_is_kept_at_once_and_read_by_the_next_reque
     )
     session_id = await started(stack, person)
     await say(stack, person, session_id, "Investigate the drop.")
-    await approved(stack, person, session_id)
+    await until_steps(stack, person, session_id, "tool_request")
 
     steering = await say(stack, person, session_id, "Don't touch the controller gains.")
     kept = await history(stack, person, session_id)
@@ -478,7 +462,6 @@ async def test_a_real_loop_runs_end_to_end_on_a_live_provider(
         "Run `echo 41` in the workspace with run_command, add one to what it prints, "
         "and answer with the number alone.",
     )
-    await approved(stack, person, session_id)
     session = await settled(stack, person, session_id)
 
     steps = await history(stack, person, session_id)

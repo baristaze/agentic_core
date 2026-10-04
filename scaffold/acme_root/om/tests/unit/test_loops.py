@@ -16,9 +16,11 @@ from uuid import UUID
 
 import pytest
 from contracts.loops import (
+    ALLOWED,
     ASSISTANT,
     DELIVERY,
     Loop,
+    Lookup,
     loop_over,
     outage_parks_at_once_and_resumes_at_the_retry_time,
     reply,
@@ -59,7 +61,8 @@ from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.steps.types.stream import StreamPart, TextPart, ToolInputPart
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.rules import DEFAULT_CEILINGS
-from acme.om.tools.types.policy import PolicyLayer
+from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule
+from acme.om.tools.types.tool import ToolClass
 from acme.om.windows.impl.gate import CallGateBudgetImpl
 from acme.om.windows.rules import request_step
 
@@ -603,6 +606,42 @@ async def test_a_session_holding_no_private_data_acts_outward_unattended(tmp_pat
         assert loop.tools["send"].ran_as == ([loop.owner.user_id] if lifted else []), lifted
 
     assert ran == {False: RunEnd.PARKED, True: RunEnd.ENDED}
+
+
+async def test_a_command_under_open_egress_runs_unattended_until_the_session_is_marked(
+    tmp_path: Path,
+) -> None:
+    """A command in a workspace whose egress is open acts outward for the
+    rule of two, and for nothing else: a session that holds private data
+    but is not marked runs it as its kind's policy decides, and once a tool
+    result marks the session, the same command waits for a person."""
+    worker = ASSISTANT.model_copy(
+        update={
+            "name": "worker",
+            "tools": ("lookup", "shell"),
+            "isolation": IsolationSpec(
+                mode=IsolationMode.TWIN, egress=EgressPolicy(mode=EgressMode.OPEN)
+            ),
+            "policy": PolicyLayer(
+                rules=(
+                    *ALLOWED.rules,
+                    PolicyRule(authorization_class=ToolClass.EXECUTE, decision=Decision.ALLOW),
+                )
+            ),
+        }
+    )
+    ran: dict[bool, RunEnd] = {}
+    for marked in (False, True):
+        shell = Lookup("shell", authorization_class=ToolClass.EXECUTE)
+        loop = loop_over(tmp_path / str(marked), kinds=(worker,), extra=(shell,))
+        session_id = await loop.start("worker")
+        await loop.say(session_id, "Run the build.")
+        first = (reply(use("lookup", use_id="use_lookup")),) if marked else ()
+        loop.anthropic.add(*first, reply(use("shell", use_id="use_shell")), reply(said("Built.")))
+        ran[marked] = (await loop.loops.run(loop.owner, session_id)).end
+        assert shell.ran_as == ([] if marked else [loop.owner.user_id]), marked
+
+    assert ran == {False: RunEnd.ENDED, True: RunEnd.PARKED}
 
 
 # Recovery before any park, a cut reply, attribution by delivery, a stale
