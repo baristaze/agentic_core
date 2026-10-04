@@ -359,7 +359,10 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         # have no purge of the tenant of their own. The tree goes with the
         # tenant's trees, so none is named. A session whose holdings cannot
         # go keeps its row, which the next pass reads again; the raise keeps
-        # the tenant from being marked purged while one is left.
+        # the tenant from being marked purged while one is left. The count
+        # is of the sessions read, not of the rows deleted: a purge another
+        # worker had in flight may have taken them, and a count of nothing
+        # would mark the tenant while the rest of it remains.
         gone: list[UUID] = []
         for session_id in found:
             try:
@@ -368,13 +371,13 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
                 log.exception("agent session %s keeps its row: its purge failed", session_id)
             else:
                 gone.append(session_id)
-        purged = await self._storage.purge_tenant(ctx.org_id, gone)
+        await self._storage.purge_tenant(ctx.org_id, gone)
         if len(gone) < len(found):
             raise RuntimeError(
                 f"{len(found) - len(gone)} sessions of org {ctx.org_id} keep their rows: "
                 "what they hold could not be purged"
             )
-        return purged
+        return len(found)
 
     async def _read(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
         """A session every read may answer: one marked deleted is hidden, as

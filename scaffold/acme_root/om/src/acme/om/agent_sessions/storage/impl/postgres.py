@@ -137,8 +137,8 @@ class AgentSessionStoragePostgresImpl(PgStorageBase, AgentSessionStorageInterfac
     async def purge_tenant(self, org_id: UUID, session_ids: Sequence[UUID]) -> int:
         if not session_ids:
             return 0
-        # The funnel holds the tenant's purge lock, so a second purge waits
-        # for this one and then counts what is left (`hold_purge`).
+        # The funnel holds the tenant's purge lock, so two workers' deletes
+        # of one tenant take turns (`hold_purge`).
         stmt = delete(AgentSessions).where(
             AgentSessions.org_id == org_id, AgentSessions.id.in_(session_ids)
         )

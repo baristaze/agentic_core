@@ -185,6 +185,7 @@ class AgentSessionsManagerInterface(ABC):
         included, before its row. A session whose holdings cannot go yet
         keeps its row for the next pass, and the call raises once every
         other session of the batch is purged, so the tenant is not marked
-        purged while anything of it is left. Any other tenant returns 0
-        and reads nothing."""
+        purged while anything of it is left. Returns how many sessions it
+        took up, so only a call that finds none says nothing is left. Any
+        other tenant returns 0 and reads nothing."""
         ...
