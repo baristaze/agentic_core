@@ -89,12 +89,18 @@ contract.
    mid-run would leave a half-done effect.
 3. `target` reads what the call acts on from the system it acts on,
    never from the input, and answers an empty `Target` when the call
-   acts on nothing in particular. A call that changes external state
-   beyond the session's own work product, or reaches past its egress
-   allowlist, answers `outward: True` among its target's attributes:
-   `DEFAULT_CEILINGS` in `om/src/<name>/om/tools/rules.py` keys on it,
-   so a person approves the call whatever a tenant allows. The shapes
-   `Command` and `PushBranch` carry no such mark. `preflight` refuses a call that cannot
+   acts on nothing in particular. The target's `outward` attribute, when
+   it answers one, wins. When it says nothing, the class answers: a call
+   of a class outside `INWARD_CLASSES` in
+   `om/src/<name>/om/tools/rules.py` counts as outward, and
+   `DEFAULT_CEILINGS` there holds it for a person whatever a tenant
+   allows. So a call of such a class that stays in the session's own
+   work, such as a push to the session's own branch or a pull request
+   on the bound repository, answers `outward: False`, and a call of an
+   inward class that changes external state beyond the session's own
+   work product, or reaches past its egress allowlist, answers
+   `outward: True`. The shapes `Command` and `PushBranch` carry no such
+   mark, so each takes its class's answer. `preflight` refuses a call that cannot
    succeed with `ToolFailed`, before anyone is asked to approve it; its
    runtime is read-only. A tool with nothing to check returns. An error
    the runtime raises is an infra exception, read by its `http_status`,
