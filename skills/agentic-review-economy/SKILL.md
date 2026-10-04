@@ -1,20 +1,20 @@
 ---
-name: agentic-review-windows
-description: "Engine review through the Windows lenses of the agentic_core spec: Context. For a change in this area, or as one leg of agentic-review-full."
+name: agentic-review-economy
+description: "Engine review through the Economy lenses of the agentic_core spec: Economy. For a change in this area, or as one leg of agentic-review-full."
 allowed-tools: Read, Grep, Glob, Bash(git diff:*), Bash(git show:*), Bash(git log:*), Bash(git status:*), Bash(git rev-parse:*), Bash(git merge-base:*), Bash(git symbolic-ref:*), Bash(git ls-files:*)
 ---
 
-# agentic-review-windows
+# agentic-review-economy
 
 Judge the code from one perspective only: the lenses in
-`../../lenses/windows.md`. Other perspectives have their own skills; do
+`../../lenses/economy.md`. Other perspectives have their own skills; do
 not borrow their rules, and do not flag anything a lens in this file
 does not name. The spec is at `../../agentic_core_spec.md` when a lens
 needs its source read in full. A path that starts with `../` is read
 from this skill's folder as `realpath` resolves it. If either file is
 missing, stop and say the installation is incomplete.
 
-This pass covers these sections of the spec: Context.
+This pass covers these sections of the spec: Economy.
 
 A lens that leans on a rule of the guideline judges the engine's rule
 only: the guideline's own rule is its own review's
@@ -114,7 +114,7 @@ under review. This skill reads and reports.
 ## Output
 
 ```markdown
-# Engine review: Windows
+# Engine review: Economy
 
 **Scope.** <what was reviewed, in one line>
 **Lenses.** <n> applied, <p> passed, <f> findings, <u> unverified, <x> not applicable
