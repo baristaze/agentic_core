@@ -10,7 +10,9 @@
 # refuses while that environment has no required-reviewers rule, so nothing
 # is published unreviewed. Only then does `publish` fast-forward `release`,
 # tag the commit, and publish the GitHub release, its notes the changelog's
-# section.
+# section. A private repository can have the required-reviewers rule only
+# under GitHub Enterprise: on Free, Pro, or Team every run refuses, and until
+# this repository has the rule, a release is tagged and published by hand.
 #
 # The repository is private, so the checkouts keep the run's token: the
 # fetches and the tag lookup need it. The tag is made with the same token,

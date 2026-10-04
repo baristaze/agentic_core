@@ -48,9 +48,12 @@ has no release section.
 the release pull request and the release's name, publishes the release
 once a reviewer of the `human-approval` environment approves. It
 fast-forwards the `release` branch to the squash, tags it, and publishes
-the GitHub release with the changelog's section as its notes. It refuses
-while that environment has no required reviewer, so nothing is
-published unreviewed.
+the GitHub release with the changelog's section as its notes. It needs a
+required-reviewers rule on that environment and refuses without one, so
+nothing is published unreviewed. A private repository can have that rule
+only under GitHub Enterprise, so on Free, Pro, or Team the workflow
+refuses every run. Until this repository has the rule, a release is
+tagged and published by hand.
 
 ## License
 
