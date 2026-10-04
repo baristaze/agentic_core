@@ -98,7 +98,9 @@ the preamble gives.
    - A loop whose first `main` turn wrote the prefix again after the
      session's first loop: the cache did not last from one loop to the
      next, so each waking input pays the prefix again. Its gap since
-     the loop before says whether the cache expired between them.
+     the last turn of the loop before says why: more than five minutes
+     points at the cache's expiry, and a shorter gap at a prefix that
+     changed.
    - The cost by agent kind, kind version, model role, and model,
      across the session.
 6. Write the report: the session's totals, a line per loop, then each
