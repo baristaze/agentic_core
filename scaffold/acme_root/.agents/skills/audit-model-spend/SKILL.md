@@ -11,10 +11,13 @@ saved. Every model call a provider billed left a usage record: its
 prompt tokens by how they were billed (read from a cache, written to
 one, or sent uncached), its output and thinking, its reference cost,
 and the agent kind, kind version, model role, and model that served it
-(ADR 1014). A cache read is the cheap token; a cache write is a cache
-rebuilt, paid above the uncached rate. A low hit rate on one kind
-version is a prefix that keeps changing, which the bill shows only as
-a total.
+(ADR 1014). A call whose usage was never reported whole (a broken
+stream, a lost run) was settled at its whole hold: its record is
+marked `settled_whole`, its cost is the hold's, and its tokens are
+what a partial reply reported, else 0. A cache read is the cheap
+token; a cache write is a cache rebuilt, paid above the uncached rate.
+A low hit rate on one kind version is a prefix that keeps changing,
+which the bill shows only as a total.
 
 Read `../_shared/ops-preamble.md`, a path from this skill's folder,
 before the first step: the env file and the token's refresh are there.
@@ -26,10 +29,11 @@ before the first step: the env file and the token's refresh are there.
 `--env`, `--org`, and one `--session` at least are required; ask for
 them when missing. The audit reads at most 20 sessions: the first 20
 given, in the order given, and the report lists every one past the
-twentieth as not read. The operator plane lists no org's sessions. The
-ids come from the person, or from the org's events feed, where each
-`agent_sessions.agent_session.created` event names a session as its
-`target_id`; `ops-root-cause` reads that feed.
+twentieth as not read. The operator plane lists no org's sessions, so
+the ids come from the person. Without them the audit stops and asks
+for them, saying where they are: the org's events feed names each new
+session as the `target_id` of an `agent_sessions.agent_session.created`
+event. It reads no feed and starts no other skill to find them.
 
 ## Role and credential
 
@@ -75,7 +79,7 @@ the preamble gives.
    ```bash
    set -a; . ~/.config/acme/ops/<env>.env; set +a
    curl -s -H "Authorization: Bearer $ACME_OPERATOR_TOKEN" "$ACME_API_URL/v1/admin/orgs/<org_id>/sessions/<session_id>/usage?limit=200" \
-     | jq -c '{error: .error.code, next_cursor, total, groups: ([.items[]?] | group_by([.agent_kind, .kind_version, .role, .provider, .model]) | map({group: (.[0] | [.agent_kind, .kind_version, .role, .provider, .model]), calls: length, input: (map(.input_tokens) | add), cache_read: (map(.cache_read_tokens) | add), cache_write: (map(.cache_write_tokens) | add), output: (map(.output_tokens) | add), thinking: (map(.thinking_tokens) | add), cost_micros: (map(.cost_micros // 0) | add), unpriced: (map(select(.cost_micros == null)) | length)}))}'
+     | jq -c '{error: .error.code, next_cursor, total, groups: ([.items[]?] | group_by([.agent_kind, .kind_version, .role, .provider, .model]) | map({group: (.[0] | [.agent_kind, .kind_version, .role, .provider, .model]), calls: length, input: (map(.input_tokens) | add), cache_read: (map(.cache_read_tokens) | add), cache_write: (map(.cache_write_tokens) | add), output: (map(.output_tokens) | add), thinking: (map(.thinking_tokens) | add), cost_micros: (map(.cost_micros // 0) | add), unpriced: (map(select(.cost_micros == null)) | length), settled_whole: (map(select(.settled_whole)) | length)}))}'
    ```
 
    When `next_cursor` is not null, read the next page of the same
@@ -83,7 +87,10 @@ the preamble gives.
    the same `jq`. Read at most 5 pages a session, 1,000 records. A
    session cut there is audited on the records read, and the report
    says how many of its `total` calls were not read. `total`, the
-   session's rollup, covers every record whatever the page.
+   session's rollup, covers every record whatever the page. A later
+   page whose `total.calls` is above the first page's means the session
+   wrote records while it was read: it is a live session, audited on
+   the records read, and its `total` is the first page's.
 
    A `404` (`not_found`) means the org is unknown, or it holds no
    record of that session, which is also how another tenant's session
@@ -91,24 +98,30 @@ the preamble gives.
    the next. An empty answer, or one `jq` cannot parse, ends the run as
    in step 2, with the sessions already read audited. No read is made
    a second time.
-4. Add the groups across the sessions read, page by page, and check
-   each session's groups against its `total`: the calls and the cost
-   agree, or the difference is a finding. Then compute, for each
-   group: the prompt, input plus cache read plus cache write; the hit
-   rate, `cache_read / prompt`; the share of the prompt written to a
-   cache, `cache_write / prompt`; its share of the tokens; and its
-   share of the spend. A cost in dollars is `cost_micros` divided by
-   1,000,000. The rates of a cache write and an uncached input token
-   are the price table's, in `om/src/acme/om/budgets/impl/pricing.py`
-   (read it with `Read`), so the cost of rebuilt caches is each group's
-   cache writes at the write rate's premium over the input rate, as an
+4. Add the groups across the sessions read, page by page. Check a
+   session's groups against its `total` only when every record of it was
+   read, its last page's `next_cursor` null and the session not live:
+   the calls, the cost, and the calls settled whole agree, or the
+   difference is a finding. A session cut at 5 pages, or live, is
+   reported as exactly that, never as a difference. Then compute, for
+   each group: the prompt, input plus cache read plus cache write; the
+   hit rate, `cache_read / prompt`; the share of the prompt written to a
+   cache, `cache_write / prompt`; its share of the tokens; and its share
+   of the spend. A cost in dollars is `cost_micros` divided by
+   1,000,000. The rates of a cache write and an uncached input token are
+   the price table's, in `om/src/acme/om/budgets/impl/pricing.py` (read
+   it with `Read`), so the cost of rebuilt caches is each group's cache
+   writes at the write rate's premium over the input rate, as an
    estimate the report labels so. Each kind version's total across its
    roles and models is reported beside its groups.
 5. Judge each group. A hit rate under half is a finding, and so are
    cache writes above a tenth of the prompt, and a group whose spend
-   share is far above its share of the tokens. A group with any
-   unpriced call is a finding of its own: its cost is in no figure,
-   and every total it is part of is a floor.
+   share is far above its share of the tokens. A group with any unpriced
+   call is a finding of its own: its cost is in no figure, and every
+   total it is part of is a floor. Beside a group's unpriced count goes
+   its `settled_whole` count: calls whose tokens are partial or unknown,
+   each at its hold's cost, so the group's hit rate reads only the
+   tokens reported.
 6. Write the report, with each finding's proposed ticket: what to
    change (the order of a kind version's prompt so its stable part
    comes first, a cache breakpoint, a tool definition that moves, a
@@ -152,5 +165,6 @@ the preamble gives.
 
 ## Not verified
 
-- <each session not read, and why; each session cut at 5 pages>
+- <each session not read, and why; each session cut at 5 pages, or live>
+- <each group's calls settled whole: their full tokens, which no record holds>
 ```

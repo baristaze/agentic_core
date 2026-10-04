@@ -9,21 +9,28 @@ allowed-tools: Read, Bash(curl:*), Bash(jq:*), Bash(uv run acme-ops size:*)
 One loop's bill, turn by turn, from what the engine recorded. Every
 model call a provider billed left one usage record: its tokens by
 class, its reference cost, and the labels of what served it, in every
-storage mode (ADR 1014). This skill reads one loop's records through
-the operator plane, checks them against the loop's rollup, and says
-where the tokens went and what to look at next. It changes nothing.
+storage mode (ADR 1014). A call whose usage was never reported whole
+(a broken stream, a lost run) was settled at its whole hold: its record
+is marked `settled_whole`, its cost is the hold's, and its tokens are
+what a partial reply reported, else 0. This skill reads one loop's
+records through the operator plane, checks them against the loop's
+rollup, and says where the tokens went and what to look at next. It
+changes nothing.
 
 Read `../_shared/ops-preamble.md`, a path from this skill's folder,
 before the first step: the env file and the token's refresh are there.
 
 ## Input
 
-`--env local|staging|production --org <org_id> --session <session_id> --loop <loop_id>`
+`--env local|staging|production --org <org_id> --session <session_id> --loop <loop_id> [--cursor <cursor>]`
 
-All four are required; ask for any that is missing. A loop is the
+The first four are required; ask for any that is missing. A loop is the
 steps from one waking input to its outcome, and its id is that input's
 step id. `ops-session-spend` lists a session's loops and runs this
-skill over each of them.
+skill over each of them. `--cursor` is the cursor of the page the
+loop's first turn is on, which `ops-session-spend` names for a loop it
+did not read turn by turn: the first read then starts at that page, so
+the pages before it are not read again.
 
 `local` reads the local API that the env file names. No cloud is
 needed.
@@ -73,51 +80,66 @@ that follows a summarizer turn was sent after the window was compacted.
    prints nothing when the API is out of reach, and a parse error
    means the answer was not JSON. The report then says the operator
    plane was not read, and why. No read is made a second time.
-3. Read the loop's records, 200 a page:
+3. Read the loop's records, 200 a page. With `--cursor`, the first
+   read adds `&cursor=<next_cursor>` to this route, that cursor as
+   `<next_cursor>`:
 
    ```bash
    set -a; . ~/.config/acme/ops/<env>.env; set +a
    curl -s -H "Authorization: Bearer $ACME_OPERATOR_TOKEN" "$ACME_API_URL/v1/admin/orgs/<org_id>/sessions/<session_id>/usage?limit=200" \
-     | jq -c '{error: .error.code, next_cursor, has_more_loops, rollup: ([.loops[]? | select(.loop_id == "<loop_id>") | .rollup][0]), turns: [.items[]? | select(.loop_id == "<loop_id>") | [.created_at, .agent_kind, .kind_version, .role, .model, .input_tokens, .cache_read_tokens, .cache_write_tokens, .output_tokens, .thinking_tokens, .cost_micros, .latency_ms]]}'
+     | jq -c '{error: .error.code, next_cursor, has_more_loops, total_calls: .total.calls, rollup: ([.loops[]? | select(.loop_id == "<loop_id>") | .rollup][0]), turns: [.items[]? | select(.loop_id == "<loop_id>") | [.created_at, .agent_kind, .kind_version, .role, .model, .input_tokens, .cache_read_tokens, .cache_write_tokens, .output_tokens, .thinking_tokens, .cost_micros, .latency_ms, .settled_whole]]}'
    ```
 
    Each turn prints as one array, its fields in that order. `rollup` is
    the loop's sum over every record the session holds, whatever the
    page: `calls`, the five token classes, `cost_micros`, `unpriced`,
-   and `latency_ms`. When `next_cursor` is not null and the turns read
-   so far are fewer than the rollup's `calls`, or there is no rollup,
-   read the next page with it as `cursor`, through this `jq`:
+   `settled_whole`, and `latency_ms`; `total_calls` is the session's
+   count of calls. When `next_cursor` is not null and the turns read so
+   far are fewer than the rollup's `calls`, read the next page with it
+   as `cursor`, through this `jq`:
 
    ```bash
    set -a; . ~/.config/acme/ops/<env>.env; set +a
    curl -s -H "Authorization: Bearer $ACME_OPERATOR_TOKEN" "$ACME_API_URL/v1/admin/orgs/<org_id>/sessions/<session_id>/usage?limit=200&cursor=<next_cursor>" \
-     | jq -c '{error: .error.code, next_cursor, turns: [.items[]? | select(.loop_id == "<loop_id>") | [.created_at, .agent_kind, .kind_version, .role, .model, .input_tokens, .cache_read_tokens, .cache_write_tokens, .output_tokens, .thinking_tokens, .cost_micros, .latency_ms]]}'
+     | jq -c '{error: .error.code, next_cursor, total_calls: .total.calls, turns: [.items[]? | select(.loop_id == "<loop_id>") | [.created_at, .agent_kind, .kind_version, .role, .model, .input_tokens, .cache_read_tokens, .cache_write_tokens, .output_tokens, .thinking_tokens, .cost_micros, .latency_ms, .settled_whole]]}'
    ```
 
    Read at most 5 pages, 1,000 records. After the fifth the read
-   stops, and the report says how many of the rollup's calls were not
-   read; the rollup still totals them.
+   stops, cut, and the report says how many of the rollup's calls were
+   not read; the rollup still totals them. A later page whose
+   `total_calls` is above the first page's means the session wrote
+   records while it was read: the read is live, and the rollup is the
+   first page's.
 
    A `404` (`not_found`) ends the run: the org is unknown, or it holds
    no record of the session, which is also how another tenant's session
-   reads. A null `rollup` with `has_more_loops` false means the session
-   holds no record of this loop: the report says so, and names
+   reads. A null `rollup` ends the read at the first page: no later
+   page is searched for the loop. With `has_more_loops` false, the
+   session holds no record of this loop: the report says so, and names
    `ops-session-spend` for the session's loops. With `has_more_loops`
-   true, the loop is past the thousand loops the route rolls up: its
-   turns are read as above, and the report says its rollup was not
-   read. An empty answer, or one `jq` cannot parse, ends the run as in
-   step 2.
+   true, the loop is past the thousand loops the route rolls up, so a
+   thousand records or more come before its first, past the 5 pages
+   this skill reads: the report says its turns and its rollup were not
+   read, and why. An empty answer, or one `jq` cannot parse, ends the
+   run as in step 2.
 
    When `ops-session-spend` runs this skill, it has made these reads
    once for the whole session: steps 1 to 3 are not run again, and
    step 4 starts from the turns and the rollup it hands over.
-4. Reconcile. Sum each token class, `cost_micros`, and the count of
-   turns over the turns read, and compare each with the rollup. Equal,
-   the loop is reconciled. Different, it is a finding, with both
-   figures, never adjusted to agree. A cost in dollars is
+4. Reconcile, only when every record of the loop was read: the read
+   ended at the rollup's `calls` or at a null `next_cursor`, neither cut
+   at the fifth page nor live. Sum each token class, `cost_micros`, the
+   count of turns, and the count of turns marked `settled_whole` over
+   the turns read, and compare each with the rollup. Equal, the loop is
+   reconciled. Different, it is a finding, with both figures, never
+   adjusted to agree. A read that was cut or live, or a loop with no
+   rollup, is not reconciled and is no finding: the report says which it
+   was, with the figures read beside the rollup's. A cost in dollars is
    `cost_micros` divided by 1,000,000. A turn whose `cost_micros` is
    null had no price: the loop's cost is then a floor, and the report
-   gives it as one, with the rollup's `unpriced` count.
+   gives it as one, with the rollup's `unpriced` count. Beside it goes
+   the rollup's `settled_whole` count: calls whose tokens are partial or
+   unknown, each at its hold's cost.
 5. Read the turns. A turn's prompt is its input, cache-read, and
    cache-write tokens together, and its cache share is its cache-read
    tokens over its prompt.
@@ -129,14 +151,26 @@ that follows a summarizer turn was sent after the window was compacted.
      last, and the largest single step. A step that more than doubles
      the prompt is a finding: something large entered the window
      between the two turns.
-   - **Cache-miss streaks.** A turn after its role's first turn in the
-     loop whose cache share is under half is a miss, and two or more
-     misses in a row are a streak. A miss with cache-write tokens means
+   - **Cache-miss streaks.** The engine moves a cache breakpoint along
+     the window, so a turn reads from the cache what the previous turn
+     of its role wrote there: that turn's cache-read and cache-write
+     tokens together. A turn after its role's first turn in the loop
+     whose cache read is under half of that is a miss, and two or more
+     misses in a row are a streak. The cache share is not the measure: a
+     turn that takes in more new tokens than its cached prefix holds has
+     a low share and still read the whole prefix. Two kinds of turn are
+     never misses, nor part of a streak. The first `main` turn after a
+     `summarizer` turn reads a window the compaction rewrote, so its
+     short cache read is the compaction's, read under compaction churn.
+     A `summarizer` turn marks only its system prompt for the cache, so
+     its share is low by design. A miss with cache-write tokens means
      the cached prefix was written again: the prefix changed, or its
      cache expired. A gap of more than five minutes since the role's
      previous turn points at the expiry; with no such gap, the prefix
-     changed. The record holds no prompt hash, so which part of the
-     prefix changed is not recorded, and the report says so.
+     changed. A record is written when its call ends, so the gap runs
+     from the previous turn's `created_at` to this turn's `created_at`
+     minus its `latency_ms`. The record holds no prompt hash, so which
+     part of the prefix changed is not recorded, and the report says so.
    - **Compaction churn.** Each `summarizer` turn is one compaction.
      What it saved is the prompt of the next main turn against that of
      the main turn before it. Two compactions with fewer than three
@@ -150,11 +184,12 @@ that follows a summarizer turn was sent after the window was compacted.
      tenant's content, and this skill does not read it.
 6. Write the report. Each finding names what to look at next:
 
-   - A prefix written again with no gap: the kind version's prompts
-     and tool definitions, in the order they render, since anything
-     that changes inside the cached prefix writes it again.
-   - A prefix written again after a gap: the time between the turns,
-     against the provider's cache lifetime.
+   - A miss that wrote the prefix again with no gap: the kind
+     version's prompts and tool definitions, in the order they render,
+     since anything that changes inside the cached prefix writes it
+     again.
+   - A miss that wrote the prefix again after a gap: the time between
+     the turns, against the provider's cache lifetime.
    - A context that grows fast: the tool results and inputs the loop
      took in between the two turns.
    - Compaction churn: the window's size against what the loop adds
@@ -189,7 +224,7 @@ that follows a summarizer turn was sent after the window was compacted.
 # Loop spend: <env>, org <org_id>, session <session_id>, loop <loop_id>
 
 **Credential.** the `read` operator token, admitted as `read`
-**Reconciled.** <yes: <n> turns, $<cost> | no: the turns read <figures> against the rollup <figures>>
+**Reconciled.** <yes: <n> turns, $<cost> | no: the turns read <figures> against the rollup <figures> | not checked: <cut at 5 pages, <k> of <n> calls read | live, the session wrote records while it was read | no rollup>>
 
 ## Turns
 
@@ -199,7 +234,7 @@ that follows a summarizer turn was sent after the window was compacted.
 ## Totals
 
 - Tokens: input <n>, cache read <n>, cache write <n>, output <n>, thinking <n>
-- Cost: $<n>, <or: a floor, <k> turns had no price>
+- Cost: $<n>, <or: a floor, <k> turns had no price>; <j> calls settled whole, their tokens partial or unknown
 - <kind> v<version>, <role>, <model>: <n> turns, $<n> (<p>%)
 
 ## Findings
@@ -210,4 +245,5 @@ that follows a summarizer turn was sent after the window was compacted.
 
 - Repeated tool calls: a usage record holds no tool name or input.
 - Which part of a prefix changed: a usage record holds no prompt hash.
+- The full tokens of a call settled whole: its record holds what a partial reply reported, else 0.
 ```
