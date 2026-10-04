@@ -85,10 +85,13 @@ of](../../../../README.md).
   only caps its share and never adds to the tree's. A kind that names
   no share is never spawned.
 - **A child's report is data in its parent.** It carries the child's
-  mark, and it marks the parent as data does. The parent never polls: it
-  wakes on each report, except the note of a cancel it sent down itself,
-  so a parent whose loop was cancelled never starts again on its
-  children's word. The report of a loop's end is written before the loop
+  mark, and it marks the parent as data does. A child that holds private
+  data makes its parent hold them, so the rule of two holds the parent's
+  outward calls. Being no principal's message, it answers no question the
+  parent asked and brings back no archived parent. The parent never
+  polls: it wakes on each report, its run asked for as a person's message
+  asks, except the note of a cancel it sent down itself, so a parent whose
+  loop was cancelled never starts again on its children's word. The report of a loop's end is written before the loop
   closes, under an id derived from the loop, so a run that ends the loop
   again writes it once.
 - **The agent that hands work over cannot steer it.** The objective it

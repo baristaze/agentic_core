@@ -32,14 +32,20 @@ and the parent shares it.
 it into the parent's inbox as a message whose actor is the agent and
 whose header names the child. It is never the parent's instruction. It
 carries the child's mark as the child's history stands at that moment,
-and, being data, it marks the parent too.
+and, being data, it marks the parent too. It carries whether the child
+holds private data, and a parent that reads a private child's report
+holds them from then on, stored on its session as a child holds its
+parent's. Being no principal's message, it answers no question the parent
+waits on and brings back no archived parent.
 
-**Every report wakes the parent but one.** The note of a cancel that came
-down from the parent does not wake it. That cancel is the parent's own
-cascade, so the parent knows of it, and a parent whose loop a principal
-cancelled must not start again on its children's word. A cancel a
-person sends the child directly wakes the parent, which would otherwise
-wait on a child that stopped.
+**Every report wakes the parent but one.** A report goes through the
+parent's inbox, so an idle parent turns pending and its run is asked for,
+as a person's message asks. The note of a cancel that came down from the
+parent does not wake it. That cancel is the parent's own cascade, so the
+parent knows of it, and a parent whose loop a principal cancelled must
+not start again on its children's word. A cancel a person sends the
+child directly wakes the parent, which would otherwise wait on a child
+that stopped.
 
 **The end's report is written before the loop closes.** Its id is
 derived from the loop. A run lost between the report and the closing
@@ -59,7 +65,8 @@ shown and where it is kept.
 - A parent that delegates hears back without polling, and a child's
   words never instruct it.
 - A parent that spawns a child is marked once the child reports, as it
-  is by any data it reads.
+  is by any data it reads, and holds what the child held private, so its
+  outward calls wait for a person.
 - A crash at a child's loop end repeats its report at most once more,
   under the same id; a crash right after a park can lose that park's
   note, and the report of the loop's end still follows.
