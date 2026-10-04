@@ -82,7 +82,11 @@ def _append_statement(*, fenced: bool) -> ReturningInsert[Any]:
     )
     # A step already appended to this session is left out, and takes no
     # number. An id another session or another tenant holds is not left out:
-    # the insert meets the primary key, and the whole call rolls back.
+    # the insert meets the primary key, and the whole call rolls back. The
+    # check names the session and the id alone, so it probes the primary
+    # key: with `org_id` leading it, the planner walks the session's whole
+    # history on the unique (org_id, session_id, seq) instead. The tenant is
+    # the policy's to fence, and the insert's.
     fresh = (
         select(
             *(incoming.c[name] for name in WRITTEN),
@@ -90,7 +94,6 @@ def _append_statement(*, fenced: bool) -> ReturningInsert[Any]:
         )
         .where(
             ~exists().where(
-                table.c.org_id == org_id,
                 table.c.session_id == session_id,
                 table.c.id == incoming.c.id,
             )
