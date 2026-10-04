@@ -50,10 +50,10 @@ class AgentSessionsManagerInterface(ABC):
 
     @abstractmethod
     async def get_session_at_head(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
-        """The session with its speaker and its mark folded up to the head of
-        its history: the cache, then the steps after it. Nothing is written,
-        and the status and the version stay the cache's. What attribution
-        answers is read from it."""
+        """The session with its speaker, its mark, and whether it holds
+        private data folded up to the head of its history: the cache, then
+        the steps after it. Nothing is written, and the status and the
+        version stay the cache's. What attribution answers is read from it."""
         ...
 
     @abstractmethod

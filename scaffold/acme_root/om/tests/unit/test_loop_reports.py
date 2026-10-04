@@ -1,8 +1,10 @@
 """A child's report through the loop: when its loop ends, or parks on its
 person, its parent's inbox holds an agent's message that names it, says
-how its loop stands and what it said last, carries its mark, and is data
-in its parent's next request. Every report wakes the parent but the note
-of a cancel the parent sent down."""
+how its loop stands and what it said last, carries its mark and the
+private data it holds, and is data in its parent's next request. Every
+report wakes the parent but the note of a cancel the parent sent down, and
+asks for the parent's run by itself; being no principal's message, it
+answers no question the parent asked and brings back no archived parent."""
 
 from pathlib import Path
 from uuid import UUID
@@ -30,6 +32,10 @@ from acme.om.steps.types.header import (
     ParkReason,
 )
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
+from acme.om.tools.rules import DEFAULT_CEILINGS
+from acme.om.tools.types.policy import PolicyLayer
+from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
+from acme.om.work.types.work_item import WorkKind
 
 KINDS = (LEAD, WORKER)
 
@@ -68,6 +74,19 @@ def report_of(step: Step) -> InputHeader:
     header = step.header
     assert isinstance(header, InputHeader)
     return header
+
+
+def runs_asked(loop: Loop, session_id: UUID) -> int:
+    """How many runs of the session's loop its work queue was asked for."""
+    work = loop.storage.get_work_storage()
+    assert isinstance(work, WorkStorageMemoryImpl)
+    items = [item for _, item in work._items.values()]  # pyright: ignore[reportPrivateUsage]
+    return len([i for i in items if i.kind is WorkKind.LOOP and i.target_id == session_id])
+
+
+async def cached(loop: Loop, session_id: UUID) -> SessionStatus:
+    """The status as last stored, with no projection of the caller's."""
+    return (await loop.managers.agent_sessions.get_session(loop.owner, session_id)).status
 
 
 async def status_of(loop: Loop, session_id: UUID) -> SessionStatus:
@@ -204,6 +223,113 @@ async def test_a_cancelled_child_notes_its_parent_and_wakes_it_unless_the_parent
     quiet = await reported(loop, by_parent, before)
     assert report_of(quiet).waking is False and "ended cancelled" in quiet.as_text()
     assert await status_of(loop, by_parent) is SessionStatus.IDLE, "its parent stopped it"
+
+
+async def test_a_report_asks_for_its_idle_parents_run_by_itself(tmp_path: Path) -> None:
+    """The spawn's objective asks for the child's run, and the child's
+    report for its idle parent's: no caller projects either."""
+    loop = loop_over(tmp_path, kinds=KINDS)
+    parent_id = await a_lead(loop)
+    asked = runs_asked(loop, parent_id)
+    assert await cached(loop, parent_id) is SessionStatus.IDLE
+    child_id = await a_child(loop, parent_id)
+    assert await cached(loop, child_id) is SessionStatus.PENDING
+    assert runs_asked(loop, child_id) == 1, "its objective asks for its run"
+    (objective,) = await loop.history(child_id)
+    loop.anthropic.add(reply(said("The total is 12."), submit(objective)))
+
+    await loop.loops.run(loop.owner, child_id)
+
+    assert await cached(loop, parent_id) is SessionStatus.PENDING
+    assert runs_asked(loop, parent_id) == asked + 1, "the report asks for its parent's run"
+
+
+async def test_a_parked_child_the_cascade_cancels_is_asked_to_run_and_end(
+    tmp_path: Path,
+) -> None:
+    loop = loop_over(tmp_path, kinds=KINDS)
+    parent_id = await a_lead(loop)
+    child_id = await a_child(loop, parent_id)
+    loop.anthropic.add(reply(said("Which quarter?"), call("ask_person", question="Which one?")))
+    await loop.loops.run(loop.owner, child_id)
+    assert await cached(loop, child_id) is SessionStatus.PARKED
+    asked = runs_asked(loop, child_id)
+
+    assert await loop.managers.agents.cancel_children(loop.owner, parent_id) == (child_id,)
+
+    assert await cached(loop, child_id) is SessionStatus.PENDING
+    assert runs_asked(loop, child_id) == asked + 1, "the cancel asks for its run"
+    run = await loop.loops.run(loop.owner, child_id)
+    assert run.outcome is LoopOutcome.CANCELLED
+
+
+async def test_a_report_answers_no_question_and_brings_back_no_archived_parent(
+    tmp_path: Path,
+) -> None:
+    """Only a principal's message answers a question or unarchives a
+    session: a child's report waits with the parent for its person."""
+    loop = loop_over(tmp_path, kinds=KINDS)
+    sessions = loop.managers.agent_sessions
+    asking = await loop.start(LEAD.name)
+    await loop.say(asking, "What is the quarterly total?")
+    loop.anthropic.add(reply(said("Which quarter?"), call("ask_person", question="Which one?")))
+    assert (await loop.loops.run(loop.owner, asking)).park == QUESTION
+    archived = await a_lead(loop)
+    children = [await a_child(loop, asking), await a_child(loop, archived)]
+    await sessions.archive_session(loop.owner, archived)
+    for child_id in children:
+        (objective,) = await loop.history(child_id)
+        loop.anthropic.add(reply(said("The total is 12."), submit(objective)))
+        await loop.loops.run(loop.owner, child_id)
+
+    waiting = await sessions.get_session(loop.owner, asking)
+    assert (waiting.status, waiting.park) == (SessionStatus.PARKED, QUESTION)
+    history = await loop.history(asking)
+    (response,) = [s for s in history if s.type is StepType.MODEL_RESPONSE]
+    assert rules.question_waits(history, response), "the report is no answer"
+    still = await sessions.get_session(loop.owner, archived)
+    assert still.archived_at is not None and still.status is SessionStatus.IDLE
+    await loop.say(asking, "The third.")
+    assert not rules.question_waits(await loop.history(asking), response)
+    assert await status_of(loop, asking) is SessionStatus.PENDING, "its person answered"
+
+
+@pytest.mark.parametrize("private", [True, False])
+async def test_a_parent_holds_what_its_child_held_private_once_the_report_arrives(
+    tmp_path: Path, private: bool
+) -> None:
+    """A parent whose kind holds no private data acts outward unattended
+    where its adopter lifts the outward ceiling. A report from a child that
+    holds private data makes it hold them, and, marked by that report, its
+    outward call waits for a person."""
+    public = LEAD.model_copy(
+        update={"name": "public_lead", "private_data": False, "tools": (*LEAD.tools, "send")}
+    )
+    worker = WORKER.model_copy(update={"private_data": private})
+    lifted = PolicyLayer(
+        rules=tuple(r for r in DEFAULT_CEILINGS.rules if r.authorization_class is not None)
+    )
+    loop = loop_over(tmp_path, kinds=(public, worker), ceilings=lifted)
+    parent_id = await loop.start(public.name)
+    await loop.say(parent_id, "Find who owes what, and send it.")
+    loop.anthropic.add(reply(said("A sub-agent will find it.")))
+    await loop.loops.run(loop.owner, parent_id)
+    child_id = await a_child(loop, parent_id)
+    (objective,) = await loop.history(child_id)
+    loop.anthropic.add(reply(said("Customer 42 owes 9,000."), submit(objective)))
+    await loop.loops.run(loop.owner, child_id)
+    parent = await loop.managers.agent_sessions.get_session(loop.owner, parent_id)
+    assert parent.holds_private is private and parent.status is SessionStatus.PENDING
+    loop.anthropic.add(reply(use("send", use_id="use_send")), reply(said("Sent.")))
+
+    run = await loop.loops.run(loop.owner, parent_id)
+
+    if private:
+        assert run.end is RunEnd.PARKED and run.park is not None
+        assert (run.park.reason, run.park.unlock) == (ParkReason.PERSON, "approval")
+        assert loop.tools["send"].ran_as == [], "it holds its child's records"
+    else:
+        assert run.end is RunEnd.ENDED and loop.tools["send"].ran_as == [loop.owner.user_id]
 
 
 @pytest.mark.parametrize(

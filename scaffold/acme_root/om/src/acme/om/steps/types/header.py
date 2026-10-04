@@ -130,15 +130,18 @@ class InputHeader(Platform):
     under. `agent` names the agent that wrote it, when its actor is an
     agent. `untrusted` carries that agent's session's mark to the session
     it reaches, and is set on any input that carries a file, which is data
-    whoever attached it (`steps.types.step.Step`). `artifact` is the handle
-    of a child's report above the size bound, whose head and tail are the
-    step's two text blocks."""
+    whoever attached it (`steps.types.step.Step`). `holds_private` carries
+    whether that agent's session holds private data, so a child's report
+    makes its parent hold what the child held. `artifact` is the handle of a
+    child's report above the size bound, whose head and tail are the step's
+    two text blocks."""
 
     kind: Literal["input"] = "input"
     waking: bool | None = None
     principal: Principal
     agent: AgentRef | None = None
     untrusted: bool = False
+    holds_private: bool = False
     artifact: ArtifactRef | None = None
 
 

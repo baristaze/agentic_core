@@ -150,7 +150,9 @@ class AgentsManagerImpl(AgentsManagerInterface):
             waking=True,
             untrusted=child.untrusted,
         )
-        await self._steps.append_inputs(ctx, child.id, [objective])
+        # Through the inbox: the projection that turns the child pending
+        # asks for its loop's run.
+        _, child = await self._sessions.receive(ctx, child.id, [objective])
         return child
 
     async def tree_of(self, ctx: TenantContext, session_id: UUID) -> AgentTree:
@@ -193,15 +195,15 @@ class AgentsManagerImpl(AgentsManagerInterface):
         ctx.require(Permission.WRITE)
         if report.park is not None and not notes_parent(report.park):
             return None
-        child = await self._sessions.get_session(ctx, session_id)
+        # The mark and the private data as the child's history stands now:
+        # data it read, or a report it took, since its cached status was
+        # folded count too.
+        child = await self._sessions.get_session_at_head(ctx, session_id)
         if child.parent_id is None:
             return None
         parent = await self._find(ctx, child.parent_id)
         if parent is None:
             return None
-        # The mark as the child's history stands now: data it read since its
-        # cached status was folded marks its report too.
-        marked = await self._attribution.is_marked(ctx, child.id)
         principal = await self._attribution.call_principal(ctx, child.id)
         if report.outcome is not None:
             # One end a loop: a run that ends it again writes this report once.
@@ -210,6 +212,7 @@ class AgentsManagerImpl(AgentsManagerInterface):
             step_id = new_id()
         # The child's words are data in its parent: an agent's message, never
         # its parent's instruction, and it marks the parent as data does.
+        # What the child holds private, its parent holds once it reads them.
         step = self._input(
             parent,
             principal,
@@ -218,10 +221,13 @@ class AgentsManagerImpl(AgentsManagerInterface):
             origin=Origin.ENGINE,
             text=report_text(child, report),
             waking=report_wakes(report),
-            untrusted=marked,
+            untrusted=child.untrusted,
+            holds_private=child.holds_private,
         )
         bounded = await self._windows.bound_report(ctx, parent.id, step)
-        (stored,) = await self._steps.append_inputs(ctx, parent.id, [bounded])
+        # Through the inbox: the projection that turns the parent pending
+        # asks for its loop's run.
+        (stored,), _ = await self._sessions.receive(ctx, parent.id, [bounded])
         return stored
 
     async def hand_off(
@@ -340,10 +346,12 @@ class AgentsManagerImpl(AgentsManagerInterface):
         text: str,
         waking: bool,
         untrusted: bool,
+        holds_private: bool = False,
     ) -> Step:
         """A message an agent writes into `session`: on the authority
         `principal`, naming the agent that wrote it, and carrying the mark of
-        the session it came from, `untrusted`."""
+        the session it came from, `untrusted`, and, for a report, whether
+        that session holds private data, `holds_private`."""
         return Step(
             id=step_id,
             created_at=self._clock(),
@@ -361,6 +369,7 @@ class AgentsManagerImpl(AgentsManagerInterface):
                     session_id=from_agent.id,
                 ),
                 untrusted=untrusted,
+                holds_private=holds_private,
             ),
             content=Content(blocks=(TextBlock(text=text),)),
         )
@@ -388,7 +397,9 @@ class AgentsManagerImpl(AgentsManagerInterface):
             origin=Origin.PARENT,
             header=ControlHeader(command=ControlCommand.CANCEL),
         )
-        await self._steps.append_inputs(ctx, session_id, [control])
+        # Through the inbox: a parked child the cancel clears turns pending,
+        # and its loop's run is asked for to end it.
+        await self._sessions.receive(ctx, session_id, [control])
         return True
 
     async def _below(self, ctx: TenantContext, session_id: UUID) -> list[UUID]:

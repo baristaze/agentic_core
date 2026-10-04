@@ -50,7 +50,8 @@ class AgentsManagerInterface(ABC):
     async def spawn(self, ctx: TenantContext, parent_id: UUID, spawn: Spawn) -> AgentSession:
         """A child of `parent_id`, one level down its tree, under a budget on
         its own session of its kind's share, and its objective as its first
-        input: a waking message from its parent. A tree past its height or
+        input: a waking message from its parent, through the inbox, so the
+        projection that turns the child pending asks for its run. A tree past its height or
         its count is `TreeBoundReached`, a kind whose result tool its parent
         lacks or that names no share is `ValidationFailed`, and a context
         that lacks a permission a call of the child's registry needs is
@@ -80,8 +81,9 @@ class AgentsManagerInterface(ABC):
     async def cancel_children(self, ctx: TenantContext, session_id: UUID) -> tuple[UUID, ...]:
         """The cascade of a cancel: a `cancel` control to every session below
         `session_id` that is not idle, children and theirs, a session that
-        waits to begin its next loop among them. Answers the sessions it
-        reached."""
+        waits to begin its next loop among them. Each goes through the inbox,
+        so a parked child the cancel clears is asked to run and end its
+        loop. Answers the sessions it reached."""
         ...
 
     @abstractmethod
@@ -90,10 +92,12 @@ class AgentsManagerInterface(ABC):
     ) -> Step | None:
         """A child's report, written into its parent's inbox as an agent's
         message: data that names the child and says how its loop stands and
-        what it said last, carrying the child's mark, and above the size
-        bound a tool result has, its head, its tail, and the handle of the
-        artifact that keeps it whole. It wakes the parent, except the note
-        of a cancel that came down from the parent (`rules.report_wakes`).
+        what it said last, carrying the child's mark and whether it holds
+        private data, and above the size bound a tool result has, its head,
+        its tail, and the handle of the artifact that keeps it whole. It
+        wakes the parent through the inbox, so the projection that turns the
+        parent pending asks for its run, except the note of a cancel that
+        came down from the parent (`rules.report_wakes`).
         The report of a loop's end has an id derived from the loop, so a
         run that ends the loop again writes it once. None, with nothing
         written, for a session with no parent, a parent that is gone, and
