@@ -1,9 +1,9 @@
 """Pure rules of budgets: the window a time falls in, a call's worst case, the
-breaches of a hold, how a hold settles, and the park a refusal asks for.
-Values in, values out; no clock, no storage. Both ledger impls ask
+breaches of a hold, how a hold settles, the park a refusal asks for, and
+the rollups of usage records. Values in, values out; no clock, no storage. Both ledger impls ask
 `breaches` under their lock before they write."""
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -23,6 +23,7 @@ from acme.om.budgets.types.hold import (
     Settlement,
     Tally,
 )
+from acme.om.budgets.types.usage import LoopUsage, UsageRecord, UsageRollup
 from acme.om.steps.types.header import Park, ParkReason
 
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
@@ -410,3 +411,52 @@ def _clears_at(breach: Breach, now: datetime, hold_retry: timedelta) -> datetime
         soon = now + hold_retry
         return soon if breach.resets_at is None else min(soon, breach.resets_at)
     return breach.resets_at
+
+
+def rollup_of(records: Iterable[UsageRecord]) -> UsageRollup:
+    """The sum of the records: their calls, tokens by class, reference cost,
+    and latency. A call no price applied to adds to `unpriced` and to no
+    cost; a call settled at its whole hold adds its hold's cost, and to
+    `settled_whole`."""
+    calls = input_tokens = cache_read = cache_write = output = thinking = 0
+    cost = unpriced = whole = latency = 0
+    for record in records:
+        calls += 1
+        input_tokens += record.input_tokens
+        cache_read += record.cache_read_tokens
+        cache_write += record.cache_write_tokens
+        output += record.output_tokens
+        thinking += record.thinking_tokens
+        if record.cost_micros is None:
+            unpriced += 1
+        else:
+            cost += record.cost_micros
+        whole += record.settled_whole
+        latency += record.latency_ms
+    return UsageRollup(
+        calls=calls,
+        input_tokens=input_tokens,
+        cache_read_tokens=cache_read,
+        cache_write_tokens=cache_write,
+        output_tokens=output,
+        thinking_tokens=thinking,
+        cost_micros=cost,
+        unpriced=unpriced,
+        settled_whole=whole,
+        latency_ms=latency,
+    )
+
+
+def loop_rollups(records: Sequence[UsageRecord]) -> list[LoopUsage]:
+    """One rollup per loop of records in the order they were written, the
+    loops in the order each first called."""
+    by_loop: dict[UUID, list[UsageRecord]] = {}
+    for record in records:
+        by_loop.setdefault(record.loop_id, []).append(record)
+    return [LoopUsage(loop_id=loop_id, rollup=rollup_of(of)) for loop_id, of in by_loop.items()]
+
+
+def elapsed_ms(started: datetime, ended: datetime) -> int:
+    """The whole milliseconds between two readings of a clock, never fewer
+    than none: a call's latency, from its send to its reply."""
+    return max(0, (ended - started) // timedelta(milliseconds=1))

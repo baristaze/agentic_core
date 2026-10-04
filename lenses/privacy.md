@@ -126,12 +126,12 @@ cannot be undone.
 **Principle.** Where a session must keep no content at rest, its storage
 policy is chosen per session, by policy: sealed by default, or
 memory-only, where content lives only while a runtime holds it and the
-shape may still be persisted, when policy allows, so cost and audit
-survive. Both impls are wired at boot, and a decorator routes each
-session by its policy. A memory-only session keeps its runtime while it
-is parked, up to a declared time; past it, or on a crash, its loop ends
-`errored` and its shape stays. Zero data retention's engine half is a
-memory-only session.
+shape may still be persisted, when policy allows, so the audit survives.
+A call's cost survives in every mode, in its usage record. Both impls
+are wired at boot, and a decorator routes each session by its policy. A
+memory-only session keeps its runtime while it is parked, up to a
+declared time; past it, or on a crash, its loop ends `errored` and its
+shape stays. Zero data retention's engine half is a memory-only session.
 
 **Source.** Privacy, Storage Modes and Retention.
 

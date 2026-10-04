@@ -1224,6 +1224,18 @@ them:
   output, thinking.
 - **Reference cost:** what that usage costs at list price, whoever paid.
 
+Both land in a **usage record**, one for every call a provider billed:
+the session, its tree, the loop, and the step it answered, the agent
+kind and its version, the model role, the provider and the model, its
+tokens by class, its reference cost, and its latency. A call settled at
+its whole hold, a broken stream or a run lost before its reply, is
+recorded at the hold and marked so, with what a partial reply reported,
+and a rollup counts it apart. A record holds no content, so it is
+written in every storage mode. It is billing data, kept beside the
+ledger: a session's purge and its tenant's leave it, and it never keeps
+a deleted tenant from being marked purged. The operator plane reads a
+session's records and their rollups, per loop and per session.
+
 Budgets read reference cost, so one workload meets one line whether the
 platform's key or the tenant's own pays. A pricing interface supplies
 prices from one source, and every model a resolver can pick has a price
@@ -1367,9 +1379,10 @@ session's title comes from a cheap model role, never the main one.
 
 ### Spend Is a Reading
 
-What a loop spent is read from its history, never guessed. Each model
-call's usage ([Usage and Cost](#usage-and-cost)) can be traced to its
-loop, its model role, its kind version, and its tree. So the cost of a
+What a loop spent is read from what its calls recorded, never guessed.
+Each model call's usage record ([Usage and Cost](#usage-and-cost)) names
+its loop, its model role, its kind version, and its tree, in every
+storage mode. So the cost of a
 loop, a role, or a kind is a query, and so is the share of its input
 the cache served. A change made to save shows its saving on that
 reading, before and after.
@@ -1448,8 +1461,9 @@ own lifetimes.
 Some tenants accept no content at rest, sealed or not. A session's
 storage policy is chosen per session, by policy: **sealed** by default,
 or **memory-only**, where content lives only while a runtime holds it and
-the shape may still be persisted, when policy allows, so cost and audit
-survive. Both impls are wired at boot, and a decorator routes each
+the shape may still be persisted, when policy allows, so the audit
+survives. A call's cost survives in every mode, in its [usage
+record](#usage-and-cost). Both impls are wired at boot, and a decorator routes each
 session by its policy. A memory-only session keeps its runtime while it
 is parked, up to a declared time; past it, or on a crash, its loop ends
 `errored` and its shape stays.

@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from acme.integrations.model_providers.types import Usage
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.agents import AgentsManagerInterface
@@ -31,6 +32,7 @@ from acme.services.api.types.agent_sessions import (
     ParkView,
     StartSessionRequest,
     StepPageView,
+    StepUsageView,
     StepView,
 )
 from acme.services.api.types.common import clamp_limit
@@ -66,6 +68,10 @@ def text_of(step: Step) -> str:
     return step.as_text()
 
 
+def usage_view(usage: Usage | None) -> StepUsageView | None:
+    return None if usage is None else StepUsageView.model_validate(usage.model_dump())
+
+
 def step_view(step: Step) -> StepView:
     header = step.header
     responded = header if isinstance(header, ModelResponseHeader) else None
@@ -82,6 +88,7 @@ def step_view(step: Step) -> StepView:
         text=text_of(step),
         tools=[use.name for use in step.as_tool_uses()] if responded is not None else [],
         stop_reason=None if responded is None else responded.stop_reason,
+        usage=usage_view(responded.usage) if responded is not None else None,
         tool=header.tool if isinstance(header, ToolRequestHeader) else None,
         failure=header.failure if isinstance(header, ToolResponseHeader) else None,
         command=header.command if isinstance(header, ControlHeader) else None,

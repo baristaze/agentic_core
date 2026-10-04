@@ -76,7 +76,9 @@ def build_services(
     same services through the typed client under `clients/python`."""
     return ServicesImpl(
         tenancy=TenancyServiceImpl(managers.tenancy),
-        admin=AdminServiceImpl(managers.tenancy_operator, managers.work_operator),
+        admin=AdminServiceImpl(
+            managers.tenancy_operator, managers.work_operator, managers.budgets_operator
+        ),
         events=EventsServiceImpl(managers.events),
         media=MediaServiceImpl(managers.media),
         realtime=RealtimeServiceImpl(

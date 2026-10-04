@@ -1,6 +1,8 @@
 from datetime import timedelta
 from uuid import UUID
 
+from acme.om.budgets import BudgetsOperatorManagerInterface
+from acme.om.budgets.types.usage import SessionUsage
 from acme.om.context import OperatorContext, OperatorPermission, OperatorRole
 from acme.om.idempotency.types.attempt import Attempt
 from acme.om.tenancy import TenancyOperatorManagerInterface
@@ -20,6 +22,7 @@ from acme.services.api.types.admin import (
     OperatorView,
     OperatorWorkItemView,
     PlatformSizeView,
+    SessionUsageView,
     TotpConfirmedView,
 )
 from acme.services.api.types.common import clamp_limit
@@ -33,10 +36,14 @@ class AdminServiceImpl(AdminServiceInterface):
     way from either plane."""
 
     def __init__(
-        self, tenancy: TenancyOperatorManagerInterface, work: WorkOperatorManagerInterface
+        self,
+        tenancy: TenancyOperatorManagerInterface,
+        work: WorkOperatorManagerInterface,
+        budgets: BudgetsOperatorManagerInterface,
     ) -> None:
         self._tenancy = tenancy
         self._work = work
+        self._budgets = budgets
 
     async def get_orgs(self, admin: OperatorContext, cursor: str | None, limit: int) -> OrgPageView:
         limit = clamp_limit(limit)
@@ -142,6 +149,20 @@ class AdminServiceImpl(AdminServiceInterface):
     ) -> OperatorWorkItemView:
         return OperatorWorkItemView.model_validate(await self._work.requeue(admin, org_id, item_id))
 
+    async def get_session_usage(
+        self,
+        admin: OperatorContext,
+        org_id: UUID,
+        session_id: UUID,
+        cursor: str | None,
+        limit: int,
+    ) -> SessionUsageView:
+        after = decode_cursor("usage", cursor) if cursor else None
+        usage = await self._budgets.get_session_usage(
+            admin, org_id, session_id, after, clamp_limit(limit)
+        )
+        return usage_view(usage)
+
 
 def token_view(token: Session) -> OperatorTokenView:
     """A row of kind `operator_token` as the wire reads it: its one permission
@@ -153,4 +174,18 @@ def token_view(token: Session) -> OperatorTokenView:
         created_at=token.created_at,
         expires_at=token.expires_at,
         revoked_at=token.revoked_at,
+    )
+
+
+def usage_view(usage: SessionUsage) -> SessionUsageView:
+    last = usage.records[-1].id if usage.records else None
+    return SessionUsageView.model_validate(
+        {
+            "session_id": usage.session_id,
+            "items": [record.model_dump() for record in usage.records],
+            "next_cursor": encode_cursor("usage", last) if usage.has_more and last else None,
+            "loops": [loop.model_dump() for loop in usage.loops],
+            "has_more_loops": usage.has_more_loops,
+            "total": usage.total.model_dump(),
+        }
     )
