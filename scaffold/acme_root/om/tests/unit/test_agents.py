@@ -24,7 +24,7 @@ from acme.om.agents import ResultGateInterface
 from acme.om.agents.loop_rules import holds_private
 from acme.om.agents.rules import after_turn, claim_refusal, tree_refusal
 from acme.om.agents.types.kind import AgentKind, AgentKindCatalog, DoneRule, TreeLimits
-from acme.om.agents.types.request import Handoff, Spawn, Start
+from acme.om.agents.types.request import MAX_OBJECTIVE, Handoff, Spawn, Start
 from acme.om.agents.types.result import Claim, Result, Turn, Verdict
 from acme.om.agents.types.tree import AgentTree
 from acme.om.attribution.rules import trust_of
@@ -296,6 +296,17 @@ async def test_a_child_draws_on_its_trees_budget_and_deadline(managers: Managers
         Spawn.model_validate({**spawn().model_dump(), "budget": 10})
     with pytest.raises(ValidationError):
         Spawn.model_validate({**spawn().model_dump(), "deadline": later})
+
+
+def test_an_objective_past_its_bound_is_refused_with_the_bound_named() -> None:
+    """A parent's objective is a model's text: one past the bound is refused
+    with the bound in the refusal, which the model reads as its call's
+    answer, and a hand-over's objective is held to the same bound."""
+    at_bound = "x" * MAX_OBJECTIVE
+    assert Spawn(id=new_id(), kind="helper", title="t", objective=at_bound).objective == at_bound
+    for request in (Spawn, Handoff):
+        with pytest.raises(ValidationError, match=f"at most {MAX_OBJECTIVE} characters"):
+            request(id=new_id(), kind="helper", title="t", objective=at_bound + "x")
 
 
 async def test_a_moved_deadline_unlocks_every_session_of_the_tree_it_parked(

@@ -18,6 +18,12 @@ from acme.om.base import Platform
 
 MAX_TITLE = 200
 
+MAX_OBJECTIVE = 8_000
+"""The most a spawn's or a hand-over's objective holds, in characters: room
+for the objective, its constraints and bounds, and the shape of a good
+report. Large material crosses by its handle, never pasted, so the window
+it opens stays small."""
+
 
 class Start(Platform):
     """A root session on the latest version of a kind. `deadline` is the
@@ -39,7 +45,7 @@ class Spawn(Platform):
     id: UUID
     kind: str = Field(min_length=1, max_length=MAX_KIND)
     title: str = Field(min_length=1, max_length=MAX_TITLE)
-    objective: str = Field(min_length=1)
+    objective: str = Field(min_length=1, max_length=MAX_OBJECTIVE)
 
 
 class Handoff(Platform):
@@ -50,4 +56,4 @@ class Handoff(Platform):
     id: UUID
     kind: str = Field(min_length=1, max_length=MAX_KIND)
     title: str = Field(min_length=1, max_length=MAX_TITLE)
-    objective: str = Field(min_length=1)
+    objective: str = Field(min_length=1, max_length=MAX_OBJECTIVE)
