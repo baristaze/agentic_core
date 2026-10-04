@@ -45,8 +45,8 @@ purges nothing never judges a tenant purged.
 
 ## Consequences
 
-- The runner runs on the host locally (`scripts/dev.sh`). It is not yet a
-  container in the compose stack or a service in the cloud: a deployed
+- The runner runs on the host locally (`scripts/dev.sh`). It is no
+  container in the compose stack and no service in the cloud: a deployed
   runner refuses a workspace on its host, and the cloud's tasks run on
   Fargate, which starts no container from inside a task. The first
   environment that runs a session's loop deploys it, with its image, its

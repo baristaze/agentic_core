@@ -32,7 +32,7 @@ whoever speaks to it, so no child holds more than its parent. A message
 is said in the name of the context that appends it, so no one asks in
 another's name. A revoked person's next call is refused
 (`AuthorityRevoked`) and denied. A steady session's call runs under its
-one fixed principal, and when that principal no longer holds, its calls
+one fixed principal, and when that principal lapses, its calls
 stop (`PrincipalLapsed`) until a person takes the session over.
 
 **The transition is the adopter's.** It is one operation of the

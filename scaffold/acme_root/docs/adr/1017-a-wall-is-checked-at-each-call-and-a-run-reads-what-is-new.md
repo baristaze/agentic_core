@@ -4,29 +4,23 @@
 
 ## Context
 
-The engine's walls were each checked at one point, and each point missed
-a case. The API classed only the engine's own tools, so a member could
-message an admin's session whose kind offers a product's configuration
-call. A call's class was asked of its principal at the start, never
-again. The outward ceiling read only what a call's target said of
-itself. A child took its parent's mark but not its private data. A
-decision sent on an API key counted as a person's. Open-egress container
-workspaces shared Docker's default bridge, where each reaches every
-other.
+A wall holds only where it is checked, and a call passes several
+points: the API's classing of a session's registry, the gate before each
+call, the outward ceiling, what a child takes from its parent, a
+decision's actor, and the network between workspaces. A check at one
+point misses what another lets through.
 
-Two costs grew without bound. The sweep never marked a deleted tenant
-purged while its ledger stayed, so every pass ran each of its purges
-again. A loop read its whole history again for every turn and every
-render.
+Two costs must stay bounded: the sweep's passes over a deleted tenant,
+and a loop's reads of its own history.
 
 ## Decision
 
 **Every product tool is classed.** The API takes the product's tool
 catalog. A registry name no catalog classes is refused, never skipped.
 
-**A call is asked of its principal as it is now.** The gate refuses a
-call whose class's permission (ADR 1012) the principal's live context
-lacks, as ADR 1007 asks.
+**A call is asked of its principal as it is now.** At each call, never
+once at the start, the gate refuses a call whose class's permission
+(ADR 1012) the principal's live context lacks, as ADR 1007 asks.
 
 **The ceiling reads a silent target's class.** A target's explicit
 `outward` wins, either way. A target that says nothing is outward at the
@@ -39,14 +33,15 @@ under its class's policy.
 **Private data passes like the mark.** A session stores whether it holds
 private data. Its maker sets it from its kind and its tools' secrets,
 and a session spawned or handed over takes its source's. A session
-stored before this is taken to hold it, and so is one an older release
-writes during a roll or after a rollback.
+stored with no value for it, one an older release writes during a roll
+or after a rollback included, is taken to hold it.
 
 **An API key decides as a program.** A decision sent on one is recorded
 with that credential's actor, and approves nothing a person must.
 
 **Open egress joins one bridge where no container reaches another.** It
-is `acme-ws-open`, made with traffic between its containers off, and one
+is `acme-ws-open`, never Docker's default bridge, where each reaches
+every other. It is made with traffic between its containers off, and one
 that stands with it on is refused. It is one bridge, not one a
 workspace: Docker's default address pools hold about thirty. The host's
 metadata service is the host's to close. A host that runs these
@@ -55,7 +50,8 @@ container one hop behind the bridge gets none.
 
 **A deleted tenant is marked purged once its other rows are gone.** No
 serving login deletes a hold or a settlement (ADR 1006), so the ledger
-stays, and it no longer holds the mark.
+stays, and marking the tenant purged never waits on it: a sweep that
+waited would run each of the tenant's purges again on every pass.
 
 **A run reads its history whole once.** Each turn after reads only the
 steps added since, and the render takes the run's history.
@@ -69,7 +65,7 @@ steps added since, and the render takes the run's history.
   outward. A tool whose call of such a class stays in the session's own
   work, such as a push to the session's own branch or a pull request on
   the bound repository, answers `outward: False`.
-- Most development work still runs unattended: a command in an
+- Most development work runs unattended: a command in an
   open-egress workspace waits for a person only when the rule of two
   holds it.
 - A child of a session that holds private data is held by the rule of
