@@ -22,8 +22,9 @@ from acme.om.steps.types.step import Step
 SessionPurged = Callable[[UUID, UUID, UUID | None], Awaitable[None]]
 """What other namespaces hold of a session, purged before its row: given its
 tenant, its id, and its tree's id when no other session of the tree is
-left, and None otherwise. The root binds it to attribution's and the agents'
-purges, which run under the purge login in that tenant."""
+left, and None otherwise, as in a tenant's purge, whose trees go with the
+tenant. The root binds it to the windows', the tools', attribution's, and
+the agents' purges, which run under the purge login in that tenant."""
 
 
 class AgentSessionsManagerInterface(ABC):
@@ -179,6 +180,11 @@ class AgentSessionsManagerInterface(ABC):
     @abstractmethod
     async def purge_tenant(self, ctx: TenantContext) -> int:
         """The sweep, for one tenant past its own retention: every session,
-        a batch at most a call, under the purge login. Any other tenant
-        returns 0 and reads nothing."""
+        a batch at most a call, under the purge login, each with what other
+        namespaces hold of it, its workspace and its transport's records
+        included, before its row. A session whose holdings cannot go yet
+        keeps its row for the next pass, and the call raises once every
+        other session of the batch is purged, so the tenant is not marked
+        purged while anything of it is left. Any other tenant returns 0
+        and reads nothing."""
         ...

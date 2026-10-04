@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
@@ -86,9 +87,12 @@ class AgentSessionStorageMemoryImpl(MemoryStorageBase, AgentSessionStorageInterf
             del self._sessions[session_id]
             return True
 
-    async def purge_tenant(self, org_id: UUID, limit: int) -> int:
+    async def read_tenant_sessions(self, org_id: UUID, limit: int) -> list[UUID]:
+        return [s.id for s in self._rows(self._sessions, org_id)][:limit]
+
+    async def purge_tenant(self, org_id: UUID, session_ids: Sequence[UUID]) -> int:
         async with self._lock:
-            gone = [s.id for s in self._rows(self._sessions, org_id)][:limit]
+            gone = {i for i in session_ids if self._get(self._sessions, org_id, i) is not None}
             for session_id in gone:
                 del self._sessions[session_id]
             return len(gone)

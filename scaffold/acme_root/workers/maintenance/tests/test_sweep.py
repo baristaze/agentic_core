@@ -31,11 +31,22 @@ from worker_support import (
 
 from acme.infra.buckets import Buckets
 from acme.infra.cache import CacheScope
+from acme.infra.exceptions import InfraNotFound
 from acme.infra.observability import (
     OUTBOX_FAILED_RECENTLY,
     WORK_OLDEST_READY_SECONDS,
     JsonFormatter,
 )
+from acme.infra.transports import CommandSpec, RecordSeal
+from acme.infra.transports.twin import TransportTwinImpl
+from acme.infra.workspaces import (
+    EgressMode,
+    EgressPolicy,
+    IsolationMode,
+    IsolationSpec,
+    Workspace,
+)
+from acme.infra.workspaces.twin import WorkspaceTwinImpl
 from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.agents.types.tree import AgentTree
 from acme.om.attribution.types.authority import AuthorityMode, SessionAuthority
@@ -476,6 +487,85 @@ async def test_a_deleted_tenants_history_goes_and_it_is_marked_purged_only_after
     await loop._sweep_once()  # pyright: ignore[reportPrivateUsage]
     marked = await tenancy.read_org(org_id)
     assert marked is not None and marked.purged_at is not None, "nothing was left"
+
+
+async def a_workspace(container: WorkerContainer, org_id: UUID, session_id: UUID) -> Workspace:
+    """The session's twin workspace, prepared under its id, with a file in it
+    and a record of one command its transport ran there."""
+    workspaces, transport = container.infra.get_workspaces(), container.infra.get_transport()
+    spec = IsolationSpec(mode=IsolationMode.TWIN, egress=EgressPolicy(mode=EgressMode.NONE))
+    workspace = await workspaces.prepare(org_id, session_id, spec)
+    await transport.write_file(workspace, "notes.txt", b"the build log", 1)
+
+    async def nothing_kept(data: bytes) -> bytes | None:
+        return None
+
+    command = CommandSpec(argv=("true",), key=new_id(), epoch=1, deadline=utcnow())
+    await transport.run(workspace, command, seal=RecordSeal(seal=nothing_kept, open=nothing_kept))
+    return workspace
+
+
+async def holds(container: WorkerContainer, workspace: Workspace) -> bool:
+    """Whether the twin keeps anything of the workspace: an instance, a
+    file, or a record."""
+    workspaces, transport = container.infra.get_workspaces(), container.infra.get_transport()
+    assert isinstance(workspaces, WorkspaceTwinImpl) and isinstance(transport, TransportTwinImpl)
+    try:
+        await transport.read_file(workspace, "notes.txt", 10)
+        has_file = True
+    except InfraNotFound:
+        has_file = False
+    has_record = any(w == workspace.id for w, _ in transport.records)
+    return workspace.id in workspaces.live or has_file or has_record
+
+
+async def test_a_deleted_tenants_workspaces_go_with_its_sessions_before_it_is_marked_purged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each session of a deleted tenant goes with its workspace and its
+    transport's records. While one session's workspace cannot go, that
+    session keeps its row and the tenant is never marked purged; every
+    other session goes. The next pass takes it, and the one after marks the
+    tenant. A living tenant's workspaces stay."""
+    container = build_container(tmp_path)
+    org_id, _ = await deleted_org(container, days_ago=40)
+    living = (await sign_in(container)).org_id
+    storage = container.storage.get_agent_session_storage()
+    stuck, purged, kept = a_session(), a_session(), a_session()
+    for owner, session in ((org_id, stuck), (org_id, purged), (living, kept)):
+        assert await storage.create_session(owner, session, ())
+    stuck_at = await a_workspace(container, org_id, stuck.id)
+    purged_at = await a_workspace(container, org_id, purged.id)
+    kept_at = await a_workspace(container, living, kept.id)
+    workspaces = container.infra.get_workspaces()
+    tenancy = container.storage.get_tenancy_storage()
+    loop = build_loop(container)
+    real_purge = workspaces.purge
+
+    async def refused(owner: UUID, workspace_id: UUID) -> None:
+        if workspace_id == stuck.id:
+            raise RuntimeError("the host refuses the removal")
+        await real_purge(owner, workspace_id)
+
+    monkeypatch.setattr(workspaces, "purge", refused)
+    for _ in range(2):
+        await loop._sweep_once()  # pyright: ignore[reportPrivateUsage]
+    assert await storage.read_session(org_id, purged.id) is None
+    assert not await holds(container, purged_at), "every other session goes"
+    assert await storage.read_session(org_id, stuck.id) is not None, "its row stays"
+    assert await holds(container, stuck_at)
+    held = await tenancy.read_org(org_id)
+    assert held is not None and held.purged_at is None, "a workspace remains"
+
+    monkeypatch.undo()
+    await loop._sweep_once()  # pyright: ignore[reportPrivateUsage]
+    assert await storage.read_session(org_id, stuck.id) is None
+    assert not await holds(container, stuck_at), "the next pass takes it"
+    await loop._sweep_once()  # pyright: ignore[reportPrivateUsage]
+    marked = await tenancy.read_org(org_id)
+    assert marked is not None and marked.purged_at is not None, "nothing was left"
+    assert await storage.read_session(living, kept.id) == kept
+    assert await holds(container, kept_at), "a living tenant's workspace stays"
 
 
 async def test_the_sweep_purges_a_session_deleted_past_its_retention_and_no_other(

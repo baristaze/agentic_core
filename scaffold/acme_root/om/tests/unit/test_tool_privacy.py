@@ -36,6 +36,7 @@ from acme.infra.transports.local import DEFAULT_PATH, TransportLocalImpl
 from acme.infra.transports.twin import TransportTwinImpl
 from acme.infra.workspaces import Workspace, WorkspaceProviderInterface
 from acme.infra.workspaces.host import WorkspaceHostImpl
+from acme.infra.workspaces.twin import WorkspaceTwinImpl
 from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
 from acme.om.agents.types.run import RunEnd
 from acme.om.base import new_id
@@ -226,6 +227,47 @@ async def test_a_purged_sessions_workspace_and_records_are_gone_from_the_host(
     if isinstance(roots.infra, HostInfra):
         assert not (roots.infra.records / gone.id.hex).exists()
     assert await roots.holds_files(stays) and roots.at_rest(stays.id), "another session's stay"
+
+
+async def test_a_deleted_tenants_purge_takes_its_sessions_workspaces_and_no_other_tenants(
+    roots: Roots, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A tenant past its retention is purged a batch of sessions at a time,
+    each with its workspace's files and its records before its row. Another
+    tenant's sessions, workspaces, and records stay."""
+    sessions, ctx = [await roots.session(), await roots.session()], roots.ctx
+    ran = [await roots.ran(session) for session in sessions]
+    roots.ctx = context(Role.MEMBER)
+    elsewhere = await roots.session()
+    (stays, kept) = await roots.ran(elsewhere)
+    for workspace, call in [*ran, (stays, kept)]:
+        await roots.transport.write_file(workspace, "notes.txt", LINE.encode(), call.epoch)
+        assert await roots.holds_files(workspace) and roots.at_rest(workspace.id)
+    tenancy = roots.managers.tenancy
+
+    async def expired(asked: TenantContext) -> bool:
+        return asked.org_id == ctx.org_id
+
+    monkeypatch.setattr(tenancy, "tenant_expired", expired)
+    agent_sessions = roots.managers.agent_sessions
+    assert await agent_sessions.purge_tenant(roots.ctx) == 0, "a living tenant keeps everything"
+    assert await agent_sessions.purge_tenant(ctx) == 2
+    assert await agent_sessions.purge_tenant(ctx) == 0
+    for session, (workspace, _) in zip(sessions, ran, strict=True):
+        assert not await roots.holds_files(workspace), "the tenant's files go"
+        assert roots.at_rest(workspace.id) == b"", "and its records"
+        assert (
+            await roots.storage.get_agent_session_storage().read_session(ctx.org_id, session)
+            is None
+        )
+    if isinstance(roots.infra, HostInfra):
+        assert not any((roots.infra.records / w.id.hex).exists() for w, _ in ran)
+    else:
+        twin = roots.infra.get_workspaces()
+        assert isinstance(twin, WorkspaceTwinImpl)
+        assert twin.live == {stays.id}, "the twin holds the other tenant's alone"
+    assert await roots.holds_files(stays) and roots.at_rest(stays.id), "another tenant's stay"
+    assert await agent_sessions.get_session(roots.ctx, elsewhere)
 
 
 def lock_a_module_cache(location: str) -> None:

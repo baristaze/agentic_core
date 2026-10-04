@@ -22,6 +22,7 @@ CROSS_TENANT_CASES: frozenset[str] = frozenset(
         "read_children",
         "read_session",
         "read_sessions",
+        "read_tenant_sessions",
         "tree_holds_others",
         "write_session",
     }
@@ -141,18 +142,27 @@ class AgentSessionStorageContract:
         assert await storage.create_session(org, session, ())
         assert await storage.read_session(org, session.id) == session
 
-    async def test_purge_tenant_takes_the_tenants_sessions_a_batch_at_a_time(
+    async def test_purge_tenant_deletes_exactly_the_batch_read_and_no_other_tenants(
         self, storage: AgentSessionStorageInterface
     ) -> None:
         gone, kept = new_id(), new_id()
-        for _ in range(3):
-            assert await storage.create_session(gone, make_session(), ())
+        made = [make_session() for _ in range(3)]
+        for session in made:
+            assert await storage.create_session(gone, session, ())
         stays = make_session()
         assert await storage.create_session(kept, stays, ())
-        assert await storage.purge_tenant(gone, 2) == 2
-        assert await storage.purge_tenant(gone, 2) == 1
-        assert await storage.purge_tenant(gone, 2) == 0
-        assert await storage.read_sessions(gone, None, None, 10) == []
+        batch = await storage.read_tenant_sessions(gone, 2)
+        assert len(batch) == 2 and set(batch) <= {s.id for s in made}
+        assert await storage.read_tenant_sessions(kept, 10) == [stays.id]
+        assert await storage.purge_tenant(kept, batch) == 0, "another tenant's ids"
+        assert await storage.purge_tenant(gone, [stays.id]) == 0, "an id of another tenant's"
+        assert await storage.read_session(kept, stays.id) == stays
+        assert await storage.purge_tenant(gone, []) == 0
+        assert await storage.purge_tenant(gone, batch) == 2
+        assert await storage.purge_tenant(gone, batch) == 0, "gone already"
+        (left,) = [s for s in made if s.id not in batch]
+        assert await storage.read_sessions(gone, None, None, 10) == [left]
+        assert await storage.read_tenant_sessions(gone, 10) == [left.id]
         assert await storage.read_sessions(kept, None, None, 10) == [stays]
 
     async def test_a_deleted_session_is_on_no_page_and_still_read_by_id(
