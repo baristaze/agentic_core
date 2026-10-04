@@ -451,6 +451,39 @@ async def test_a_projection_behind_another_writer_reads_again_and_folds_on(
     assert (await sessions.get_session(ctx, created.id)).status_seq == 1
 
 
+async def test_a_deleted_tenants_purge_takes_up_at_most_a_batch_of_sessions_a_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each session the purge of a tenant takes up brings its workspace and
+    its records along, so one call reads the smaller session batch, not the
+    rows' batch; the tenant reads as settled only once a call finds none."""
+    storage = StorageMemoryImpl()
+    managers = build_managers(storage, InfraLocalImpl(tmp_path))
+    taken: list[UUID] = []
+
+    async def held(org_id: UUID, session_id: UUID, tree_id: UUID | None) -> None:
+        taken.append(session_id)
+
+    sessions = AgentSessionsManagerImpl(
+        storage.get_agent_session_storage(),
+        managers.steps,
+        managers.tenancy,
+        managers.outbox,
+        AgentSessionsOptions(purge_batch=1000, purge_sessions=2),
+        purged=held,
+    )
+    ctx = context(Role.MEMBER)
+    for _ in range(3):
+        await sessions.create_session(ctx, make_session())
+
+    async def expired(asked: TenantContext) -> bool:
+        return asked.org_id == ctx.org_id
+
+    monkeypatch.setattr(managers.tenancy, "tenant_expired", expired)
+    assert [await sessions.purge_tenant(ctx) for _ in range(3)] == [2, 1, 0]
+    assert len(taken) == len(set(taken)) == 3
+
+
 async def test_only_an_idle_session_is_archived_and_a_message_brings_it_back(
     managers: Managers,
 ) -> None:

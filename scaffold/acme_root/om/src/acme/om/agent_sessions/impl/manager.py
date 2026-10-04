@@ -54,7 +54,10 @@ class AgentSessionsOptions(Platform):
     # How long a session marked deleted keeps its shape and can be unmarked;
     # past it the sweep purges it (ADR 1010).
     retention: timedelta = timedelta(days=30)
-    purge_sessions: int = 100  # sessions one purge across tenants takes up at most
+    # Sessions one purge across tenants, or of one tenant, takes up at most:
+    # each brings its workspace and its records along, so far fewer than a
+    # batch of rows fit in a sweep's budget.
+    purge_sessions: int = 100
 
 
 class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
@@ -353,7 +356,31 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         ctx.require(Permission.WRITE)
         if not await self._tenancy.tenant_expired(ctx):
             return 0
-        return await self._storage.purge_tenant(ctx.org_id, self._options.purge_batch)
+        found = await self._storage.read_tenant_sessions(ctx.org_id, self._options.purge_sessions)
+        # What other namespaces hold of each session goes before its row, as
+        # in a session's own purge: its workspace and its transport's records
+        # have no purge of the tenant of their own. The tree goes with the
+        # tenant's trees, so none is named. A session whose holdings cannot
+        # go keeps its row, which the next pass reads again; the raise keeps
+        # the tenant from being marked purged while one is left. The count
+        # is of the sessions read, not of the rows deleted: a purge another
+        # worker had in flight may have taken them, and a count of nothing
+        # would mark the tenant while the rest of it remains.
+        gone: list[UUID] = []
+        for session_id in found:
+            try:
+                await self._purged(ctx.org_id, session_id, None)
+            except Exception:
+                log.exception("agent session %s keeps its row: its purge failed", session_id)
+            else:
+                gone.append(session_id)
+        await self._storage.purge_tenant(ctx.org_id, gone)
+        if len(gone) < len(found):
+            raise RuntimeError(
+                f"{len(found) - len(gone)} sessions of org {ctx.org_id} keep their rows: "
+                "what they hold could not be purged"
+            )
+        return len(found)
 
     async def _read(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
         """A session every read may answer: one marked deleted is hidden, as

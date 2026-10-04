@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
@@ -128,12 +129,18 @@ class AgentSessionStoragePostgresImpl(PgStorageBase, AgentSessionStorageInterfac
             await session.commit()
             return purged > 0
 
-    async def purge_tenant(self, org_id: UUID, limit: int) -> int:
-        # The funnel holds the tenant's purge lock, so a second purge waits
-        # for this one and then counts what is left (`hold_purge`).
-        batch = select(AgentSessions.id).where(AgentSessions.org_id == org_id).limit(limit)
+    async def read_tenant_sessions(self, org_id: UUID, limit: int) -> list[UUID]:
+        stmt = select(AgentSessions.id).where(AgentSessions.org_id == org_id).limit(limit)
+        async with self._session_for(stmt, org_id=org_id) as session:
+            return list((await session.execute(stmt)).scalars())
+
+    async def purge_tenant(self, org_id: UUID, session_ids: Sequence[UUID]) -> int:
+        if not session_ids:
+            return 0
+        # The funnel holds the tenant's purge lock, so two workers' deletes
+        # of one tenant take turns (`hold_purge`).
         stmt = delete(AgentSessions).where(
-            AgentSessions.org_id == org_id, AgentSessions.id.in_(batch)
+            AgentSessions.org_id == org_id, AgentSessions.id.in_(session_ids)
         )
         async with self._purge_session_for(stmt, org_id=org_id) as session:
             purged = deleted(await session.execute(stmt))

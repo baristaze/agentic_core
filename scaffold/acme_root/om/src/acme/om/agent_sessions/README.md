@@ -62,7 +62,8 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
 - **Purge.** Once a deleted session has waited out its retention, thirty
   days by default, the sweep removes it and its history for good. From
   the moment the purge begins, the session can no longer be restored. A
-  deleted org's sessions and history go when the org is purged.
+  deleted org's sessions and history go when the org is purged, each
+  session with its workspace.
 
 ## The rules
 

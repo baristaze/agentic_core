@@ -5,6 +5,7 @@ rows in one commit. Its delete, the purge, runs under the purge login, which
 no serving process holds (ADR 1010)."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
@@ -79,7 +80,15 @@ class AgentSessionStorageInterface(ABC):
         ...
 
     @abstractmethod
-    async def purge_tenant(self, org_id: UUID, limit: int) -> int:
-        """At most `limit` sessions of a deleted tenant past its retention,
-        under the purge login; returns how many went."""
+    async def read_tenant_sessions(self, org_id: UUID, limit: int) -> list[UUID]:
+        """The ids of at most `limit` sessions of the tenant, marked deleted
+        or not, in no order: one batch of a deleted tenant's purge."""
+        ...
+
+    @abstractmethod
+    async def purge_tenant(self, org_id: UUID, session_ids: Sequence[UUID]) -> int:
+        """Deletes the rows of exactly `session_ids` that the tenant holds,
+        under the purge login, so a session read since stays; an id of
+        another tenant's, or one gone, deletes nothing. Returns how many
+        went."""
         ...
