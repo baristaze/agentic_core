@@ -54,7 +54,10 @@ class AgentSessionsOptions(Platform):
     # How long a session marked deleted keeps its shape and can be unmarked;
     # past it the sweep purges it (ADR 1010).
     retention: timedelta = timedelta(days=30)
-    purge_sessions: int = 100  # sessions one purge across tenants takes up at most
+    # Sessions one purge across tenants, or of one tenant, takes up at most:
+    # each brings its workspace and its records along, so far fewer than a
+    # batch of rows fit in a sweep's budget.
+    purge_sessions: int = 100
 
 
 class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
@@ -353,7 +356,7 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         ctx.require(Permission.WRITE)
         if not await self._tenancy.tenant_expired(ctx):
             return 0
-        found = await self._storage.read_tenant_sessions(ctx.org_id, self._options.purge_batch)
+        found = await self._storage.read_tenant_sessions(ctx.org_id, self._options.purge_sessions)
         # What other namespaces hold of each session goes before its row, as
         # in a session's own purge: its workspace and its transport's records
         # have no purge of the tenant of their own. The tree goes with the
