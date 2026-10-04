@@ -126,12 +126,6 @@ class BudgetsManagerImpl(BudgetsManagerInterface):
             return 0
         return await self._storage.purge_tenant(ctx.org_id, self._options.purge_batch)
 
-    async def purge_ledger(self, ctx: TenantContext) -> int:
-        ctx.require(Permission.WRITE)
-        if not await self._tenancy.tenant_expired(ctx):
-            return 0
-        return await self._ledger.count_tenant(ctx.org_id, max(1, self._options.purge_batch - 1))
-
     async def _read(self, ctx: TenantContext, budget_id: UUID) -> Budget:
         budget = await self._storage.read_budget(ctx.org_id, budget_id)
         if budget is None:

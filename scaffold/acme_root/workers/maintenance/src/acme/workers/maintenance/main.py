@@ -98,10 +98,9 @@ def build_loop(container: WorkerContainer, lane: str | None = None) -> WorkerLoo
             # Each session's key versions, then its privacy record: the
             # content sealed under them is noise from the first batch.
             "privacy": managers.privacy.purge_tenant,
+            # What a call held and spent is not a purge of its tenant's: no
+            # serving login deletes it, so it never holds the tenant's mark.
             "budgets": managers.budgets.purge_tenant,
-            # Deletes nothing: what a call held and spent stays, so a
-            # tenant whose ledger remains is never marked purged.
-            "ledger": managers.budgets.purge_ledger,
         },
         # Once a pass, across every tenant: each namespace's rows past their
         # retention.
