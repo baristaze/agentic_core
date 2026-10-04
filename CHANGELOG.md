@@ -5,29 +5,37 @@ included, stay on its GitHub release. Releases are tagged
 `vMAJOR.MINOR.PATCH`; see `CONTRIBUTING.md` for what bumps which
 number.
 
-## 0.3.0 (2026-10-03)
+## 0.4.0 (2026-10-04)
 
-A tool's long job, and reads past a long line. Minor: rules are added,
-and no released rule is reversed.
+A deleted tenant's purge takes its sessions' workspaces, a recovered job
+call runs once, and the engine builds on the guideline at v0.50.0.
+Minor: the guideline's new rules come in, with one reversal.
 
-### Added
+### Fixed
 
-- A `job`-mode tool starts its work and answers a handle; the loop parks
-  on `job`, holding no runtime, and the job's completion, checked against
-  the session's history, writes the call's response before any further
-  model call. The job's deadline is never past the tree's; at it the job
-  is cancelled and answered as a timeout, and any end of the loop cancels
-  it too. A spending job passes the budget gate before it starts, at its
-  tool's hourly rate; its hold is released only when the tool refused
-  before starting, and a completion's cost is bounded. ADR 1013, and the
-  scaffold-tool skill scaffolds a job tool (#28).
-- `read_attachment` takes an offset into its range's one line or page and
-  answers the offset the next read starts at, so a one-line export or a
-  large page is read whole (#27).
+- A deleted tenant's purge takes each session's workspace files and
+  transport records through the root's purge hook, deletes only the rows
+  whose holdings went, and marks the tenant purged only after. A call
+  reads at most 100 sessions; one whose workspace cannot go keeps its
+  row, and the call raises, so the next pass retries it (#33).
+- A run that recovers a lost job call parks on the job it started: the
+  job starts once, under one hold, and the budget gate is not asked
+  again (#30).
+- The requeue's plan test seeds settled items and live leases, analyzed,
+  before it reads its plan, so the planner's choice no longer varies
+  (#32).
 
 ### Changed
 
-- A layer's copy runs its stack under a compose name no stack or volume
-  uses, and takes that stack down once its gates have run (#25).
-- The spec's running example and the scaffold's tests tell their story in
-  software nouns: a checkout service that drops an order (#26).
+- The engine builds on the guideline at v0.50.0, through v0.49.0: the
+  scaffold's nuke removes what Terraform does not own, production's
+  create protects `release`, an outbound breadcrumb keeps no URL path,
+  the portal's error reports keep no query, and the tracker's org and
+  project come from `environments.json`. The spec and the lenses cite
+  v0.50.0 (#34).
+- Reversed: the guideline's NET-26 no longer asks a statement deadline
+  of a migration's connection; the migration runner already sets
+  `lock_timeout` and no `statement_timeout` (#34).
+- The repository's `CLAUDE.md` lives under `.claude/`, so the plugin
+  validates with `--strict`, and CI pins the Claude Code that checks it
+  (#31).
