@@ -23,7 +23,10 @@ description (the list of files, or the range or commit) and hand the
 same description to every reviewer so the ten reports cover the same
 ground. A range or a commit is handed over as the ref, with its list of
 files, and the reviewer reads each file at the range's end or the
-commit, never from the working tree. `all` and a path or a glob,
+commit, never from the working tree. A range or a commit followed by
+a path or a glob is handed over the same way, its list holding only the
+files it changes under that path or glob
+(`git diff --name-only <range> -- <path>`). `all` and a path or a glob,
 which can be large, are handed over as the path or the glob (`.` for
 `all`), the commit `HEAD` is at, and the count of files the
 `git ls-files` call gave, never as a list: each reviewer lists them

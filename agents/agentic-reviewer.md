@@ -25,8 +25,11 @@ Procedure (the same as the `agentic-review-<group>` skills):
    range or a commit reads history, which may not be checked out: read
    each file at the range's end or the commit with
    `git show <ref>:<path>`, never from the working tree. Any other scope reads the working tree, untracked
-   files included. A path or a glob, or `.` for the whole tree, reads
-   the working tree whatever commit is named beside it, and is listed
+   files included. A range or a commit followed by a path or a glob
+   reads only the files it changes under that path or glob, listed with
+   `git diff --name-only <range> -- <path>`. Any other path or glob, or
+   `.` for the whole tree, reads the working tree whatever commit a
+   hand-over names as where `HEAD` stood, and is listed
    with `git ls-files --cached --others --exclude-standard -- <path>`;
    it exists when that call lists at least one file, never by `ls`.
    Read changed files in full, plus the interface a class implements,

@@ -50,7 +50,10 @@ that matches:
    `./<name>` for the path.
 
 A range or a commit followed by a path or a glob reads only the files
-it changes under that path or glob.
+it changes under that path or glob, listed with
+`git diff --name-only <range> -- <path>` (a commit's range is
+`<commit>^..<commit>`). A path or a glob that matches no file it
+changes is an error, as a path that does not exist is; say so and stop.
 
 The empty scope, `all`, and a path read the working tree. A list that
 is not a diff (`all`, a path or a glob, a repository with no commit)
