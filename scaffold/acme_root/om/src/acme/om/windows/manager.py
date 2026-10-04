@@ -10,7 +10,8 @@ compacts: the summarizer folds the oldest part into a `summary` step, and
 the steps themselves never change. A side model role reads a consistent
 suffix sized to its own fill. A tool result too large for a step is kept
 as an artifact the agent reads a page at a time, sealed under its session's
-key like the step it came from, and purged with its history."""
+key like the step it came from, and purged with its history. So is a
+child's report too large for a step of its parent's."""
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
@@ -83,6 +84,16 @@ class WindowsManagerInterface(ABC):
         result is within the size bound; above it, its whole text kept as an
         artifact of the session and the step holding the head, the tail, and
         the artifact's handle. Any other step is `ValidationFailed`."""
+        ...
+
+    @abstractmethod
+    async def bound_report(self, ctx: TenantContext, session_id: UUID, step: Step) -> Step:
+        """A child's report to its parent, an input an agent wrote into
+        `session_id`, as the history keeps it: as given when its text is
+        within the size bound a tool result has; above it, its whole text
+        kept as an artifact of the session and the step holding the head,
+        the tail, and the artifact's handle. Any other step is
+        `ValidationFailed`."""
         ...
 
     @abstractmethod

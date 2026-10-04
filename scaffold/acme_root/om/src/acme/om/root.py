@@ -416,20 +416,6 @@ def build_managers(
     kinds = AgentKindCatalog(kinds=agent_kinds)
     catalog = engine_tools(steps, attachment_reader or AttachmentReaderNullImpl()) + tool_catalog
     ToolRegistry(catalog, domain_classes)  # refuses two tools of one name at boot
-    agents = AgentsManagerImpl(
-        storage.get_agent_storage(),
-        agent_sessions,
-        steps,
-        attribution,
-        result_gate or ResultGateNullImpl(),
-        kinds,
-        tenancy,
-        outbox,
-        agents_options or AgentsOptions(),
-        budgets=budgets,
-        tool_classes={tool.spec.name: tool.spec.authorization_class for tool in catalog},
-        secret_tools=frozenset(tool.spec.name for tool in catalog if tool.spec.secrets),
-    )
     # What a model request reads: rendered from the history, compacted by
     # the summarizer through the model providers, behind the gate, paid for
     # by the spender attribution names.
@@ -451,6 +437,22 @@ def build_managers(
         artifact_seal or ArtifactSealKeysImpl(session_keys, storage.get_privacy_storage()),
         compaction_policy or CompactionPolicy(),
         WindowsOptions(),
+    )
+    # A child's report reaches its parent through windows, which bounds it.
+    agents = AgentsManagerImpl(
+        storage.get_agent_storage(),
+        agent_sessions,
+        steps,
+        attribution,
+        result_gate or ResultGateNullImpl(),
+        kinds,
+        tenancy,
+        outbox,
+        agents_options or AgentsOptions(),
+        budgets=budgets,
+        windows=windows,
+        tool_classes={tool.spec.name: tool.spec.authorization_class for tool in catalog},
+        secret_tools=frozenset(tool.spec.name for tool in catalog if tool.spec.secrets),
     )
     # Where the engine touches the world: the session's history for a
     # person's decisions, the events for the audit of each secret a call

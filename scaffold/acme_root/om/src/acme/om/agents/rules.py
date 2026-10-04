@@ -1,15 +1,18 @@
 """Pure rules of agent kinds and trees: what a turn means under a kind's
 done rule, whether a tree has room for one more child, the tree a root
-starts with, and the claim no gate is asked about. Values in, values out;
-no clock, no storage."""
+starts with, the claim no gate is asked about, and what a child's report
+tells its parent. Values in, values out; no clock, no storage."""
 
 from datetime import datetime
 from uuid import UUID
 
+from acme.om.agent_sessions.limits import DEADLINE_UNLOCK
+from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.agents.types.kind import AgentKind, DoneRule
+from acme.om.agents.types.report import Report
 from acme.om.agents.types.result import Claim, Result, Turn
 from acme.om.agents.types.tree import AgentTree
-from acme.om.steps.types.header import LoopOutcome
+from acme.om.steps.types.header import LoopOutcome, Park, ParkReason
 from acme.om.steps.types.step import Step
 
 OUTCOMES: dict[Claim, LoopOutcome] = {
@@ -73,3 +76,36 @@ def claim_refusal(result: Result) -> str | None:
     if not result.evidence:
         return f"a claim that the work {result.claim.value} cites its evidence"
     return None
+
+
+def notes_parent(park: Park) -> bool:
+    """Whether a child's park reaches its parent: one on a person, the time
+    a child needs one. The tree's deadline is the parent's too, and a wait
+    on a budget or a provider belongs to the tree, unlocked at its root, so
+    none of them disturbs the parent."""
+    return park.reason is ParkReason.PERSON and park.unlock != DEADLINE_UNLOCK
+
+
+def report_wakes(report: Report) -> bool:
+    """Whether a child's report wakes its parent: every one does but the
+    note of a cancel that came down from the parent. The parent stopped it
+    already, and a parent whose own loop a principal cancelled never starts
+    again on its children's word."""
+    return not report.cancelled_by_parent
+
+
+def report_text(child: AgentSession, report: Report) -> str:
+    """What a parent reads of its child's report: which child, how its loop
+    stands, and the last thing it said."""
+    who = f'Sub-agent {child.id} ("{child.title}", {child.kind} v{child.kind_version})'
+    if report.outcome is not None:
+        text = f"{who} ended {report.outcome.value}."
+    else:
+        assert report.park is not None
+        text = f"{who} waits for a person ({report.park.unlock})."
+    if report.accepted is not None:
+        checked = "verified" if report.accepted.verified else "unverified"
+        text += f" Its result was accepted, {checked}."
+    if not report.answer:
+        return f"{text} It said nothing."
+    return f"{text} Its last answer:\n\n{report.answer}"

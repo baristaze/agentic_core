@@ -26,7 +26,7 @@ from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStat
 from acme.om.agents import AgentsManagerInterface
 from acme.om.agents import loop_rules as rules
 from acme.om.agents.loop import LoopManagerInterface
-from acme.om.agents.rules import after_turn
+from acme.om.agents.rules import after_turn, notes_parent
 from acme.om.agents.sink import StreamSinkInterface
 from acme.om.agents.types.kind import AgentKind, AgentKindCatalog
 from acme.om.agents.types.result import Result, Turn
@@ -1102,6 +1102,10 @@ class LoopManagerImpl(LoopManagerInterface):
         if run.jobs:
             why = f"the loop ended {outcome.value}; the job was cancelled"
             await self._stop_jobs(run, list(run.jobs.values()), why)
+        if run.session.parent_id is not None:
+            # Before the loop is closed: a run lost in between leaves it open,
+            # and the run that ends it again repeats the report, written once.
+            await self._report(run, outcome=outcome)
         step = rules.ended_step(new_id(), self._clock(), run.session_id, run.loop_id, outcome)
         await self._steps.append_steps(run.ctx, run.session_id, run.epoch, [step])
         await self._sessions.project_status(run.ctx, run.session_id)
@@ -1111,7 +1115,19 @@ class LoopManagerImpl(LoopManagerInterface):
 
     async def _park(self, run: _Run, park: Park) -> LoopRun:
         await self._sessions.park(run.ctx, run.session_id, run.epoch, run.loop_id, park)
+        if run.session.parent_id is not None and notes_parent(park):
+            await self._report(run, park=park)
         return self._result(run, RunEnd.PARKED, park=park)
+
+    async def _report(
+        self, run: _Run, *, outcome: LoopOutcome | None = None, park: Park | None = None
+    ) -> None:
+        """A child tells its parent how its loop stands, read from the loop's
+        own steps: from its first, never the session's whole history."""
+        steps = await self._history(run.ctx, run.session_id, since=run.start_seq - 1)
+        loop = rules.OpenLoop(run.loop_id, run.start_seq, None)
+        report = rules.report_of(steps, loop, outcome=outcome, park=park)
+        await self._agents.report_to_parent(run.ctx, run.session_id, report)
 
     def _result(
         self,
@@ -1240,13 +1256,14 @@ class LoopManagerImpl(LoopManagerInterface):
     # The history.
 
     async def _history(
-        self, ctx: TenantContext, session_id: UUID, read: Sequence[Step] = ()
+        self, ctx: TenantContext, session_id: UUID, read: Sequence[Step] = (), *, since: int = 0
     ) -> list[Step]:
         """The session's whole history, in `seq` order: `read`, what was read
-        of it already, and every step after it."""
+        of it already, and every step after it; with nothing read, every
+        step after `since`."""
         steps = list(read)
         while True:
-            after = steps[-1].seq if steps else 0
+            after = steps[-1].seq if steps else since
             page = await self._steps.get_steps(ctx, session_id, after, self._options.page)
             steps.extend(page.items)
             if not page.has_more or not page.items:

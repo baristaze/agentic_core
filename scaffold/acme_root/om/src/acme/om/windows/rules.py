@@ -47,6 +47,7 @@ from acme.om.steps.types.header import (
     ArtifactRef,
     ControlCommand,
     ControlHeader,
+    InputHeader,
     ModelRequestHeader,
     ModelResponseHeader,
     SummaryHeader,
@@ -557,7 +558,7 @@ class _Walk:
             return [*said, *files]
         quoted = data_block(
             _origin(step),
-            step.as_text(),
+            _input_text(step),
             seq=step.seq,
             actor=step.actor.value,
             via=step.origin.value,
@@ -586,13 +587,28 @@ def _stub(answer: Step, artifact: ArtifactRef | None) -> str:
     return f"[A tool result of {size} characters, elided once read. It is kept whole as {kept}.]"
 
 
-def _artifact_notice(artifact: ArtifactRef, head: ResultPart, tail: ResultPart) -> str:
+def _artifact_notice(
+    artifact: ArtifactRef, head: ResultPart, tail: ResultPart, what: str = "result"
+) -> str:
     shown = sum(len(part.text) for part in (head, tail) if isinstance(part, TextBlock))
     return (
         f"[{artifact.characters - shown} characters between the head above and the tail "
-        f"below are not shown. The whole result is artifact {artifact.id}, "
+        f"below are not shown. The whole {what} is artifact {artifact.id}, "
         f"{artifact.characters} characters; a read tool pages through it.]"
     )
+
+
+def _input_text(step: Step) -> str:
+    """An input's text as the model reads it: a child's report above the
+    size bound is its head, the notice of what is not shown and where it is
+    kept, and its tail."""
+    header = step.header
+    if not isinstance(header, InputHeader) or header.artifact is None:
+        return step.as_text()
+    texts = [block for block in step.content.blocks if isinstance(block, TextBlock)]
+    head, tail = texts[0], texts[-1]
+    notice = _artifact_notice(header.artifact, head, tail, "report")
+    return "\n".join((head.text, notice, tail.text))
 
 
 def _conversation(
@@ -1054,12 +1070,21 @@ def preview(
     else it held. None when the result is within the bound."""
     texts = [part.text for part in result.parts if isinstance(part, TextBlock)]
     whole = "\n".join(texts)
+    kept = clip(whole, policy)
+    if kept is None:
+        return None
+    others = tuple(part for part in result.parts if not isinstance(part, TextBlock))
+    return whole, (*kept, *others)
+
+
+def clip(whole: str, policy: CompactionPolicy) -> tuple[TextBlock, TextBlock] | None:
+    """The head and the tail a step keeps of a text above the size bound, a
+    tool's result or a child's report, or None when it is within it."""
     if len(whole) <= policy.result_bound:
         return None
     head = TextBlock(text=whole[: policy.preview_head])
     tail = TextBlock(text=whole[len(whole) - policy.preview_tail :])
-    others = tuple(part for part in result.parts if not isinstance(part, TextBlock))
-    return whole, (head, tail, *others)
+    return head, tail
 
 
 def artifact_page(text: str, offset: int, limit: int, policy: CompactionPolicy) -> tuple[str, bool]:

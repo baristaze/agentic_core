@@ -8,17 +8,21 @@ history. It holds no more than its parent: its tools are cut to its
 parent's, its calls run under its parent's principal, it pays as its
 parent pays, it carries its parent's mark, and it draws on its tree's
 budget and deadline, under a share of its own that never adds to the
-tree's. Cancelling a parent cancels its children."""
+tree's. Cancelling a parent cancels its children. A child's report
+reaches its parent's inbox, as data, when its loop ends or when it needs
+a person, so its parent never polls."""
 
 from abc import ABC, abstractmethod
 from datetime import datetime
 from uuid import UUID
 
 from acme.om.agent_sessions.types.agent_session import AgentSession
+from acme.om.agents.types.report import Report
 from acme.om.agents.types.request import Handoff, Spawn, Start
 from acme.om.agents.types.result import Result, Verdict
 from acme.om.agents.types.tree import AgentTree
 from acme.om.context import TenantContext
+from acme.om.steps.types.step import Step
 
 
 class AgentsManagerInterface(ABC):
@@ -78,6 +82,22 @@ class AgentsManagerInterface(ABC):
         `session_id` that is not idle, children and theirs, a session that
         waits to begin its next loop among them. Answers the sessions it
         reached."""
+        ...
+
+    @abstractmethod
+    async def report_to_parent(
+        self, ctx: TenantContext, session_id: UUID, report: Report
+    ) -> Step | None:
+        """A child's report, written into its parent's inbox as an agent's
+        message: data that names the child and says how its loop stands and
+        what it said last, carrying the child's mark, and above the size
+        bound a tool result has, its head, its tail, and the handle of the
+        artifact that keeps it whole. It wakes the parent, except the note
+        of a cancel that came down from the parent (`rules.report_wakes`).
+        The report of a loop's end has an id derived from the loop, so a
+        run that ends the loop again writes it once. None, with nothing
+        written, for a session with no parent, a parent that is gone, and
+        a park the parent is not told of (`rules.notes_parent`)."""
         ...
 
     @abstractmethod
