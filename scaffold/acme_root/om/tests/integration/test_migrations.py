@@ -1,5 +1,6 @@
 """Every role's migrated schema agrees with the ORM metadata, the latest
-revision of every role downgrades and upgrades again, the logins are safe to
+revision of every role downgrades and upgrades again, a session row the
+previous release writes takes its private-data default, the logins are safe to
 make twice, a migration behind a held lock gives up within its bound, and a
 data migration passes the fence it runs under and fails when it misses rows."""
 
@@ -45,6 +46,27 @@ async def test_latest_revision_round_trips(
     await downgrade(role, migrated[role], "-1")
     await upgrade(role, migrated[role])
     assert await check(role, migrated[role]) == []
+
+
+async def test_a_session_row_written_without_its_private_data_mark_holds_private_data(
+    migrated: dict[DatabaseRole, str],
+) -> None:
+    """The previous release writes no `holds_private`, during a roll and
+    after a rollback: the column keeps its default, so such a row is taken
+    to hold private data rather than refused."""
+    engine = create_async_engine(migrated[DatabaseRole.CORE])
+    try:
+        async with engine.connect() as connection:
+            default = await connection.scalar(
+                text(
+                    "SELECT column_default FROM information_schema.columns"
+                    " WHERE table_schema = 'core' AND table_name = 'agent_sessions'"
+                    " AND column_name = 'holds_private'"
+                )
+            )
+    finally:
+        await engine.dispose()
+    assert default == "true"
 
 
 async def test_ensure_logins_runs_again_on_a_migrated_database(
