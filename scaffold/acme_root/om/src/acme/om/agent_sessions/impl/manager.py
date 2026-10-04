@@ -7,6 +7,7 @@ from acme.om.agent_sessions.manager import AgentSessionsManagerInterface, Sessio
 from acme.om.agent_sessions.rules import (
     announces,
     asks_for_run,
+    held_private,
     lineage,
     parked_step,
     projected,
@@ -391,15 +392,18 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         return session
 
     async def _at_head(self, ctx: TenantContext, session: AgentSession) -> AgentSession:
-        """`session` with its speaker and mark folded over the steps after
-        its cache, page by page; nothing else changes."""
-        speaker, marked = session.speaker, session.untrusted
+        """`session` with its speaker, its mark, and whether it holds private
+        data folded over the steps after its cache, page by page; nothing
+        else changes."""
+        speaker, marked, held = session.speaker, session.untrusted, session.holds_private
         after = session.status_seq
         while True:
             page = await self._steps.get_steps(ctx, session.id, after, self._options.project_batch)
             speaker, marked = fold(speaker, marked, page.items)
+            held = held_private(held, page.items)
             if not page.has_more or not page.items:
-                return session.model_copy(update={"speaker": speaker, "untrusted": marked})
+                update = {"speaker": speaker, "untrusted": marked, "holds_private": held}
+                return session.model_copy(update=update)
             after = page.items[-1].seq
 
     async def _relay_all(self, ctx: TenantContext, rows: tuple[OutboxRow, ...]) -> None:

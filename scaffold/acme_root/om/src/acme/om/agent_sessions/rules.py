@@ -32,16 +32,17 @@ delivers every pending input, so the latest one stands for them all.
 The cache keeps attribution's two answers beside the status, folded over
 the same steps (`attribution.rules.fold`): the speaker, which each model
 request records, and the untrusted mark, which the first data sets for
-good."""
+good. Whether it holds private data is folded the same way: an input that
+carries it from another session, a child's report, sets it for good."""
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
-from acme.om.attribution.rules import fold
+from acme.om.attribution.rules import fold, principal_authored
 from acme.om.steps.types.header import (
     ControlCommand,
     ControlHeader,
@@ -97,11 +98,13 @@ def after_step(state: Projection, step: Step) -> Projection:
     state = delivered(state, step)
     header = step.header
     if isinstance(header, InputHeader):
-        archived = state.archived and step.type is not StepType.MESSAGE
+        # Only a principal's message unarchives a session or answers its
+        # question: an agent's, such as a child's report, is data.
+        archived = state.archived and not principal_authored(step)
         if not header.waking or archived:
             return replace(state, archived=archived)
         idle = state.status is SessionStatus.IDLE
-        answered = state.park == QUESTION and step.type is StepType.MESSAGE
+        answered = state.park == QUESTION and principal_authored(step)
         status = SessionStatus.PENDING if idle or answered else state.status
         return replace(
             state,
@@ -170,6 +173,7 @@ def projected(
         state = after_step(state, step)
     speaker, untrusted = fold(session.speaker, session.untrusted, unread)
     archived_at = session.archived_at if state.archived else None
+    holds_private = held_private(session.holds_private, unread)
     return AgentSession.model_validate(
         {
             **session.model_dump(),
@@ -180,11 +184,21 @@ def projected(
             "archived_at": archived_at,
             "speaker": speaker,
             "untrusted": untrusted,
+            "holds_private": holds_private,
             "status_seq": unread[-1].seq,
             "version": session.version + 1,
             "updated_at": now,
             "updated_by": by,
         }
+    )
+
+
+def held_private(held: bool, steps: Iterable[Step]) -> bool:
+    """Whether a session holds private data once `steps` are read: it held
+    it, or an input among them carries it from the session that wrote it,
+    as a child's report does. Once set, it stays."""
+    return held or any(
+        isinstance(step.header, InputHeader) and step.header.holds_private for step in steps
     )
 
 

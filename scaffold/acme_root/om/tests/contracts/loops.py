@@ -232,6 +232,33 @@ HELPER = AgentKind(
 )
 """A kind that names the engine's own tools."""
 
+LEAD = AgentKind(
+    name="lead",
+    version=1,
+    tools=("lookup", "ask_person", "submit"),
+    done_rule=DoneRule.ANSWER,
+    authority=AuthorityMode.DELEGATED,
+    tree=TreeLimits(height=2, count=4),
+    prompts=("You split the work among sub-agents and answer from their reports.",),
+    policy=ALLOWED,
+)
+"""A root that spawns `worker`s: it holds every tool a worker may hold."""
+
+WORKER = AgentKind(
+    name="worker",
+    version=1,
+    tools=("lookup", "ask_person", "submit"),
+    done_rule=DoneRule.RESULT_TOOL,
+    result_tool="submit",
+    max_nudges=3,
+    authority=AuthorityMode.DELEGATED,
+    tree=TreeLimits(height=2, count=4),
+    share=Amount(tokens=1_000_000),
+    prompts=("You do the part you are given, and submit it with its evidence.",),
+    policy=ALLOWED,
+)
+"""A sub-agent kind: it asks its person, and submits a result."""
+
 
 class Clock:
     def __init__(self) -> None:

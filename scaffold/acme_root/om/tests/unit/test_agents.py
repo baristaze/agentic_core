@@ -549,8 +549,8 @@ async def test_a_child_of_a_session_holding_private_data_holds_it_too(
     alone = await start(managers, ctx, "researcher")
     assert parent.holds_private and child.holds_private and not alone.holds_private
     registry = ToolRegistry(stand_ins(*RESEARCHER.tools))
-    assert holds_private(child, RESEARCHER, registry)
-    assert not holds_private(alone, RESEARCHER, registry)
+    assert holds_private(child, RESEARCHER, registry, ())
+    assert not holds_private(alone, RESEARCHER, registry, ())
     sent = make_session(parent=parent).model_copy(update={"holds_private": False})
     assert lineage(parent, sent)["holds_private"]
 
@@ -642,6 +642,15 @@ async def test_a_purged_session_leaves_no_authority_or_tree_behind(tmp_path: Pat
     with pytest.raises(NotFound):
         await authority(ctx, root.id)
     assert await trees.read_tree(ctx.org_id, root.id) is not None, "its child is left"
+    # Its objective woke it: its loop reads it and ends, and the idle child
+    # may be deleted.
+    (objective,) = (await managers.steps.get_steps(ctx, child.id, 0, 1)).items
+    request = make_request(child.id, objective.id, (objective.id,))
+    response = make_response(child.id, objective.id, request.id)
+    epoch = await managers.steps.begin_run(ctx, child.id)
+    done = [request, response, ended(child.id, objective.id)]
+    await managers.steps.append_steps(ctx, child.id, epoch, done)
+    assert (await sessions.project_status(ctx, child.id)).status is SessionStatus.IDLE
     await sessions.delete_session(ctx, child.id)
     await sessions.purge_across_tenants()
     with pytest.raises(NotFound):

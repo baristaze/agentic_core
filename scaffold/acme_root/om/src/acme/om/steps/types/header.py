@@ -107,6 +107,16 @@ class Park(Platform):
         return self
 
 
+class ArtifactRef(Platform):
+    """The handle of a text kept whole as an artifact, outside the step: a
+    tool result, or a child's report to its parent. It holds the artifact's
+    id and how many characters it holds. The step keeps the text's head and
+    tail; a read tool pages through the rest by the id."""
+
+    id: UUID
+    characters: int = Field(gt=0)
+
+
 class InputHeader(Platform):
     """A `message` or an `event`. `waking` is set when the input arrives, by
     the adopter's routing: a waking input starts a loop on an idle session.
@@ -120,13 +130,19 @@ class InputHeader(Platform):
     under. `agent` names the agent that wrote it, when its actor is an
     agent. `untrusted` carries that agent's session's mark to the session
     it reaches, and is set on any input that carries a file, which is data
-    whoever attached it (`steps.types.step.Step`)."""
+    whoever attached it (`steps.types.step.Step`). `holds_private` carries
+    whether that agent's session holds private data, so a child's report
+    makes its parent hold what the child held. `artifact` is the handle of a
+    child's report above the size bound, whose head and tail are the step's
+    two text blocks."""
 
     kind: Literal["input"] = "input"
     waking: bool | None = None
     principal: Principal
     agent: AgentRef | None = None
     untrusted: bool = False
+    holds_private: bool = False
+    artifact: ArtifactRef | None = None
 
 
 class DecidedCall(Platform):
@@ -225,15 +241,6 @@ class ToolRequestHeader(Platform):
     authority: AuthorityMode
     agent: AgentRef
     authorization_class: Stored = Field(min_length=1, max_length=MAX_NAME)
-
-
-class ArtifactRef(Platform):
-    """The handle of a tool result kept whole as an artifact, outside the
-    step: its id, and how many characters it holds. The step keeps the
-    result's head and tail; a read tool pages through the rest by the id."""
-
-    id: UUID
-    characters: int = Field(gt=0)
 
 
 class AcceptedResult(Platform):

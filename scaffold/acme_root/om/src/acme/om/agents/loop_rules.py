@@ -23,8 +23,11 @@ from acme.integrations.model_providers.calls import (
     ToolUseDelta,
 )
 from acme.integrations.model_providers.calls import StreamPart as ProviderPart
+from acme.om.agent_sessions.rules import held_private
 from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.agents.types.kind import AgentKind
+from acme.om.agents.types.report import Report
+from acme.om.attribution.rules import principal_authored
 from acme.om.attribution.types.principal import Principal
 from acme.om.steps.rules import completes
 from acme.om.steps.types.content import Children, Content, TextBlock, ToolUseBlock
@@ -269,6 +272,50 @@ def accepted_outcome(steps: Sequence[Step], response: Step) -> LoopOutcome | Non
     return None
 
 
+def report_of(
+    steps: Sequence[Step],
+    loop: OpenLoop,
+    *,
+    outcome: LoopOutcome | None = None,
+    park: Park | None = None,
+) -> Report:
+    """What a child tells its parent of `loop` as `steps` hold it, from its
+    first step: the outcome it ended with, or the park it waits on; the
+    result its gate accepted with that outcome; the text of its latest
+    complete response that said something; and whether the cancel that
+    ended it came down from its parent."""
+    ex = exchanges(steps)
+    responses = sorted(
+        (step for step in ex.responses.values() if step.loop_id == loop.loop_id),
+        key=lambda step: step.seq,
+        reverse=True,
+    )
+    answer = next((text for step in responses if (text := step.as_text().strip())), None)
+    accepted = None
+    for step in steps:
+        header = step.header
+        if (
+            outcome is not None
+            and step.loop_id == loop.loop_id
+            and isinstance(header, ToolResponseHeader)
+            and header.accepted is not None
+            and header.accepted.outcome is outcome
+        ):
+            accepted = header.accepted
+    cancel = asked(steps, loop, ControlCommand.CANCEL)
+    by_parent = (
+        outcome is LoopOutcome.CANCELLED and cancel is not None and cancel.origin is Origin.PARENT
+    )
+    return Report(
+        loop_id=loop.loop_id,
+        outcome=outcome,
+        park=park,
+        accepted=accepted,
+        answer=answer,
+        cancelled_by_parent=by_parent,
+    )
+
+
 def judged(steps: Sequence[Step], response: Step) -> bool:
     """Whether a turn that called no tool was acted on: a step a run wrote
     in its loop follows it, such as a nudge."""
@@ -348,7 +395,7 @@ def question_waits(steps: Sequence[Step], response: Step) -> bool:
     since = next((step.seq for step in steps if step.id == response.responds_to), response.seq)
     return not any(
         step.seq > since
-        and step.type is StepType.MESSAGE
+        and principal_authored(step)
         and isinstance(step.header, InputHeader)
         and step.header.waking
         for step in steps
@@ -414,13 +461,16 @@ def repeated_failure(steps: Sequence[Step], loop_id: UUID, every: int) -> str | 
     return REPEATED.format(tool=last[0], count=count)
 
 
-def holds_private(session: AgentSession, kind: AgentKind, registry: ToolRegistry) -> bool:
+def holds_private(
+    session: AgentSession, kind: AgentKind, registry: ToolRegistry, history: Sequence[Step]
+) -> bool:
     """Whether a session holds private data or credentials, for the rule of
     two: its kind says it holds private data, a tool it may call is given a
-    secret, or it took the mark from a session it came from that holds
-    either."""
+    secret, it took the mark from a session it came from that holds either,
+    or its history holds a child's report that carries it, one that landed
+    after the run read its session included."""
     return (
-        session.holds_private
+        held_private(session.holds_private, history)
         or kind.private_data
         or any(tool.spec.secrets for tool in registry.tools())
     )

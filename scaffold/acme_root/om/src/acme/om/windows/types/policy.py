@@ -57,7 +57,8 @@ class CompactionPolicy(Platform):
     the model has read and answered it before the latest summary, and is
     clipped to it where the summarizer reads it."""
     result_bound: int = Field(default=24_000, gt=0)
-    """A tool result longer than this is kept as an artifact."""
+    """A tool result, or a child's report to its parent, longer than this
+    is kept as an artifact."""
     preview_head: int = Field(default=2_000, gt=0)
     preview_tail: int = Field(default=2_000, gt=0)
     page_max: int = Field(default=24_000, gt=0)
