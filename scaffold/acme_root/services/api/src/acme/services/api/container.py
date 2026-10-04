@@ -22,6 +22,7 @@ from acme.om.root import Managers, TenancyOperatorOptions, TenancyOptions, build
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.storage.impl.postgres import StoragePostgresImpl
 from acme.om.storage.root import StorageInterface
+from acme.om.tools.tool import ToolInterface
 from acme.services.api.gateway.ratelimit import RateLimit, RateLimitOptions, RefusedAddresses
 from acme.services.api.services import ServicesInterface
 from acme.services.api.services.impl.root import build_services
@@ -165,6 +166,8 @@ class AppContainer:
         integrations: IntegrationsInterface | None = None,
         *,
         agent_kinds: tuple[AgentKind, ...] = (),
+        tool_catalog: tuple[ToolInterface, ...] = (),
+        domain_classes: tuple[str, ...] = (),
     ) -> AppContainer:
         settings = settings or ApiSettings.model_validate(
             {
@@ -175,7 +178,15 @@ class AppContainer:
         )
         # No identity provider unless the test hands one in.
         integrations = integrations or absent_integrations()
-        return cls.over(settings, storage, infra, integrations, agent_kinds=agent_kinds)
+        return cls.over(
+            settings,
+            storage,
+            infra,
+            integrations,
+            agent_kinds=agent_kinds,
+            tool_catalog=tool_catalog,
+            domain_classes=domain_classes,
+        )
 
     @classmethod
     def over(
@@ -186,10 +197,15 @@ class AppContainer:
         integrations: IntegrationsInterface,
         *,
         agent_kinds: tuple[AgentKind, ...] = (),
+        tool_catalog: tuple[ToolInterface, ...] = (),
+        domain_classes: tuple[str, ...] = (),
     ) -> AppContainer:
         """Managers, then services, over whichever roots the caller chose.
-        `agent_kinds` are the product's: a session starts on one of them, and
-        the session runner runs its loop with the same kinds."""
+        `agent_kinds`, `tool_catalog`, and `domain_classes` are the
+        product's, the same the session runner runs its loop with: a session
+        starts on one of the kinds, and a start or a message is checked
+        against the class of every tool its registry offers, the product's
+        included. A registry name the catalog cannot class is refused."""
         managers = build_managers(
             storage,
             infra,
@@ -198,6 +214,8 @@ class AppContainer:
             integrations,
             environment=settings.environment,
             agent_kinds=agent_kinds,
+            tool_catalog=tool_catalog,
+            domain_classes=domain_classes,
         )
         services = build_services(
             managers,

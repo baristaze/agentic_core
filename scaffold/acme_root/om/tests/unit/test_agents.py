@@ -12,6 +12,7 @@ from contracts.agent_session_storage import make_session
 from contracts.doubles import context, model_request
 from contracts.factories import make_org
 from contracts.step_storage import make_message, make_parked, make_request, make_response
+from contracts.tools import stand_ins
 from pydantic import ValidationError
 
 from acme.infra.impl.local import InfraLocalImpl
@@ -82,6 +83,7 @@ REPORTER = HELPER.model_copy(
     update={"name": "reporter", "tools": ("read_log", "report"), "result_tool": "report"}
 )
 KINDS = (OLDER, DELIVERY, HELPER, ASSISTANT, REPORTER)
+TOOLS = stand_ins(*(tool for kind in KINDS for tool in kind.tools))
 
 
 def person_of(ctx: TenantContext) -> Principal:
@@ -179,7 +181,9 @@ class Refusing(ResultGateInterface):
 
 @pytest.fixture
 def managers(tmp_path: Path) -> Managers:
-    return build_managers(StorageMemoryImpl(), InfraLocalImpl(tmp_path), agent_kinds=KINDS)
+    return build_managers(
+        StorageMemoryImpl(), InfraLocalImpl(tmp_path), agent_kinds=KINDS, tool_catalog=TOOLS
+    )
 
 
 async def start(managers: Managers, ctx: TenantContext, kind: str = "delivery") -> AgentSession:
@@ -456,11 +460,42 @@ async def test_a_result_passes_the_gate_and_the_null_gate_marks_it_unverified(
     failed = Result(claim=Claim.FAILED, evidence=(new_id(),))
     assert (await managers.agents.judge_result(ctx, sid, failed)).outcome is LoopOutcome.FAILED
     gated = build_managers(
-        StorageMemoryImpl(), InfraLocalImpl(tmp_path), agent_kinds=KINDS, result_gate=Refusing()
+        StorageMemoryImpl(),
+        InfraLocalImpl(tmp_path),
+        agent_kinds=KINDS,
+        tool_catalog=TOOLS,
+        result_gate=Refusing(),
     )
     gated_sid = (await start(gated, ctx)).id
     verdict = await gated.agents.judge_result(ctx, gated_sid, cited)
     assert (verdict.accepted, verdict.reason) == (False, "the cited run did not pass")
+
+
+async def test_a_tool_the_catalog_cannot_class_starts_nothing(tmp_path: Path) -> None:
+    """A kind that names a tool the catalog lacks offers a call no one can
+    check: its start is refused, and so is a message to a session that
+    names one, never let through as a tool with no class."""
+    unlisted = AgentKind(
+        name="unlisted",
+        version=1,
+        tools=("read_log", "grant_admin"),
+        done_rule=DoneRule.ANSWER,
+        authority=AuthorityMode.DELEGATED,
+        tree=TreeLimits(height=1, count=0),
+    )
+    managers = build_managers(
+        StorageMemoryImpl(),
+        InfraLocalImpl(tmp_path),
+        agent_kinds=(unlisted,),
+        tool_catalog=stand_ins("read_log"),
+    )
+    owner = context(Role.OWNER)
+    with pytest.raises(NotAuthorized, match="grant_admin"):
+        await start(managers, owner, "unlisted")
+    stored = make_session().model_copy(update={"tools": ("read_log", "grant_admin")})
+    await managers.agent_sessions.create_session(owner, stored)
+    with pytest.raises(NotAuthorized, match="grant_admin"):
+        await managers.agents.require_instructor(owner, stored.id)
 
 
 async def test_a_viewer_reads_a_tree_and_spawns_nothing(managers: Managers) -> None:
@@ -485,6 +520,7 @@ async def test_a_purged_session_leaves_no_authority_or_tree_behind(tmp_path: Pat
         storage,
         InfraLocalImpl(tmp_path),
         agent_kinds=KINDS,
+        tool_catalog=TOOLS,
         agent_sessions_options=AgentSessionsOptions(retention=timedelta(0)),
     )
     ctx = context(Role.MEMBER)

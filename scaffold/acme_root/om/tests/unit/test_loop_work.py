@@ -10,6 +10,7 @@ import pytest
 from contracts.agent_session_storage import make_session
 from contracts.doubles import context
 from contracts.step_storage import make_request, make_response
+from contracts.tools import stand_ins
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.om.agent_sessions.rules import QUESTION, asks_for_run, parked_step
@@ -42,6 +43,11 @@ from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
 from acme.om.work.types.work_item import WorkItem, WorkKind
 
+# What `make_session` names, so the agents manager classes every tool it
+# offers.
+TOOLS = stand_ins("read_log", "run_tests")
+
+
 CLI = AppContext(type=AppType.CLI, version="cli@test")
 
 
@@ -51,7 +57,9 @@ class Engine:
 
     def __init__(self, tmp_path: Path) -> None:
         self.storage = StorageMemoryImpl()
-        self.managers: Managers = build_managers(self.storage, InfraLocalImpl(tmp_path))
+        self.managers: Managers = build_managers(
+            self.storage, InfraLocalImpl(tmp_path), tool_catalog=TOOLS
+        )
 
     def runs(self, session_id: UUID) -> list[WorkItem]:
         work = self.storage.get_work_storage()

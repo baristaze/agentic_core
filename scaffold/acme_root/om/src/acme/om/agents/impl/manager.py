@@ -214,10 +214,14 @@ class AgentsManagerImpl(AgentsManagerInterface):
         return await self._storage.purge_tenant(ctx.org_id, self._options.purge_batch)
 
     def _may_instruct(self, ctx: TenantContext, tools: Iterable[str]) -> None:
-        """A registry is the tools the catalog holds of those named, and the
-        classes they offer are what its sender must be able to make."""
-        classes = [self._tool_classes[name] for name in tools if name in self._tool_classes]
-        refusal = instruct_refusal(ctx, classes)
+        """The classes a registry offers are what its sender must be able to
+        make. A name the catalog cannot class offers a call no one can
+        check, so it is refused, never skipped."""
+        names = tuple(tools)
+        unknown = sorted(name for name in names if name not in self._tool_classes)
+        if unknown:
+            raise NotAuthorized(f"no tool of the catalog classes {', '.join(unknown)}")
+        refusal = instruct_refusal(ctx, [self._tool_classes[name] for name in names])
         if refusal is not None:
             raise NotAuthorized(refusal)
 

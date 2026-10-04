@@ -21,6 +21,7 @@ from contracts.step_storage import (
     make_message,
     make_parked,
 )
+from contracts.tools import stand_ins
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.infra.keys.memory import KeyServiceMemoryImpl
@@ -39,6 +40,11 @@ from acme.om.steps.storage.impl.memory import StepStorageMemoryImpl
 from acme.om.steps.types.content import Children, Content, ContentState
 from acme.om.steps.types.step import Step
 from acme.om.storage.impl.memory import StorageMemoryImpl
+
+# What `make_session` names, so the agents manager classes every tool it
+# offers.
+TOOLS = stand_ins("read_log", "run_tests")
+
 
 SAID = (
     "the weekly report is missing a total",
@@ -178,7 +184,7 @@ def infra(tmp_path: Path) -> InfraLocalImpl:
 
 @pytest.fixture
 def managers(infra: InfraLocalImpl) -> Managers:
-    return build_managers(StorageMemoryImpl(), infra)
+    return build_managers(StorageMemoryImpl(), infra, tool_catalog=TOOLS)
 
 
 async def a_session(managers: Managers, ctx: TenantContext) -> UUID:

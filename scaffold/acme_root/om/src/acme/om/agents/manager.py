@@ -36,8 +36,9 @@ class AgentsManagerInterface(ABC):
         """The history's check of an instruction, a principal's message or a
         parent's to its child: `NotAuthorized` when `ctx` lacks a permission
         a call the session's registry offers needs
-        (`tools.rules.instruct_refusal`). A session that is not there offers
-        nothing to check."""
+        (`tools.rules.instruct_refusal`), or when the registry names a tool
+        the catalog cannot class. A session that is not there offers nothing
+        to check."""
         ...
 
     @abstractmethod

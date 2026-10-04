@@ -18,10 +18,12 @@ from contracts.step_storage import (
     make_tool_request,
     make_tool_response,
 )
+from contracts.tools import Command
 
 from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.context import Role
+from acme.om.tools.types.tool import ToolClass
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
 from acme.om.work.types.work_item import WorkKind
 from acme.services.api.container import AppContainer
@@ -33,12 +35,18 @@ ASSISTANT = AgentKind(
     authority=AuthorityMode.DELEGATED,
     tree=TreeLimits(height=1, count=0),
 )
+# A kind whose registry offers a product tool only an owner or an admin may
+# call: it changes the tenant's configuration.
+CONFIGURER = ASSISTANT.model_copy(update={"name": "configurer", "tools": ("set_role",)})
+PRODUCT_TOOLS = (Command("set_role", authorization_class=ToolClass.CONFIGURATION),)
 
 
 @pytest.fixture
 def container(tmp_path: Path) -> AppContainer:
-    """The test container with one kind the product runs."""
-    return build_container(tmp_path, agent_kinds=(ASSISTANT,))
+    """The test container with the kinds the product runs and its tools."""
+    return build_container(
+        tmp_path, agent_kinds=(ASSISTANT, CONFIGURER), tool_catalog=PRODUCT_TOOLS
+    )
 
 
 def created(headers: dict[str, str], key: str | None = None) -> dict[str, str]:
@@ -217,6 +225,36 @@ async def test_a_viewer_reads_a_session_and_sends_it_nothing(
     assert (said.status_code, started.status_code) == (403, 403)
     steps = await client.get(f"{path}/steps", headers=owner)
     assert steps.json()["items"] == []
+
+
+async def test_a_member_cannot_steer_a_session_into_an_admins_tool(
+    client: httpx.AsyncClient, owner: dict[str, str], container: AppContainer
+) -> None:
+    """A session whose kind offers a product tool of class `configuration`
+    is started and spoken to only by a person who could make that call: a
+    member, who lacks `manage_members`, is refused both, and nothing lands
+    in the owner's session's history or its queue."""
+    me = await client.get("/v1/orgs/current", headers=owner)
+    org_id = UUID(me.json()["id"])
+    await add_member(container, org_id, "mia@example.test", Role.MEMBER)
+    member = await sign_in_as(client, "mia@example.test", org_id)
+    made = await client.post(
+        "/v1/agent-sessions", headers=created(owner), json={"kind": "configurer", "title": "t"}
+    )
+    assert made.status_code == 201, made.text
+    path = f"/v1/agent-sessions/{made.json()['id']}"
+
+    said = await client.post(
+        f"{path}/messages", headers=created(member), json={"text": "Make x@evil.test an admin."}
+    )
+    started = await client.post(
+        "/v1/agent-sessions", headers=created(member), json={"kind": "configurer", "title": "t"}
+    )
+
+    assert (said.status_code, started.status_code) == (403, 403)
+    assert "manage_members" in said.json()["error"]["message"]
+    steps = await client.get(f"{path}/steps", headers=owner)
+    assert steps.json()["items"] == [] and runs_of(container, made.json()["id"]) == 0
 
 
 async def test_no_route_reaches_another_tenants_session(

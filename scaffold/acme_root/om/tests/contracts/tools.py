@@ -353,6 +353,20 @@ def registry_of(*tools: ToolInterface) -> ToolRegistry:
     return ToolRegistry(tools)
 
 
+def stand_ins(*names: str) -> tuple[ToolInterface, ...]:
+    """A `Command` under each name, for a case whose kinds or sessions name
+    tools it never calls: the agents manager classes every tool a registry
+    offers and refuses a name the catalog lacks. A `read_` name reads,
+    `spawn` spawns, and any other runs code."""
+
+    def class_of(name: str) -> str:
+        if name == "spawn":
+            return ToolClass.SPAWN
+        return ToolClass.READ if name.startswith("read_") else ToolClass.EXECUTE
+
+    return tuple(Command(name, authorization_class=class_of(name)) for name in dict.fromkeys(names))
+
+
 def echoing(env_name: str | None = None) -> TwinHandler:
     """A twin handler that answers a command with its argv joined, and the
     value of `env_name` in its environment after it when one is named."""

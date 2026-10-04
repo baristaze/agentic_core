@@ -19,6 +19,7 @@ from contracts.step_storage import (
     make_request,
     make_response,
 )
+from contracts.tools import stand_ins
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.om.agent_sessions.impl.manager import AgentSessionsManagerImpl, AgentSessionsOptions
@@ -49,6 +50,11 @@ from acme.om.steps.types.header import (
 from acme.om.steps.types.page import StepCursor
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.storage.impl.memory import StorageMemoryImpl
+
+# What `make_session` names, so the agents manager classes every tool it
+# offers.
+TOOLS = stand_ins("read_log", "run_tests")
+
 
 SESSION = new_id()
 LOOP = new_id()
@@ -271,7 +277,7 @@ def test_a_session_carries_a_park_exactly_while_parked() -> None:
 
 @pytest.fixture
 def managers(tmp_path: Path) -> Managers:
-    return build_managers(StorageMemoryImpl(), InfraLocalImpl(tmp_path))
+    return build_managers(StorageMemoryImpl(), InfraLocalImpl(tmp_path), tool_catalog=TOOLS)
 
 
 async def kinds(managers: Managers, ctx: TenantContext, target: UUID) -> list[str]:
@@ -426,7 +432,7 @@ async def test_a_projection_behind_another_writer_reads_again_and_folds_on(
     the version; the projection reads what it left and folds on from it, and
     gives up after its attempts, landing nothing."""
     storage = StorageMemoryImpl()
-    managers = build_managers(storage, InfraLocalImpl(tmp_path))
+    managers = build_managers(storage, InfraLocalImpl(tmp_path), tool_catalog=TOOLS)
     outbox = storage.get_outbox_storage()
     assert isinstance(outbox, OutboxStorageMemoryImpl)
     overtaken = Overtaken(outbox)
@@ -458,7 +464,7 @@ async def test_a_deleted_tenants_purge_takes_up_at_most_a_batch_of_sessions_a_ca
     its records along, so one call reads the smaller session batch, not the
     rows' batch; the tenant reads as settled only once a call finds none."""
     storage = StorageMemoryImpl()
-    managers = build_managers(storage, InfraLocalImpl(tmp_path))
+    managers = build_managers(storage, InfraLocalImpl(tmp_path), tool_catalog=TOOLS)
     taken: list[UUID] = []
 
     async def held(org_id: UUID, session_id: UUID, tree_id: UUID | None) -> None:
@@ -609,7 +615,7 @@ async def test_a_purge_before_the_retention_ends_is_refused_and_one_after_takes_
     purge runs, and can be unmarked. Past the retention, counted from the
     last mark, the purge takes the session, its steps, and its cursor."""
     storage = StorageMemoryImpl()
-    managers = build_managers(storage, InfraLocalImpl(tmp_path))
+    managers = build_managers(storage, InfraLocalImpl(tmp_path), tool_catalog=TOOLS)
     clock = Clock()
     sessions = purging(managers, storage, clock)
     ctx = context(Role.MEMBER)
@@ -646,7 +652,7 @@ async def test_a_claimed_session_cannot_come_back_and_its_long_history_goes_in_b
     going answers an unmark as one gone, and each pass takes a batch more of
     its history, then its row once the history is gone."""
     storage = StorageMemoryImpl()
-    managers = build_managers(storage, InfraLocalImpl(tmp_path))
+    managers = build_managers(storage, InfraLocalImpl(tmp_path), tool_catalog=TOOLS)
     clock = Clock()
     sessions = purging(managers, storage, clock, batch=2)
     ctx = context(Role.MEMBER)
@@ -689,7 +695,7 @@ class RestoredMeanwhile(AgentSessionStorageMemoryImpl):
 
 async def test_an_unmark_that_lands_before_the_claim_keeps_the_session(tmp_path: Path) -> None:
     storage = StorageMemoryImpl()
-    managers = build_managers(storage, InfraLocalImpl(tmp_path))
+    managers = build_managers(storage, InfraLocalImpl(tmp_path), tool_catalog=TOOLS)
     outbox = storage.get_outbox_storage()
     assert isinstance(outbox, OutboxStorageMemoryImpl)
     clock = Clock()
