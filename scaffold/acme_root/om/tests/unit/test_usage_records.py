@@ -8,20 +8,24 @@ from uuid import UUID
 
 import pytest
 from contracts.loops import ASSISTANT, Loop, loop_over, reply, said, use
-from sqlalchemy import BigInteger, DateTime, Integer, Text, Uuid
+from sqlalchemy import BigInteger, Boolean, DateTime, Integer, Text, Uuid
 
 from acme.integrations.model_providers.calls import ModelCall
-from acme.integrations.model_providers.types import ProviderName, Usage
+from acme.integrations.model_providers.scripted import ScriptedFailure
+from acme.integrations.model_providers.types import ErrorKind, ProviderName, Usage
 from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
 from acme.om.agents.types.request import Start
 from acme.om.base import new_id
 from acme.om.budgets.rules import usage_spend
 from acme.om.budgets.storage.tables.usage_records import UsageRecords
+from acme.om.budgets.types.hold import Settlement
 from acme.om.budgets.types.usage import UsageRecord
 from acme.om.context import TenantContext
+from acme.om.exceptions import Unavailable
 from acme.om.models.types.fill import MAIN, SUMMARIZER
 from acme.om.privacy.types.session_privacy import StorageMode, StoragePolicy
-from acme.om.steps.types.step import StepType
+from acme.om.steps.types.header import LoopOutcome, ModelRequestHeader
+from acme.om.steps.types.step import Step, StepType
 
 FIRST = Usage(input=1_200, cache_read=800, cache_write=300, output=45, thinking=20)
 SECOND = Usage(input=1_400, cache_read=1_100, cache_write=0, output=60, thinking=0)
@@ -163,10 +167,11 @@ COLUMNS = {
     "thinking_tokens": BigInteger,
     "cost_micros": BigInteger,
     "latency_ms": BigInteger,
+    "settled_whole": Boolean,
 }
 """Every column a usage record has: ids, a time, counts, money, a duration,
-and four labels. A column added here is a decision that it holds no
-content."""
+four labels, and a mark. A column added here is a decision that it holds
+no content."""
 
 
 async def test_a_usage_record_holds_no_content(
@@ -258,3 +263,94 @@ async def test_a_deleted_tenants_purge_keeps_its_usage_records(
     assert await loop.storage.get_step_storage().read_steps(org, session, 0, 10) == []
     assert await loop.storage.get_agent_session_storage().read_session(org, session) is None
     assert await records_of(loop, loop.owner, session) == kept, "the records stay whole"
+
+
+PARTIAL = Usage(input=1_200, cache_read=800, output=3)
+
+
+def is_request(step: Step) -> bool:
+    return isinstance(step.header, ModelRequestHeader)
+
+
+async def settlement_of(loop: Loop, request: Step) -> Settlement:
+    """How the ledger closed a model request's hold."""
+    header = request.header
+    assert isinstance(header, ModelRequestHeader) and header.hold_id is not None
+    found = await loop.storage.get_ledger_storage().read_settlement(
+        loop.owner.org_id, header.hold_id
+    )
+    assert found is not None
+    return found
+
+
+async def test_a_call_settled_whole_leaves_a_marked_record_at_its_hold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stream that broke after it began is settled at its whole hold, then
+    the call again is answered whole: two records, the first marked and
+    holding what the partial reply reported, and a rollup whose cost is the
+    ledger's settled total, the call settled whole counted apart."""
+    loop = loop_over(tmp_path)
+    timed(loop, monkeypatch)
+    org = loop.owner.org_id
+    session = await started(loop)
+    await loop.say(session, "What is the total?")
+    partial = reply(said("The total is")).model_copy(
+        update={"stop_reason": None, "truncated": True, "usage": PARTIAL}
+    )
+    loop.anthropic.add(
+        ScriptedFailure(kind=ErrorKind.TRANSIENT, partial=partial),
+        reply(said("It is 12.")).model_copy(update={"usage": FIRST}),
+    )
+
+    run = await loop.loops.run(loop.owner, session)
+
+    assert run.outcome is LoopOutcome.SUCCEEDED
+    history = await loop.history(session)
+    ledger = loop.storage.get_ledger_storage()
+    first, second = [await settlement_of(loop, s) for s in history if is_request(s)]
+    assert (first.bill.kind, second.bill.kind) == ("unknown", "billed")
+    broken, whole = await records_of(loop, loop.owner, session)
+    responses = [s.id for s in history if s.type is StepType.MODEL_RESPONSE]
+    assert [broken.step_id, whole.step_id] == responses
+    assert (broken.settled_whole, whole.settled_whole) == (True, False)
+    assert (broken.input_tokens, broken.cache_read_tokens, broken.output_tokens) == (1_200, 800, 3)
+    assert (broken.cost_micros, whole.cost_micros) == (
+        first.spent.cost_micros,
+        second.spent.cost_micros,
+    )
+    spent = (first.spent.cost_micros or 0) + (second.spent.cost_micros or 0)
+    total = await ledger.read_usage_total(org, session)
+    assert (total.calls, total.cost_micros, total.settled_whole) == (2, spent, 1)
+    assert spent > 0 and total.unpriced == 0
+
+
+async def test_a_record_that_fails_to_land_never_fails_its_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ledger settles each call, then the record's write fails as a
+    database that timed out does: the reply is kept, the loop goes on to its
+    end, and only the reading is lost."""
+    loop = loop_over(tmp_path)
+    ledger = loop.storage.get_ledger_storage()
+
+    async def timed_out(org_id: UUID, record: UsageRecord) -> bool:
+        raise Unavailable("the database did not answer in time")
+
+    monkeypatch.setattr(ledger, "append_usage_record", timed_out)
+    session = await started(loop)
+    await loop.say(session, "What is the total?")
+    loop.anthropic.add(
+        reply(use("lookup", "the total")).model_copy(update={"usage": FIRST}),
+        reply(said("12.")).model_copy(update={"usage": SECOND}),
+    )
+
+    run = await loop.loops.run(loop.owner, session)
+
+    assert run.outcome is LoopOutcome.SUCCEEDED
+    history = await loop.history(session)
+    responses = [s for s in history if s.type is StepType.MODEL_RESPONSE]
+    assert len(responses) == 2 and responses[-1].as_text() == "12.", "both replies are kept"
+    settled = [await settlement_of(loop, s) for s in history if is_request(s)]
+    assert [s.bill.kind for s in settled] == ["billed", "billed"]
+    assert await records_of(loop, loop.owner, session) == []

@@ -39,3 +39,5 @@ class UsageRecords(IdentifiableMixin, CreatedMixin, Base):
     thinking_tokens: Mapped[int] = mapped_column(BigInteger)
     cost_micros: Mapped[int | None] = mapped_column(BigInteger)
     latency_ms: Mapped[int] = mapped_column(BigInteger)
+    # A call settled at its whole hold: its usage was never reported whole.
+    settled_whole: Mapped[bool]

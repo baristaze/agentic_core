@@ -136,6 +136,7 @@ class Gate(CallGateInterface):
         self.spenders: list[Principal] = []
         self.settled: list[tuple[UUID, Usage | None, bool]] = []
         self.sites: list[CallSite | None] = []
+        self.partials: list[Usage | None] = []
 
     async def authorize(
         self,
@@ -161,10 +162,12 @@ class Gate(CallGateInterface):
         *,
         billed: bool,
         site: CallSite | None,
+        partial: Usage | None = None,
     ) -> None:
         assert hold_id in self.holds
         self.settled.append((hold_id, usage, billed))
         self.sites.append(site)
+        self.partials.append(partial)
 
     async def authorize_job(
         self,
@@ -713,6 +716,9 @@ async def test_a_summary_whose_stream_broke_is_billed_and_recorded_cut(engine: E
     cut = (await history_of(engine, session))[-1]
     assert isinstance(cut.header, ModelResponseHeader) and cut.header.truncated
     assert cut.as_text() == "The order"
+    (site,) = engine.gate.sites
+    assert site is not None and site.step_id == cut.id, "settled whole, its record names the cut"
+    assert engine.gate.partials == [arrived.usage]
 
 
 async def test_a_refused_gate_calls_no_model_and_writes_nothing(engine: Engine) -> None:

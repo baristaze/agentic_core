@@ -3,9 +3,10 @@ model call or a job that spends. A compaction is a model call, and it
 passes the one gate before it starts like any other: a hold of the call's
 worst case first, settled once the provider answers. A job's worst case is
 its rate until its deadline, settled once it ends. A model call the
-provider billed with its usage leaves a usage record at its settlement, in
-every storage mode (ADR 1014). This is the narrow face of the gate the
-windows and the loop read; a root wires the budgets' gate behind it."""
+provider billed leaves a usage record at its settlement, in every storage
+mode, at its usage or, marked, at its whole hold (ADR 1014). This is the
+narrow face of the gate the windows and the loop read; a root wires the
+budgets' gate behind it."""
 
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -44,14 +45,18 @@ class CallGateInterface(ABC):
         *,
         billed: bool,
         site: CallSite | None,
+        partial: Usage | None = None,
     ) -> None:
         """Closes the hold once: released when `billed` is False, which the
         caller says only when the call failed before the provider streamed
         anything back: it was never sent, or the provider refused it before
         processing it. Otherwise counted at `usage`, or at the whole hold when
-        the usage is unknown. A call billed at its usage, with its `site`,
-        writes its usage record; a caller with a reply in hand names the
-        site, and one without passes None."""
+        the usage is unknown. A billed call with its `site` writes its usage
+        record, once per hold; one settled whole is marked so, at its hold's
+        cost, with the tokens a broken stream's `partial` reply reported. A
+        caller passes None for the site only when the call was never sent.
+        A record that fails to land is logged, and never fails the call the
+        ledger has settled."""
         ...
 
     @abstractmethod

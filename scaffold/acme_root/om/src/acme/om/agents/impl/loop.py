@@ -35,7 +35,7 @@ from acme.om.attribution import AttributionManagerInterface
 from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
 from acme.om.base import Platform, new_id, thaw_mapping, utcnow
 from acme.om.budgets.rules import budget_park, elapsed_ms
-from acme.om.budgets.types.usage import CallSite
+from acme.om.budgets.types.usage import CallLabels, CallSite
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import (
     BudgetRefused,
@@ -454,28 +454,32 @@ class LoopManagerImpl(LoopManagerInterface):
             raise
         response_id = new_id()
         started = self._clock()
+
+        def site() -> CallSite:
+            elapsed = elapsed_ms(started, self._clock())
+            return CallSite(loop_id=run.loop_id, step_id=response_id, latency_ms=elapsed)
+
         try:
             reply = await self._stream(run, fill, rendered.call, response_id)
         except ModelCallFailed as failed:
             # Nothing streamed back: the call was refused before it was
             # processed, and the hold is released. A stream that broke is
             # usually billed, so it counts whole, and what arrived is kept.
-            await self._gate.settle(ctx, hold, None, billed=failed.partial is not None, site=None)
-            closing = (
-                rules.abandoned_step(response_id, self._clock(), request)
-                if failed.partial is None
-                else rules.response_step(response_id, self._clock(), request, failed.partial)
-            )
+            if failed.partial is None:
+                await self._gate.settle(ctx, hold, None, billed=False, site=None)
+                closing = rules.abandoned_step(response_id, self._clock(), request)
+            else:
+                await self._gate.settle(
+                    ctx, hold, None, billed=True, site=site(), partial=failed.partial.usage
+                )
+                closing = rules.response_step(response_id, self._clock(), request, failed.partial)
             await self._steps.append_steps(ctx, session_id, run.epoch, [closing])
             raise
         except BaseException:
             with contextlib.suppress(Exception):
-                await self._gate.settle(ctx, hold, None, billed=True, site=None)
+                await self._gate.settle(ctx, hold, None, billed=True, site=site())
             raise
-        site = CallSite(
-            loop_id=run.loop_id, step_id=response_id, latency_ms=elapsed_ms(started, self._clock())
-        )
-        await self._gate.settle(ctx, hold, reply.usage, billed=True, site=site)
+        await self._gate.settle(ctx, hold, reply.usage, billed=True, site=site())
         stored = rules.response_step(response_id, self._clock(), request, reply)
         (stored,) = await self._steps.append_steps(ctx, session_id, run.epoch, [stored])
         return stored
@@ -1110,12 +1114,26 @@ class LoopManagerImpl(LoopManagerInterface):
         )
 
     async def _close_lost(self, run: _Run, request: Step) -> None:
+        """A request a lost run left unanswered: its hold settled whole, its
+        usage record named from the request and the session, since this
+        run's gate never held it, and the request closed as abandoned."""
         header = request.header
-        hold = header.hold_id if isinstance(header, ModelRequestHeader) else None
-        if hold is not None:
-            with contextlib.suppress(NotFound):
-                await self._gate.settle(run.ctx, hold, None, billed=True, site=None)
         closing = rules.abandoned_step(new_id(), self._clock(), request)
+        if isinstance(header, ModelRequestHeader) and header.hold_id is not None:
+            provider, _, model = header.fill.partition("/")
+            session = run.session
+            labels = CallLabels(
+                session_id=run.session_id,
+                tree_id=session.root_id,
+                agent_kind=session.kind,
+                kind_version=session.kind_version,
+                role=header.role,
+                provider=provider,
+                model=model,
+            )
+            site = CallSite(loop_id=run.loop_id, step_id=closing.id, latency_ms=0, labels=labels)
+            with contextlib.suppress(NotFound):
+                await self._gate.settle(run.ctx, header.hold_id, None, billed=True, site=site)
         await self._steps.append_steps(run.ctx, run.session_id, run.epoch, [closing])
 
     async def _release(self, run: _Run) -> None:

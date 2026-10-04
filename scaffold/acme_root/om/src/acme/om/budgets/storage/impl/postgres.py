@@ -276,14 +276,26 @@ _ROLLUP = (
     func.coalesce(func.sum(UsageRecords.thinking_tokens), 0),
     func.coalesce(func.sum(UsageRecords.cost_micros), 0),
     func.count().filter(UsageRecords.cost_micros.is_(None)),
+    func.count().filter(UsageRecords.settled_whole),
     func.coalesce(func.sum(UsageRecords.latency_ms), 0),
 )
 """The columns of a rollup, in `UsageRollup`'s order: a cost no price gave
-is in no sum, and counts as unpriced."""
+is in no sum, and counts as unpriced; a call settled whole counts apart."""
 
 
 def _rollup(row: Sequence[Any]) -> UsageRollup:
-    calls, input_tokens, cache_read, cache_write, output, thinking, cost, unpriced, latency = row
+    (
+        calls,
+        input_tokens,
+        cache_read,
+        cache_write,
+        output,
+        thinking,
+        cost,
+        unpriced,
+        whole,
+        latency,
+    ) = row
     return UsageRollup(
         calls=calls,
         input_tokens=input_tokens,
@@ -293,6 +305,7 @@ def _rollup(row: Sequence[Any]) -> UsageRollup:
         thinking_tokens=thinking,
         cost_micros=cost,
         unpriced=unpriced,
+        settled_whole=whole,
         latency_ms=latency,
     )
 

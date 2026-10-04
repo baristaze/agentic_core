@@ -208,12 +208,15 @@ async def get_session_usage(
     response step), `agent_kind`, `kind_version`, `role`, `provider`, `model`, `input_tokens`,
     `cache_read_tokens`, `cache_write_tokens`, `output_tokens`,
     `thinking_tokens`, `cost_micros` (reference cost in millionths, null when
-    no price applied), and `latency_ms`; `next_cursor`, the next page's
-    `cursor`, or null; `loops`, one `{loop_id, rollup}` per loop in the order
-    it first called; `has_more_loops`; and `total`, the session's rollup. A
-    rollup holds `calls`, the five token classes, `cost_micros`, `unpriced`
-    (calls no price applied to, whose cost no figure holds), and
-    `latency_ms`. The rollups cover every record, whatever the page.
+    no price applied), `latency_ms`, and `settled_whole` (a call whose usage
+    was never reported whole, counted at its whole hold, its tokens partial
+    at most); `next_cursor`, the next page's `cursor`, or null; `loops`, one
+    `{loop_id, rollup}` per loop in the order it first called;
+    `has_more_loops`; and `total`, the session's rollup. A rollup holds
+    `calls`, the five token classes, `cost_micros`, `unpriced` (calls no
+    price applied to, whose cost no figure holds), `settled_whole` (calls
+    counted at their whole hold), and `latency_ms`. The rollups cover every
+    record, whatever the page.
 
     A record holds ids, counts, money, a duration, and labels, and no
     content. `404 not_found` for an unknown org, and for a session the org
