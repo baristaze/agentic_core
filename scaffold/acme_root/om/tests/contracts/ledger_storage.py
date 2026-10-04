@@ -25,11 +25,23 @@ from acme.om.budgets.types.hold import (
     NotBilledProof,
     Tally,
 )
+from acme.om.budgets.types.usage import UsageRecord, UsageRollup
 from acme.om.exceptions import NotFound, TenantMismatch
 from contracts.racing import race
 
 CROSS_TENANT_CASES: frozenset[str] = frozenset(
-    {"close_hold", "count_tenant", "open_hold", "read_hold", "read_settlement", "read_tally"}
+    {
+        "append_usage_record",
+        "close_hold",
+        "count_tenant",
+        "open_hold",
+        "read_hold",
+        "read_settlement",
+        "read_tally",
+        "read_usage_records",
+        "read_usage_rollups",
+        "read_usage_total",
+    }
 )
 """Every method of `LedgerStorageInterface` that takes a tenant has a case in
 this module that presents another tenant's."""
@@ -68,6 +80,35 @@ def a_hold(
         exposure=Spend(cost_micros=cost_micros, tokens=tokens),
         own=own,
         lines=lines,
+    )
+
+
+def a_record(
+    session_id: UUID,
+    loop_id: UUID,
+    *,
+    hold_id: UUID | None = None,
+    cost_micros: int | None = 300,
+    input_tokens: int = 1_000,
+) -> UsageRecord:
+    return UsageRecord(
+        id=new_id(),
+        created_at=utcnow(),
+        hold_id=hold_id or new_id(),
+        session_id=session_id,
+        loop_id=loop_id,
+        step_id=new_id(),
+        agent_kind="assistant",
+        role="main",
+        provider="anthropic",
+        model="claude-sonnet",
+        input_tokens=input_tokens,
+        cache_read_tokens=200,
+        cache_write_tokens=100,
+        output_tokens=50,
+        thinking_tokens=10,
+        cost_micros=cost_micros,
+        latency_ms=1_000,
     )
 
 
@@ -260,3 +301,71 @@ class LedgerStorageContract:
         assert await storage.count_tenant(org_a, 10) == 3
         assert await storage.count_tenant(org_a, 2) == 2
         assert await storage.count_tenant(org_b, 10) == 0
+
+    async def test_a_usage_record_is_written_once_per_hold(
+        self, storage: LedgerStorageInterface
+    ) -> None:
+        org, session, loop = new_id(), new_id(), new_id()
+        record = a_record(session, loop)
+        assert await storage.append_usage_record(org, record) is True
+        again = a_record(session, loop, hold_id=record.hold_id)
+        assert await storage.append_usage_record(org, again) is False, "its hold has one"
+        assert await storage.read_usage_records(org, session, None, 10) == [record]
+
+    async def test_a_sessions_usage_pages_by_id_and_rolls_up_per_loop(
+        self, storage: LedgerStorageInterface
+    ) -> None:
+        org, session, other = new_id(), new_id(), new_id()
+        first, second = new_id(), new_id()
+        records = [
+            a_record(session, first, input_tokens=1_000),
+            a_record(session, second, input_tokens=2_000),
+            a_record(session, first, input_tokens=3_000, cost_micros=None),
+        ]
+        for record in records:
+            assert await storage.append_usage_record(org, record)
+        assert await storage.append_usage_record(org, a_record(other, first))
+        assert await storage.read_usage_records(org, session, None, 10) == records
+        page = await storage.read_usage_records(org, session, None, 2)
+        assert page == records[:2]
+        assert await storage.read_usage_records(org, session, page[-1].id, 2) == records[2:]
+        loops = await storage.read_usage_rollups(org, session, 10)
+        assert [(u.loop_id, u.rollup.calls, u.rollup.input_tokens) for u in loops] == [
+            (first, 2, 4_000),
+            (second, 1, 2_000),
+        ], "in the order each loop first called"
+        assert [u.loop_id for u in await storage.read_usage_rollups(org, session, 1)] == [first]
+        assert await storage.read_usage_total(org, session) == UsageRollup(
+            calls=3,
+            input_tokens=6_000,
+            cache_read_tokens=600,
+            cache_write_tokens=300,
+            output_tokens=150,
+            thinking_tokens=30,
+            cost_micros=600,
+            unpriced=1,
+            latency_ms=3_000,
+        ), "a call no price applied to is unpriced, and in no cost"
+        assert await storage.read_usage_total(org, new_id()) == UsageRollup()
+
+    async def test_another_tenant_reads_no_usage_and_cannot_take_a_records_id(
+        self, storage: LedgerStorageInterface
+    ) -> None:
+        org_a, org_b, session, loop = new_id(), new_id(), new_id(), new_id()
+        record = a_record(session, loop)
+        assert await storage.append_usage_record(org_a, record)
+        with pytest.raises(TenantMismatch):
+            await storage.append_usage_record(org_b, record)
+        assert await storage.read_usage_records(org_b, session, None, 10) == []
+        assert await storage.read_usage_rollups(org_b, session, 10) == []
+        assert await storage.read_usage_total(org_b, session) == UsageRollup()
+        assert await storage.read_usage_records(org_a, session, None, 10) == [record]
+
+    async def test_count_tenant_never_counts_usage_records(
+        self, storage: LedgerStorageInterface
+    ) -> None:
+        """A record outlives its tenant as content-free billing data, and never
+        keeps the tenant from being marked purged."""
+        org = new_id()
+        assert await storage.append_usage_record(org, a_record(new_id(), new_id()))
+        assert await storage.count_tenant(org, 10) == 0

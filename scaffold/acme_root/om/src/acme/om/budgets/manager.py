@@ -4,7 +4,10 @@ every spending job passes before it starts.
 A budget has a scope, a window, and an amount, and binds every call charged
 to its scope. Setting one governs what the org's members may spend, so it
 takes the permission that governs members; reading one takes READ. The gate
-is `BudgetGateInterface`, beside this one."""
+is `BudgetGateInterface`, beside this one. Every model call a provider
+billed leaves a usage record with no content (ADR 1014); the operator plane
+reads a session's records and their rollups through
+`BudgetsOperatorManagerInterface`."""
 
 from abc import ABC, abstractmethod
 from uuid import UUID
@@ -12,7 +15,8 @@ from uuid import UUID
 from acme.om.budgets.types.amount import Amount
 from acme.om.budgets.types.budget import Budget, BudgetPage
 from acme.om.budgets.types.hold import Tally
-from acme.om.context import TenantContext
+from acme.om.budgets.types.usage import SessionUsage, UsageRecord
+from acme.om.context import OperatorContext, TenantContext
 
 
 class BudgetsManagerInterface(ABC):
@@ -50,6 +54,13 @@ class BudgetsManagerInterface(ABC):
         ...
 
     @abstractmethod
+    async def record_usage(self, ctx: TenantContext, record: UsageRecord) -> bool:
+        """Writes what one billed model call used and cost, once per hold:
+        False, with nothing written, when its hold has a record already.
+        Takes WRITE, as a hold does."""
+        ...
+
+    @abstractmethod
     async def purge_tenant(self, ctx: TenantContext) -> int:
         """The sweep, for one tenant past its own retention: every budget, a
         batch at most a call. Any other tenant returns 0 and reads nothing."""
@@ -63,4 +74,27 @@ class BudgetsManagerInterface(ABC):
         than a whole batch, so the sweep never marks the tenant purged while
         its ledger remains and does not call again in the same pass. Any
         other tenant returns 0 and reads nothing."""
+        ...
+
+
+class BudgetsOperatorManagerInterface(ABC):
+    """The operator plane of the ledger: one named org's session, read for
+    what its model calls used and cost. Takes `OperatorContext` and nothing
+    else."""
+
+    @abstractmethod
+    async def get_session_usage(
+        self,
+        admin: OperatorContext,
+        org_id: UUID,
+        session_id: UUID,
+        after: UUID | None,
+        limit: int,
+    ) -> SessionUsage:
+        """A page of the session's usage records, after the id named, and the
+        rollups of all of them, per loop and for the session. A record holds
+        no content, so this reads the same for every storage mode, and for a
+        session whose history was purged. Requires the read permission.
+        NotFound when the org is not there, or holds no record of the
+        session: another tenant's session reads as one that never called."""
         ...

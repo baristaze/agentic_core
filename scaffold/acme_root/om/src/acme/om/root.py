@@ -30,9 +30,14 @@ from acme.om.attribution.impl.manager import (
     members_context,
 )
 from acme.om.base import utcnow
-from acme.om.budgets import BudgetGateInterface, BudgetsManagerInterface
+from acme.om.budgets import (
+    BudgetGateInterface,
+    BudgetsManagerInterface,
+    BudgetsOperatorManagerInterface,
+)
 from acme.om.budgets.impl.gate import BudgetGateImpl, BudgetGateOptions
 from acme.om.budgets.impl.manager import BudgetsManagerImpl, BudgetsOptions
+from acme.om.budgets.impl.operator import BudgetsOperatorManagerImpl, BudgetsOperatorOptions
 from acme.om.budgets.impl.pricing import PricingTableImpl
 from acme.om.budgets.pricing import PricingInterface
 from acme.om.events import EventsManagerInterface
@@ -110,6 +115,7 @@ class Managers:
     agent_sessions: AgentSessionsManagerInterface
     privacy: PrivacyManagerInterface
     budgets: BudgetsManagerInterface
+    budgets_operator: BudgetsOperatorManagerInterface
     budget_gate: BudgetGateInterface
     pricing: PricingInterface
     models: ModelsManagerInterface
@@ -429,7 +435,7 @@ def build_managers(
         absent_model_providers() if integrations is None else integrations.get_model_providers()
     )
     # The one gate every model call passes, priced from the one source.
-    calls = call_gate or CallGateBudgetImpl(gate, pricing, agent_sessions)
+    calls = call_gate or CallGateBudgetImpl(gate, pricing, agent_sessions, budgets)
     windows = WindowsManagerImpl(
         storage.get_window_storage(),
         steps,
@@ -491,6 +497,9 @@ def build_managers(
         agent_sessions=agent_sessions,
         privacy=privacy,
         budgets=budgets,
+        budgets_operator=BudgetsOperatorManagerImpl(
+            storage.get_ledger_storage(), storage.get_tenancy_storage(), BudgetsOperatorOptions()
+        ),
         budget_gate=gate,
         # The one source of prices: the list table.
         pricing=pricing,

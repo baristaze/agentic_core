@@ -115,6 +115,7 @@ TABLE_SCOPES: dict[str, TableScope] = {
     "budget_tallies": TableScope(ScopeKind.ORG),
     "budget_holds": TableScope(ScopeKind.ORG),
     "budget_settlements": TableScope(ScopeKind.ORG),
+    "usage_records": TableScope(ScopeKind.ORG),
     "fill_sets": TableScope(ScopeKind.ORG),
     "artifacts": TableScope(ScopeKind.ORG),
     "tool_policies": TableScope(ScopeKind.ORG),

@@ -34,7 +34,8 @@ from acme.om.agents.types.run import LoopRun, RunEnd
 from acme.om.attribution import AttributionManagerInterface
 from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
 from acme.om.base import Platform, new_id, thaw_mapping, utcnow
-from acme.om.budgets.rules import budget_park
+from acme.om.budgets.rules import budget_park, elapsed_ms
+from acme.om.budgets.types.usage import CallSite
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import (
     BudgetRefused,
@@ -449,16 +450,17 @@ class LoopManagerImpl(LoopManagerInterface):
             (request,) = await self._steps.append_steps(ctx, session_id, run.epoch, [request])
         except BaseException:
             # Never sent: nothing was billed.
-            await self._gate.settle(ctx, hold, None, billed=False)
+            await self._gate.settle(ctx, hold, None, billed=False, site=None)
             raise
         response_id = new_id()
+        started = self._clock()
         try:
             reply = await self._stream(run, fill, rendered.call, response_id)
         except ModelCallFailed as failed:
             # Nothing streamed back: the call was refused before it was
             # processed, and the hold is released. A stream that broke is
             # usually billed, so it counts whole, and what arrived is kept.
-            await self._gate.settle(ctx, hold, None, billed=failed.partial is not None)
+            await self._gate.settle(ctx, hold, None, billed=failed.partial is not None, site=None)
             closing = (
                 rules.abandoned_step(response_id, self._clock(), request)
                 if failed.partial is None
@@ -468,9 +470,12 @@ class LoopManagerImpl(LoopManagerInterface):
             raise
         except BaseException:
             with contextlib.suppress(Exception):
-                await self._gate.settle(ctx, hold, None, billed=True)
+                await self._gate.settle(ctx, hold, None, billed=True, site=None)
             raise
-        await self._gate.settle(ctx, hold, reply.usage, billed=True)
+        site = CallSite(
+            loop_id=run.loop_id, step_id=response_id, latency_ms=elapsed_ms(started, self._clock())
+        )
+        await self._gate.settle(ctx, hold, reply.usage, billed=True, site=site)
         stored = rules.response_step(response_id, self._clock(), request, reply)
         (stored,) = await self._steps.append_steps(ctx, session_id, run.epoch, [stored])
         return stored
@@ -1109,7 +1114,7 @@ class LoopManagerImpl(LoopManagerInterface):
         hold = header.hold_id if isinstance(header, ModelRequestHeader) else None
         if hold is not None:
             with contextlib.suppress(NotFound):
-                await self._gate.settle(run.ctx, hold, None, billed=True)
+                await self._gate.settle(run.ctx, hold, None, billed=True, site=None)
         closing = rules.abandoned_step(new_id(), self._clock(), request)
         await self._steps.append_steps(run.ctx, run.session_id, run.epoch, [closing])
 

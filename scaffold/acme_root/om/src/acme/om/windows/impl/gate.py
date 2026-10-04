@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable
 from datetime import datetime
 from uuid import UUID
@@ -6,8 +7,8 @@ from acme.integrations.model_providers.calls import ModelCall
 from acme.integrations.model_providers.types import Usage
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.attribution.types.principal import Principal
-from acme.om.base import utcnow
-from acme.om.budgets import BudgetGateInterface
+from acme.om.base import Platform, new_id, utcnow
+from acme.om.budgets import BudgetGateInterface, BudgetsManagerInterface
 from acme.om.budgets.pricing import ModelPrice, PricingInterface
 from acme.om.budgets.rules import call_exposure, job_exposure, usage_spend
 from acme.om.budgets.types.amount import Spend
@@ -21,11 +22,14 @@ from acme.om.budgets.types.hold import (
     NotBilled,
     NotBilledProof,
 )
+from acme.om.budgets.types.usage import CallSite, UsageRecord
 from acme.om.context import TenantContext
 from acme.om.exceptions import BudgetRefused, Unavailable
 from acme.om.models.types.fill import Fill, ModelRole
 from acme.om.windows.gate import CallGateInterface
 from acme.om.windows.rules import call_shape
+
+log = logging.getLogger(__name__)
 
 
 class CallGateNullImpl(CallGateInterface):
@@ -45,7 +49,13 @@ class CallGateNullImpl(CallGateInterface):
         raise Unavailable("no budget gate is wired, so no compaction is called")
 
     async def settle(
-        self, ctx: TenantContext, hold_id: UUID, usage: Usage | None, *, billed: bool
+        self,
+        ctx: TenantContext,
+        hold_id: UUID,
+        usage: Usage | None,
+        *,
+        billed: bool,
+        site: CallSite | None,
     ) -> None:
         raise Unavailable("no budget gate is wired, so there is no hold to settle")
 
@@ -66,6 +76,18 @@ class CallGateNullImpl(CallGateInterface):
         raise Unavailable("no budget gate is wired, so there is no hold to settle")
 
 
+class _Held(Platform):
+    """What the gate read of a call at its hold and keeps until it settles:
+    its price, and what its usage record names."""
+
+    price: ModelPrice | None
+    session_id: UUID
+    agent_kind: str
+    role: ModelRole
+    provider: str
+    model: str
+
+
 class CallGateBudgetImpl(CallGateInterface):
     """The budgets' gate behind the narrow face the windows and the loop
     read. A model call's worst case is priced from the one source of prices
@@ -77,20 +99,24 @@ class CallGateBudgetImpl(CallGateInterface):
     its hold. A spending job is held on the same scopes at its rate until
     its deadline (`budgets.rules.job_exposure`), and settles at the cost
     its runner reported, else whole; a job refused before any work began
-    releases its hold."""
+    releases its hold. A model call billed at its reported usage leaves a
+    usage record, priced as its settlement is, in every storage mode
+    (ADR 1014)."""
 
     def __init__(
         self,
         gate: BudgetGateInterface,
         pricing: PricingInterface,
         sessions: AgentSessionsManagerInterface,
+        budgets: BudgetsManagerInterface,
         clock: Callable[[], datetime] = utcnow,
     ) -> None:
         self._gate = gate
         self._pricing = pricing
         self._sessions = sessions
+        self._budgets = budgets
         self._clock = clock
-        self._prices: dict[UUID, ModelPrice | None] = {}
+        self._held: dict[UUID, _Held] = {}
 
     async def authorize(
         self,
@@ -113,13 +139,27 @@ class CallGateBudgetImpl(CallGateInterface):
         answer = await self._gate.authorize(ctx, request)
         if isinstance(answer, Refusal):
             raise BudgetRefused(answer)
-        self._prices[answer.id] = price
+        self._held[answer.id] = _Held(
+            price=price,
+            session_id=session_id,
+            agent_kind=session.kind,
+            role=role,
+            provider=fill.provider.value,
+            model=fill.model,
+        )
         return answer.id
 
     async def settle(
-        self, ctx: TenantContext, hold_id: UUID, usage: Usage | None, *, billed: bool
+        self,
+        ctx: TenantContext,
+        hold_id: UUID,
+        usage: Usage | None,
+        *,
+        billed: bool,
+        site: CallSite | None,
     ) -> None:
-        price = self._prices.pop(hold_id, None)
+        held = self._held.pop(hold_id, None)
+        price = None if held is None else held.price
         bill: Bill
         if not billed:
             bill = NotBilled(proof=NotBilledProof.REFUSED_BEFORE_PROCESSING)
@@ -128,6 +168,15 @@ class CallGateBudgetImpl(CallGateInterface):
         else:
             bill = Billed(usage=usage_spend(usage, price))
         await self._gate.settle(ctx, hold_id, bill)
+        if isinstance(bill, Billed) and usage is not None and site is not None:
+            if held is None:
+                # This process never held the call, so it has no labels to
+                # write: the ledger still counts it.
+                log.error("hold %s settled with no usage record: not held here", hold_id)
+                return
+            await self._budgets.record_usage(
+                ctx, _record(hold_id, held, usage, bill.usage.cost_micros, site, self._clock())
+            )
 
     async def authorize_job(
         self,
@@ -162,6 +211,37 @@ class CallGateBudgetImpl(CallGateInterface):
         else:
             bill = Billed(usage=Spend(cost_micros=cost_micros, tokens=0))
         await self._gate.settle(ctx, hold_id, bill)
+
+
+def _record(
+    hold_id: UUID,
+    held: _Held,
+    usage: Usage,
+    cost_micros: int | None,
+    site: CallSite,
+    at: datetime,
+) -> UsageRecord:
+    """A billed call's usage record: ids, its tokens by class, its cost at
+    the price its hold read, its latency, and labels; no content."""
+    return UsageRecord(
+        id=new_id(),
+        created_at=at,
+        hold_id=hold_id,
+        session_id=held.session_id,
+        loop_id=site.loop_id,
+        step_id=site.step_id,
+        agent_kind=held.agent_kind,
+        role=held.role,
+        provider=held.provider,
+        model=held.model,
+        input_tokens=usage.input,
+        cache_read_tokens=usage.cache_read,
+        cache_write_tokens=usage.cache_write,
+        output_tokens=usage.output,
+        thinking_tokens=usage.thinking,
+        cost_micros=cost_micros,
+        latency_ms=site.latency_ms,
+    )
 
 
 def scopes_of(
