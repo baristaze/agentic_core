@@ -27,7 +27,7 @@ answer, usage), the call, and the reply are defined in
 `integrations/model_providers/`. A step's content takes its blocks from
 there, and the `steps` and `models` namespaces name them again under
 their own modules, so a caller reads them where the spec places them.
-The frozen mapping field a tool's input holds moves to infra's base,
+The frozen mapping field a tool's input holds lives in infra's base,
 which both packages read, and the object model's base names it again.
 
 **An adapter speaks HTTP.** Each adapter calls its provider's API with
