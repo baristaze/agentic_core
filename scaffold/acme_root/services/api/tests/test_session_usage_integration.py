@@ -133,6 +133,7 @@ async def test_a_read_operator_reads_a_sessions_usage_and_nobody_else_does(
             "thinking_tokens": 0,
             "cost_micros": 5_000,
             "unpriced": 1,
+            "settled_whole": 0,
             "latency_ms": 2_400,
         }
         assert body["has_more_loops"] is False

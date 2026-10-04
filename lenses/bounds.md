@@ -157,8 +157,7 @@ pays, and a tenant's own key changes who pays, never what is gated. A
 pricing interface supplies prices from one source, and every model a
 resolver can pick has a price of its own, never a default row. Every
 billed call leaves a usage record of both figures, with no content, in
-every storage mode, one settled at its whole hold included, at the hold
-and marked; a purge keeps it and never counts it.
+every storage mode; a purge keeps it and never counts it.
 
 **Source.** Bounds and Budgets, Usage and Cost; The Tenant's Own Key.
 
