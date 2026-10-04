@@ -764,13 +764,15 @@ class UploadFieldView(BaseModel):
 
 class UsageRecordView(BaseModel):
     """
-    One model call a provider billed with its usage, as the ledger keeps
-    it: ids, tokens by disjoint class, reference cost in millionths (null
-    when no price applied), the provider's latency, and the labels of what
-    served it. It holds no content, so it reads the same in every storage
-    mode. `step_id` is the call's response step; `hold_id` its hold;
-    `tree_id` the session's tree; `kind_version` the agent kind's version
-    the session ran.
+    One model call a provider billed, as the ledger keeps it: ids, tokens
+    by disjoint class, reference cost in millionths (null when no price
+    applied), the provider's latency, and the labels of what served it. It
+    holds no content, so it reads the same in every storage mode. `step_id`
+    is the call's response step; `hold_id` its hold; `tree_id` the
+    session's tree; `kind_version` the agent kind's version the session
+    ran. `settled_whole` marks a call whose usage was never reported whole
+    (a broken stream, a lost run): its cost is its whole hold, and its
+    tokens are what a partial reply reported, else 0.
     """
     agent_kind: Annotated[str, Field(title='Agent Kind')]
     cache_read_tokens: Annotated[int, Field(title='Cache Read Tokens')]
@@ -788,6 +790,7 @@ class UsageRecordView(BaseModel):
     provider: Annotated[str, Field(title='Provider')]
     role: Annotated[str, Field(title='Role')]
     session_id: Annotated[UUID, Field(title='Session Id')]
+    settled_whole: Annotated[bool, Field(title='Settled Whole')]
     step_id: Annotated[UUID, Field(title='Step Id')]
     thinking_tokens: Annotated[int, Field(title='Thinking Tokens')]
     tree_id: Annotated[UUID, Field(title='Tree Id')]
@@ -797,6 +800,8 @@ class UsageRollupView(BaseModel):
     """
     The sum of some records. `unpriced` counts the calls no price applied
     to, whose cost is in no figure here: a rollup with any is a floor.
+    `settled_whole` counts the calls settled at their whole hold, whose cost
+    is in `cost_micros` at the hold, as the ledger counts it.
     """
     cache_read_tokens: Annotated[int, Field(title='Cache Read Tokens')]
     cache_write_tokens: Annotated[int, Field(title='Cache Write Tokens')]
@@ -805,6 +810,7 @@ class UsageRollupView(BaseModel):
     input_tokens: Annotated[int, Field(title='Input Tokens')]
     latency_ms: Annotated[int, Field(title='Latency Ms')]
     output_tokens: Annotated[int, Field(title='Output Tokens')]
+    settled_whole: Annotated[int, Field(title='Settled Whole')]
     thinking_tokens: Annotated[int, Field(title='Thinking Tokens')]
     unpriced: Annotated[int, Field(title='Unpriced')]
 

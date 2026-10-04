@@ -1227,7 +1227,10 @@ them:
 Both land in a **usage record**, one for every call a provider billed:
 the session, its tree, the loop, and the step it answered, the agent
 kind and its version, the model role, the provider and the model, its
-tokens by class, its reference cost, and its latency. A record holds no content, so it is
+tokens by class, its reference cost, and its latency. A call settled at
+its whole hold, a broken stream or a run lost before its reply, is
+recorded at the hold and marked so, with what a partial reply reported,
+and a rollup counts it apart. A record holds no content, so it is
 written in every storage mode. It is billing data, kept beside the
 ledger: a session's purge and its tenant's leave it, and it never keeps
 a deleted tenant from being marked purged. The operator plane reads a

@@ -23,6 +23,7 @@ CREATE TABLE activity.usage_records (
     thinking_tokens bigint NOT NULL,
     cost_micros bigint,
     latency_ms bigint NOT NULL,
+    settled_whole boolean NOT NULL,
     CONSTRAINT pk_usage_records PRIMARY KEY (id)
 );
 CREATE UNIQUE INDEX uq_usage_records_org_id_hold_id ON activity.usage_records (org_id, hold_id);

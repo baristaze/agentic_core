@@ -22,7 +22,7 @@ from acme.om.budgets.types.hold import (
     NotBilled,
     NotBilledProof,
 )
-from acme.om.budgets.types.usage import CallSite, UsageRecord
+from acme.om.budgets.types.usage import CallLabels, CallSite, UsageRecord
 from acme.om.context import TenantContext
 from acme.om.exceptions import BudgetRefused, Unavailable
 from acme.om.models.types.fill import Fill, ModelRole
@@ -56,6 +56,7 @@ class CallGateNullImpl(CallGateInterface):
         *,
         billed: bool,
         site: CallSite | None,
+        partial: Usage | None = None,
     ) -> None:
         raise Unavailable("no budget gate is wired, so there is no hold to settle")
 
@@ -81,13 +82,7 @@ class _Held(Platform):
     its price, and what its usage record names."""
 
     price: ModelPrice | None
-    session_id: UUID
-    tree_id: UUID
-    agent_kind: str
-    kind_version: int
-    role: ModelRole
-    provider: str
-    model: str
+    labels: CallLabels
 
 
 class CallGateBudgetImpl(CallGateInterface):
@@ -101,9 +96,9 @@ class CallGateBudgetImpl(CallGateInterface):
     its hold. A spending job is held on the same scopes at its rate until
     its deadline (`budgets.rules.job_exposure`), and settles at the cost
     its runner reported, else whole; a job refused before any work began
-    releases its hold. A model call billed at its reported usage leaves a
-    usage record, priced as its settlement is, in every storage mode
-    (ADR 1014)."""
+    releases its hold. A billed model call leaves a usage record, in every
+    storage mode: priced as its settlement is, or, settled whole, at its
+    hold and marked so (ADR 1014)."""
 
     def __init__(
         self,
@@ -143,13 +138,15 @@ class CallGateBudgetImpl(CallGateInterface):
             raise BudgetRefused(answer)
         self._held[answer.id] = _Held(
             price=price,
-            session_id=session_id,
-            tree_id=session.root_id,
-            agent_kind=session.kind,
-            kind_version=session.kind_version,
-            role=role,
-            provider=fill.provider.value,
-            model=fill.model,
+            labels=CallLabels(
+                session_id=session_id,
+                tree_id=session.root_id,
+                agent_kind=session.kind,
+                kind_version=session.kind_version,
+                role=role,
+                provider=fill.provider.value,
+                model=fill.model,
+            ),
         )
         return answer.id
 
@@ -161,6 +158,7 @@ class CallGateBudgetImpl(CallGateInterface):
         *,
         billed: bool,
         site: CallSite | None,
+        partial: Usage | None = None,
     ) -> None:
         held = self._held.pop(hold_id, None)
         price = None if held is None else held.price
@@ -171,16 +169,28 @@ class CallGateBudgetImpl(CallGateInterface):
             bill = BillUnknown()
         else:
             bill = Billed(usage=usage_spend(usage, price))
-        await self._gate.settle(ctx, hold_id, bill)
-        if isinstance(bill, Billed) and usage is not None and site is not None:
-            if held is None:
-                # This process never held the call, so it has no labels to
-                # write: the ledger still counts it.
-                log.error("hold %s settled with no usage record: not held here", hold_id)
-                return
-            await self._budgets.record_usage(
-                ctx, _record(hold_id, held, usage, bill.usage.cost_micros, site, self._clock())
-            )
+        settlement = await self._gate.settle(ctx, hold_id, bill)
+        if isinstance(bill, NotBilled) or site is None or settlement.bill.kind != bill.kind:
+            # Released, never sent, or closed before by another bill, whose
+            # settlement wrote any record that was due.
+            return
+        labels = held.labels if held is not None else site.labels
+        if labels is None:
+            # Neither this process's hold nor the caller names the call: the
+            # ledger still counts it.
+            log.error("hold %s settled with no usage record: not held here", hold_id)
+            return
+        if isinstance(bill, Billed):
+            whole, reported, cost = False, usage, bill.usage.cost_micros
+        else:
+            whole, reported, cost = True, partial, settlement.spent.cost_micros
+        try:
+            record = _record(hold_id, labels, reported, cost, whole, site, self._clock())
+            await self._budgets.record_usage(ctx, record)
+        except Exception:
+            # The ledger counts the call already: a record that fails to land
+            # costs the reading, never the call or the reply it paid for.
+            log.exception("hold %s settled with no usage record: the write failed", hold_id)
 
     async def authorize_job(
         self,
@@ -219,27 +229,31 @@ class CallGateBudgetImpl(CallGateInterface):
 
 def _record(
     hold_id: UUID,
-    held: _Held,
-    usage: Usage,
+    labels: CallLabels,
+    usage: Usage | None,
     cost_micros: int | None,
+    whole: bool,
     site: CallSite,
     at: datetime,
 ) -> UsageRecord:
-    """A billed call's usage record: ids, its tokens by class, its cost at
-    the price its hold read, its latency, and labels; no content."""
+    """A billed call's usage record: ids, its tokens by class, its cost as
+    the ledger settled it, its latency, and labels; no content. A call
+    settled whole is marked, with the tokens its partial reply reported,
+    else none."""
+    usage = usage or Usage()
     return UsageRecord(
         id=new_id(),
         created_at=at,
         hold_id=hold_id,
-        session_id=held.session_id,
-        tree_id=held.tree_id,
+        session_id=labels.session_id,
+        tree_id=labels.tree_id,
         loop_id=site.loop_id,
         step_id=site.step_id,
-        agent_kind=held.agent_kind,
-        kind_version=held.kind_version,
-        role=held.role,
-        provider=held.provider,
-        model=held.model,
+        agent_kind=labels.agent_kind,
+        kind_version=labels.kind_version,
+        role=labels.role,
+        provider=labels.provider,
+        model=labels.model,
         input_tokens=usage.input,
         cache_read_tokens=usage.cache_read,
         cache_write_tokens=usage.cache_write,
@@ -247,6 +261,7 @@ def _record(
         thinking_tokens=usage.thinking,
         cost_micros=cost_micros,
         latency_ms=site.latency_ms,
+        settled_whole=whole,
     )
 
 

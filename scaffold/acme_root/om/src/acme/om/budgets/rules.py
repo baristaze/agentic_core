@@ -416,9 +416,10 @@ def _clears_at(breach: Breach, now: datetime, hold_retry: timedelta) -> datetime
 def rollup_of(records: Iterable[UsageRecord]) -> UsageRollup:
     """The sum of the records: their calls, tokens by class, reference cost,
     and latency. A call no price applied to adds to `unpriced` and to no
-    cost."""
+    cost; a call settled at its whole hold adds its hold's cost, and to
+    `settled_whole`."""
     calls = input_tokens = cache_read = cache_write = output = thinking = 0
-    cost = unpriced = latency = 0
+    cost = unpriced = whole = latency = 0
     for record in records:
         calls += 1
         input_tokens += record.input_tokens
@@ -430,6 +431,7 @@ def rollup_of(records: Iterable[UsageRecord]) -> UsageRollup:
             unpriced += 1
         else:
             cost += record.cost_micros
+        whole += record.settled_whole
         latency += record.latency_ms
     return UsageRollup(
         calls=calls,
@@ -440,6 +442,7 @@ def rollup_of(records: Iterable[UsageRecord]) -> UsageRollup:
         thinking_tokens=thinking,
         cost_micros=cost,
         unpriced=unpriced,
+        settled_whole=whole,
         latency_ms=latency,
     )
 

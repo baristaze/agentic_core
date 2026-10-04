@@ -171,9 +171,10 @@ provider's native tokens when it is set in reference cost; a default
 price row for an unknown model (the hold it under-covers is BND-03); a
 call on the tenant's key priced or gated differently from one on the
 platform's; a call's usage or cost kept only on its step's shape, so a
-session that keeps no shape loses it; a usage record column that can
-hold content; a purge that deletes usage records, or a purge step that
-counts them.
+session that keeps no shape loses it; a billed call settled at its whole
+hold that leaves no usage record; a usage record column that can hold
+content; a purge that deletes usage records, or a purge step that counts
+them.
 
 **Severity.** medium
 

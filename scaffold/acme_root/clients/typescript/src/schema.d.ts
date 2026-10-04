@@ -209,12 +209,15 @@ export interface paths {
          *     response step), `agent_kind`, `kind_version`, `role`, `provider`, `model`, `input_tokens`,
          *     `cache_read_tokens`, `cache_write_tokens`, `output_tokens`,
          *     `thinking_tokens`, `cost_micros` (reference cost in millionths, null when
-         *     no price applied), and `latency_ms`; `next_cursor`, the next page's
-         *     `cursor`, or null; `loops`, one `{loop_id, rollup}` per loop in the order
-         *     it first called; `has_more_loops`; and `total`, the session's rollup. A
-         *     rollup holds `calls`, the five token classes, `cost_micros`, `unpriced`
-         *     (calls no price applied to, whose cost no figure holds), and
-         *     `latency_ms`. The rollups cover every record, whatever the page.
+         *     no price applied), `latency_ms`, and `settled_whole` (a call whose usage
+         *     was never reported whole, counted at its whole hold, its tokens partial
+         *     at most); `next_cursor`, the next page's `cursor`, or null; `loops`, one
+         *     `{loop_id, rollup}` per loop in the order it first called;
+         *     `has_more_loops`; and `total`, the session's rollup. A rollup holds
+         *     `calls`, the five token classes, `cost_micros`, `unpriced` (calls no
+         *     price applied to, whose cost no figure holds), `settled_whole` (calls
+         *     counted at their whole hold), and `latency_ms`. The rollups cover every
+         *     record, whatever the page.
          *
          *     A record holds ids, counts, money, a duration, and labels, and no
          *     content. `404 not_found` for an unknown org, and for a session the org
@@ -2368,13 +2371,15 @@ export interface components {
         };
         /**
          * UsageRecordView
-         * @description One model call a provider billed with its usage, as the ledger keeps
-         *     it: ids, tokens by disjoint class, reference cost in millionths (null
-         *     when no price applied), the provider's latency, and the labels of what
-         *     served it. It holds no content, so it reads the same in every storage
-         *     mode. `step_id` is the call's response step; `hold_id` its hold;
-         *     `tree_id` the session's tree; `kind_version` the agent kind's version
-         *     the session ran.
+         * @description One model call a provider billed, as the ledger keeps it: ids, tokens
+         *     by disjoint class, reference cost in millionths (null when no price
+         *     applied), the provider's latency, and the labels of what served it. It
+         *     holds no content, so it reads the same in every storage mode. `step_id`
+         *     is the call's response step; `hold_id` its hold; `tree_id` the
+         *     session's tree; `kind_version` the agent kind's version the session
+         *     ran. `settled_whole` marks a call whose usage was never reported whole
+         *     (a broken stream, a lost run): its cost is its whole hold, and its
+         *     tokens are what a partial reply reported, else 0.
          */
         UsageRecordView: {
             /** Agent Kind */
@@ -2424,6 +2429,8 @@ export interface components {
              * Format: uuid
              */
             session_id: string;
+            /** Settled Whole */
+            settled_whole: boolean;
             /**
              * Step Id
              * Format: uuid
@@ -2441,6 +2448,8 @@ export interface components {
          * UsageRollupView
          * @description The sum of some records. `unpriced` counts the calls no price applied
          *     to, whose cost is in no figure here: a rollup with any is a floor.
+         *     `settled_whole` counts the calls settled at their whole hold, whose cost
+         *     is in `cost_micros` at the hold, as the ledger counts it.
          */
         UsageRollupView: {
             /** Cache Read Tokens */
@@ -2457,6 +2466,8 @@ export interface components {
             latency_ms: number;
             /** Output Tokens */
             output_tokens: number;
+            /** Settled Whole */
+            settled_whole: number;
             /** Thinking Tokens */
             thinking_tokens: number;
             /** Unpriced */

@@ -2707,7 +2707,7 @@
         "type": "object"
       },
       "UsageRecordView": {
-        "description": "One model call a provider billed with its usage, as the ledger keeps\nit: ids, tokens by disjoint class, reference cost in millionths (null\nwhen no price applied), the provider's latency, and the labels of what\nserved it. It holds no content, so it reads the same in every storage\nmode. `step_id` is the call's response step; `hold_id` its hold;\n`tree_id` the session's tree; `kind_version` the agent kind's version\nthe session ran.",
+        "description": "One model call a provider billed, as the ledger keeps it: ids, tokens\nby disjoint class, reference cost in millionths (null when no price\napplied), the provider's latency, and the labels of what served it. It\nholds no content, so it reads the same in every storage mode. `step_id`\nis the call's response step; `hold_id` its hold; `tree_id` the\nsession's tree; `kind_version` the agent kind's version the session\nran. `settled_whole` marks a call whose usage was never reported whole\n(a broken stream, a lost run): its cost is its whole hold, and its\ntokens are what a partial reply reported, else 0.",
         "properties": {
           "agent_kind": {
             "title": "Agent Kind",
@@ -2785,6 +2785,10 @@
             "title": "Session Id",
             "type": "string"
           },
+          "settled_whole": {
+            "title": "Settled Whole",
+            "type": "boolean"
+          },
           "step_id": {
             "format": "uuid",
             "title": "Step Id",
@@ -2819,13 +2823,14 @@
           "output_tokens",
           "thinking_tokens",
           "cost_micros",
-          "latency_ms"
+          "latency_ms",
+          "settled_whole"
         ],
         "title": "UsageRecordView",
         "type": "object"
       },
       "UsageRollupView": {
-        "description": "The sum of some records. `unpriced` counts the calls no price applied\nto, whose cost is in no figure here: a rollup with any is a floor.",
+        "description": "The sum of some records. `unpriced` counts the calls no price applied\nto, whose cost is in no figure here: a rollup with any is a floor.\n`settled_whole` counts the calls settled at their whole hold, whose cost\nis in `cost_micros` at the hold, as the ledger counts it.",
         "properties": {
           "cache_read_tokens": {
             "title": "Cache Read Tokens",
@@ -2855,6 +2860,10 @@
             "title": "Output Tokens",
             "type": "integer"
           },
+          "settled_whole": {
+            "title": "Settled Whole",
+            "type": "integer"
+          },
           "thinking_tokens": {
             "title": "Thinking Tokens",
             "type": "integer"
@@ -2873,6 +2882,7 @@
           "thinking_tokens",
           "cost_micros",
           "unpriced",
+          "settled_whole",
           "latency_ms"
         ],
         "title": "UsageRollupView",
@@ -4301,7 +4311,7 @@
     },
     "/v1/admin/orgs/{org_id}/sessions/{session_id}/usage": {
       "get": {
-        "description": "What one session's model calls used and cost, in every storage mode\n(ADR 1014). Requires the read permission.\n\nThe answer is a `SessionUsageView`: `session_id`; `items`, a page of the\nsession's usage records, oldest first, each with `id`, `created_at`,\n`hold_id`, `session_id`, `tree_id`, `loop_id`, `step_id` (the call's\nresponse step), `agent_kind`, `kind_version`, `role`, `provider`, `model`, `input_tokens`,\n`cache_read_tokens`, `cache_write_tokens`, `output_tokens`,\n`thinking_tokens`, `cost_micros` (reference cost in millionths, null when\nno price applied), and `latency_ms`; `next_cursor`, the next page's\n`cursor`, or null; `loops`, one `{loop_id, rollup}` per loop in the order\nit first called; `has_more_loops`; and `total`, the session's rollup. A\nrollup holds `calls`, the five token classes, `cost_micros`, `unpriced`\n(calls no price applied to, whose cost no figure holds), and\n`latency_ms`. The rollups cover every record, whatever the page.\n\nA record holds ids, counts, money, a duration, and labels, and no\ncontent. `404 not_found` for an unknown org, and for a session the org\nholds no record of, which is how another tenant's session reads.",
+        "description": "What one session's model calls used and cost, in every storage mode\n(ADR 1014). Requires the read permission.\n\nThe answer is a `SessionUsageView`: `session_id`; `items`, a page of the\nsession's usage records, oldest first, each with `id`, `created_at`,\n`hold_id`, `session_id`, `tree_id`, `loop_id`, `step_id` (the call's\nresponse step), `agent_kind`, `kind_version`, `role`, `provider`, `model`, `input_tokens`,\n`cache_read_tokens`, `cache_write_tokens`, `output_tokens`,\n`thinking_tokens`, `cost_micros` (reference cost in millionths, null when\nno price applied), `latency_ms`, and `settled_whole` (a call whose usage\nwas never reported whole, counted at its whole hold, its tokens partial\nat most); `next_cursor`, the next page's `cursor`, or null; `loops`, one\n`{loop_id, rollup}` per loop in the order it first called;\n`has_more_loops`; and `total`, the session's rollup. A rollup holds\n`calls`, the five token classes, `cost_micros`, `unpriced` (calls no\nprice applied to, whose cost no figure holds), `settled_whole` (calls\ncounted at their whole hold), and `latency_ms`. The rollups cover every\nrecord, whatever the page.\n\nA record holds ids, counts, money, a duration, and labels, and no\ncontent. `404 not_found` for an unknown org, and for a session the org\nholds no record of, which is how another tenant's session reads.",
         "operationId": "get_session_usage_v1_admin_orgs__org_id__sessions__session_id__usage_get",
         "parameters": [
           {

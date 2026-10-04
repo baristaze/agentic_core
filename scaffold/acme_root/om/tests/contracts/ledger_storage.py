@@ -90,6 +90,7 @@ def a_record(
     hold_id: UUID | None = None,
     cost_micros: int | None = 300,
     input_tokens: int = 1_000,
+    settled_whole: bool = False,
 ) -> UsageRecord:
     return UsageRecord(
         id=new_id(),
@@ -111,6 +112,7 @@ def a_record(
         thinking_tokens=10,
         cost_micros=cost_micros,
         latency_ms=1_000,
+        settled_whole=settled_whole,
     )
 
 
@@ -321,7 +323,7 @@ class LedgerStorageContract:
         first, second = new_id(), new_id()
         records = [
             a_record(session, first, input_tokens=1_000),
-            a_record(session, second, input_tokens=2_000),
+            a_record(session, second, input_tokens=2_000, settled_whole=True),
             a_record(session, first, input_tokens=3_000, cost_micros=None),
         ]
         for record in records:
@@ -332,10 +334,10 @@ class LedgerStorageContract:
         assert page == records[:2]
         assert await storage.read_usage_records(org, session, page[-1].id, 2) == records[2:]
         loops = await storage.read_usage_rollups(org, session, 10)
-        assert [(u.loop_id, u.rollup.calls, u.rollup.input_tokens) for u in loops] == [
-            (first, 2, 4_000),
-            (second, 1, 2_000),
-        ], "in the order each loop first called"
+        assert [
+            (u.loop_id, u.rollup.calls, u.rollup.input_tokens, u.rollup.settled_whole)
+            for u in loops
+        ] == [(first, 2, 4_000, 0), (second, 1, 2_000, 1)], "in the order each loop first called"
         assert [u.loop_id for u in await storage.read_usage_rollups(org, session, 1)] == [first]
         assert await storage.read_usage_total(org, session) == UsageRollup(
             calls=3,
@@ -346,8 +348,9 @@ class LedgerStorageContract:
             thinking_tokens=30,
             cost_micros=600,
             unpriced=1,
+            settled_whole=1,
             latency_ms=3_000,
-        ), "a call no price applied to is unpriced, and in no cost"
+        ), "a call no price applied to is unpriced, and in no cost; one settled whole counts apart"
         assert await storage.read_usage_total(org, new_id()) == UsageRollup()
 
     async def test_another_tenant_reads_no_usage_and_cannot_take_a_records_id(

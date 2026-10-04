@@ -376,12 +376,20 @@ class WindowsManagerImpl(WindowsManagerInterface):
         except ModelCallFailed as failed:
             # Nothing streamed back: the call was never sent, or the provider
             # refused it before processing it, so the hold is released. A
-            # stream that broke after it began is billed.
-            await self._gate.settle(ctx, hold, None, billed=failed.partial is not None, site=None)
-            if failed.partial is not None:
-                await self._steps.append_steps(
-                    ctx, session_id, epoch, [_response(request, failed.partial, self._clock())]
-                )
+            # stream that broke after it began is billed, whole.
+            if failed.partial is None:
+                await self._gate.settle(ctx, hold, None, billed=False, site=None)
+                raise
+            broken = _response(request, failed.partial, self._clock())
+            site = CallSite(
+                loop_id=loop_id,
+                step_id=broken.id,
+                latency_ms=elapsed_ms(started, broken.created_at),
+            )
+            await self._gate.settle(
+                ctx, hold, None, billed=True, site=site, partial=failed.partial.usage
+            )
+            await self._steps.append_steps(ctx, session_id, epoch, [broken])
             raise
         answered = self._clock()
         response = _response(request, reply, answered)
