@@ -58,10 +58,10 @@ amount, a window that never resets, or a missing price waits on a
 person's raise or price: no retry time. The park tries again when the last
 of its breaches can have cleared, and names the breach that binds
 longest. A park with a retry time lands, with the session's write, a
-`WAKE_SESSION` work item that waits in the queue until then. A raised budget lands a `WAKE_SESSIONS` item that wakes every
-session of the org parked on a budget. Each wake writes the engine's
-`unlock` control, and the run that takes the session up asks its gates
-again.
+`WAKE_SESSION` work item that waits in the queue until then. A raised
+budget lands a `WAKE_SESSIONS` item that wakes every session of the org
+parked on a budget. Each wake writes the engine's `unlock` control, and
+the run that takes the session up asks its gates again.
 
 ## Consequences
 

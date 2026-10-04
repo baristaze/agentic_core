@@ -5,9 +5,9 @@
 ## Context
 
 The spec records two figures on every model call: native usage, tokens
-by class, and reference cost. Both lived where the history lives. The
-response step's shape carries the usage by class, and the ledger's
-settlement keeps the reference cost and one token total
+by class, and reference cost. The response step's shape carries the
+usage by class, and the ledger's settlement keeps the reference cost and
+one token total
 ([ADR 1006](1006-a-hold-is-held-before-the-call-and-written-once.md)).
 
 A memory-only session may keep no shape at rest. Its steps then live
@@ -23,9 +23,10 @@ rest keep its shape anyway.
 `activity.usage_records`, in the `budgets` namespace beside the ledger.
 It holds the call's hold, its session, the session's tree, its loop,
 and the step that answered it; the agent kind and its version, the
-model role, the provider, and the model; input, cache-read, cache-write, output, and thinking tokens; the
-reference cost, `cost_micros`, at the price the hold read, or null when
-no price applied; and the provider's latency. The call gate writes it
+model role, the provider, and the model; input, cache-read, cache-write,
+output, and thinking tokens; the reference cost, `cost_micros`, at the
+price the hold read, or null when no price applied; and the provider's
+latency. The call gate writes it
 when it settles a call the provider billed, once per hold: a second
 write of the same hold lands nothing.
 
@@ -71,9 +72,10 @@ org, and none of the figures. The answer, `SessionUsageView`:
 - `session_id`.
 - `items`: a page of records, oldest first, each with `id`,
   `created_at`, `hold_id`, `session_id`, `tree_id`, `loop_id`,
-  `step_id`, `agent_kind`, `kind_version`, `role`, `provider`, `model`, `input_tokens`,
-  `cache_read_tokens`, `cache_write_tokens`, `output_tokens`,
-  `thinking_tokens`, `cost_micros`, `latency_ms`, and `settled_whole`.
+  `step_id`, `agent_kind`, `kind_version`, `role`, `provider`, `model`,
+  `input_tokens`, `cache_read_tokens`, `cache_write_tokens`,
+  `output_tokens`, `thinking_tokens`, `cost_micros`, `latency_ms`, and
+  `settled_whole`.
 - `next_cursor`: the next page's `cursor`, or null.
 - `loops`: one `{loop_id, rollup}` per loop, in the order each loop
   first called, up to a thousand, and `has_more_loops` past them.

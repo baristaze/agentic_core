@@ -11,11 +11,11 @@ session's registry. A principal may start or instruct a session only if
 it may make each kind of call the registry offers. Policy then gates each
 call on its own.
 
-Nothing said which calls a principal may make. A tool names its class,
-the kind of power it uses, and a tenant grants permissions, not classes.
-So a member could message a steady session an admin started, and its
-agent would change the tenant's configuration under the admin's
-authority, on the member's word.
+A tool names its class, the kind of power it uses, and a tenant grants
+permissions, not classes. Without a map between the two, a member could
+message a steady session an admin started, and its agent would change
+the tenant's configuration under the admin's authority, on the member's
+word.
 
 ## Decision
 
@@ -30,9 +30,9 @@ table is `CLASS_PERMISSIONS` in `om/src/acme/om/tools/rules.py`.
 start and a spawn by a sender who lacks one are refused before anything
 is made. So is an instruction, a principal's message or a parent's to
 its child, however its actor is labelled, by the inbox and by a run's
-append alike, with nothing appended. The engine's own notice, an event from outside, an
-agent's message from no parent, and a control instruct nobody, and are
-not asked.
+append alike, with nothing appended. The engine's own notice, an event
+from outside, an agent's message from no parent, and a control instruct
+nobody, and are not asked.
 
 **The agents answer it.** A session's registry is its kind's tools that
 the catalog holds, so the agents manager reads it; the root binds the
