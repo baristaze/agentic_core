@@ -56,6 +56,8 @@ from acme.om.steps.types.header import (
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.steps.types.stream import StreamPart, TextPart, ToolInputPart
 from acme.om.tools.registry import ToolRegistry
+from acme.om.tools.rules import DEFAULT_CEILINGS
+from acme.om.tools.types.policy import PolicyLayer
 from acme.om.windows.impl.gate import CallGateBudgetImpl
 from acme.om.windows.rules import request_step
 
@@ -567,20 +569,29 @@ async def test_a_marked_session_holding_private_data_asks_a_person_before_it_act
 
 
 async def test_a_session_holding_no_private_data_acts_outward_unattended(tmp_path: Path) -> None:
+    """The rule of two holds back only a session that holds private data.
+    The platform's outward ceiling holds back every outward call, so the
+    session acts unattended only where its adopter lifts that ceiling."""
     public = ASSISTANT.model_copy(update={"name": "public", "private_data": False})
-    loop = loop_over(tmp_path, kinds=(public,))
-    session_id = await loop.start("public")
-    await loop.say(session_id, "Find the total and send it.")
-    loop.anthropic.add(
-        reply(use("lookup", use_id="use_lookup")),
-        reply(use("send", use_id="use_send")),
-        reply(said("Sent.")),
+    destructive_only = PolicyLayer(
+        rules=tuple(r for r in DEFAULT_CEILINGS.rules if r.authorization_class is not None)
     )
+    ran: dict[bool, RunEnd] = {}
+    for lifted in (False, True):
+        loop = loop_over(
+            tmp_path / str(lifted), kinds=(public,), ceilings=destructive_only if lifted else None
+        )
+        session_id = await loop.start("public")
+        await loop.say(session_id, "Find the total and send it.")
+        loop.anthropic.add(
+            reply(use("lookup", use_id="use_lookup")),
+            reply(use("send", use_id="use_send")),
+            reply(said("Sent.")),
+        )
+        ran[lifted] = (await loop.loops.run(loop.owner, session_id)).end
+        assert loop.tools["send"].ran_as == ([loop.owner.user_id] if lifted else []), lifted
 
-    run = await loop.loops.run(loop.owner, session_id)
-
-    assert run.outcome is LoopOutcome.SUCCEEDED
-    assert loop.tools["send"].ran_as == [loop.owner.user_id]
+    assert ran == {False: RunEnd.PARKED, True: RunEnd.ENDED}
 
 
 # Recovery before any park, a cut reply, attribution by delivery, a stale

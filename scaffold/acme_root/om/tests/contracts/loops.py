@@ -37,6 +37,7 @@ from acme.om.storage.root import StorageInterface
 from acme.om.tenancy.rules import permissions_of
 from acme.om.tools.attachments import AttachmentReaderInterface
 from acme.om.tools.impl.attachments import AttachmentReaderNullImpl
+from acme.om.tools.impl.manager import ToolsOptions
 from acme.om.tools.tool import JobToolInterface, ToolInterface, ToolRuntime
 from acme.om.tools.types.call import JobHandle, JobStarted
 from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule, Target
@@ -321,13 +322,14 @@ def loop_over(
     jitter: Callable[[], float] = random.random,
     reader: AttachmentReaderInterface | None = None,
     extra: tuple[ToolInterface, ...] = (),
+    ceilings: PolicyLayer | None = None,
 ) -> Loop:
     """`storage` None is the memory storage, and `owner` None a fresh
     tenant's owner; a suite over Postgres hands in both. `jitter` is what
     the loop draws its retry waits from. The loop's catalog holds the
     engine's tools before the suite's, over `reader`, None the null, and
     `extra` after them: a product's own tool, which a kind of `kinds`
-    names."""
+    names. `ceilings` None keeps the platform's."""
     infra = InfraLocalImpl(tmp_path)
     anthropic = ModelProviderScriptedImpl(ProviderName.ANTHROPIC)
     openai = ModelProviderScriptedImpl(ProviderName.OPENAI)
@@ -348,6 +350,7 @@ def loop_over(
         principal_context=live,
         tool_catalog=every,
         attachment_reader=reader,
+        tools_options=None if ceilings is None else ToolsOptions(ceilings=ceilings),
     )
     clock = Clock()
     calls = CallGateBudgetImpl(

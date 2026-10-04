@@ -32,6 +32,7 @@ from acme.om.tools.types.policy import (
     PolicyCall,
     PolicyLayer,
     PolicyRule,
+    Target,
     ToolPolicy,
 )
 from acme.om.tools.types.tool import Effect, ToolClass
@@ -85,6 +86,16 @@ ADVICE: dict[ToolFailure, str] = {
 def permissions_for(classes: Iterable[str]) -> frozenset[Permission]:
     """What a principal holds to make every kind of call `classes` names."""
     return frozenset(CLASS_PERMISSIONS.get(name, Permission.WRITE) for name in classes)
+
+
+def call_refusal(ctx: TenantContext, authorization_class: str) -> str | None:
+    """Why the principal whose live context is `ctx` may not make a call of
+    `authorization_class`, or None when it may. Asked at every call, so a
+    permission taken away between two calls stops the second (ADR 1007)."""
+    needed = CLASS_PERMISSIONS.get(authorization_class, Permission.WRITE)
+    if ctx.has(needed):
+        return None
+    return f"{ctx.role.value} lacks {needed.value}, which a {authorization_class} call needs"
 
 
 def instruct_refusal(ctx: TenantContext, classes: Iterable[str]) -> str | None:
@@ -194,6 +205,16 @@ def reaches_outward(call: PolicyCall, egress: EgressMode) -> bool:
     if call.authorization_class == ToolClass.EXECUTE and egress is EgressMode.OPEN:
         return True
     return call.authorization_class not in INWARD_CLASSES
+
+
+def with_reach(call: PolicyCall, egress: EgressMode) -> PolicyCall:
+    """The call as policy reads it: its target says whether it acts outward,
+    in the target's own word or, where the target does not say, by
+    `reaches_outward`. So the platform's outward ceiling, and any rule keyed
+    on `outward`, meets every call the rule of two counts as outward, not
+    only one whose target marks it."""
+    attributes = {**call.target.attributes, "outward": reaches_outward(call, egress)}
+    return call.model_copy(update={"target": Target(kind=call.target.kind, attributes=attributes)})
 
 
 def specificity(rule: PolicyRule) -> int:
