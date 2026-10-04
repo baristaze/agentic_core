@@ -16,7 +16,7 @@ Lenses: `../../lenses/agents.md`.
 
 ## Input
 
-`<kind> [--done answer|result_tool] [--result-tool <tool>] [--tools <tool,...>] [--authority delegated|steady] [--tree <height>/<count>] [--deadline <hours>]`,
+`<kind> [--done answer|result_tool] [--result-tool <tool>] [--tools <tool,...>] [--authority delegated|steady] [--tree <height>/<count>] [--deadline <hours>] [--share <micros>]`,
 and what the kind's agent does, in the arguments or in the
 conversation.
 
@@ -36,6 +36,9 @@ Example: `fixer --done result_tool --result-tool submit --tools read_log,run_tes
   single agent, unless the kind spawns.
 - `--deadline`: the hours a tree the kind roots has, from its start;
   none unless the product bounds the kind's work in time.
+- `--share`: the reference cost, in millionths, one session of the kind
+  may spend over its life as a sub-agent. A kind some spawn starts
+  names one; when it is not given for such a kind, ask.
 
 ## Created
 
@@ -79,7 +82,10 @@ The shape of a kind is `DELIVERY` and `ASSISTANT` in
    are not run there: this skill's run once, for both.
 4. A kind's bounds are the tree's: its height, its count, and one
    deadline every session of it shares. A kind that spawns sub-agents
-   names a `spawn`-class tool among its tools.
+   names a `spawn`-class tool among its tools. A kind some spawn starts
+   names its `share`, an `Amount` from
+   `om/src/<name>/om/budgets/types/amount.py`: a spawn writes it as a
+   budget on the child's session, and refuses a kind with none.
 5. The tests hold, over `AGENT_KINDS`: the catalog builds from them;
    `latest(<kind>)` answers this version, and each earlier version
    still answers by its number. Each container passes them, held in
