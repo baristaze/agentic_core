@@ -1223,6 +1223,24 @@
         "title": "LoopOutcome",
         "type": "string"
       },
+      "LoopUsageView": {
+        "properties": {
+          "loop_id": {
+            "format": "uuid",
+            "title": "Loop Id",
+            "type": "string"
+          },
+          "rollup": {
+            "$ref": "#/components/schemas/UsageRollupView"
+          }
+        },
+        "required": [
+          "loop_id",
+          "rollup"
+        ],
+        "title": "LoopUsageView",
+        "type": "object"
+      },
       "MeView": {
         "properties": {
           "app": {
@@ -1952,6 +1970,58 @@
         "title": "SessionStatus",
         "type": "string"
       },
+      "SessionUsageView": {
+        "description": "A page of a session's usage records, oldest first, with the rollup of\neach loop, in the order it first called, and of the whole session. The\nrollups cover every record, whatever the page; `has_more_loops` says the\nsession ran more loops than `loops` holds. With `next_cursor`, the next\npage of `items` starts there.",
+        "properties": {
+          "has_more_loops": {
+            "title": "Has More Loops",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UsageRecordView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "loops": {
+            "items": {
+              "$ref": "#/components/schemas/LoopUsageView"
+            },
+            "title": "Loops",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "total": {
+            "$ref": "#/components/schemas/UsageRollupView"
+          }
+        },
+        "required": [
+          "session_id",
+          "items",
+          "next_cursor",
+          "loops",
+          "has_more_loops",
+          "total"
+        ],
+        "title": "SessionUsageView",
+        "type": "object"
+      },
       "SessionView": {
         "description": "Only the hash of a token is ever kept, so a session view carries no secret.",
         "properties": {
@@ -2283,8 +2353,42 @@
         "title": "StepType",
         "type": "string"
       },
+      "StepUsageView": {
+        "description": "What a model call used, as its provider reported it, in disjoint\nclasses, so no token is counted twice.",
+        "properties": {
+          "cache_read": {
+            "title": "Cache Read",
+            "type": "integer"
+          },
+          "cache_write": {
+            "title": "Cache Write",
+            "type": "integer"
+          },
+          "input": {
+            "title": "Input",
+            "type": "integer"
+          },
+          "output": {
+            "title": "Output",
+            "type": "integer"
+          },
+          "thinking": {
+            "title": "Thinking",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "input",
+          "cache_read",
+          "cache_write",
+          "output",
+          "thinking"
+        ],
+        "title": "StepUsageView",
+        "type": "object"
+      },
       "StepView": {
-        "description": "One step of a session's history, in its order. `text` is what it\nsays: a message's words, a model's answer, a tool's result. The rest is\nits header's, by type: the tools a model response called and why it\nstopped, a tool call's tool and the class of its failure, a control's\ncommand, a park, a loop's outcome.",
+        "description": "One step of a session's history, in its order. `text` is what it\nsays: a message's words, a model's answer, a tool's result. The rest is\nits header's, by type: the tools a model response called, why it\nstopped, and what it used; a tool call's tool and the class of its\nfailure; a control's command; a park; a loop's outcome.",
         "properties": {
           "actor": {
             "$ref": "#/components/schemas/Actor"
@@ -2405,6 +2509,16 @@
           },
           "type": {
             "$ref": "#/components/schemas/StepType"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StepUsageView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -2420,6 +2534,7 @@
           "text",
           "tools",
           "stop_reason",
+          "usage",
           "tool",
           "failure",
           "command",
@@ -2589,6 +2704,167 @@
           "value"
         ],
         "title": "UploadFieldView",
+        "type": "object"
+      },
+      "UsageRecordView": {
+        "description": "One model call a provider billed with its usage, as the ledger keeps\nit: ids, tokens by disjoint class, reference cost in millionths (null\nwhen no price applied), the provider's latency, and the labels of what\nserved it. It holds no content, so it reads the same in every storage\nmode. `step_id` is the call's response step; `hold_id` its hold.",
+        "properties": {
+          "agent_kind": {
+            "title": "Agent Kind",
+            "type": "string"
+          },
+          "cache_read_tokens": {
+            "title": "Cache Read Tokens",
+            "type": "integer"
+          },
+          "cache_write_tokens": {
+            "title": "Cache Write Tokens",
+            "type": "integer"
+          },
+          "cost_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Micros"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "hold_id": {
+            "format": "uuid",
+            "title": "Hold Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "input_tokens": {
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "latency_ms": {
+            "title": "Latency Ms",
+            "type": "integer"
+          },
+          "loop_id": {
+            "format": "uuid",
+            "title": "Loop Id",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "output_tokens": {
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "step_id": {
+            "format": "uuid",
+            "title": "Step Id",
+            "type": "string"
+          },
+          "thinking_tokens": {
+            "title": "Thinking Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "hold_id",
+          "session_id",
+          "loop_id",
+          "step_id",
+          "agent_kind",
+          "role",
+          "provider",
+          "model",
+          "input_tokens",
+          "cache_read_tokens",
+          "cache_write_tokens",
+          "output_tokens",
+          "thinking_tokens",
+          "cost_micros",
+          "latency_ms"
+        ],
+        "title": "UsageRecordView",
+        "type": "object"
+      },
+      "UsageRollupView": {
+        "description": "The sum of some records. `unpriced` counts the calls no price applied\nto, whose cost is in no figure here: a rollup with any is a floor.",
+        "properties": {
+          "cache_read_tokens": {
+            "title": "Cache Read Tokens",
+            "type": "integer"
+          },
+          "cache_write_tokens": {
+            "title": "Cache Write Tokens",
+            "type": "integer"
+          },
+          "calls": {
+            "title": "Calls",
+            "type": "integer"
+          },
+          "cost_micros": {
+            "title": "Cost Micros",
+            "type": "integer"
+          },
+          "input_tokens": {
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "latency_ms": {
+            "title": "Latency Ms",
+            "type": "integer"
+          },
+          "output_tokens": {
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "thinking_tokens": {
+            "title": "Thinking Tokens",
+            "type": "integer"
+          },
+          "unpriced": {
+            "title": "Unpriced",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "calls",
+          "input_tokens",
+          "cache_read_tokens",
+          "cache_write_tokens",
+          "output_tokens",
+          "thinking_tokens",
+          "cost_micros",
+          "unpriced",
+          "latency_ms"
+        ],
+        "title": "UsageRollupView",
         "type": "object"
       },
       "UserPageView": {
@@ -4007,6 +4283,134 @@
           }
         },
         "summary": "Add Member",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/orgs/{org_id}/sessions/{session_id}/usage": {
+      "get": {
+        "description": "What one session's model calls used and cost, in every storage mode\n(ADR 1014). Requires the read permission.\n\nThe answer is a `SessionUsageView`: `session_id`; `items`, a page of the\nsession's usage records, oldest first, each with `id`, `created_at`,\n`hold_id`, `session_id`, `loop_id`, `step_id` (the call's response\nstep), `agent_kind`, `role`, `provider`, `model`, `input_tokens`,\n`cache_read_tokens`, `cache_write_tokens`, `output_tokens`,\n`thinking_tokens`, `cost_micros` (reference cost in millionths, null when\nno price applied), and `latency_ms`; `next_cursor`, the next page's\n`cursor`, or null; `loops`, one `{loop_id, rollup}` per loop in the order\nit first called; `has_more_loops`; and `total`, the session's rollup. A\nrollup holds `calls`, the five token classes, `cost_micros`, `unpriced`\n(calls no price applied to, whose cost no figure holds), and\n`latency_ms`. The rollups cover every record, whatever the page.\n\nA record holds ids, counts, money, a duration, and labels, and no\ncontent. `404 not_found` for an unknown org, and for a session the org\nholds no record of, which is how another tenant's session reads.",
+        "operationId": "get_session_usage_v1_admin_orgs__org_id__sessions__session_id__usage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Org Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionUsageView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Session Usage",
         "tags": [
           "admin"
         ]

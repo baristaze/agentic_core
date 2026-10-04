@@ -191,6 +191,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/orgs/{org_id}/sessions/{session_id}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Usage
+         * @description What one session's model calls used and cost, in every storage mode
+         *     (ADR 1014). Requires the read permission.
+         *
+         *     The answer is a `SessionUsageView`: `session_id`; `items`, a page of the
+         *     session's usage records, oldest first, each with `id`, `created_at`,
+         *     `hold_id`, `session_id`, `loop_id`, `step_id` (the call's response
+         *     step), `agent_kind`, `role`, `provider`, `model`, `input_tokens`,
+         *     `cache_read_tokens`, `cache_write_tokens`, `output_tokens`,
+         *     `thinking_tokens`, `cost_micros` (reference cost in millionths, null when
+         *     no price applied), and `latency_ms`; `next_cursor`, the next page's
+         *     `cursor`, or null; `loops`, one `{loop_id, rollup}` per loop in the order
+         *     it first called; `has_more_loops`; and `total`, the session's rollup. A
+         *     rollup holds `calls`, the five token classes, `cost_micros`, `unpriced`
+         *     (calls no price applied to, whose cost no figure holds), and
+         *     `latency_ms`. The rollups cover every record, whatever the page.
+         *
+         *     A record holds ids, counts, money, a duration, and labels, and no
+         *     content. `404 not_found` for an unknown org, and for a session the org
+         *     holds no record of, which is how another tenant's session reads.
+         */
+        get: operations["get_session_usage_v1_admin_orgs__org_id__sessions__session_id__usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/orgs/{org_id}/work/{item_id}/requeue": {
         parameters: {
             query?: never;
@@ -1600,6 +1638,15 @@ export interface components {
          * @enum {string}
          */
         LoopOutcome: "succeeded" | "failed" | "inconclusive" | "cancelled" | "errored";
+        /** LoopUsageView */
+        LoopUsageView: {
+            /**
+             * Loop Id
+             * Format: uuid
+             */
+            loop_id: string;
+            rollup: components["schemas"]["UsageRollupView"];
+        };
         /** MeView */
         MeView: {
             /** App */
@@ -1974,6 +2021,30 @@ export interface components {
          */
         SessionStatus: "pending" | "running" | "parked" | "idle";
         /**
+         * SessionUsageView
+         * @description A page of a session's usage records, oldest first, with the rollup of
+         *     each loop, in the order it first called, and of the whole session. The
+         *     rollups cover every record, whatever the page; `has_more_loops` says the
+         *     session ran more loops than `loops` holds. With `next_cursor`, the next
+         *     page of `items` starts there.
+         */
+        SessionUsageView: {
+            /** Has More Loops */
+            has_more_loops: boolean;
+            /** Items */
+            items: components["schemas"]["UsageRecordView"][];
+            /** Loops */
+            loops: components["schemas"]["LoopUsageView"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+            /**
+             * Session Id
+             * Format: uuid
+             */
+            session_id: string;
+            total: components["schemas"]["UsageRollupView"];
+        };
+        /**
          * SessionView
          * @description Only the hash of a token is ever kept, so a session view carries no secret.
          */
@@ -2146,12 +2217,29 @@ export interface components {
          */
         StepType: "message" | "event" | "control" | "model_request" | "model_response" | "tool_request" | "tool_response" | "summary" | "parked" | "resumed" | "loop_ended" | "switched" | "environment_changed";
         /**
+         * StepUsageView
+         * @description What a model call used, as its provider reported it, in disjoint
+         *     classes, so no token is counted twice.
+         */
+        StepUsageView: {
+            /** Cache Read */
+            cache_read: number;
+            /** Cache Write */
+            cache_write: number;
+            /** Input */
+            input: number;
+            /** Output */
+            output: number;
+            /** Thinking */
+            thinking: number;
+        };
+        /**
          * StepView
          * @description One step of a session's history, in its order. `text` is what it
          *     says: a message's words, a model's answer, a tool's result. The rest is
-         *     its header's, by type: the tools a model response called and why it
-         *     stopped, a tool call's tool and the class of its failure, a control's
-         *     command, a park, a loop's outcome.
+         *     its header's, by type: the tools a model response called, why it
+         *     stopped, and what it used; a tool call's tool and the class of its
+         *     failure; a control's command; a park; a loop's outcome.
          */
         StepView: {
             actor: components["schemas"]["Actor"];
@@ -2189,6 +2277,7 @@ export interface components {
             /** Tools */
             tools: string[];
             type: components["schemas"]["StepType"];
+            usage: components["schemas"]["StepUsageView"] | null;
         };
         /**
          * StopReason
@@ -2276,6 +2365,93 @@ export interface components {
             name: string;
             /** Value */
             value: string;
+        };
+        /**
+         * UsageRecordView
+         * @description One model call a provider billed with its usage, as the ledger keeps
+         *     it: ids, tokens by disjoint class, reference cost in millionths (null
+         *     when no price applied), the provider's latency, and the labels of what
+         *     served it. It holds no content, so it reads the same in every storage
+         *     mode. `step_id` is the call's response step; `hold_id` its hold.
+         */
+        UsageRecordView: {
+            /** Agent Kind */
+            agent_kind: string;
+            /** Cache Read Tokens */
+            cache_read_tokens: number;
+            /** Cache Write Tokens */
+            cache_write_tokens: number;
+            /** Cost Micros */
+            cost_micros: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Hold Id
+             * Format: uuid
+             */
+            hold_id: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Latency Ms */
+            latency_ms: number;
+            /**
+             * Loop Id
+             * Format: uuid
+             */
+            loop_id: string;
+            /** Model */
+            model: string;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Provider */
+            provider: string;
+            /** Role */
+            role: string;
+            /**
+             * Session Id
+             * Format: uuid
+             */
+            session_id: string;
+            /**
+             * Step Id
+             * Format: uuid
+             */
+            step_id: string;
+            /** Thinking Tokens */
+            thinking_tokens: number;
+        };
+        /**
+         * UsageRollupView
+         * @description The sum of some records. `unpriced` counts the calls no price applied
+         *     to, whose cost is in no figure here: a rollup with any is a floor.
+         */
+        UsageRollupView: {
+            /** Cache Read Tokens */
+            cache_read_tokens: number;
+            /** Cache Write Tokens */
+            cache_write_tokens: number;
+            /** Calls */
+            calls: number;
+            /** Cost Micros */
+            cost_micros: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Latency Ms */
+            latency_ms: number;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Thinking Tokens */
+            thinking_tokens: number;
+            /** Unpriced */
+            unpriced: number;
         };
         /**
          * UserPageView
@@ -2796,6 +2972,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_session_usage_v1_admin_orgs__org_id__sessions__session_id__usage_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+                "x-app"?: string | null;
+                "x-app-version"?: string | null;
+            };
+            path: {
+                org_id: string;
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionUsageView"];
                 };
             };
             /** @description Validation Error */

@@ -660,6 +660,18 @@ class StepType(StrEnum):
     environment_changed = 'environment_changed'
 
 
+class StepUsageView(BaseModel):
+    """
+    What a model call used, as its provider reported it, in disjoint
+    classes, so no token is counted twice.
+    """
+    cache_read: Annotated[int, Field(title='Cache Read')]
+    cache_write: Annotated[int, Field(title='Cache Write')]
+    input: Annotated[int, Field(title='Input')]
+    output: Annotated[int, Field(title='Output')]
+    thinking: Annotated[int, Field(title='Thinking')]
+
+
 class StopReason(StrEnum):
     """
     Why a response stopped. A model's refusal is a response its agent kind
@@ -748,6 +760,49 @@ class UpdateMembershipRequest(BaseModel):
 class UploadFieldView(BaseModel):
     name: Annotated[str, Field(title='Name')]
     value: Annotated[str, Field(title='Value')]
+
+
+class UsageRecordView(BaseModel):
+    """
+    One model call a provider billed with its usage, as the ledger keeps
+    it: ids, tokens by disjoint class, reference cost in millionths (null
+    when no price applied), the provider's latency, and the labels of what
+    served it. It holds no content, so it reads the same in every storage
+    mode. `step_id` is the call's response step; `hold_id` its hold.
+    """
+    agent_kind: Annotated[str, Field(title='Agent Kind')]
+    cache_read_tokens: Annotated[int, Field(title='Cache Read Tokens')]
+    cache_write_tokens: Annotated[int, Field(title='Cache Write Tokens')]
+    cost_micros: Annotated[int | None, Field(title='Cost Micros')]
+    created_at: Annotated[AwareDatetime, Field(title='Created At')]
+    hold_id: Annotated[UUID, Field(title='Hold Id')]
+    id: Annotated[UUID, Field(title='Id')]
+    input_tokens: Annotated[int, Field(title='Input Tokens')]
+    latency_ms: Annotated[int, Field(title='Latency Ms')]
+    loop_id: Annotated[UUID, Field(title='Loop Id')]
+    model: Annotated[str, Field(title='Model')]
+    output_tokens: Annotated[int, Field(title='Output Tokens')]
+    provider: Annotated[str, Field(title='Provider')]
+    role: Annotated[str, Field(title='Role')]
+    session_id: Annotated[UUID, Field(title='Session Id')]
+    step_id: Annotated[UUID, Field(title='Step Id')]
+    thinking_tokens: Annotated[int, Field(title='Thinking Tokens')]
+
+
+class UsageRollupView(BaseModel):
+    """
+    The sum of some records. `unpriced` counts the calls no price applied
+    to, whose cost is in no figure here: a rollup with any is a floor.
+    """
+    cache_read_tokens: Annotated[int, Field(title='Cache Read Tokens')]
+    cache_write_tokens: Annotated[int, Field(title='Cache Write Tokens')]
+    calls: Annotated[int, Field(title='Calls')]
+    cost_micros: Annotated[int, Field(title='Cost Micros')]
+    input_tokens: Annotated[int, Field(title='Input Tokens')]
+    latency_ms: Annotated[int, Field(title='Latency Ms')]
+    output_tokens: Annotated[int, Field(title='Output Tokens')]
+    thinking_tokens: Annotated[int, Field(title='Thinking Tokens')]
+    unpriced: Annotated[int, Field(title='Unpriced')]
 
 
 class UserView(BaseModel):
@@ -952,6 +1007,11 @@ class LastOwnerDetail(BaseModel):
     orgs: Annotated[list[OwnedOrgRef], Field(title='Orgs')]
 
 
+class LoopUsageView(BaseModel):
+    loop_id: Annotated[UUID, Field(title='Loop Id')]
+    rollup: UsageRollupView
+
+
 class MeView(BaseModel):
     app: Annotated[str, Field(title='App')]
     org: OrgView
@@ -1031,13 +1091,29 @@ class OrgPageView(BaseModel):
     next_cursor: Annotated[str | None, Field(title='Next Cursor')]
 
 
+class SessionUsageView(BaseModel):
+    """
+    A page of a session's usage records, oldest first, with the rollup of
+    each loop, in the order it first called, and of the whole session. The
+    rollups cover every record, whatever the page; `has_more_loops` says the
+    session ran more loops than `loops` holds. With `next_cursor`, the next
+    page of `items` starts there.
+    """
+    has_more_loops: Annotated[bool, Field(title='Has More Loops')]
+    items: Annotated[list[UsageRecordView], Field(title='Items')]
+    loops: Annotated[list[LoopUsageView], Field(title='Loops')]
+    next_cursor: Annotated[str | None, Field(title='Next Cursor')]
+    session_id: Annotated[UUID, Field(title='Session Id')]
+    total: UsageRollupView
+
+
 class StepView(BaseModel):
     """
     One step of a session's history, in its order. `text` is what it
     says: a message's words, a model's answer, a tool's result. The rest is
-    its header's, by type: the tools a model response called and why it
-    stopped, a tool call's tool and the class of its failure, a control's
-    command, a park, a loop's outcome.
+    its header's, by type: the tools a model response called, why it
+    stopped, and what it used; a tool call's tool and the class of its
+    failure; a control's command; a park; a loop's outcome.
     """
     actor: Actor
     command: ControlCommand | None
@@ -1056,6 +1132,7 @@ class StepView(BaseModel):
     tool: Annotated[str | None, Field(title='Tool')]
     tools: Annotated[list[str], Field(title='Tools')]
     type: StepType
+    usage: StepUsageView | None
 
 
 class UserPageView(BaseModel):

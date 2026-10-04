@@ -37,6 +37,7 @@ from acme.services.api.types.admin import (
     OperatorView,
     OperatorWorkItemView,
     PlatformSizeView,
+    SessionUsageView,
     TotpConfirmedView,
 )
 from acme.services.api.types.common import LIMIT_DEFAULT
@@ -187,3 +188,34 @@ async def requeue_work(
     with `409 work_not_failed` for an item that is not failed, so a second
     call finds the first one's work done and says so."""
     return await service.requeue_work(admin, org_id, item_id)
+
+
+@router.get("/orgs/{org_id}/sessions/{session_id}/usage", response_model=SessionUsageView)
+async def get_session_usage(
+    admin: OperatorCtx,
+    service: AdminService,
+    org_id: UUID,
+    session_id: UUID,
+    cursor: str | None = None,
+    limit: int = LIMIT_DEFAULT,
+) -> SessionUsageView:
+    """What one session's model calls used and cost, in every storage mode
+    (ADR 1014). Requires the read permission.
+
+    The answer is a `SessionUsageView`: `session_id`; `items`, a page of the
+    session's usage records, oldest first, each with `id`, `created_at`,
+    `hold_id`, `session_id`, `loop_id`, `step_id` (the call's response
+    step), `agent_kind`, `role`, `provider`, `model`, `input_tokens`,
+    `cache_read_tokens`, `cache_write_tokens`, `output_tokens`,
+    `thinking_tokens`, `cost_micros` (reference cost in millionths, null when
+    no price applied), and `latency_ms`; `next_cursor`, the next page's
+    `cursor`, or null; `loops`, one `{loop_id, rollup}` per loop in the order
+    it first called; `has_more_loops`; and `total`, the session's rollup. A
+    rollup holds `calls`, the five token classes, `cost_micros`, `unpriced`
+    (calls no price applied to, whose cost no figure holds), and
+    `latency_ms`. The rollups cover every record, whatever the page.
+
+    A record holds ids, counts, money, a duration, and labels, and no
+    content. `404 not_found` for an unknown org, and for a session the org
+    holds no record of, which is how another tenant's session reads."""
+    return await service.get_session_usage(admin, org_id, session_id, cursor, limit)
