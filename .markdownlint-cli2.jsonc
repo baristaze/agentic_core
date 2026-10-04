@@ -26,5 +26,7 @@
   // The same files scripts/_common.py leaves out of the repository's Markdown:
   // every `.claude/` folder. The scaffold's skills sit in its `.agents/skills/`,
   // and its `.claude/skills` is a link to them, so they are linted once.
-  "ignores": ["**/node_modules/**", ".git/**", "**/.claude/**", "**/.venv/**", "**/.pytest_cache/**"]
+  // A benchmark run's folder holds the answers as the products wrote them,
+  // so it is a record and is left as it came; each scenario's README is linted.
+  "ignores": ["**/node_modules/**", ".git/**", "**/.claude/**", "**/.venv/**", "**/.pytest_cache/**", "benchmark/runs/*/*/**"]
 }

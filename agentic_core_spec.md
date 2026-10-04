@@ -1,6 +1,7 @@
-# agentic_core
+# An Engine for Long-Running Agents
 
-*Specification of an agentic engine. Preliminary. Apache 2.0.*
+*`agentic_core`, a specification. A personal edition, preliminary.
+Apache 2.0.*
 
 `agentic_core` is the engine under an agent: a tool-call loop with a model
 as its decision-maker, made durable, bounded, steerable, private, and

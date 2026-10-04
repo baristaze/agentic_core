@@ -13,15 +13,15 @@ that tells the story, and tools that hold the detail.
 - **[`agentic_core_spec.md`](agentic_core_spec.md)**: the spec. It says
   what the engine is, what it guarantees, and why. Start with its
   [Core](agentic_core_spec.md#the-core).
-- **`lenses/`**: the checkable detail under each rule of the spec, one
+- **[`lenses/`](lenses/)**: the checkable detail under each rule of the spec, one
   file per group, in the guideline's lens format.
-- **`skills/`**: skills named `agentic-*` that review a change through
+- **[`skills/`](skills/)**: skills named `agentic-*` that review a change through
   the lenses, explain a rule, record a deviation, and scaffold the
   engine's parts. They follow the [Agent
   Skills](https://agentskills.io/specification) standard.
-- **`scaffold/`**: the engine's domain-free core, built on the
+- **[`scaffold/`](scaffold/)**: the engine's domain-free core, built on the
   guideline's scaffold. A platform renders it under its own name. It
-  carries `checkers/`, the checker for the lenses a program can decide,
+  carries [`checkers/`](scaffold/acme_root/checkers/), the checker for the lenses a program can decide,
   so every copy runs it.
 
 [The Repository](agentic_core_spec.md#the-repository) in the spec says
@@ -51,6 +51,9 @@ In Claude Code, the repository is a plugin marketplace:
 /plugin marketplace add baristaze/agentic_core
 /plugin install agentic-core@agentic-core
 ```
+
+While the repository is private, only an account that can clone it can
+add the marketplace.
 
 ## Develop
 
