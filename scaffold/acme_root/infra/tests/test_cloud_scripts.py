@@ -7,6 +7,7 @@ dry run that wrote a profile or an env file by mistake would be caught.
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -102,6 +103,21 @@ def test_create_staging_dry_run_prints_every_step_and_writes_nothing(tmp_path: P
     assert not (ROOT / "deployment/terraform/bootstrap/staging/backend_override.tf").exists()
 
 
+def test_create_drops_a_site_cname_left_by_a_destroyed_environment(tmp_path: Path) -> None:
+    # CloudFront refuses a name whose CNAME points at another distribution,
+    # even one the nuke deleted, so the run removes that leftover before the
+    # deploy, and only while no distribution of the account serves the name.
+    result = _run(CREATE, "staging", "--dry-run", home=tmp_path)
+    assert result.returncode == 0, result.stderr
+    out = result.stdout
+    step = out[out.index("== 3c.") : out.index("== 4.")]
+    stale = step.index(
+        f"type=CNAME&name={STAGING['site_domain_name']}  (a CNAME to CloudFront whose target no longer resolves goes)"
+    )
+    assert stale < step.index(f"CNAME {STAGING['site_domain_name']} -> <the distribution's domain>")
+    assert out.index("== 3c.") < out.index("+ gh workflow run deploy-staging.yml --ref main")
+
+
 def test_create_production_dry_run_sets_two_environments_and_waits_for_replication(
     tmp_path: Path,
 ) -> None:
@@ -128,6 +144,22 @@ def test_create_production_dry_run_sets_two_environments_and_waits_for_replicati
     assert f"ACME_API_URL=https://{PRODUCTION['api_domain_name']}" in out
     assert "gh workflow run grant-operator.yml --ref release -f environment=production" in out
     assert "uv run acme-ops signals check --env production" in out
+
+
+def test_create_production_protects_release_with_a_ruleset_and_a_deploy_key(
+    tmp_path: Path,
+) -> None:
+    # release moves only by release.yml, whose push uses a deploy key the
+    # ruleset lets through; the key's private half goes straight into the
+    # secret and is never printed. Staging's run touches none of it.
+    out = _run(CREATE, "production", "--dry-run", home=tmp_path).stdout
+    step = out[out.index("== 5c.") : out.index("== 6.")]
+    assert "+ gh repo deploy-key add <its public half> --allow-write --title release" in step
+    assert "+ gh secret set RELEASE_DEPLOY_KEY < <its private half>" in step
+    assert "+ gh api -X POST repos/{owner}/{repo}/rulesets --input <the release ruleset>" in step
+    assert out.index("== 5.") < out.index("== 5c.")
+    staging = _run(CREATE, "staging", "--dry-run", home=tmp_path).stdout
+    assert "== 5c." not in staging and "RELEASE_DEPLOY_KEY" not in staging
 
 
 def test_create_refuses_to_run_for_real_without_the_cloudflare_token(tmp_path: Path) -> None:
@@ -159,6 +191,70 @@ def test_create_refuses_to_run_for_real_on_placeholders(environment: str, tmp_pa
         assert name in refusal
     root = ENVIRONMENTS["environments"][environment]["environment_root"]
     assert f"workos_client_id in deployment/terraform/{root}/variables.tf" in refusal
+
+
+def _tree_with_tracker(tmp_path: Path, tracker: dict[str, str]) -> Path:
+    """The create script beside an environments.json whose error tracker is
+    `tracker`, everything else as shipped."""
+    tree = tmp_path / "tree"
+    (tree / "scripts").mkdir(parents=True)
+    shutil.copy(CREATE, tree / "scripts")
+    (tree / "deployment" / "cloud").mkdir(parents=True)
+    layout = {**ENVIRONMENTS, "error_tracker": tracker}
+    (tree / "deployment" / "cloud" / "environments.json").write_text(json.dumps(layout))
+    for env in (STAGING, PRODUCTION):
+        root = Path("deployment/terraform") / env["environment_root"]
+        (tree / root).mkdir(parents=True)
+        shutil.copy(ROOT / root / "variables.tf", tree / root)
+    return tree / "scripts" / CREATE.name
+
+
+def test_create_writes_the_trackers_url_org_and_project_from_the_environments(
+    tmp_path: Path,
+) -> None:
+    """The tracker's org is its own slug, which need not be the product's
+    name: an env file that guessed it would name an org that does not
+    exist, and every read of the errors would fail."""
+    shipped = ENVIRONMENTS["error_tracker"]
+    out = _run(CREATE, "staging", "--dry-run", home=tmp_path).stdout
+    assert f"ACME_ERROR_TRACKER_URL={shipped['url']}\n" in out
+    assert f"ACME_ERROR_TRACKER_ORG={shipped['org']}  #" in out
+    assert f"ACME_ERROR_TRACKER_PROJECT={shipped['project']}  #" in out
+    tracker = {"url": "https://errors.acme.test", "org": "acme-xy", "project": "acme-api"}
+    result = _run(_tree_with_tracker(tmp_path, tracker), "staging", "--dry-run", home=tmp_path)
+    assert result.returncode == 0, result.stderr
+    out = result.stdout
+    assert "ACME_ERROR_TRACKER_URL=https://errors.acme.test\n" in out
+    assert "ACME_ERROR_TRACKER_ORG=acme-xy  #" in out
+    assert "ACME_ERROR_TRACKER_PROJECT=acme-api  #" in out
+    assert "Filled by hand, " in out and ": ACME_ERROR_TRACKER_TOKEN in " in out
+    assert not (tmp_path / ".config").exists()
+
+
+def test_create_refuses_a_placeholder_tracker_and_runs_without_one(tmp_path: Path) -> None:
+    """A placeholder or a half-named tracker is refused before any command,
+    like every other placeholder; an empty url is an environment with no
+    tracker, which runs, and its env file's tracker lines stay empty."""
+    real = {"CLOUDFLARE_API_TOKEN": "token"}
+    shipped = _run(CREATE, "staging", home=tmp_path, **real).stderr
+    for name in ("error_tracker.url", "error_tracker.org", "error_tracker.project"):
+        assert name in shipped
+    half = {"url": "https://errors.acme.test", "org": "", "project": "acme"}
+    refusal = _run(_tree_with_tracker(tmp_path / "half", half), "staging", home=tmp_path, **real)
+    assert refusal.returncode == 2 and refusal.stdout == ""
+    assert "error_tracker.org" in refusal.stderr
+    assert "error_tracker.url" not in refusal.stderr
+    assert "error_tracker.project" not in refusal.stderr
+    none = {"url": "", "org": "ORG_PLACEHOLDER", "project": "PROJECT_PLACEHOLDER"}
+    script = _tree_with_tracker(tmp_path / "none", none)
+    refusal = _run(script, "staging", home=tmp_path, **real)
+    assert "refused: placeholders left: " in refusal.stderr
+    assert "error_tracker" not in refusal.stderr
+    out = _run(script, "staging", "--dry-run", home=tmp_path).stdout
+    for line in ("URL", "TOKEN", "ORG", "PROJECT"):
+        assert f"ACME_ERROR_TRACKER_{line}=\n" in out or f"ACME_ERROR_TRACKER_{line}=  #" in out
+    assert "No error tracker: " in out
+    assert "sentry_dsn stays off: " in out
 
 
 @pytest.mark.parametrize("script", [CREATE, NUKE], ids=["create", "nuke"])
@@ -215,10 +311,34 @@ def test_nuke_staging_dry_run_lifts_the_protections_then_destroys(tmp_path: Path
     worktree = "<a worktree of the deployed commit> <the last commit staging deployed>"
     assert f"+ git worktree add --detach {worktree}" in out
     assert "origin/main" not in out
-    assert out.count(f"(expect account {STAGING['account_id']})") == 3
-    assert "== 5. What remains" in out
+    assert out.count(f"(expect account {STAGING['account_id']})") == 4
+    assert "== 6. What remains" in out
     assert "the bootstrap root, whole" in out
     assert "the state prefix environments/staging/" in out
+
+
+def test_nuke_removes_what_terraform_does_not_own_after_the_destroy(tmp_path: Path) -> None:
+    # The application's secrets and the leftovers AWS made are not in the
+    # state. Each is found by this environment's names alone, after the
+    # destroy, and the tenants' secrets follow the database's final snapshot.
+    result = _run(NUKE, "staging", "--dry-run", home=tmp_path)
+    assert result.returncode == 0, result.stderr
+    out = result.stdout
+    leftovers = out.index("== 5. Remove what Terraform does not own")
+    assert out.index(f"+ terraform -chdir={STAGING_ROOT} destroy") < leftovers
+    step = out[leftovers : out.index("== 6. What remains")]
+    assert "describe-db-snapshots --db-snapshot-identifier acme-staging-final" in step
+    assert "Values=acme/staging/app/org/" in step
+    assert "starts_with(Name, 'acme/staging/app/org/')" in step
+    assert "(only when acme-staging-final does not exist)" in step
+    assert "--log-group-name-prefix /aws/ecs/containerinsights/acme-staging/" in step
+    assert "--family-prefix acme-staging-" in step
+    assert "--force-delete-without-recovery" in step
+    assert "production" not in step
+    # A dry run reads nothing, so it cannot say whether production holds
+    # copies of staging's builds; it names the condition instead.
+    assert "get-bucket-replication --bucket acme-artifacts-" in out
+    assert "when the artifacts bucket replicates" in out
 
 
 def test_nuke_refuses_production_without_its_typed_name(tmp_path: Path) -> None:
