@@ -44,6 +44,14 @@ on its GitHub release. It moves the version in
 it. Until the first release the version is `0.0.0`, and the changelog
 has no release section.
 
+`.github/workflows/release.yml`, dispatched on `main` with the squash of
+the release pull request and the release's name, publishes the release
+once a reviewer of the `human-approval` environment approves. It
+fast-forwards the `release` branch to the squash, tags it, and publishes
+the GitHub release with the changelog's section as its notes. It refuses
+while that environment has no required reviewer, so nothing is
+published unreviewed.
+
 ## License
 
 By contributing you agree that your contribution is licensed under the
