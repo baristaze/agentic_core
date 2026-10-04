@@ -39,6 +39,7 @@ from acme.om.agents.types.request import Handoff, Spawn
 from acme.om.agents.types.run import RunEnd
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
+from acme.om.context import TenantContext
 from acme.om.exceptions import StaleWriter
 from acme.om.models.types.fill import MAIN, SUMMARIZER, Eligibility
 from acme.om.steps.types.content import UNPARSED, TextBlock, ToolResultBlock, ToolUseBlock
@@ -53,6 +54,7 @@ from acme.om.steps.types.header import (
     ToolRequestHeader,
     ToolResponseHeader,
 )
+from acme.om.steps.types.page import StepPage
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.steps.types.stream import StreamPart, TextPart, ToolInputPart
 from acme.om.tools.registry import ToolRegistry
@@ -988,6 +990,41 @@ async def test_a_sink_that_fails_costs_the_live_view_never_the_call(tmp_path: Pa
         "The total is 12."
     )
     assert len(of_type(steps, StepType.TOOL_RESPONSE)) == 1
+
+
+async def test_each_turn_reads_only_the_steps_added_since_the_last(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run reads its history whole once; each turn after reads only what
+    was added since. So the rows four more tool turns read are the same
+    over a session of 400 earlier steps as over one of none: what a turn
+    reads does not grow with the history."""
+
+    async def rows_read(earlier: int, turns: int) -> int:
+        loop = loop_over(tmp_path / f"earlier-{earlier}-turns-{turns}")
+        session_id = await loop.start()
+        for n in range(earlier):
+            await loop.say(session_id, f"note {n}")
+        await loop.say(session_id, "What is the total?")
+        loop.anthropic.add(*(reply(use("lookup")) for _ in range(turns - 1)), reply(said("42")))
+        read: list[int] = []
+        get_steps = loop.managers.steps.get_steps
+
+        async def counted(
+            ctx: TenantContext, session_id: UUID, after_seq: int, limit: int
+        ) -> StepPage:
+            page = await get_steps(ctx, session_id, after_seq, limit)
+            read.append(len(page.items))
+            return page
+
+        monkeypatch.setattr(loop.managers.steps, "get_steps", counted)
+        run = await loop.loops.run(loop.owner, session_id)
+        assert run.outcome is LoopOutcome.SUCCEEDED and len(loop.anthropic.calls) == turns
+        return sum(read)
+
+    short = await rows_read(0, 5) - await rows_read(0, 1)
+    long = await rows_read(400, 5) - await rows_read(400, 1)
+    assert long == short, f"four more turns read {long} rows over 400 steps, {short} over none"
 
 
 async def test_a_call_that_keeps_failing_earns_a_notice_before_the_streak_ends_the_loop(
