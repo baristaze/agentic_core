@@ -27,7 +27,7 @@ from pydantic import ValidationError
 
 from acme.infra.workspaces import Workspace
 from acme.om.base import new_id, utcnow
-from acme.om.context import Role
+from acme.om.context import CredentialKind, Role, build_context
 from acme.om.exceptions import NotAuthorized, NotFound, ValidationFailed
 from acme.om.steps.types.content import Content, TextBlock
 from acme.om.steps.types.header import (
@@ -38,9 +38,10 @@ from acme.om.steps.types.header import (
     ToolRequestHeader,
 )
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
+from acme.om.tenancy.rules import permissions_of
 from acme.om.tenancy.types.org import Org
 from acme.om.tools.registry import ToolRegistry
-from acme.om.tools.rules import verdict
+from acme.om.tools.rules import decides, verdict
 from acme.om.tools.types.call import GateOutcome, Verdict
 from acme.om.tools.types.policy import ApproverRule, Decision
 
@@ -276,3 +277,36 @@ async def test_a_decision_counts_only_in_a_role_the_policy_lets_decide(setting: 
     admins = (ApproverRule(authorization_class="integration", roles=(Role.ADMIN,)),)
     await tools.manager.write_policy(admin, policy.model_copy(update={"approvers": admins}))
     assert await outcome() is GateOutcome.ASK, "the owner no longer decides this class"
+
+
+async def test_a_decision_sent_on_an_api_key_is_a_programs_and_approves_nothing(
+    setting: Setting,
+) -> None:
+    """An owner's API key may send a decision, and the history records it as
+    the program's: no verdict counts it, so the call still waits for a
+    person."""
+    tools, org, registry = setting.tools, setting.org, setting.registry
+    agent, owner = context(Role.SERVICE, org), context(Role.OWNER, org)
+    program = build_context(
+        owner,
+        user_id=owner.user_id,
+        org_id=org.id,
+        role=Role.OWNER,
+        permissions=permissions_of(Role.OWNER),
+        credential_kind=CredentialKind.API_KEY,
+    )
+    workspace = Workspace.absent(org.id, new_id())
+    found = await put_call(
+        tools.manager, tools.steps, agent, "push_branch", {"branch": "feature"}, "integration"
+    )
+
+    decision = await tools.manager.decide_call(
+        program, found.session_id, found.request.seq, approve=True
+    )
+    gate = await tools.manager.gate(
+        agent, registry, KIND_DEFAULTS, found.request, found.call_input, workspace
+    )
+
+    assert decision.actor is Actor.PROGRAM
+    assert not decides(decision, found.request, OWNERS)
+    assert gate.outcome is GateOutcome.ASK
