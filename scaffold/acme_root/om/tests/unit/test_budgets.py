@@ -497,6 +497,26 @@ async def test_a_viewer_neither_spends_nor_sets_a_budget(managers: Managers) -> 
         await managers.budgets.create_budget(member, make_budget())
 
 
+async def test_a_member_caps_a_session_and_the_cap_never_moves(managers: Managers) -> None:
+    """A cap only narrows what one session may spend, so writing one takes
+    the permission to write, which a viewer lacks. Asked again under its id,
+    with any amount, it answers the cap as written."""
+    org = make_org()
+    viewer, member = context(Role.VIEWER, org), context(Role.MEMBER, org)
+    session, cap_id, amount = new_id(), new_id(), Amount(cost_micros=1_000)
+    with pytest.raises(NotAuthorized):
+        await managers.budgets.cap_session(viewer, session, cap_id, amount)
+    cap = await managers.budgets.cap_session(member, session, cap_id, amount)
+    assert (cap.id, cap.scope, cap.window_kind, cap.amount) == (
+        cap_id,
+        scope(BudgetScopeKind.SESSION, session),
+        WindowKind.LIFE,
+        amount,
+    )
+    raised = Amount(cost_micros=9_000)
+    assert await managers.budgets.cap_session(member, session, cap_id, raised) == cap
+
+
 # Settlement.
 
 

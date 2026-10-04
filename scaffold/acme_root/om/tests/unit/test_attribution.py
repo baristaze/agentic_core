@@ -47,6 +47,7 @@ from acme.om.attribution.types.authority import (
 )
 from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
+from acme.om.budgets.types.amount import Amount
 from acme.om.context import (
     CredentialKind,
     RequestContext,
@@ -98,6 +99,7 @@ DELIVERY = AgentKind(
     result_tool="submit",
     authority=AuthorityMode.STEADY,
     tree=TreeLimits(height=3, count=4),
+    share=Amount(tokens=1_000_000),
 )
 ASSISTANT = AgentKind(
     name="assistant",
@@ -106,6 +108,7 @@ ASSISTANT = AgentKind(
     done_rule=DoneRule.ANSWER,
     authority=AuthorityMode.DELEGATED,
     tree=TreeLimits(height=2, count=2),
+    share=Amount(tokens=1_000_000),
 )
 TOOLS = stand_ins(*DELIVERY.tools, *ASSISTANT.tools)
 OUTWARD = CallReach(outward=True, holds_private=True)

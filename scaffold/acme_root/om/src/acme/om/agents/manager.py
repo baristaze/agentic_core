@@ -7,7 +7,8 @@ A child starts from a self-contained objective, never its parent's
 history. It holds no more than its parent: its tools are cut to its
 parent's, its calls run under its parent's principal, it pays as its
 parent pays, it carries its parent's mark, and it draws on its tree's
-budget and deadline. Cancelling a parent cancels its children."""
+budget and deadline, under a share of its own that never adds to the
+tree's. Cancelling a parent cancels its children."""
 
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -43,11 +44,12 @@ class AgentsManagerInterface(ABC):
 
     @abstractmethod
     async def spawn(self, ctx: TenantContext, parent_id: UUID, spawn: Spawn) -> AgentSession:
-        """A child of `parent_id`, one level down its tree, and its objective
-        as its first input: a waking message from its parent. A tree past
-        its height or its count is `TreeBoundReached`, a kind whose result
-        tool its parent lacks is `ValidationFailed`, and a context that lacks
-        a permission a call of the child's registry needs is
+        """A child of `parent_id`, one level down its tree, under a budget on
+        its own session of its kind's share, and its objective as its first
+        input: a waking message from its parent. A tree past its height or
+        its count is `TreeBoundReached`, a kind whose result tool its parent
+        lacks or that names no share is `ValidationFailed`, and a context
+        that lacks a permission a call of the child's registry needs is
         `NotAuthorized`: nothing is made.
         A spawn asked again under the same id answers the child it made."""
         ...

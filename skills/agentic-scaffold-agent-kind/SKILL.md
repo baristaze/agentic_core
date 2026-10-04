@@ -16,7 +16,7 @@ Lenses: `../../lenses/agents.md`.
 
 ## Input
 
-`<kind> [--done answer|result_tool] [--result-tool <tool>] [--tools <tool,...>] [--authority delegated|steady] [--tree <height>/<count>] [--deadline <hours>]`,
+`<kind> [--done answer|result_tool] [--result-tool <tool>] [--tools <tool,...>] [--authority delegated|steady] [--tree <height>/<count>] [--deadline <hours>] [--share <micros>|tokens=<count>]`,
 and what the kind's agent does, in the arguments or in the
 conversation.
 
@@ -36,6 +36,21 @@ Example: `fixer --done result_tool --result-tool submit --tools read_log,run_tes
   single agent, unless the kind spawns.
 - `--deadline`: the hours a tree the kind roots has, from its start;
   none unless the product bounds the kind's work in time.
+- `--share`: what one session of the kind may spend over its life as a
+  sub-agent, as `Amount` holds it: a bare `<micros>` is reference cost in
+  millionths, `Amount(cost_micros=<micros>)`, and `tokens=<count>` is
+  native tokens, `Amount(tokens=<count>)`. A share covers at least one
+  call's worst-case hold (Hold, in `om/src/<name>/om/budgets/README.md`):
+  a smaller one refuses the child's first call, and only a person clears
+  it. A kind names a share when a spawn can start it, which is known when
+  the kind is written: every kind that delivers through a result tool,
+  and any kind the arguments say a spawn starts. An assistant a person
+  starts directly names none: its `share` is left unset, never
+  `Amount(cost_micros=0)`, and a spawn of it is refused. When it is not
+  given for a kind that names one, ask; unattended, the kind takes the
+  largest share another kind of the catalog names, and when none names
+  one it leaves the share unset and the report says a spawn of the kind
+  is refused until a person names it.
 
 ## Created
 
@@ -79,10 +94,19 @@ The shape of a kind is `DELIVERY` and `ASSISTANT` in
    are not run there: this skill's run once, for both.
 4. A kind's bounds are the tree's: its height, its count, and one
    deadline every session of it shares. A kind that spawns sub-agents
-   names a `spawn`-class tool among its tools.
+   names a `spawn`-class tool among its tools. A kind a spawn can start
+   names its `share`, an `Amount` from
+   `om/src/<name>/om/budgets/types/amount.py`: a spawn writes it as a
+   budget on the child's session, and refuses a kind with none. Its
+   parent holds what a spawn asks of it: a `spawn`-class tool, the kind's
+   result tool among its tools, and a tree with room for the child, a
+   height above the parent's depth and a count above 0. The kind that
+   lacks one, the parent or the root of its tree, is changed as step 2
+   says.
 5. The tests hold, over `AGENT_KINDS`: the catalog builds from them;
    `latest(<kind>)` answers this version, and each earlier version
-   still answers by its number. Each container passes them, held in
+   still answers by its number; `latest(<kind>).share` is the share the
+   kind names, or `None` for a kind that names none. Each container passes them, held in
    that process's own tests, read from the arguments its
    `build_managers` call receives, as `services/api/tests/test_container.py`
    reads that call.

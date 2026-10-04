@@ -7,7 +7,7 @@ from acme.om.budgets.manager import BudgetsManagerInterface
 from acme.om.budgets.rules import raises, window_bounds
 from acme.om.budgets.storage import BudgetStorageInterface, LedgerStorageInterface
 from acme.om.budgets.types.amount import Amount
-from acme.om.budgets.types.budget import Budget, BudgetPage
+from acme.om.budgets.types.budget import Budget, BudgetPage, BudgetScopeKind, WindowKind
 from acme.om.budgets.types.hold import Tally
 from acme.om.budgets.types.usage import UsageRecord
 from acme.om.context import Permission, TenantContext
@@ -50,6 +50,28 @@ class BudgetsManagerImpl(BudgetsManagerInterface):
 
     async def create_budget(self, ctx: TenantContext, budget: Budget) -> Budget:
         ctx.require(SETS_BUDGETS)
+        return await self._create(ctx, budget)
+
+    async def cap_session(
+        self, ctx: TenantContext, session_id: UUID, budget_id: UUID, amount: Amount
+    ) -> Budget:
+        ctx.require(Permission.WRITE)
+        now = self._clock()
+        cap = Budget(
+            id=budget_id,
+            created_at=now,
+            updated_at=now,
+            created_by=ctx.user_id,
+            updated_by=ctx.user_id,
+            scope_kind=BudgetScopeKind.SESSION,
+            scope_key=str(session_id),
+            window_kind=WindowKind.LIFE,
+            cost_micros=amount.cost_micros,
+            tokens=amount.tokens,
+        )
+        return await self._create(ctx, cap)
+
+    async def _create(self, ctx: TenantContext, budget: Budget) -> Budget:
         now = self._clock()
         created = Budget.model_validate(
             {

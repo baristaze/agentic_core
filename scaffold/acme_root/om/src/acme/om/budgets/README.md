@@ -38,6 +38,10 @@ thing [Acme is made of](../../../../README.md).
 - **Set a budget**, or change its amount. Either takes the permission
   that governs the org's members. A raise lets the sessions parked on a
   budget go on: each of them is woken, and asks again.
+- **Cap a session.** A budget on one session over its life, as a spawn
+  gives its child its share. It takes only the permission to write: it
+  narrows what the session may spend, and every other budget of its
+  calls still binds.
 - **Authorize a call.** The gate holds its worst case on every budget at
   once, or refuses it and holds nothing.
 - **Settle a hold.** It is released only when the provider provably did
