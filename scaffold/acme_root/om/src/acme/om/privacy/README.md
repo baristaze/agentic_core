@@ -20,7 +20,8 @@ of](../../../../README.md).
 - **Storage policy**: chosen once per session, before its history
   begins. **Sealed** is the default: content is kept, sealed. **Memory
   only** keeps content in the running process alone; the shape is still
-  kept when the policy allows, so cost and audit survive.
+  kept when the policy allows, so the audit survives. A call's cost
+  survives in every mode, in its usage record (`budgets`).
 - **Privacy record**: one per session: its policy, and when its key was
   revoked and by whom.
 

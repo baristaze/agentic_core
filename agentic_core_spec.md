@@ -1222,6 +1222,15 @@ them:
   output, thinking.
 - **Reference cost:** what that usage costs at list price, whoever paid.
 
+Both land in a **usage record**, one for every call a provider billed:
+the session, the loop, and the step it answered, the agent kind and the
+model role, the provider and the model, its tokens by class, its
+reference cost, and its latency. A record holds no content, so it is
+written in every storage mode. It is billing data, kept beside the
+ledger: a session's purge and its tenant's leave it, and it never keeps
+a deleted tenant from being marked purged. The operator plane reads a
+session's records and their rollups, per loop and per session.
+
 Budgets read reference cost, so one workload meets one line whether the
 platform's key or the tenant's own pays. A pricing interface supplies
 prices from one source, and every model a resolver can pick has a price
@@ -1368,8 +1377,9 @@ own lifetimes.
 Some tenants accept no content at rest, sealed or not. A session's
 storage policy is chosen per session, by policy: **sealed** by default,
 or **memory-only**, where content lives only while a runtime holds it and
-the shape may still be persisted, when policy allows, so cost and audit
-survive. Both impls are wired at boot, and a decorator routes each
+the shape may still be persisted, when policy allows, so the audit
+survives. A call's cost survives in every mode, in its [usage
+record](#usage-and-cost). Both impls are wired at boot, and a decorator routes each
 session by its policy. A memory-only session keeps its runtime while it
 is parked, up to a declared time; past it, or on a crash, its loop ends
 `errored` and its shape stays.
