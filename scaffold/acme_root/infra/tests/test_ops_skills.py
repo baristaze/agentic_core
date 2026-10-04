@@ -473,7 +473,8 @@ def test_a_spend_read_prints_the_calls_settled_whole_and_the_sessions_count(name
         calls = printed["total_calls"] if "total_calls" in printed else printed["total"]["calls"]
         assert calls == 2, route
     if name == "ops-session-spend":
-        assert _jq(kept[USAGE_FIRST], page)["tree_id"] == "8" * 32
+        first = _jq(kept[USAGE_FIRST], page)
+        assert isinstance(first, dict) and first["tree_id"] == "8" * 32
 
 
 # The two reads of the error tracker a pass makes: the issues of the request,
