@@ -184,10 +184,11 @@ write; the same check run twice on an unchanged input.
 
 ## ECO-08 Spend is a reading
 
-**Principle.** What a loop spent is read from its history, never
-guessed. Each model call's usage can be traced to its loop, its model
-role, its kind version, and its tree, so the cost of a loop, a role, or
-a kind is a query, and so is the share of its input the cache served.
+**Principle.** What a loop spent is read from what its calls recorded,
+never guessed. Each model call's usage record names its loop, its model
+role, its kind version, and its tree, in every storage mode, so the
+cost of a loop, a role, or a kind is a query, and so is the share of its
+input the cache served.
 The figures a call records, native usage and reference cost, are
 BND-06's.
 
@@ -199,7 +200,9 @@ it.
 
 **Violation.** Usage recorded with no loop, model role, kind version, or
 tree it can be traced to; usage kept only as a running total per session
-or per budget, so the share of a loop or a role is lost.
+or per budget, so the share of a loop or a role is lost; a call settled
+at its whole hold that records nothing, so a loop's reading falls short
+of what the ledger counted.
 
 **Severity.** medium
 

@@ -18,6 +18,7 @@ from acme.integrations.model_providers.calls import ModelReply
 from acme.integrations.model_providers.registry import ModelProvidersOverImpl
 from acme.integrations.model_providers.scripted import ModelProviderScriptedImpl, ScriptedFailure
 from acme.integrations.model_providers.types import ErrorKind, ProviderName, StopReason, Usage
+from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
 from acme.om.agents.impl.loop import LoopManagerImpl, LoopOptions
 from acme.om.agents.impl.sink import StreamSinkMemoryImpl
 from acme.om.agents.types.kind import AgentKind, AgentKindCatalog, DoneRule, TreeLimits
@@ -321,13 +322,14 @@ def loop_over(
     jitter: Callable[[], float] = random.random,
     reader: AttachmentReaderInterface | None = None,
     extra: tuple[ToolInterface, ...] = (),
+    sessions: AgentSessionsOptions | None = None,
 ) -> Loop:
     """`storage` None is the memory storage, and `owner` None a fresh
     tenant's owner; a suite over Postgres hands in both. `jitter` is what
     the loop draws its retry waits from. The loop's catalog holds the
     engine's tools before the suite's, over `reader`, None the null, and
     `extra` after them: a product's own tool, which a kind of `kinds`
-    names."""
+    names. `sessions` None is the sessions' own options."""
     infra = InfraLocalImpl(tmp_path)
     anthropic = ModelProviderScriptedImpl(ProviderName.ANTHROPIC)
     openai = ModelProviderScriptedImpl(ProviderName.OPENAI)
@@ -348,10 +350,11 @@ def loop_over(
         principal_context=live,
         tool_catalog=every,
         attachment_reader=reader,
+        agent_sessions_options=sessions,
     )
     clock = Clock()
     calls = CallGateBudgetImpl(
-        managers.budget_gate, managers.pricing, managers.agent_sessions, clock
+        managers.budget_gate, managers.pricing, managers.agent_sessions, managers.budgets, clock
     )
 
     async def sleep(seconds: float) -> None:

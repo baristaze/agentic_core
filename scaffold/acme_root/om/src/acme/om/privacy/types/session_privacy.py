@@ -26,8 +26,9 @@ class StorageMode(StrEnum):
 
 class StoragePolicy(Platform):
     """A session's storage, chosen once. A memory-only session keeps its
-    shape at rest when `keep_shape` allows, so its cost and its audit
-    survive; a sealed one always does."""
+    shape at rest when `keep_shape` allows, so its audit survives; a sealed
+    one always does. A call's cost survives in every mode, in its usage
+    record (ADR 1014)."""
 
     mode: StorageMode = StorageMode.SEALED
     keep_shape: bool = True

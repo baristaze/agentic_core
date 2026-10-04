@@ -49,12 +49,23 @@ class AgentSessionView(View):
     archived_at: datetime | None
 
 
+class StepUsageView(View):
+    """What a model call used, as its provider reported it, in disjoint
+    classes, so no token is counted twice."""
+
+    input: int
+    cache_read: int
+    cache_write: int
+    output: int
+    thinking: int
+
+
 class StepView(View):
     """One step of a session's history, in its order. `text` is what it
     says: a message's words, a model's answer, a tool's result. The rest is
-    its header's, by type: the tools a model response called and why it
-    stopped, a tool call's tool and the class of its failure, a control's
-    command, a park, a loop's outcome."""
+    its header's, by type: the tools a model response called, why it
+    stopped, and what it used; a tool call's tool and the class of its
+    failure; a control's command; a park; a loop's outcome."""
 
     id: UUID
     seq: int
@@ -68,6 +79,7 @@ class StepView(View):
     text: str
     tools: list[str]
     stop_reason: StopReason | None
+    usage: StepUsageView | None
     tool: str | None
     failure: ToolFailure | None
     command: ControlCommand | None
