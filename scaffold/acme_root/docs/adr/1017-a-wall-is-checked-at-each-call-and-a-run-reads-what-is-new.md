@@ -28,14 +28,19 @@ catalog. A registry name no catalog classes is refused, never skipped.
 call whose class's permission (ADR 1012) the principal's live context
 lacks, as ADR 1007 asks.
 
-**The ceiling reads the call's reach.** A call `reaches_outward` counts
-as outward is outward at the platform's ceiling, whatever its target
-says.
+**The ceiling reads a silent target's class.** A target's explicit
+`outward` wins, either way. A target that says nothing is outward at the
+platform's ceiling when its class is not inward (read, write, execute,
+spawn): a network, integration, configuration, credentials, or domain
+call. A command in an open-egress workspace is not outward there: it is
+a leg of the rule of two, and a session that lacks another leg runs it
+under its class's policy.
 
 **Private data passes like the mark.** A session stores whether it holds
 private data. Its maker sets it from its kind and its tools' secrets,
 and a session spawned or handed over takes its source's. A session
-stored before this is taken to hold it.
+stored before this is taken to hold it, and so is one an older release
+writes during a roll or after a rollback.
 
 **An API key decides as a program.** A decision sent on one is recorded
 with that credential's actor, and approves nothing a person must.
@@ -59,6 +64,14 @@ steps added since, and the render takes the run's history.
 
 - A member who holds `write` alone steers no session into a call of a
   class it lacks, by a start, a message, or a demotion between calls.
+- The platform's outward ceiling holds every call of an outward class
+  whose target is silent, and every call whose target says it acts
+  outward. A tool whose call of such a class stays in the session's own
+  work, such as a push to the session's own branch or a pull request on
+  the bound repository, answers `outward: False`.
+- Most development work still runs unattended: a command in an
+  open-egress workspace waits for a person only when the rule of two
+  holds it.
 - A child of a session that holds private data is held by the rule of
   two as its parent is.
 - A deployment that runs the container provider on a cloud host sets the
