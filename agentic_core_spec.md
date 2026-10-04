@@ -86,6 +86,7 @@ These are the invariants. Each links the section that states it.
 - [Agent Kinds and Sub-Agents](#agent-kinds-and-sub-agents)
 - [Bounds and Budgets](#bounds-and-budgets)
 - [Parking](#parking)
+- [Economy](#economy)
 - [Privacy](#privacy)
 - [Null Objects](#null-objects)
 - [Testing and Conformance](#testing-and-conformance)
@@ -1301,6 +1302,84 @@ resumes each time without anyone restarting it.
 > unlock, and its retry time, holds nothing while it waits, and resumes
 > by itself once its unlock happens.
 
+## Economy
+
+An agent's bill follows what its requests carry and how its loops
+delegate. [Bounds and Budgets](#bounds-and-budgets) stop a loop that
+spends too much. Nothing there makes a loop spend less. Economy is that
+other half: the same work, for fewer tokens and fewer calls. The spec
+never says what a kind's prompts say; it says what they cost.
+
+### What a Request Carries
+
+Every request opens with the kind's prompts and its tool definitions
+([Rendering](#rendering)). Every call pays for them, and they are the
+part the provider's cache can serve across sessions.
+
+- **One prefix per kind version.** The kind's prompts and its tool
+  definitions hold no value that differs per session, per person, or
+  per tenant. Such a value renders after them, in the places
+  [Rendering](#rendering) and [The Pinned Zone](#the-pinned-zone)
+  allow. So every session of a kind version shares one cached prefix.
+- **A tool definition earns its weight.** A definition rides every
+  request of every session of its kind. A kind registers the tools its
+  loops use. A description says what the model needs to choose the tool
+  and fill its input, and nothing its schema already says.
+
+### What a Delegation Moves
+
+A sub-agent spends its own window so its parent's stays small
+([Sub-Agents](#sub-agents)). That holds only while little crosses
+between them.
+
+- **A bounded objective.** A spawn's objective has a size bound.
+  It names large material by its handle and never pastes it.
+- **A bounded report.** A child's report has a size bound. Above
+  it, the report is stored as an artifact, and the parent's inbox holds
+  its preview and its handle, as a large tool result does ([Large
+  Results and Retrieval](#large-results-and-retrieval)).
+- **Caps of its own.** A child runs under its kind's step guard, sized
+  for its task, and under a budget scoped to its own session: a share
+  of what the tree has left. The tree's budget still bounds every
+  child. A child's cap only keeps one child from spending its siblings'
+  share.
+
+### Fewer and Cheaper Calls
+
+- **A mechanical task has a model role of its own.** A title, a
+  summary, a classification, or an extraction needs no judgment. Each
+  is a model role of its own, so a resolver can fill it with a cheaper
+  model ([Roles and Fills](#roles-and-fills)). None rides the main role,
+  whose fill is sized for the agent's hardest turn.
+- **Fewer calls before concurrent calls.** A loop's model calls and its
+  sub-agents follow the guideline's order for fixing calls
+  ([Operational Skills][g-ops-skills]). A fan-out is the last step,
+  never the first.
+- **A check costs what its risk is worth.** A check that is itself a
+  model call or a sub-agent, such as a result gate that asks a model,
+  runs where the work it gates calls for it: by that work's class and
+  effect, never on every result alike. It never runs again on an input
+  it has already judged.
+
+*Example:* the three sub-agents each get one hypothesis and the log
+excerpts it rests on, by handle. Each returns a short report, and the
+session's title comes from a cheap model role, never the main one.
+
+### Spend Is a Reading
+
+What a loop spent is read from its history, never guessed. Each model
+call's usage ([Usage and Cost](#usage-and-cost)) can be traced to its
+loop, its model role, its kind version, and its tree. So the cost of a
+loop, a role, or a kind is a query, and so is the share of its input
+the cache served. A change made to save shows its saving on that
+reading, before and after.
+
+> **Principle:** Economy is spending less inside the bounds: one prefix
+> per kind version, tool definitions that earn their weight, a bounded
+> objective down and a bounded report up, a cap for each child, a cheap
+> model role for mechanical work, fewer calls before concurrent ones,
+> checks sized to their risk, and spend that is a reading.
+
 ## Privacy
 
 ### A Key per Session
@@ -1507,6 +1586,7 @@ The planned lens groups:
 | `trust` | `TRU` | Identity, Trust, and Attribution |
 | `agents` | `AGT` | Agent Kinds and Sub-Agents |
 | `bounds` | `BND` | Bounds and Budgets; Parking |
+| `economy` | `ECO` | Economy |
 | `privacy` | `PRV` | Privacy; Null Objects |
 
 A `high` lens is one whose breach spends outside the gate, lets a secret
@@ -1572,6 +1652,7 @@ evidence, trust across a customer's wall, and money.
 [g-twins]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#twins-for-external-services
 [g-refuses]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#what-a-process-refuses
 [g-ops]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#operations
+[g-ops-skills]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#operational-skills
 [g-handoff]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#correlation-across-a-handoff
 [g-exceptions]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#exceptions
 [g-adr]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#records-of-decisions
