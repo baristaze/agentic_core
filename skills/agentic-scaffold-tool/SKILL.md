@@ -89,22 +89,36 @@ contract.
    mid-run would leave a half-done effect.
 3. `target` reads what the call acts on from the system it acts on,
    never from the input, and answers an empty `Target` when the call
-   acts on nothing in particular. The target's `outward` attribute, when
-   it answers one, wins. When it says nothing, the class answers: a call
-   of a class outside `INWARD_CLASSES` in
-   `om/src/<name>/om/tools/rules.py` counts as outward, and
-   `DEFAULT_CEILINGS` there holds it for a person whatever a tenant
-   allows. So a call of such a class that stays in the session's own
-   work, such as a push to the session's own branch or a pull request
-   on the bound repository, answers `outward: False`, and a call of an
-   inward class that changes external state beyond the session's own
-   work product, or reaches past its egress allowlist, answers
-   `outward: True`. The shapes `Command` and `PushBranch` carry no such
-   mark, so each takes its class's answer. `preflight` refuses a call that cannot
-   succeed with `ToolFailed`, before anyone is asked to approve it; its
-   runtime is read-only. A tool with nothing to check returns. An error
-   the runtime raises is an infra exception, read by its `http_status`,
-   never caught by its class, as the guideline's DEL-29 holds.
+   acts on nothing in particular. It receives the tenant context and
+   the input, no session and no runtime, so it decides from what the
+   system the tool acts on says, such as the source control's record of
+   which branch the session owns, as `PushBranch` reads `protected` from
+   its `protections`. The target's `outward` attribute, when it answers
+   one, wins, and an empty `Target` may carry it, as
+   `Target(attributes={"outward": True})`, when the class's answer would
+   be wrong for the call: a read whose address comes from the input may
+   name a host past the egress allowlist, which is the agent kind's
+   `isolation.egress.hosts` in `om/src/<name>/om/agents/types/kind.py`.
+   When the target cannot tell, or says nothing, it leaves `outward`
+   unset and the class answers: a call of a class outside
+   `INWARD_CLASSES` in `om/src/<name>/om/tools/rules.py` (`READ`,
+   `WRITE`, `EXECUTE`, and `SPAWN` of `ToolClass` are the inward ones)
+   counts as outward, and `DEFAULT_CEILINGS` there holds it for a person
+   whatever a tenant allows. A wrong `False` skips that ceiling and the
+   rule of two, so a target answers `False` only when the system says
+   the call stays in the session's own work, such as a pull request on
+   the bound repository, and a call of an inward class that changes
+   external state beyond the session's own work product, or reaches past
+   the egress allowlist, answers `outward: True`. A push tool's target
+   answers `outward: False` for the session's own branch and
+   `outward: True` for any other. The shapes `Command` and `PushBranch`
+   mark no `outward`, so each takes its class's answer: `Command`
+   (`EXECUTE`) inward, `PushBranch` (`INTEGRATION`) outward.
+   `preflight` refuses a call that cannot succeed with `ToolFailed`,
+   before anyone is asked to approve it; its runtime is read-only. A
+   tool with nothing to check returns. An error the runtime raises is an
+   infra exception, read by its `http_status`, never caught by its
+   class, as the guideline's DEL-29 holds.
 4. A `job` tool's `run` starts the work and answers `JobStarted` at
    once; it never waits for the work. The work runs under
    `runtime.key`, so a start under a key that started before attaches
