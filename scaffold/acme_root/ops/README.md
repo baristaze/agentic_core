@@ -59,6 +59,8 @@ row names.
 | `ops-simulate-traffic` | Provisioner | How the platform looks under traffic at a profile. |
 | `stress-test-create-or-update` | none | Write or change a scenario, with its target stated first. |
 | `stress-test-run` | Provisioner, Investigator | Run a scenario and say whether the target held. |
+| `ops-session-spend` | Supporter (the `read` operator token alone) | What one session's model calls used and cost, loop by loop. |
+| `ops-loop-spend` | Supporter (the `read` operator token alone) | What one loop's model calls used and cost, turn by turn, and where it grew. |
 
 The audits read and never fix. The database ones build a database of
 their own on the local stack and drop it; their tools are in
@@ -71,6 +73,7 @@ their own on the local stack and drop it; their tools are in
 | `audit-database-calls` | none (local) | The round trips and transactions of each endpoint and worker flow. |
 | `audit-credential-lifetimes` | none (local) | How long each credential works after it is revoked, on each channel. |
 | `audit-provider-calls` | none (local) | Every call to a provider, flow by flow, and which to remove, fold, move, or cache. |
+| `audit-model-spend` | Supporter (the `read` operator token alone) | What an org's model calls spend by agent kind, kind version, and model role, the cache's hit rate, and what rebuilt caches cost. |
 | `audit-deploy-time` | Investigator | Where a deploy's minutes go, and what would shorten it. |
 
 `tickets-triage` reads the tracker and the repository, and holds none of
