@@ -768,7 +768,9 @@ class UsageRecordView(BaseModel):
     it: ids, tokens by disjoint class, reference cost in millionths (null
     when no price applied), the provider's latency, and the labels of what
     served it. It holds no content, so it reads the same in every storage
-    mode. `step_id` is the call's response step; `hold_id` its hold.
+    mode. `step_id` is the call's response step; `hold_id` its hold;
+    `tree_id` the session's tree; `kind_version` the agent kind's version
+    the session ran.
     """
     agent_kind: Annotated[str, Field(title='Agent Kind')]
     cache_read_tokens: Annotated[int, Field(title='Cache Read Tokens')]
@@ -778,6 +780,7 @@ class UsageRecordView(BaseModel):
     hold_id: Annotated[UUID, Field(title='Hold Id')]
     id: Annotated[UUID, Field(title='Id')]
     input_tokens: Annotated[int, Field(title='Input Tokens')]
+    kind_version: Annotated[int, Field(title='Kind Version')]
     latency_ms: Annotated[int, Field(title='Latency Ms')]
     loop_id: Annotated[UUID, Field(title='Loop Id')]
     model: Annotated[str, Field(title='Model')]
@@ -787,6 +790,7 @@ class UsageRecordView(BaseModel):
     session_id: Annotated[UUID, Field(title='Session Id')]
     step_id: Annotated[UUID, Field(title='Step Id')]
     thinking_tokens: Annotated[int, Field(title='Thinking Tokens')]
+    tree_id: Annotated[UUID, Field(title='Tree Id')]
 
 
 class UsageRollupView(BaseModel):

@@ -8,7 +8,7 @@ from uuid import UUID
 
 import pytest
 from contracts.loops import ASSISTANT, Loop, loop_over, reply, said, use
-from sqlalchemy import BigInteger, DateTime, Text, Uuid
+from sqlalchemy import BigInteger, DateTime, Integer, Text, Uuid
 
 from acme.integrations.model_providers.calls import ModelCall
 from acme.integrations.model_providers.types import ProviderName, Usage
@@ -111,6 +111,8 @@ async def test_every_storage_mode_keeps_one_usage_record_per_model_call(
         assert [r.step_id for r in records] == [s.id for s in responses], mode
         assert len({r.loop_id for r in records}) == 1 and records[0].loop_id == responses[0].loop_id
         assert len({r.hold_id for r in records}) == 2, f"{mode}: one record per hold"
+        row = await loop.managers.agent_sessions.get_session(loop.owner, session)
+        assert {(r.tree_id, r.kind_version) for r in records} == {(row.root_id, row.kind_version)}
         at_rest = await loop.storage.get_step_storage().read_steps(org, session, 0, 100)
         assert bool(at_rest) is (mode != "memory_only without keep_shape"), mode
         found[mode] = [figures(r) for r in records]
@@ -146,9 +148,11 @@ COLUMNS = {
     "created_at": DateTime,
     "hold_id": Uuid,
     "session_id": Uuid,
+    "tree_id": Uuid,
     "loop_id": Uuid,
     "step_id": Uuid,
     "agent_kind": Text,
+    "kind_version": Integer,
     "role": Text,
     "provider": Text,
     "model": Text,

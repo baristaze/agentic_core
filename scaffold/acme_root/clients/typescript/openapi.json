@@ -2707,7 +2707,7 @@
         "type": "object"
       },
       "UsageRecordView": {
-        "description": "One model call a provider billed with its usage, as the ledger keeps\nit: ids, tokens by disjoint class, reference cost in millionths (null\nwhen no price applied), the provider's latency, and the labels of what\nserved it. It holds no content, so it reads the same in every storage\nmode. `step_id` is the call's response step; `hold_id` its hold.",
+        "description": "One model call a provider billed with its usage, as the ledger keeps\nit: ids, tokens by disjoint class, reference cost in millionths (null\nwhen no price applied), the provider's latency, and the labels of what\nserved it. It holds no content, so it reads the same in every storage\nmode. `step_id` is the call's response step; `hold_id` its hold;\n`tree_id` the session's tree; `kind_version` the agent kind's version\nthe session ran.",
         "properties": {
           "agent_kind": {
             "title": "Agent Kind",
@@ -2751,6 +2751,10 @@
             "title": "Input Tokens",
             "type": "integer"
           },
+          "kind_version": {
+            "title": "Kind Version",
+            "type": "integer"
+          },
           "latency_ms": {
             "title": "Latency Ms",
             "type": "integer"
@@ -2789,6 +2793,11 @@
           "thinking_tokens": {
             "title": "Thinking Tokens",
             "type": "integer"
+          },
+          "tree_id": {
+            "format": "uuid",
+            "title": "Tree Id",
+            "type": "string"
           }
         },
         "required": [
@@ -2796,9 +2805,11 @@
           "created_at",
           "hold_id",
           "session_id",
+          "tree_id",
           "loop_id",
           "step_id",
           "agent_kind",
+          "kind_version",
           "role",
           "provider",
           "model",
@@ -4290,7 +4301,7 @@
     },
     "/v1/admin/orgs/{org_id}/sessions/{session_id}/usage": {
       "get": {
-        "description": "What one session's model calls used and cost, in every storage mode\n(ADR 1014). Requires the read permission.\n\nThe answer is a `SessionUsageView`: `session_id`; `items`, a page of the\nsession's usage records, oldest first, each with `id`, `created_at`,\n`hold_id`, `session_id`, `loop_id`, `step_id` (the call's response\nstep), `agent_kind`, `role`, `provider`, `model`, `input_tokens`,\n`cache_read_tokens`, `cache_write_tokens`, `output_tokens`,\n`thinking_tokens`, `cost_micros` (reference cost in millionths, null when\nno price applied), and `latency_ms`; `next_cursor`, the next page's\n`cursor`, or null; `loops`, one `{loop_id, rollup}` per loop in the order\nit first called; `has_more_loops`; and `total`, the session's rollup. A\nrollup holds `calls`, the five token classes, `cost_micros`, `unpriced`\n(calls no price applied to, whose cost no figure holds), and\n`latency_ms`. The rollups cover every record, whatever the page.\n\nA record holds ids, counts, money, a duration, and labels, and no\ncontent. `404 not_found` for an unknown org, and for a session the org\nholds no record of, which is how another tenant's session reads.",
+        "description": "What one session's model calls used and cost, in every storage mode\n(ADR 1014). Requires the read permission.\n\nThe answer is a `SessionUsageView`: `session_id`; `items`, a page of the\nsession's usage records, oldest first, each with `id`, `created_at`,\n`hold_id`, `session_id`, `tree_id`, `loop_id`, `step_id` (the call's\nresponse step), `agent_kind`, `kind_version`, `role`, `provider`, `model`, `input_tokens`,\n`cache_read_tokens`, `cache_write_tokens`, `output_tokens`,\n`thinking_tokens`, `cost_micros` (reference cost in millionths, null when\nno price applied), and `latency_ms`; `next_cursor`, the next page's\n`cursor`, or null; `loops`, one `{loop_id, rollup}` per loop in the order\nit first called; `has_more_loops`; and `total`, the session's rollup. A\nrollup holds `calls`, the five token classes, `cost_micros`, `unpriced`\n(calls no price applied to, whose cost no figure holds), and\n`latency_ms`. The rollups cover every record, whatever the page.\n\nA record holds ids, counts, money, a duration, and labels, and no\ncontent. `404 not_found` for an unknown org, and for a session the org\nholds no record of, which is how another tenant's session reads.",
         "operationId": "get_session_usage_v1_admin_orgs__org_id__sessions__session_id__usage_get",
         "parameters": [
           {

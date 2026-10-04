@@ -24,9 +24,11 @@ class UsageRecords(IdentifiableMixin, CreatedMixin, Base):
     )
     hold_id: Mapped[UUID]
     session_id: Mapped[UUID]
+    tree_id: Mapped[UUID]
     loop_id: Mapped[UUID]
     step_id: Mapped[UUID]
     agent_kind: Mapped[str]
+    kind_version: Mapped[int]
     role: Mapped[str]
     provider: Mapped[str]
     model: Mapped[str]

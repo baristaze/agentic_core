@@ -1225,9 +1225,9 @@ them:
 - **Reference cost:** what that usage costs at list price, whoever paid.
 
 Both land in a **usage record**, one for every call a provider billed:
-the session, the loop, and the step it answered, the agent kind and the
-model role, the provider and the model, its tokens by class, its
-reference cost, and its latency. A record holds no content, so it is
+the session, its tree, the loop, and the step it answered, the agent
+kind and its version, the model role, the provider and the model, its
+tokens by class, its reference cost, and its latency. A record holds no content, so it is
 written in every storage mode. It is billing data, kept beside the
 ledger: a session's purge and its tenant's leave it, and it never keeps
 a deleted tenant from being marked purged. The operator plane reads a
@@ -1376,9 +1376,10 @@ session's title comes from a cheap model role, never the main one.
 
 ### Spend Is a Reading
 
-What a loop spent is read from its history, never guessed. Each model
-call's usage ([Usage and Cost](#usage-and-cost)) can be traced to its
-loop, its model role, its kind version, and its tree. So the cost of a
+What a loop spent is read from what its calls recorded, never guessed.
+Each model call's usage record ([Usage and Cost](#usage-and-cost)) names
+its loop, its model role, its kind version, and its tree, in every
+storage mode. So the cost of a
 loop, a role, or a kind is a query, and so is the share of its input
 the cache served. A change made to save shows its saving on that
 reading, before and after.

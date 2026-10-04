@@ -21,9 +21,9 @@ rest keep its shape anyway.
 
 **Every billed call leaves a usage record.** It is one row of
 `activity.usage_records`, in the `budgets` namespace beside the ledger.
-It holds the call's hold, its session, its loop, and the step that
-answered it; the agent kind, the model role, the provider, and the
-model; input, cache-read, cache-write, output, and thinking tokens; the
+It holds the call's hold, its session, the session's tree, its loop,
+and the step that answered it; the agent kind and its version, the
+model role, the provider, and the model; input, cache-read, cache-write, output, and thinking tokens; the
 reference cost, `cost_micros`, at the price the hold read, or null when
 no price applied; and the provider's latency. The call gate writes it
 when it settles a call the provider billed at its reported usage, once
@@ -54,8 +54,8 @@ org, and none of the figures. The answer, `SessionUsageView`:
 
 - `session_id`.
 - `items`: a page of records, oldest first, each with `id`,
-  `created_at`, `hold_id`, `session_id`, `loop_id`, `step_id`,
-  `agent_kind`, `role`, `provider`, `model`, `input_tokens`,
+  `created_at`, `hold_id`, `session_id`, `tree_id`, `loop_id`,
+  `step_id`, `agent_kind`, `kind_version`, `role`, `provider`, `model`, `input_tokens`,
   `cache_read_tokens`, `cache_write_tokens`, `output_tokens`,
   `thinking_tokens`, `cost_micros`, and `latency_ms`.
 - `next_cursor`: the next page's `cursor`, or null.
@@ -73,7 +73,9 @@ history carries its usage by class, where the session keeps its shape.
 ## Consequences
 
 - A call's cost survives every storage mode, and a bill reconciles per
-  call, per loop, and per session.
+  call, per loop, and per session. A loop's, a role's, or a kind
+  version's spend is a query over the records, even once the history
+  is gone.
 - A call settled at its whole hold, a broken stream or a run lost
   before its reply, leaves no record: there is no reported usage to
   write. The ledger still counts it.

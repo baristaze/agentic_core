@@ -146,15 +146,19 @@ class UsageRecordView(View):
     it: ids, tokens by disjoint class, reference cost in millionths (null
     when no price applied), the provider's latency, and the labels of what
     served it. It holds no content, so it reads the same in every storage
-    mode. `step_id` is the call's response step; `hold_id` its hold."""
+    mode. `step_id` is the call's response step; `hold_id` its hold;
+    `tree_id` the session's tree; `kind_version` the agent kind's version
+    the session ran."""
 
     id: UUID
     created_at: datetime
     hold_id: UUID
     session_id: UUID
+    tree_id: UUID
     loop_id: UUID
     step_id: UUID
     agent_kind: str
+    kind_version: int
     role: str
     provider: str
     model: str

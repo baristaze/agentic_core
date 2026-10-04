@@ -82,7 +82,9 @@ class _Held(Platform):
 
     price: ModelPrice | None
     session_id: UUID
+    tree_id: UUID
     agent_kind: str
+    kind_version: int
     role: ModelRole
     provider: str
     model: str
@@ -142,7 +144,9 @@ class CallGateBudgetImpl(CallGateInterface):
         self._held[answer.id] = _Held(
             price=price,
             session_id=session_id,
+            tree_id=session.root_id,
             agent_kind=session.kind,
+            kind_version=session.kind_version,
             role=role,
             provider=fill.provider.value,
             model=fill.model,
@@ -228,9 +232,11 @@ def _record(
         created_at=at,
         hold_id=hold_id,
         session_id=held.session_id,
+        tree_id=held.tree_id,
         loop_id=site.loop_id,
         step_id=site.step_id,
         agent_kind=held.agent_kind,
+        kind_version=held.kind_version,
         role=held.role,
         provider=held.provider,
         model=held.model,

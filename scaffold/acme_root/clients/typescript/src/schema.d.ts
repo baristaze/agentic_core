@@ -205,8 +205,8 @@ export interface paths {
          *
          *     The answer is a `SessionUsageView`: `session_id`; `items`, a page of the
          *     session's usage records, oldest first, each with `id`, `created_at`,
-         *     `hold_id`, `session_id`, `loop_id`, `step_id` (the call's response
-         *     step), `agent_kind`, `role`, `provider`, `model`, `input_tokens`,
+         *     `hold_id`, `session_id`, `tree_id`, `loop_id`, `step_id` (the call's
+         *     response step), `agent_kind`, `kind_version`, `role`, `provider`, `model`, `input_tokens`,
          *     `cache_read_tokens`, `cache_write_tokens`, `output_tokens`,
          *     `thinking_tokens`, `cost_micros` (reference cost in millionths, null when
          *     no price applied), and `latency_ms`; `next_cursor`, the next page's
@@ -2372,7 +2372,9 @@ export interface components {
          *     it: ids, tokens by disjoint class, reference cost in millionths (null
          *     when no price applied), the provider's latency, and the labels of what
          *     served it. It holds no content, so it reads the same in every storage
-         *     mode. `step_id` is the call's response step; `hold_id` its hold.
+         *     mode. `step_id` is the call's response step; `hold_id` its hold;
+         *     `tree_id` the session's tree; `kind_version` the agent kind's version
+         *     the session ran.
          */
         UsageRecordView: {
             /** Agent Kind */
@@ -2400,6 +2402,8 @@ export interface components {
             id: string;
             /** Input Tokens */
             input_tokens: number;
+            /** Kind Version */
+            kind_version: number;
             /** Latency Ms */
             latency_ms: number;
             /**
@@ -2427,6 +2431,11 @@ export interface components {
             step_id: string;
             /** Thinking Tokens */
             thinking_tokens: number;
+            /**
+             * Tree Id
+             * Format: uuid
+             */
+            tree_id: string;
         };
         /**
          * UsageRollupView

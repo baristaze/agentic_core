@@ -31,16 +31,19 @@ class CallSite(Platform):
 
 class UsageRecord(Identifiable, Created):
     """One model call a provider billed with its usage reported: the call's
-    hold, where it sat, what served it, its tokens in disjoint classes, its
+    hold, where it sat (its session, the session's tree, its loop, its
+    step), the agent kind and version that made it, what served it, its tokens in disjoint classes, its
     reference cost, and how long the provider took. Written once per hold.
     `step_id` is the call's response step, which a stale run may never land;
     the provider billed the call all the same."""
 
     hold_id: UUID
     session_id: UUID
+    tree_id: UUID
     loop_id: UUID
     step_id: UUID
     agent_kind: str = Field(min_length=1, max_length=MAX_LABEL)
+    kind_version: int = Field(ge=1)
     role: str = Field(min_length=1, max_length=MAX_LABEL)
     provider: str = Field(min_length=1, max_length=MAX_LABEL)
     model: str = Field(min_length=1, max_length=MAX_LABEL)
