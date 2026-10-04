@@ -1,0 +1,57 @@
+{
+  "run_id": "20261002-063600",
+  "started_at": "2026-10-02T06:36:00Z",
+  "finished_at": null,
+  "repository_head": "57f4a096d3883ee966a2a5e1dbafbfa46d407857",
+  "attachment": "agentic_core_spec.md",
+  "prompt": "You are a highly senior software engineer and architect with a focus on agentic development.\n\nEvaluate the attached spec from a software design and architecture perspective:\n\nGive it a score from 0 to 100, then defend your evaluation:\n\nDo not be biased by who wrote it, an agent or a human, or by how fast it was developed.\nEvaluate the material itself.\n\nCompare it to its adjacents that might exist in the industry and have a big adoption already; e.g. \nPydantic-AI, \nClaude's Agent SDK,\nlangchain/langgraph,\n\nor whatever more relevant to what agentic_core is doing (top 2-3 competitors side-by-side would be great)\n\nProvide criterion that you used to evaluate them.",
+  "contract": null,
+  "sizes": null,
+  "note": "A manual run: the person sent the prompt in each product and shared the conversation. Run 1 had no contract (no report format) and no sizes, so the score is in each answer's own words (only chatgpt.com's opens with a `Score: NN/100` line). All four pages show the same prompt, byte for byte, with agentic_core_spec.md attached. started_at is the time two pages show (chatgpt.com \"Thursday 11:36 PM\", gemini.google.com \"October 1, 2026 at 11:36 PM\"), read as the browser's local time, PDT (UTC-7), and converted; the pages show minutes, so the seconds are 00. claude.ai shows \"2 days ago\" and grok.com shows no time. finished_at is null: no page shows when an answer finished. repository_head is the commit that was agentic_core's default branch when the pages say the run began: 57f4a09, the repository's third commit (adding the spec, 2026-10-01 20:54:59 PDT), which stood until 6ff23cc at 23:48:30 PDT; its spec has 1,592 lines, and the claude.ai file chip reads 1,593 lines. The spec was attached as a file, so the commit is inferred from the times, not stated by a page. No page names the model of claude.ai or grok.com, or the effort of any site but chatgpt.com. `[redacted]` marks each place a conversation's address stood, in `url`, and, in chatgpt.com.md, the name the product addresses the person by and the name of another repository.",
+  "sessions": [
+    {
+      "site": "chatgpt.com",
+      "url": "[redacted]",
+      "model_label": "—",
+      "effort_label": "Extra High",
+      "score": 92,
+      "read_version": "the attached agentic_core_spec.md",
+      "response_path": "chatgpt.com.md",
+      "status": "ok",
+      "note": "The page shows \"Worked for 4m\" and no model name; the effort is the label on the page's model picker in a signed-in view, so it is that picker's state when the page was read."
+    },
+    {
+      "site": "claude.ai",
+      "url": "[redacted]",
+      "model_label": "—",
+      "effort_label": "—",
+      "score": 80,
+      "read_version": "the attached agentic_core_spec.md, 1,593 lines (the file chip)",
+      "response_path": "claude.ai.md",
+      "status": "ok",
+      "note": "The page shows no model or effort. The answer was searched against the web first; the copy button's text opens with the sentence written before the search and ends with the product's sources."
+    },
+    {
+      "site": "gemini.google.com",
+      "url": "[redacted]",
+      "model_label": "3.1 Pro",
+      "effort_label": "—",
+      "score": 91,
+      "read_version": "the attached agentic_core_spec.md",
+      "response_path": "gemini.google.com.md",
+      "status": "ok",
+      "note": "The share page has no copy button for an answer, so gemini.google.com.md is the page text: the answer's rendered text, without its Markdown marks, with table cells separated by tabs. The page shows \"Created with 3.1 Pro\" and the effort is not shown."
+    },
+    {
+      "site": "grok.com",
+      "url": "[redacted]",
+      "model_label": "—",
+      "effort_label": "—",
+      "score": 84,
+      "read_version": "the attached agentic_core_spec.md",
+      "response_path": "grok.com.md",
+      "status": "ok",
+      "note": "The page shows no model, effort, or time, only \"Worked for 42s\". The score is given in prose: \"The spec scores 84 out of 100\"."
+    }
+  ]
+}
