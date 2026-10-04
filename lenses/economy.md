@@ -17,8 +17,8 @@ spends inside its limits, never whether a limit holds.
 
 **Principle.** The kind's prompts and its tool definitions, the two
 layers every request opens with, hold no value that differs per session,
-per person, or per tenant. Such a value renders below them, in the
-pinned zone or with the new inputs, so every session of a kind version
+per person, or per tenant. Such a value renders after that stable
+prefix, in the places WIN-05 allows, so every session of a kind version
 shares one cached prefix. The order of the layers, and that the same
 steps render the same bytes, are WIN-01's.
 
@@ -44,9 +44,7 @@ rendered into a request is WIN-01.)
 **Principle.** A tool definition rides every request of every session of
 its kind, so it is paid for on every call. A kind registers the tools
 its loops use. A description says what the model needs to choose the
-tool and fill its input, and nothing its schema already says. A tool
-that few loops need is reached through a sub-agent whose kind registers
-it, rather than carried by every request.
+tool and fill its input, and nothing its schema already says.
 
 **Source.** Economy, What a Request Carries (A tool definition earns its
 weight).
@@ -54,9 +52,9 @@ weight).
 **Look for.** Each kind's registry, and the description and the schema
 of each tool it registers.
 
-**Violation.** A kind that registers tools its work never needs, such as
-a whole family of tools for one rare call; a description that holds a
-manual, a worked example, or a restatement of its schema's fields. (A
+**Violation.** A kind that registers tools its work never needs; a
+description that holds a manual, a worked example, or a restatement of
+its schema's fields. (A
 tool with no contract at all is TOL-01.)
 
 **Severity.** medium
@@ -68,8 +66,9 @@ tool with no contract at all is TOL-01.)
 **Principle.** A spawn's objective has a size bound, and it names large
 material by its handle, never pasting it. A child's report has a size
 bound. Above it, the report is stored as an artifact, and the parent's
-inbox holds its preview and its handle. Nothing else of the child's
-crosses to its parent. That a child starts clean, without its parent's
+inbox holds its preview and its handle. The report and the status
+changes AGT-03 names cross to the parent, and nothing else of the
+child's does. That a child starts clean, without its parent's
 history, is AGT-03's.
 
 **Source.** Economy, What a Delegation Moves (A bounded objective, A
@@ -99,7 +98,10 @@ deadline are AGT-05's and AGT-06's.
 **Source.** Economy, What a Delegation Moves (Caps of its own).
 
 **Look for.** What a spawn gives a child's session: the limits of the
-child's kind, and any budget scoped to that session.
+child's kind, and any budget scoped to that session. A budget set on the
+child's session outside the spawn counts as its own when it caps the
+child's share. Where one kind serves many tasks, its step guard is
+judged against the largest task the kind states.
 
 **Violation.** A kind that sub-agents run whose step guard is the
 default every kind takes, never sized for its task; a spawn that leaves

@@ -1318,15 +1318,13 @@ part the provider's cache can serve across sessions.
 
 - **One prefix per kind version.** The kind's prompts and its tool
   definitions hold no value that differs per session, per person, or
-  per tenant. Such a value renders below them: in the pinned zone, or
-  with the new inputs. So every session of a kind version shares one
-  cached prefix.
+  per tenant. Such a value renders after them, in the places
+  [Rendering](#rendering) and [The Pinned Zone](#the-pinned-zone)
+  allow. So every session of a kind version shares one cached prefix.
 - **A tool definition earns its weight.** A definition rides every
   request of every session of its kind. A kind registers the tools its
   loops use. A description says what the model needs to choose the tool
-  and fill its input, and nothing its schema already says. A tool that
-  few loops need is reached through a sub-agent whose kind registers
-  it, rather than carried by every request.
+  and fill its input, and nothing its schema already says.
 
 ### What a Delegation Moves
 
