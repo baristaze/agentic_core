@@ -106,7 +106,7 @@ def test_the_nuke_names_the_key_among_what_remains(tmp_path: Path) -> None:
     script = NUKE.read_text()
     (line,) = [s for s in script.splitlines() if "alias/acme-$environment-sessions" in s]
     assert line.startswith('say "- the KMS key'), "inside a branch"
-    assert script.index(line) > script.index('say "== 5. What remains"')
+    assert script.index(line) > script.index('say "== 6. What remains"')
     result = subprocess.run(
         ["bash", str(NUKE), "staging", "--dry-run"],
         capture_output=True,
@@ -120,5 +120,5 @@ def test_the_nuke_names_the_key_among_what_remains(tmp_path: Path) -> None:
         },
     )
     assert result.returncode == 0, result.stderr
-    remains = result.stdout[result.stdout.index("== 5. What remains") :]
+    remains = result.stdout[result.stdout.index("== 6. What remains") :]
     assert "- the KMS key alias/acme-staging-sessions, in the bootstrap root" in remains
