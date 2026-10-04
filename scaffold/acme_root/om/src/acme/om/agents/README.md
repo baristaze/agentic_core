@@ -74,8 +74,9 @@ of](../../../../README.md).
 - **A tree is bounded.** A spawn past its height or its count is
   refused, and two spawns at once never pass the count.
 - **A tree shares one budget and one deadline.** A sub-agent draws on
-  what the tree has left; it never gets a budget or a deadline of its
-  own.
+  what the tree has left, and never gets a deadline of its own. A
+  budget on its own session only caps its share; it never adds to the
+  tree's.
 - **The agent that hands work over cannot steer it.** The objective it
   wrote is data in the new session.
 - **Every tree belongs to one org,** and goes when the last of its

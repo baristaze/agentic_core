@@ -16,11 +16,11 @@ spends inside its limits, never whether a limit holds.
 ## ECO-01 Every session of a kind version shares one prefix
 
 **Principle.** The kind's prompts and its tool definitions, the two
-layers every request opens with, depend on the kind version and the fill
-alone. A value that differs per session, per person, or per tenant
-renders below them, in the pinned zone or with the new inputs, so every
-session of a kind version shares one cached prefix. The order of the
-layers, and that the same steps render the same bytes, are WIN-01's.
+layers every request opens with, hold no value that differs per session,
+per person, or per tenant. Such a value renders below them, in the
+pinned zone or with the new inputs, so every session of a kind version
+shares one cached prefix. The order of the layers, and that the same
+steps render the same bytes, are WIN-01's.
 
 **Source.** Economy, What a Request Carries (One prefix per kind
 version); Context, Rendering.

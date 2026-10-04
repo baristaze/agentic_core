@@ -49,6 +49,9 @@ that matches:
    A name that is both a commit and a path reads as the commit; write
    `./<name>` for the path.
 
+A range or a commit followed by a path or a glob reads only the files
+it changes under that path or glob.
+
 The empty scope, `all`, and a path read the working tree. A list that
 is not a diff (`all`, a path or a glob, a repository with no commit)
 comes from `git ls-files --cached --others --exclude-standard`, with

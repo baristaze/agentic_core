@@ -1316,10 +1316,10 @@ Every request opens with the kind's prompts and its tool definitions
 part the provider's cache can serve across sessions.
 
 - **One prefix per kind version.** The kind's prompts and its tool
-  definitions depend on the kind version and the fill alone. A value
-  that differs per session, per person, or per tenant renders below
-  them: in the pinned zone, or with the new inputs. So every session of
-  a kind version shares one cached prefix.
+  definitions hold no value that differs per session, per person, or
+  per tenant. Such a value renders below them: in the pinned zone, or
+  with the new inputs. So every session of a kind version shares one
+  cached prefix.
 - **A tool definition earns its weight.** A definition rides every
   request of every session of its kind. A kind registers the tools its
   loops use. A description says what the model needs to choose the tool
