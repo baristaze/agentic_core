@@ -52,8 +52,10 @@ class AgentsManagerImpl(AgentsManagerInterface):
         clock: Callable[[], datetime] = utcnow,
         *,
         tool_classes: Mapping[str, str],
+        secret_tools: frozenset[str],
     ) -> None:
         self._tool_classes = tool_classes
+        self._secret_tools = secret_tools
         self._storage = storage
         self._sessions = sessions
         self._steps = steps
@@ -237,8 +239,9 @@ class AgentsManagerImpl(AgentsManagerInterface):
         handed_off_from: UUID | None = None,
     ) -> AgentSession:
         """A session as its maker sends it: the kind pinned at its version,
-        and its tools. What it takes from where it came from is the
-        create's to set."""
+        its tools, and whether they hold private data: its kind says so, or
+        one of its tools is given a secret. What it takes from where it came
+        from is the create's to set."""
         now = self._clock()
         return AgentSession(
             id=session_id,
@@ -251,6 +254,7 @@ class AgentsManagerImpl(AgentsManagerInterface):
             kind=kind.name,
             kind_version=kind.version,
             tools=kind.tools,
+            holds_private=kind.private_data or not self._secret_tools.isdisjoint(kind.tools),
             parent_id=parent_id,
             root_id=session_id,
             handed_off_from=handed_off_from,

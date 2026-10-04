@@ -8,7 +8,8 @@ Its status is a projection of its steps, cached here for queries; the
 steps are the truth, and the cache is rebuilt from them
 (`agent_sessions.rules.projected`). The cache also holds two answers of
 attribution: the speaker its latest model request recorded, and the
-untrusted mark. In code it is
+untrusted mark. It also holds whether it holds private data, which it
+takes from where it came as it takes the mark. In code it is
 `AgentSession`, never the sign-in `Session` of the tenancy namespace."""
 
 from datetime import datetime
@@ -67,6 +68,11 @@ class AgentSession(Identifiable, Trackable, SoftDeletable):
     # The mark: set by the first data, passed from where it came, never
     # cleared.
     untrusted: bool = False
+    # Whether it holds private data or credentials, one of the rule of
+    # two's three: set by its maker from its kind and its tools, passed from
+    # where it came, never cleared. A child of a session that holds private
+    # data may carry it in its objective, so it holds it too.
+    holds_private: bool = False
     status: SessionStatus = SessionStatus.IDLE
     park: Park | None = None  # what a parked loop waits on
     # The last seq the cached status has read: the projection goes on from

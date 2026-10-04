@@ -204,14 +204,19 @@ def lineage(source: AgentSession | None, session: AgentSession) -> dict[str, Any
     history, or None for a root.
 
     A root starts on its own: depth 1, no speaker, unmarked. A session that
-    came from another carries its mark. A child also joins its parent's
-    tree one level down and may call only the tools both its kind and its
-    parent may: no child holds more than its parent. A session handed over
-    roots a tree of its own. Whose authority it runs under, and who pays,
+    came from another carries its mark, and holds private data where its
+    source does, since its objective may carry it. A child also joins its
+    parent's tree one level down and may call only the tools both its kind
+    and its parent may: no child holds more than its parent. A session
+    handed over roots a tree of its own. Whose authority it runs under, and who pays,
     is attribution's (`attribution.rules.inherited`)."""
     if source is None:
         return {"root_id": session.id, "depth": 1, "speaker": None, "untrusted": False}
-    taken = {"speaker": None, "untrusted": source.untrusted}
+    taken = {
+        "speaker": None,
+        "untrusted": source.untrusted,
+        "holds_private": session.holds_private or source.holds_private,
+    }
     if session.parent_id is None:
         return {**taken, "root_id": session.id, "depth": 1}
     return {

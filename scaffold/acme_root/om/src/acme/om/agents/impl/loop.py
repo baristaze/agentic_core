@@ -707,7 +707,7 @@ class LoopManagerImpl(LoopManagerInterface):
                 request,
                 use.input,
                 run.workspace,
-                holds_private=rules.holds_private(run.kind, run.registry),
+                holds_private=rules.holds_private(run.session, run.kind, run.registry),
                 # A fresh call's preflight keeps the tree's deadline. A call a
                 # lost run may have started is settled by its effect, which
                 # the transport's record answers whatever the time.

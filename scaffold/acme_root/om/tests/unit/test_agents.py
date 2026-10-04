@@ -18,8 +18,10 @@ from pydantic import ValidationError
 from acme.infra.impl.local import InfraLocalImpl
 from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
 from acme.om.agent_sessions.limits import deadline_park
+from acme.om.agent_sessions.rules import lineage
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
 from acme.om.agents import ResultGateInterface
+from acme.om.agents.loop_rules import holds_private
 from acme.om.agents.rules import after_turn, claim_refusal, tree_refusal
 from acme.om.agents.types.kind import AgentKind, AgentKindCatalog, DoneRule, TreeLimits
 from acme.om.agents.types.request import Handoff, Spawn, Start
@@ -49,6 +51,7 @@ from acme.om.steps.types.header import (
 )
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.storage.impl.memory import StorageMemoryImpl
+from acme.om.tools.registry import ToolRegistry
 
 DELIVERY = AgentKind(
     name="delivery",
@@ -82,7 +85,9 @@ ASSISTANT = AgentKind(
 REPORTER = HELPER.model_copy(
     update={"name": "reporter", "tools": ("read_log", "report"), "result_tool": "report"}
 )
-KINDS = (OLDER, DELIVERY, HELPER, ASSISTANT, REPORTER)
+# A kind that reads no tenant record and no person's words.
+RESEARCHER = HELPER.model_copy(update={"name": "researcher", "private_data": False})
+KINDS = (OLDER, DELIVERY, HELPER, ASSISTANT, REPORTER, RESEARCHER)
 TOOLS = stand_ins(*(tool for kind in KINDS for tool in kind.tools))
 
 
@@ -445,6 +450,24 @@ async def test_a_handoff_carries_its_mark(managers: Managers) -> None:
     handoff = Handoff(id=new_id(), kind="delivery", title="fix it", objective="fix the total")
     handed = await managers.agents.hand_off(ctx, source.id, handoff)
     assert handed.untrusted
+
+
+async def test_a_child_of_a_session_holding_private_data_holds_it_too(
+    managers: Managers,
+) -> None:
+    """A kind that reads no private data holds it under a parent that does:
+    the parent may write its records into the objective, so the rule of two
+    holds in the child as in the parent, whatever the child's maker sent."""
+    ctx = context(Role.MEMBER)
+    parent = await start(managers, ctx)
+    child = await managers.agents.spawn(ctx, parent.id, spawn("researcher"))
+    alone = await start(managers, ctx, "researcher")
+    assert parent.holds_private and child.holds_private and not alone.holds_private
+    registry = ToolRegistry(stand_ins(*RESEARCHER.tools))
+    assert holds_private(child, RESEARCHER, registry)
+    assert not holds_private(alone, RESEARCHER, registry)
+    sent = make_session(parent=parent).model_copy(update={"holds_private": False})
+    assert lineage(parent, sent)["holds_private"]
 
 
 async def test_a_result_passes_the_gate_and_the_null_gate_marks_it_unverified(
