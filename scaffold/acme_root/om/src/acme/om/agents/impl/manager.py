@@ -17,6 +17,7 @@ from acme.om.attribution import AttributionManagerInterface
 from acme.om.attribution.types.authority import SessionAuthority
 from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
 from acme.om.base import Platform, derived_id, new_id, utcnow
+from acme.om.budgets import BudgetsManagerInterface
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import NotAuthorized, NotFound, TreeBoundReached, ValidationFailed
 from acme.om.outbox import OutboxRelayInterface
@@ -51,9 +52,11 @@ class AgentsManagerImpl(AgentsManagerInterface):
         options: AgentsOptions,
         clock: Callable[[], datetime] = utcnow,
         *,
+        budgets: BudgetsManagerInterface,
         tool_classes: Mapping[str, str],
         secret_tools: frozenset[str],
     ) -> None:
+        self._budgets = budgets
         self._tool_classes = tool_classes
         self._secret_tools = secret_tools
         self._storage = storage
@@ -99,6 +102,9 @@ class AgentsManagerImpl(AgentsManagerInterface):
             if kind.result_tool is not None and kind.result_tool not in parent.tools:
                 # Its tools are cut to its parent's, so it could never submit.
                 raise ValidationFailed(f"agent session {parent_id} cannot grant {kind.result_tool}")
+            if kind.share is None:
+                # With no cap of its own, one child could spend all its tree has left.
+                raise ValidationFailed(f"agent kind {kind.name} names no share to spawn it under")
             # Its objective instructs it: whoever spawns it may make every
             # call it will offer, asked before anything is made.
             self._may_instruct(ctx, [tool for tool in kind.tools if tool in parent.tools])
@@ -115,6 +121,13 @@ class AgentsManagerImpl(AgentsManagerInterface):
             # from the parent.
             made = self._session(ctx, kind, spawn.id, spawn.title, (), parent_id)
             child = await self._sessions.create_session(ctx, made)
+        share = self._kinds.get(child.kind, child.kind_version).share
+        if share is not None:
+            # Its share is its own budget, written before the objective wakes
+            # it; a retry answers the one written. Every call of it still
+            # passes the tree's budget, so the share never adds to it.
+            cap_id = derived_id(child.id, child.created_at, "share")
+            await self._budgets.cap_session(ctx, child.id, cap_id, share)
         authority = await self._open(ctx, child)
         objective = self._input(
             child,

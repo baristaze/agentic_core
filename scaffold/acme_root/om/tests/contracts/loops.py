@@ -28,6 +28,7 @@ from acme.om.agents.types.run import RunEnd
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import Platform, new_id, utcnow
+from acme.om.budgets.types.amount import Amount
 from acme.om.context import CredentialKind, RequestContext, Role, TenantContext, build_context
 from acme.om.root import Managers, build_managers, engine_tools
 from acme.om.steps.types.content import TextBlock, ToolUseBlock
@@ -190,6 +191,7 @@ ASSISTANT = AgentKind(
     done_rule=DoneRule.ANSWER,
     authority=AuthorityMode.DELEGATED,
     tree=TreeLimits(height=2, count=4),
+    share=Amount(tokens=1_000_000),
     prompts=("You answer questions about the records.",),
     policy=ALLOWED,
 )

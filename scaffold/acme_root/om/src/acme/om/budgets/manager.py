@@ -27,6 +27,19 @@ class BudgetsManagerInterface(ABC):
         ...
 
     @abstractmethod
+    async def cap_session(
+        self, ctx: TenantContext, session_id: UUID, budget_id: UUID, amount: Amount
+    ) -> Budget:
+        """A budget of `amount` on one session over its whole life, created as
+        `create_budget` creates one: an id written already answers the budget
+        as stored, so asking again never adds a second or moves the first.
+        A spawn writes its child's share with it. It takes WRITE, not the
+        permission that sets budgets: a budget on a session only narrows
+        what it may spend, since each of its calls still passes every budget
+        of its tree, its spender, and its tenant."""
+        ...
+
+    @abstractmethod
     async def get_budget(self, ctx: TenantContext, budget_id: UUID) -> Budget:
         """A budget of the tenant; one another tenant holds is `NotFound`."""
         ...

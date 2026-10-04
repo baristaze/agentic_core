@@ -426,6 +426,7 @@ def build_managers(
         tenancy,
         outbox,
         agents_options or AgentsOptions(),
+        budgets=budgets,
         tool_classes={tool.spec.name: tool.spec.authorization_class for tool in catalog},
         secret_tools=frozenset(tool.spec.name for tool in catalog if tool.spec.secrets),
     )

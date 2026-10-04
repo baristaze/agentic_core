@@ -4,7 +4,8 @@ session pins the version it started on.
 
 A kind names the tools it may call, the rule that says when a loop is
 done, the result tool a delivery kind submits through, the authority mode
-its calls run under, and the bounds of a tree it roots. It also carries
+its calls run under, the bounds of a tree it roots, and the share one of
+its sessions may spend when it runs as a sub-agent. It also carries
 what the loop reads of it: its prompts, the model roles it calls, the
 bounds of one loop, its layer of tool policy, the workspace its sessions
 work in, and whether they hold private data. Its prompts and its tools'
@@ -21,6 +22,7 @@ from acme.om.agent_sessions.limits import Limits
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.attribution.types.principal import MAX_KIND
 from acme.om.base import Platform
+from acme.om.budgets.types.amount import Amount
 from acme.om.exceptions import UnknownAgentKind
 from acme.om.models.types.fill import MAIN, SUMMARIZER, ModelRole
 from acme.om.tools.types.policy import PolicyLayer
@@ -60,6 +62,11 @@ class AgentKind(Platform):
     # How long a tree the kind roots has, from its start: turned into one
     # instant then, never a duration per call. None is no deadline.
     deadline: timedelta | None = None
+    # What one of its sessions may spend over its life when it runs as a
+    # sub-agent: its share, a budget on its own session that its spawn
+    # writes. The tree's budget still bounds it. A kind with none is never
+    # spawned, so no child can spend all its tree has left.
+    share: Amount | None = None
     # Its prompts, in order: the first layer of every request it renders.
     prompts: tuple[str, ...] = ()
     # The model roles it calls: its own turns, and the summarizer its

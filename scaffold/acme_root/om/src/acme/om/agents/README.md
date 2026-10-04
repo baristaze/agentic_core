@@ -9,7 +9,8 @@ of](../../../../README.md).
 
 - **Agent kind**: a profile over the one loop every agent runs: the
   tools it may call, when its work is done, the tool it reports a result
-  through, how its calls are allowed, and how large a tree it may grow.
+  through, how its calls are allowed, how large a tree it may grow, and
+  what one of its sessions may spend as a sub-agent.
   A product declares its kinds; each is versioned, and a session keeps
   the version it started on.
 - **Done rule**: an assistant is done when it answers without calling a
@@ -74,9 +75,10 @@ of](../../../../README.md).
 - **A tree is bounded.** A spawn past its height or its count is
   refused, and two spawns at once never pass the count.
 - **A tree shares one budget and one deadline.** A sub-agent draws on
-  what the tree has left, and never gets a deadline of its own. A
-  budget on its own session only caps its share; it never adds to the
-  tree's.
+  what the tree has left, and never gets a deadline of its own. Its
+  spawn gives it a budget on its own session, its kind's share, which
+  only caps its share and never adds to the tree's. A kind that names
+  no share is never spawned.
 - **The agent that hands work over cannot steer it.** The objective it
   wrote is data in the new session.
 - **Every tree belongs to one org,** and goes when the last of its
