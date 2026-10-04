@@ -29,7 +29,12 @@ from acme.infra.workspaces import (
     Workspace,
     WorkspaceProviderInterface,
 )
-from acme.infra.workspaces.container import WorkspaceContainerImpl, container_name
+from acme.infra.workspaces.container import (
+    ICC,
+    OPEN_NETWORK,
+    WorkspaceContainerImpl,
+    container_name,
+)
 from acme.infra.workspaces.host import WorkspaceHostImpl
 from acme.infra.workspaces.twin import WorkspaceNullImpl, WorkspaceTwinImpl
 
@@ -210,15 +215,27 @@ async def test_a_container_provider_refuses_what_it_cannot_hold_before_it_reache
 class LocalDocker:
     """Docker, faked for one container: `run` starts it with the labels it
     names, `rm` removes it, and `inspect` renders its format over it as
-    Docker does. It keeps every command it is given."""
+    Docker does. A network stands once made, with the options it was made
+    with. It keeps every command it is given."""
 
     def __init__(self) -> None:
         self.labels: dict[str, str] | None = None  # the running container's, when one runs
+        self.networks: dict[str, dict[str, str]] = {}  # each network's options, by name
         self.calls: list[tuple[str, ...]] = []
 
     async def __call__(self, *args: str, **_: object) -> DockerReply:
         self.calls.append(args)
-        if args[0] == "run":
+        if args[:2] == ("network", "create"):
+            pairs = [args[i + 1] for i, arg in enumerate(args) if arg == "--opt"]
+            self.networks[args[-1]] = dict(pair.split("=", 1) for pair in pairs)
+        elif args[:2] == ("network", "inspect"):
+            options = self.networks.get(args[-1])
+            if options is None:
+                return DockerReply(1, b"", b"Error: No such network")
+            wanted = re.search(r'"([^"]+)"', args[args.index("--format") + 1])
+            assert wanted is not None
+            return DockerReply(0, f"{options.get(wanted.group(1), '<no value>')}\n".encode(), b"")
+        elif args[0] == "run":
             pairs = [args[i + 1] for i, arg in enumerate(args) if arg == "--label"]
             self.labels = dict(pair.split("=", 1) for pair in pairs)
         elif args[0] == "rm":
@@ -257,6 +274,43 @@ async def test_a_running_container_is_reused_only_under_the_spec_it_was_started_
     run = docker.calls[-1]
     assert run[run.index("--network") + 1] == "none", "the new container holds the tighter spec"
     assert not any(call[:2] == ("volume", "rm") for call in docker.calls), "its files stay"
+
+
+async def test_open_egress_workspaces_share_a_bridge_where_none_reaches_another(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two workspaces with open egress never land on Docker's default
+    bridge, where every container reaches every other: each joins the one
+    bridge made with traffic between its containers off, made once."""
+    docker = LocalDocker()
+    monkeypatch.setattr("acme.infra.workspaces.container.docker", docker)
+    provider = WorkspaceContainerImpl("python:3.14-slim", timedelta(seconds=5))
+    opened = spec(IsolationMode.CONTAINER, OPEN)
+
+    await provider.prepare(new_id(), new_id(), opened)
+    docker.labels = None  # the double holds one container: the second is another
+    await provider.prepare(new_id(), new_id(), opened)
+
+    runs = [call for call in docker.calls if call[0] == "run"]
+    assert [run[run.index("--network") + 1] for run in runs] == [OPEN_NETWORK, OPEN_NETWORK]
+    made = [call for call in docker.calls if call[:2] == ("network", "create")]
+    assert len(made) == 1 and docker.networks == {OPEN_NETWORK: {ICC: "false"}}
+
+
+async def test_a_bridge_that_lets_its_containers_reach_each_other_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A network of that name made by anything else, with traffic between
+    its containers on, is never joined: the workspace is refused and no
+    container starts."""
+    docker = LocalDocker()
+    docker.networks[OPEN_NETWORK] = {ICC: "true"}
+    monkeypatch.setattr("acme.infra.workspaces.container.docker", docker)
+    provider = WorkspaceContainerImpl("python:3.14-slim", timedelta(seconds=5))
+
+    with pytest.raises(IsolationRefused, match="reach each other"):
+        await provider.prepare(new_id(), new_id(), spec(IsolationMode.CONTAINER, OPEN))
+    assert not any(call[0] == "run" for call in docker.calls)
 
 
 async def test_a_container_purge_by_ids_removes_its_container_and_its_files(
