@@ -47,7 +47,9 @@ reads, sized for the model that reads it.
 - **Retry once.** When a provider refuses a request as too long, the
   window compacts and the request is sent again, once.
 - **Keep a large result.** A tool result above the size bound is kept as
-  an artifact before its step is written. A session that keeps no
+  an artifact before its step is written, and so is a child's report
+  above the same bound, as an artifact of its parent's session. The
+  parent reads its head, its tail, and the handle. A session that keeps no
   content at rest keeps its artifact, sealed, in the memory of the
   runtime that holds the session, and nowhere else; its step is bounded
   all the same, and revoking its key erases it there too.
