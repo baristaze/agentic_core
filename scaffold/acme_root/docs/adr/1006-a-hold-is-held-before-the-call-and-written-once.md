@@ -61,8 +61,7 @@ longest. A park with a retry time lands, with the session's write, a
 `WAKE_SESSION` work item that waits in the queue until then. A raised
 budget lands a `WAKE_SESSIONS` item that wakes every session of the org
 parked on a budget. Each wake writes the engine's `unlock` control, and
-the run that takes the session up asks its gates
-again.
+the run that takes the session up asks its gates again.
 
 ## Consequences
 

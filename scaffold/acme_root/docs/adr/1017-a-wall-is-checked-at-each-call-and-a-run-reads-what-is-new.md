@@ -16,7 +16,9 @@ and a loop's reads of its own history.
 ## Decision
 
 **Every product tool is classed.** The API takes the product's tool
-catalog. A registry name no catalog classes is refused, never skipped.
+catalog. A registry name no catalog classes is refused, never skipped:
+a skipped one would let a member message an admin's session whose kind
+offers a product's configuration call.
 
 **A call is asked of its principal as it is now.** At each call, never
 once at the start, the gate refuses a call whose class's permission
@@ -32,9 +34,10 @@ under its class's policy.
 
 **Private data passes like the mark.** A session stores whether it holds
 private data. Its maker sets it from its kind and its tools' secrets,
-and a session spawned or handed over takes its source's. A session
-stored with no value for it, one an older release writes during a roll
-or after a rollback included, is taken to hold it.
+and a session spawned or handed over takes its source's. Its column
+defaults to holding it: every session stored before the column holds
+it, and so does one an older release writes during a roll or after a
+rollback.
 
 **An API key decides as a program.** A decision sent on one is recorded
 with that credential's actor, and approves nothing a person must.
@@ -54,7 +57,8 @@ stays, and marking the tenant purged never waits on it: a sweep that
 waited would run each of the tenant's purges again on every pass.
 
 **A run reads its history whole once.** Each turn after reads only the
-steps added since, and the render takes the run's history.
+steps added since, and the render takes the run's history, never the
+whole history read again for each turn and each render.
 
 ## Consequences
 
