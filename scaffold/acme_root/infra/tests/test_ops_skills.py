@@ -44,6 +44,9 @@ READERS = [
     "ops-watch",
     "stress-test-run",
 ]
+# The skills that read model spend from the usage records, through the
+# operator plane with the read token alone: no cloud profile.
+SPEND_READERS = ["audit-model-spend", "ops-loop-spend", "ops-session-spend"]
 # The skills that reach the env file's tokens.
 TOKEN_HOLDERS = [
     "ops-investigate",
@@ -51,6 +54,7 @@ TOKEN_HOLDERS = [
     "ops-simulate-traffic",
     "ops-watch",
     "stress-test-run",
+    *SPEND_READERS,
 ]
 # The two that drive traffic, whose `acme-ops` command reads the provisioner's
 # file; every other token holder reads, and holds the read token alone.
@@ -65,7 +69,12 @@ SOURCED = re.compile(
     r"(?:^[ \t]*|[;&|(][ \t]*)(?:\.|source)[ \t]+((?:[~/$]|\.{1,2}/)[^\s;&|)]*)", re.MULTILINE
 )
 # The skills that read an environment under the investigate profile.
-INVESTIGATORS = [*TOKEN_HOLDERS, "ops-infra-as-code", "audit-deploy-time", "audit-retention"]
+INVESTIGATORS = [
+    *(name for name in TOKEN_HOLDERS if name not in SPEND_READERS),
+    "ops-infra-as-code",
+    "audit-deploy-time",
+    "audit-retention",
+]
 # The skills that run under an account's administrator.
 ADMINISTRATORS = ["ops-cloud-deployment-create", "ops-cloud-deployment-nuke"]
 # The audits: read-only analyses that write a report and propose tickets.
@@ -73,6 +82,7 @@ AUDITS = [
     "audit-credential-lifetimes",
     "audit-database-calls",
     "audit-deploy-time",
+    "audit-model-spend",
     "audit-provider-calls",
     "audit-query-indexes",
     "audit-retention",
@@ -304,6 +314,34 @@ def test_every_read_of_the_operator_plane_goes_through_jq(name: str) -> None:
         assert read["piped"], f"{name} prints a read of the operator plane whole: {read[0]}"
 
 
+# What a spend skill reads: who the plane admitted, and one session's usage.
+SPEND_ROUTE = re.compile(
+    r"me|orgs/<org_id>/sessions/<session_id>/usage\?limit=200(?:&cursor=<next_cursor>)?"
+)
+# A request that is not a plain read: a method named, a body, or a file sent.
+WRITE_CALL = re.compile(
+    r"\b(?:POST|PUT|PATCH|DELETE)\b"
+    r"|(?<!\S)(?:-X|--request|-d|--data[\w-]*|-F|--form|-T|--upload-file|--json)(?!\S)"
+)
+
+
+@pytest.mark.parametrize("name", SPEND_READERS)
+def test_a_spend_skill_reads_the_usage_route_and_nothing_else(name: str) -> None:
+    """A bill is reconciled by an operator who can read and not write. Every
+    request a spend skill makes is a plain read of who the plane admitted or
+    of one session's usage; nothing in it names a write, and it reaches no
+    cloud."""
+    text = _skill(name)
+    reads = [read["route"] for read in OPERATOR_READ.finditer(text)]
+    assert reads, f"{name} reads nothing of the operator plane"
+    assert all(SPEND_ROUTE.fullmatch(route) for route in reads), reads
+    curls = [line for line in text.splitlines() if line.lstrip().startswith("curl ")]
+    assert len(curls) == len(reads), f"{name} makes a request that is not a read of the plane"
+    assert not WRITE_CALL.search(text), f"{name} names a write: {WRITE_CALL.search(text)}"
+    assert "Bash(aws:*)" not in _allowed_tools(name)
+    assert "A `write` operator is refused by this skill" in _prose(name)
+
+
 def test_the_root_cause_writes_each_read_it_makes() -> None:
     """The operator, the tenant, its members and their next page, a probe of
     the feed, and a page of it: each is a command of the skill, so no run
@@ -357,6 +395,86 @@ def test_the_root_cause_reads_print_what_the_report_needs() -> None:
         for route, program in kept.items():
             printed = _jq(program, refusal)
             assert isinstance(printed, dict) and printed["error"] == code, route
+
+
+USAGE_FIRST = "orgs/<org_id>/sessions/<session_id>/usage?limit=200"
+USAGE_NEXT = USAGE_FIRST + "&cursor=<next_cursor>"
+
+
+def _usage_record(at: str, settled_whole: bool) -> dict[str, object]:
+    return {
+        "id": "5" * 32,
+        "created_at": at,
+        "hold_id": "6" * 32,
+        "session_id": "7" * 32,
+        "tree_id": "8" * 32,
+        "loop_id": "9" * 32,
+        "step_id": "a" * 32,
+        "agent_kind": "assistant",
+        "kind_version": 1,
+        "role": "main",
+        "provider": "acme",
+        "model": "acme-1",
+        "input_tokens": 10,
+        "cache_read_tokens": 100,
+        "cache_write_tokens": 5,
+        "output_tokens": 3,
+        "thinking_tokens": 0,
+        "cost_micros": 1000,
+        "latency_ms": 500,
+        "settled_whole": settled_whole,
+    }
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="jq is not installed")
+@pytest.mark.parametrize("name", SPEND_READERS)
+def test_a_spend_read_prints_the_calls_settled_whole_and_the_sessions_count(name: str) -> None:
+    """A call settled at its whole hold is marked, and each usage read carries
+    the mark out: as a turn's last field, or as a group's count. Every page
+    prints the session's count of calls, so a read that met records written
+    while it ran tells itself from a failed reconciliation; the session's
+    first read prints its tree."""
+    rollup = {
+        "calls": 2,
+        "input_tokens": 20,
+        "cache_read_tokens": 200,
+        "cache_write_tokens": 10,
+        "output_tokens": 6,
+        "thinking_tokens": 0,
+        "cost_micros": 2000,
+        "unpriced": 0,
+        "settled_whole": 1,
+        "latency_ms": 1000,
+    }
+    page = {
+        "session_id": "7" * 32,
+        "items": [
+            _usage_record("2026-01-01T00:00:00Z", False),
+            _usage_record("2026-01-01T00:01:00Z", True),
+        ],
+        "next_cursor": None,
+        "loops": [{"loop_id": "9" * 32, "rollup": rollup}],
+        "has_more_loops": False,
+        "total": rollup,
+    }
+    kept = {
+        read["route"]: read["kept"].replace("<loop_id>", "9" * 32)
+        for read in OPERATOR_READ.finditer(_skill(name))
+    }
+    for route in (USAGE_FIRST, USAGE_NEXT):
+        if route not in kept:
+            continue
+        printed = _jq(kept[route], page)
+        assert isinstance(printed, dict), route
+        if "turns" in printed:
+            assert [turn[-1] for turn in printed["turns"]] == [False, True], route
+        if "groups" in printed:
+            assert [group["settled_whole"] for group in printed["groups"]] == [1], route
+        calls = printed["total_calls"] if "total_calls" in printed else printed["total"]["calls"]
+        assert calls == 2, route
+    if name == "ops-session-spend":
+        first = _jq(kept[USAGE_FIRST], page)
+        assert isinstance(first, dict) and first["tree_id"] == "8" * 32
 
 
 # The two reads of the error tracker a pass makes: the issues of the request,
@@ -574,6 +692,17 @@ COUNT_BOUNDS = {
         "never more than 10 polls of a query",
     ],
     "stress-test-run": ["A session follows at most 2 hops of Next."],
+    "ops-loop-spend": ["Read at most 5 pages, 1,000 records.", "never more than 5 pages"],
+    "ops-session-spend": [
+        "Read at most 5 pages, 1,000 records.",
+        "Run it over at most 10 loops",
+        "never more than 5 pages, and never more than 10 loops read turn by turn",
+    ],
+    "audit-model-spend": [
+        "The audit reads at most 20 sessions",
+        "Read at most 5 pages a session, 1,000 records.",
+        "never more than 20 sessions, and never more than 5 pages of one",
+    ],
     "ops-cloud-deployment-create": ["Its Next is the person's to run, never the session's"],
     "stress-test-create-or-update": ["Its Next is the person's to run, never the session's"],
     "audit-database-calls": ["the first run plus at most 1 rerun"],
