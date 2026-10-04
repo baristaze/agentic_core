@@ -200,7 +200,9 @@ it.
 
 **Violation.** Usage recorded with no loop, model role, kind version, or
 tree it can be traced to; usage kept only as a running total per session
-or per budget, so the share of a loop or a role is lost.
+or per budget, so the share of a loop or a role is lost; a call settled
+at its whole hold that records nothing, so a loop's reading falls short
+of what the ledger counted.
 
 **Severity.** medium
 

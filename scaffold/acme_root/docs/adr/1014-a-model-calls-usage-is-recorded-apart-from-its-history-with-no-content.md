@@ -26,8 +26,24 @@ and the step that answered it; the agent kind and its version, the
 model role, the provider, and the model; input, cache-read, cache-write, output, and thinking tokens; the
 reference cost, `cost_micros`, at the price the hold read, or null when
 no price applied; and the provider's latency. The call gate writes it
-when it settles a call the provider billed at its reported usage, once
-per hold: a second write of the same hold lands nothing.
+when it settles a call the provider billed, once per hold: a second
+write of the same hold lands nothing.
+
+**A call settled whole is recorded at its hold, and marked.** A stream
+that broke after it began, a call its run abandoned mid-stream, and a
+request a lost run left unanswered are settled at their whole hold. Each
+record says `settled_whole`: its `cost_micros` is the hold, as the
+ledger settled it, and its tokens are what a partial reply reported,
+else none. A lost run's call was never held by the gate that settles
+it, so the loop names it from its request step and its session; its
+latency is unknown, and is 0. A rollup counts such calls apart, so a
+reading's cost matches the ledger's and says how much of it is a worst
+case.
+
+**A record never fails its call.** The record is written once the ledger
+has settled. A write that fails is logged, and the call, its reply, and
+its loop go on: the ledger counts the call, and only the reading lacks
+it.
 
 **It holds no content.** Its columns are ids, counts, money, a duration,
 and labels the product or its catalog defines. No title, prompt, reply,
@@ -57,7 +73,7 @@ org, and none of the figures. The answer, `SessionUsageView`:
   `created_at`, `hold_id`, `session_id`, `tree_id`, `loop_id`,
   `step_id`, `agent_kind`, `kind_version`, `role`, `provider`, `model`, `input_tokens`,
   `cache_read_tokens`, `cache_write_tokens`, `output_tokens`,
-  `thinking_tokens`, `cost_micros`, and `latency_ms`.
+  `thinking_tokens`, `cost_micros`, `latency_ms`, and `settled_whole`.
 - `next_cursor`: the next page's `cursor`, or null.
 - `loops`: one `{loop_id, rollup}` per loop, in the order each loop
   first called, up to a thousand, and `has_more_loops` past them.
@@ -65,7 +81,8 @@ org, and none of the figures. The answer, `SessionUsageView`:
 
 A rollup holds `calls`, the five token classes, `cost_micros`,
 `unpriced` (the calls no price applied to, whose cost no figure holds),
-and `latency_ms`. The rollups cover every record, whatever the page.
+`settled_whole` (the calls counted at their whole hold), and
+`latency_ms`. The rollups cover every record, whatever the page.
 
 **The tenant sees a step's usage.** Each model response in the tenant's
 history carries its usage by class, where the session keeps its shape.
@@ -76,11 +93,15 @@ history carries its usage by class, where the session keeps its shape.
   call, per loop, and per session. A loop's, a role's, or a kind
   version's spend is a query over the records, even once the history
   is gone.
-- A call settled at its whole hold, a broken stream or a run lost
-  before its reply, leaves no record: there is no reported usage to
-  write. The ledger still counts it.
+- A rollup's cost matches the ledger's for the same priced calls. Where
+  `settled_whole` is above 0, part of it is a hold's worst case, not a
+  usage.
 - A rollup with an unpriced call is a floor, not a total.
+- A record that failed to land leaves its call out of the reading, and
+  the log says which hold.
 - Records accumulate with no delete. Their retention is decided with
   the ledger's.
 - The gate keeps what its hold read in process until the call settles.
-  A settlement in another process writes no record, and is logged.
+  A settlement in another process writes a record only when its caller
+  names the call, as the loop does for a lost run's request; otherwise
+  it is logged.

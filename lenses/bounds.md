@@ -157,7 +157,8 @@ pays, and a tenant's own key changes who pays, never what is gated. A
 pricing interface supplies prices from one source, and every model a
 resolver can pick has a price of its own, never a default row. Every
 billed call leaves a usage record of both figures, with no content, in
-every storage mode; a purge keeps it and never counts it.
+every storage mode, one settled at its whole hold included, at the hold
+and marked; a purge keeps it and never counts it.
 
 **Source.** Bounds and Budgets, Usage and Cost; The Tenant's Own Key.
 
@@ -171,9 +172,10 @@ provider's native tokens when it is set in reference cost; a default
 price row for an unknown model (the hold it under-covers is BND-03); a
 call on the tenant's key priced or gated differently from one on the
 platform's; a call's usage or cost kept only on its step's shape, so a
-session that keeps no shape loses it; a usage record column that can
-hold content; a purge that deletes usage records, or a purge step that
-counts them.
+session that keeps no shape loses it; a billed call settled at its whole
+hold that leaves no usage record; a usage record column that can hold
+content; a purge that deletes usage records, or a purge step that counts
+them.
 
 **Severity.** medium
 
