@@ -1,13 +1,13 @@
 ---
 name: agentic-review-full
-description: "Full engine review: the nine lens groups of the agentic_core spec run in parallel and merge into one report. Use before a pull request to engine code, or when a change crosses groups."
+description: "Full engine review: the ten lens groups of the agentic_core spec run in parallel and merge into one report. Use before a pull request to engine code, or when a change crosses groups."
 allowed-tools: Read, Grep, Glob, Agent, Bash(git diff:*), Bash(git show:*), Bash(git log:*), Bash(git status:*), Bash(git rev-parse:*), Bash(git merge-base:*), Bash(git symbolic-ref:*), Bash(git ls-files:*)
 ---
 
 # agentic-review-full
 
 Run every lens group over the same scope, in parallel, and merge the
-nine reports into one. Each group is judged by its own reviewer so that
+ten reports into one. Each group is judged by its own reviewer so that
 no perspective is diluted by another; this skill only fans out,
 collects, and merges. It judges the engine's rules. The guideline's own
 rules, which the spec cites and does not repeat, are the guideline's
@@ -20,7 +20,7 @@ reads them (see `../agentic-review-steps/SKILL.md`, Input; a path that
 starts with `../` is read from this skill's folder as `realpath`
 resolves it). Resolve the scope once, here, into a concrete
 description (the list of files, or the range or commit) and hand the
-same description to every reviewer so the nine reports cover the same
+same description to every reviewer so the ten reports cover the same
 ground. A range or a commit is handed over as the ref, with its list of
 files, and the reviewer reads each file at the range's end or the
 commit, never from the working tree. `all` and a path or a glob,
@@ -30,7 +30,7 @@ which can be large, are handed over as the path or the glob (`.` for
 itself with the same call, and reads the working tree, never that
 commit, which only records where `HEAD` stood. An empty
 scope is reported as "nothing to review" and the skill stops. `all`
-costs nine full reads of the repository, one per reviewer; a path or
+costs ten full reads of the repository, one per reviewer; a path or
 a range is the cheaper question whenever the change is narrower than
 the tree.
 
@@ -44,7 +44,7 @@ the tree.
    `realpath` is not pre-approved, so an unattended run would stop on a
    prompt. Reviewers do not see this skill's text, so pass them
    absolute paths.
-3. Where the agent can start subagents, launch nine reviewers at once,
+3. Where the agent can start subagents, launch ten reviewers at once,
    one per group, each with the scope line, the group name, the
    absolute path of its lens file (`<catalog>/<group>.md`), and the
    absolute path of the spec. Use the `agentic-reviewer` agent that
@@ -60,7 +60,7 @@ the tree.
    stages, or commits, and never runs a file of the repository under
    review), and that it returns its report within 80 turns, the cap
    `agentic-reviewer` holds. Where the agent has no subagents, run the
-   nine group procedures one after another in this session. The groups:
+   ten group procedures one after another in this session. The groups:
    - `agentic-review-steps`
    - `agentic-review-windows`
    - `agentic-review-models`
@@ -69,8 +69,9 @@ the tree.
    - `agentic-review-trust`
    - `agentic-review-agents`
    - `agentic-review-bounds`
+   - `agentic-review-economy`
    - `agentic-review-privacy`
-4. Wait for all nine. A report follows the group format when every
+4. Wait for all ten. A report follows the group format when every
    section of it is there (the title, the Scope and Lenses lines,
    Findings, Deviations, Passed, Unverified, Not applicable) and its
    counts add up: applied is passed plus findings plus unverified, and
@@ -120,7 +121,7 @@ The group report shape, plus a `Groups` line and a per-group table:
 # Engine review
 
 **Scope.** <the scope line>
-**Groups.** steps, windows, models, tools, live, trust, agents, bounds, privacy
+**Groups.** steps, windows, models, tools, live, trust, agents, bounds, economy, privacy
 **Lenses.** <n> applied, <p> passed, <f> findings, <u> unverified, <x> not applicable
 
 ## Findings
@@ -143,6 +144,7 @@ The group report shape, plus a `Groups` line and a per-group table:
 | trust    |         |        |          |            |                |
 | agents   |         |        |          |            |                |
 | bounds   |         |        |          |            |                |
+| economy  |         |        |          |            |                |
 | privacy  |         |        |          |            |                |
 
 ## Passed

@@ -23,6 +23,7 @@ lens here names that rule without restating it.
 | `trust`   | `TRU`  | `trust.md`   | Identity, Trust, and Attribution |
 | `agents`  | `AGT`  | `agents.md`  | Agent Kinds and Sub-Agents |
 | `bounds`  | `BND`  | `bounds.md`  | Bounds and Budgets; Parking |
+| `economy` | `ECO`  | `economy.md` | Economy |
 | `privacy` | `PRV`  | `privacy.md` | Privacy; Null Objects |
 
 The groups are the ones the spec plans in The Repository. `steps` also
@@ -62,7 +63,7 @@ The format is the guideline's, with the spec in place of
 ```
 
 Ids are the group prefix and two digits: `STP`, `WIN`, `MOD`, `TOL`,
-`LIV`, `TRU`, `AGT`, `BND`, `PRV`.
+`LIV`, `TRU`, `AGT`, `BND`, `ECO`, `PRV`.
 
 - **Principle** is at most 120 words. A rule that needs more is two
   lenses.

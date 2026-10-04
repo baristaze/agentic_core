@@ -24,7 +24,7 @@ The arguments are one of:
   shared drive").
 
 Empty arguments mean: give the guided tour, every section in the order
-of the spec's Contents, two sentences each, then the nine lens groups
+of the spec's Contents, two sentences each, then the ten lens groups
 in one line each.
 
 ## Procedure

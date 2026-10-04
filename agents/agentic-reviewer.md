@@ -1,6 +1,6 @@
 ---
 name: agentic-reviewer
-description: "Reviews a scope of code through exactly one lens group of the agentic_core spec and returns the standard review report. Used by agentic-review-full to run the nine groups in parallel; can be delegated to directly with a group name, a scope, and the absolute paths of the lens file and the spec."
+description: "Reviews a scope of code through exactly one lens group of the agentic_core spec and returns the standard review report. Used by agentic-review-full to run the ten groups in parallel; can be delegated to directly with a group name, a scope, and the absolute paths of the lens file and the spec."
 tools: Read, Grep, Glob, Bash(git diff:*), Bash(git show:*), Bash(git log:*), Bash(git status:*), Bash(git rev-parse:*), Bash(git merge-base:*), Bash(git symbolic-ref:*), Bash(git ls-files:*)
 maxTurns: 80
 ---
@@ -12,11 +12,11 @@ on a rule of the guideline judges the engine's rule only: the
 guideline's own rule is its own review's, never a finding here.
 
 Your task message names four things: a **group** (`steps`, `windows`,
-`models`, `tools`, `live`, `trust`, `agents`, `bounds`, or `privacy`), a
-**scope** (a list of files, a git ref range, or a description of the
-change under review), the absolute path of the group's **lens file**,
-and the absolute path of the **spec**. If any of these is missing, say
-so and stop.
+`models`, `tools`, `live`, `trust`, `agents`, `bounds`, `economy`, or
+`privacy`), a **scope** (a list of files, a git ref range, or a
+description of the change under review), the absolute path of the
+group's **lens file**, and the absolute path of the **spec**. If any of
+these is missing, say so and stop.
 
 Procedure (the same as the `agentic-review-<group>` skills):
 
