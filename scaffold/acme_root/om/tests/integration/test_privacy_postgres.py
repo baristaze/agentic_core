@@ -18,6 +18,7 @@ from uuid import UUID
 import pytest
 from contracts.agent_session_storage import make_session
 from contracts.step_storage import StepStorageContract, a_loop, make_message
+from contracts.tools import stand_ins
 from sqlalchemy import text
 
 from acme.infra.impl.local import InfraLocalImpl
@@ -91,6 +92,11 @@ async def storage(
     await root.close()
 
 
+# What `make_session` names, so the agents manager classes every tool it
+# offers.
+TOOLS = stand_ins("read_log", "run_tests")
+
+
 @pytest.fixture
 def infra(tmp_path: Path) -> InfraLocalImpl:
     return InfraLocalImpl(tmp_path)
@@ -98,7 +104,7 @@ def infra(tmp_path: Path) -> InfraLocalImpl:
 
 @pytest.fixture
 def managers(storage: StoragePostgresImpl, infra: InfraLocalImpl) -> Managers:
-    return build_managers(storage, infra)
+    return build_managers(storage, infra, tool_catalog=TOOLS)
 
 
 async def an_org(managers: Managers) -> TenantContext:
@@ -288,7 +294,7 @@ async def test_a_memory_only_session_writes_no_content_row(
     assert not [phrase for phrase in SAID if phrase in reader]
     assert await key_rows(pg_sessions, ctx.org_id) == []
 
-    elsewhere = build_managers(storage, infra)
+    elsewhere = build_managers(storage, infra, tool_catalog=TOOLS)
     shapes = (await elsewhere.steps.get_steps(ctx, sessions["shape"], 0, 50)).items
     assert [step.seq for step in shapes] == list(range(1, 7))
     assert ContentState.ABSENT in {step.content.state for step in shapes}
