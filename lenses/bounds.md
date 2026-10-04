@@ -155,18 +155,26 @@ costs at list price, whoever paid. Budgets read reference cost, so one
 workload meets one line whether the platform's key or the tenant's own
 pays, and a tenant's own key changes who pays, never what is gated. A
 pricing interface supplies prices from one source, and every model a
-resolver can pick has a price of its own, never a default row.
+resolver can pick has a price of its own, never a default row. Every
+billed call leaves a usage record of both figures, with no content, in
+every storage mode; a purge keeps it and never counts it.
 
 **Source.** Bounds and Budgets, Usage and Cost; The Tenant's Own Key.
 
 **Look for.** The usage and cost fields of a model call; the price
-source and its lookup; what a model with no price row gets.
+source and its lookup; what a model with no price row gets; where a
+billed call's usage record is written, what its columns hold, and what
+a purge does to it.
 
 **Violation.** One number standing for both figures; a budget read in a
 provider's native tokens when it is set in reference cost; a default
 price row for an unknown model (the hold it under-covers is BND-03); a
 call on the tenant's key priced or gated differently from one on the
-platform's.
+platform's; a call's usage or cost kept only on its step's shape, so a
+session that keeps no shape loses it; a billed call settled at its whole
+hold that leaves no usage record; a usage record column that can hold
+content; a purge that deletes usage records, or a purge step that counts
+them.
 
 **Severity.** medium
 

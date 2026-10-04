@@ -32,6 +32,7 @@ GROUPS: dict[str, str] = {
     "trust": "TRU",
     "agents": "AGT",
     "bounds": "BND",
+    "economy": "ECO",
     "privacy": "PRV",
 }
 """Each lens group and the id prefix of its lenses, in the order of the engine's `lenses/README.md`."""

@@ -9,6 +9,7 @@ from acme.om.budgets.storage import BudgetStorageInterface, LedgerStorageInterfa
 from acme.om.budgets.types.amount import Amount
 from acme.om.budgets.types.budget import Budget, BudgetPage
 from acme.om.budgets.types.hold import Tally
+from acme.om.budgets.types.usage import UsageRecord
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import NotFound, TenantMismatch
 from acme.om.outbox import OutboxRelayInterface
@@ -119,6 +120,10 @@ class BudgetsManagerImpl(BudgetsManagerInterface):
         start, _ = window_bounds(budget.window, self._clock())
         tally = await self._ledger.read_tally(ctx.org_id, budget.id, start)
         return tally or Tally(budget_id=budget.id, window_start=start)
+
+    async def record_usage(self, ctx: TenantContext, record: UsageRecord) -> bool:
+        ctx.require(Permission.WRITE)
+        return await self._ledger.append_usage_record(ctx.org_id, record)
 
     async def purge_tenant(self, ctx: TenantContext) -> int:
         ctx.require(Permission.WRITE)

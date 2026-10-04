@@ -18,6 +18,7 @@ from acme.services.api.types.admin import (
     OperatorView,
     OperatorWorkItemView,
     PlatformSizeView,
+    SessionUsageView,
     TotpConfirmedView,
 )
 from acme.services.api.types.events import OperatorEventView
@@ -90,3 +91,16 @@ class AdminServiceInterface(ABC):
     async def requeue_work(
         self, admin: OperatorContext, org_id: UUID, item_id: UUID
     ) -> OperatorWorkItemView: ...
+
+    @abstractmethod
+    async def get_session_usage(
+        self,
+        admin: OperatorContext,
+        org_id: UUID,
+        session_id: UUID,
+        cursor: str | None,
+        limit: int,
+    ) -> SessionUsageView:
+        """A page of one session's usage records and its rollups; `cursor` is
+        the previous page's `next_cursor`."""
+        ...

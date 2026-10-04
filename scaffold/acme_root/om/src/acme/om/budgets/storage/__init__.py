@@ -5,7 +5,9 @@ record, in `core`, written with their outbox rows. The ledger is in
 `activity`: a hold and its settlement are each written once, and a tally per
 line and window counts what open holds reserve and what settlements spent
 (ADR 1006). A hold carries the amount of each line as the gate read it, so
-the ledger never reads `core`."""
+the ledger never reads `core`. Beside them, a usage record per billed model
+call keeps what the call used and cost, with no content, in every storage
+mode (ADR 1014)."""
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
@@ -15,6 +17,7 @@ from uuid import UUID
 from acme.om.budgets.types.breach import Refusal
 from acme.om.budgets.types.budget import Budget, BudgetScope
 from acme.om.budgets.types.hold import Hold, Settlement, Tally
+from acme.om.budgets.types.usage import LoopUsage, UsageRecord, UsageRollup
 from acme.om.outbox.types.row import OutboxRow
 
 
@@ -102,8 +105,39 @@ class LedgerStorageInterface(ABC):
         ...
 
     @abstractmethod
+    async def append_usage_record(self, org_id: UUID, record: UsageRecord) -> bool:
+        """Writes one call's usage record, once: False, with nothing written,
+        when the tenant holds a record of its hold already; an id another
+        tenant holds is `TenantMismatch`."""
+        ...
+
+    @abstractmethod
+    async def read_usage_records(
+        self, org_id: UUID, session_id: UUID, after: UUID | None, limit: int
+    ) -> list[UsageRecord]:
+        """A page of a session's records, in the order they were written (by
+        id), after the id named."""
+        ...
+
+    @abstractmethod
+    async def read_usage_rollups(
+        self, org_id: UUID, session_id: UUID, limit: int
+    ) -> list[LoopUsage]:
+        """The session's rollups, one per loop, of the first `limit` loops in
+        the order each loop's first record was written."""
+        ...
+
+    @abstractmethod
+    async def read_usage_total(self, org_id: UUID, session_id: UUID) -> UsageRollup:
+        """The rollup of every record of the session: no calls when it has
+        none."""
+        ...
+
+    @abstractmethod
     async def count_tenant(self, org_id: UUID, limit: int) -> int:
         """How many holds, settlements, and tallies the tenant keeps, counted
         up to `limit` and no further: what stays of a deleted tenant's
-        ledger, which no serving login deletes."""
+        ledger, which no serving login deletes. Its usage records are not
+        counted: they never keep a tenant from being marked purged (ADR
+        1014)."""
         ...

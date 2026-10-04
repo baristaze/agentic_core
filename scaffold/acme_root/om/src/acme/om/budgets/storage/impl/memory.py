@@ -6,12 +6,21 @@ from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
-from acme.om.budgets.rules import TallyKey, closed, key_of, opened, refusal_of
+from acme.om.budgets.rules import (
+    TallyKey,
+    closed,
+    key_of,
+    loop_rollups,
+    opened,
+    refusal_of,
+    rollup_of,
+)
 from acme.om.budgets.storage import BudgetStorageInterface, LedgerStorageInterface
 from acme.om.budgets.types.breach import Refusal
 from acme.om.budgets.types.budget import Budget, BudgetScope
 from acme.om.budgets.types.hold import Hold, Settlement, Tally
-from acme.om.exceptions import NotFound, PreconditionFailed
+from acme.om.budgets.types.usage import LoopUsage, UsageRecord, UsageRollup
+from acme.om.exceptions import NotFound, PreconditionFailed, TenantMismatch
 from acme.om.outbox.storage import OutboxLandingInterface
 from acme.om.outbox.types.row import OutboxRow
 from acme.om.storage.impl.memory_base import MemoryStorageBase, MemoryTable
@@ -75,6 +84,7 @@ class LedgerStorageMemoryImpl(MemoryStorageBase, LedgerStorageInterface):
         self._holds: MemoryTable[Hold] = {}
         self._settlements: dict[UUID, tuple[UUID, Settlement]] = {}  # by hold id
         self._tallies: dict[tuple[UUID, UUID, datetime], Tally] = {}
+        self._usage: MemoryTable[UsageRecord] = {}
 
     async def open_hold(self, org_id: UUID, hold: Hold) -> Refusal | None:
         async with self._lock:
@@ -122,11 +132,38 @@ class LedgerStorageMemoryImpl(MemoryStorageBase, LedgerStorageInterface):
     ) -> Tally | None:
         return self._tallies.get((org_id, budget_id, window_start))
 
+    async def append_usage_record(self, org_id: UUID, record: UsageRecord) -> bool:
+        async with self._lock:
+            found = self._usage.get(record.id)
+            if found is not None and found[0] != org_id:
+                raise TenantMismatch(f"usage record {record.id} is not in {org_id}")
+            held = (r for org, r in self._usage.values() if org == org_id)
+            if any(r.hold_id == record.hold_id for r in held):
+                return False
+            return self._insert(self._usage, org_id, record)
+
+    async def read_usage_records(
+        self, org_id: UUID, session_id: UUID, after: UUID | None, limit: int
+    ) -> list[UsageRecord]:
+        records = self._session_usage(org_id, session_id)
+        return [r for r in records if after is None or r.id > after][:limit]
+
+    async def read_usage_rollups(
+        self, org_id: UUID, session_id: UUID, limit: int
+    ) -> list[LoopUsage]:
+        return loop_rollups(self._session_usage(org_id, session_id))[:limit]
+
+    async def read_usage_total(self, org_id: UUID, session_id: UUID) -> UsageRollup:
+        return rollup_of(self._session_usage(org_id, session_id))
+
     async def count_tenant(self, org_id: UUID, limit: int) -> int:
         holds = len(self._rows(self._holds, org_id))
         settlements = sum(1 for org, _ in self._settlements.values() if org == org_id)
         tallies = sum(1 for org, _, _ in self._tallies if org == org_id)
         return min(holds + settlements + tallies, limit)
+
+    def _session_usage(self, org_id: UUID, session_id: UUID) -> list[UsageRecord]:
+        return [r for r in self._rows(self._usage, org_id) if r.session_id == session_id]
 
     def _tallies_of(self, org_id: UUID, hold: Hold) -> dict[TallyKey, Tally]:
         """The tally of each line, a fresh one where the window has none."""

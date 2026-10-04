@@ -11,6 +11,8 @@ from acme.integrations.model_providers.failures import ModelCallFailed
 from acme.integrations.model_providers.types import StopReason
 from acme.om.attribution import AttributionManagerInterface
 from acme.om.base import Platform, derived_id, new_id, utcnow
+from acme.om.budgets.rules import elapsed_ms
+from acme.om.budgets.types.usage import CallSite
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import (
     CompactionFailed,
@@ -368,22 +370,35 @@ class WindowsManagerImpl(WindowsManagerInterface):
         try:
             (request,) = await self._steps.append_steps(ctx, session_id, epoch, [request])
         except BaseException:
-            await self._gate.settle(ctx, hold, None, billed=False)
+            await self._gate.settle(ctx, hold, None, billed=False, site=None)
             raise
+        started = self._clock()
         try:
             reply = await reply_of(self._providers.get(summarizer.provider).stream(call))
         except ModelCallFailed as failed:
             # Nothing streamed back: the call was never sent, or the provider
             # refused it before processing it, so the hold is released. A
-            # stream that broke after it began is billed.
-            await self._gate.settle(ctx, hold, None, billed=failed.partial is not None)
-            if failed.partial is not None:
-                await self._steps.append_steps(
-                    ctx, session_id, epoch, [_response(request, failed.partial, self._clock())]
-                )
+            # stream that broke after it began is billed, whole.
+            if failed.partial is None:
+                await self._gate.settle(ctx, hold, None, billed=False, site=None)
+                raise
+            broken = _response(request, failed.partial, self._clock())
+            site = CallSite(
+                loop_id=loop_id,
+                step_id=broken.id,
+                latency_ms=elapsed_ms(started, broken.created_at),
+            )
+            await self._gate.settle(
+                ctx, hold, None, billed=True, site=site, partial=failed.partial.usage
+            )
+            await self._steps.append_steps(ctx, session_id, epoch, [broken])
             raise
-        await self._gate.settle(ctx, hold, reply.usage, billed=True)
-        response = _response(request, reply, self._clock())
+        answered = self._clock()
+        response = _response(request, reply, answered)
+        site = CallSite(
+            loop_id=loop_id, step_id=response.id, latency_ms=elapsed_ms(started, answered)
+        )
+        await self._gate.settle(ctx, hold, reply.usage, billed=True, site=site)
         whole = (
             not reply.truncated
             and reply.stop_reason is StopReason.END_TURN

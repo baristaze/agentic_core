@@ -253,7 +253,9 @@ async def test_a_request_a_lost_run_left_open_is_closed_and_its_hold_settled_who
     rendered = await managers.windows.render_request(ctx, session_id, epoch, trigger.id, prompts)
     fill = (await managers.models.get_fill_set(ctx, session_id)).fill_for(MAIN)
     assert fill is not None
-    gate = CallGateBudgetImpl(managers.budget_gate, managers.pricing, managers.agent_sessions)
+    gate = CallGateBudgetImpl(
+        managers.budget_gate, managers.pricing, managers.agent_sessions, managers.budgets
+    )
     hold = await gate.authorize(ctx, session_id, person(ctx.user_id), MAIN, fill, rendered.call)
     lost = request_step(
         rendered, rendered.attribution, session_id, trigger.id, new_id(), loop.clock(), hold_id=hold
@@ -267,8 +269,15 @@ async def test_a_request_a_lost_run_left_open_is_closed_and_its_hold_settled_who
     steps = await loop.history(session_id)
     closing = next(step for step in steps if step.responds_to == lost.id)
     assert isinstance(closing.header, ModelResponseHeader) and closing.header.abandoned
-    settlement = await loop.storage.get_ledger_storage().read_settlement(ctx.org_id, hold)
+    ledger = loop.storage.get_ledger_storage()
+    settlement = await ledger.read_settlement(ctx.org_id, hold)
     assert settlement is not None and settlement.bill.kind == "unknown", "settled whole"
+    # This run's gate never held the lost call: its record is named from the
+    # request and the session, at the whole hold, and marked.
+    record = next(r for r in await ledger.read_usage_records(ctx.org_id, session_id, None, 10))
+    assert (record.hold_id, record.step_id, record.settled_whole) == (hold, closing.id, True)
+    assert (record.role, record.provider, record.model) == (MAIN, fill.provider.value, fill.model)
+    assert (record.cost_micros, record.input_tokens) == (settlement.spent.cost_micros, 0)
     with pytest.raises(StaleWriter):
         await managers.steps.append_steps(
             ctx, session_id, epoch, [closing.model_copy(update={"id": new_id()})]

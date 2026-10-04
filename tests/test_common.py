@@ -94,7 +94,7 @@ def test_closing_hashes_are_not_part_of_the_heading():
     assert [a for _, _, a in anchors(text)] == ["tables", "use-c", "c"]
 
 
-def test_markdown_files_reach_every_depth_and_skip_caches(repo):
+def test_markdown_files_reach_every_depth_and_skip_caches_and_runs(repo):
     for rel in [
         "docs/sub/deep/x.md",
         "node_modules/pkg/README.md",
@@ -103,6 +103,9 @@ def test_markdown_files_reach_every_depth_and_skip_caches(repo):
         ".venv/lib/README.md",
         ".git/x.md",
         ".claude/worktrees/agent-1/agentic_core_spec.md",
+        "benchmark/runs/one/20260101-000000/chatgpt.com.md",
+        "benchmark/runs/one/README.md",
+        "benchmark/browser/prompt.md",
         "docs/notes.txt",
     ]:
         repo.write(rel, "# X\n")
@@ -110,6 +113,8 @@ def test_markdown_files_reach_every_depth_and_skip_caches(repo):
     assert "docs/sub/deep/x.md" in found
     assert not {f for f in found if f.split("/")[0] in {"node_modules", ".pytest_cache", ".venv", ".git", ".claude"}}
     assert "docs/node_modules/pkg/README.md" not in found
+    assert "benchmark/runs/one/20260101-000000/chatgpt.com.md" not in found  # a run folder is a record
+    assert {"benchmark/runs/one/README.md", "benchmark/browser/prompt.md"} <= found  # a scenario's page and the prompt are not
     assert "docs/notes.txt" not in found
 
 

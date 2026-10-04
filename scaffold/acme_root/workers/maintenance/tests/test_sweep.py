@@ -56,6 +56,7 @@ from acme.om.budgets.rules import lines_of
 from acme.om.budgets.types.amount import Spend
 from acme.om.budgets.types.budget import Budget, BudgetScopeKind, WindowKind
 from acme.om.budgets.types.hold import Hold
+from acme.om.budgets.types.usage import UsageRecord
 from acme.om.context import CredentialKind, RequestContext, Role, TenantContext, build_context
 from acme.om.events.manager import audit_event
 from acme.om.media.types.file import File
@@ -386,6 +387,51 @@ async def test_a_deleted_tenant_is_marked_purged_once_nothing_is_left_and_skippe
     swept = {ctx.org_id for ctx in await container.managers.work.maintenance_contexts(request())}
     assert expired not in swept, "a purged tenant is left out"
     assert recent in swept and EMPTY_UUID in swept
+
+
+async def test_a_deleted_tenants_usage_records_stay_and_never_keep_it_from_being_marked(
+    tmp_path: Path,
+) -> None:
+    """What a tenant's model calls used and cost is billing data with no
+    content: the sweep deletes none of it, and never counts it as something
+    left to purge, so the tenant is marked purged with its records whole."""
+    container = build_container(tmp_path)
+    org_id, _ = await deleted_org(container, days_ago=40)
+    ledger = container.storage.get_ledger_storage()
+    session_id, now = new_id(), utcnow()
+    records = [
+        UsageRecord(
+            id=new_id(),
+            created_at=now,
+            hold_id=new_id(),
+            session_id=session_id,
+            tree_id=session_id,
+            loop_id=new_id(),
+            step_id=new_id(),
+            agent_kind="assistant",
+            kind_version=1,
+            role="main",
+            provider="anthropic",
+            model="claude-sonnet",
+            input_tokens=1_000,
+            cache_read_tokens=800,
+            cache_write_tokens=200,
+            output_tokens=40,
+            thinking_tokens=0,
+            cost_micros=1_500,
+            latency_ms=900,
+        )
+        for _ in range(2)
+    ]
+    for record in records:
+        assert await ledger.append_usage_record(org_id, record)
+    loop = build_loop(container)
+
+    for _ in range(3):
+        await loop._sweep_once()  # pyright: ignore[reportPrivateUsage]
+    marked = await container.storage.get_tenancy_storage().read_org(org_id)
+    assert marked is not None and marked.purged_at is not None, "its records left nothing to purge"
+    assert await ledger.read_usage_records(org_id, session_id, None, 10) == records
 
 
 def a_session() -> AgentSession:

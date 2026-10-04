@@ -1,6 +1,7 @@
-# agentic_core
+# An Engine for Long-Running Agents
 
-*Specification of an agentic engine. Preliminary. Apache 2.0.*
+*`agentic_core`, a specification. A personal edition, preliminary.
+Apache 2.0.*
 
 `agentic_core` is the engine under an agent: a tool-call loop with a model
 as its decision-maker, made durable, bounded, steerable, private, and
@@ -85,6 +86,7 @@ These are the invariants. Each links the section that states it.
 - [Agent Kinds and Sub-Agents](#agent-kinds-and-sub-agents)
 - [Bounds and Budgets](#bounds-and-budgets)
 - [Parking](#parking)
+- [Economy](#economy)
 - [Privacy](#privacy)
 - [Null Objects](#null-objects)
 - [Testing and Conformance](#testing-and-conformance)
@@ -1222,6 +1224,18 @@ them:
   output, thinking.
 - **Reference cost:** what that usage costs at list price, whoever paid.
 
+Both land in a **usage record**, one for every call a provider billed:
+the session, its tree, the loop, and the step it answered, the agent
+kind and its version, the model role, the provider and the model, its
+tokens by class, its reference cost, and its latency. A call settled at
+its whole hold, a broken stream or a run lost before its reply, is
+recorded at the hold and marked so, with what a partial reply reported,
+and a rollup counts it apart. A record holds no content, so it is
+written in every storage mode. It is billing data, kept beside the
+ledger: a session's purge and its tenant's leave it, and it never keeps
+a deleted tenant from being marked purged. The operator plane reads a
+session's records and their rollups, per loop and per session.
+
 Budgets read reference cost, so one workload meets one line whether the
 platform's key or the tenant's own pays. A pricing interface supplies
 prices from one source, and every model a resolver can pick has a price
@@ -1300,6 +1314,85 @@ resumes each time without anyone restarting it.
 > unlock, and its retry time, holds nothing while it waits, and resumes
 > by itself once its unlock happens.
 
+## Economy
+
+An agent's bill follows what its requests carry and how its loops
+delegate. [Bounds and Budgets](#bounds-and-budgets) stop a loop that
+spends too much. Nothing there makes a loop spend less. Economy is that
+other half: the same work, for fewer tokens and fewer calls. The spec
+never says what a kind's prompts say; it says what they cost.
+
+### What a Request Carries
+
+Every request opens with the kind's prompts and its tool definitions
+([Rendering](#rendering)). Every call pays for them, and they are the
+part the provider's cache can serve across sessions.
+
+- **One prefix per kind version.** The kind's prompts and its tool
+  definitions hold no value that differs per session, per person, or
+  per tenant. Such a value renders after them, in the places
+  [Rendering](#rendering) and [The Pinned Zone](#the-pinned-zone)
+  allow. So every session of a kind version shares one cached prefix.
+- **A tool definition earns its weight.** A definition rides every
+  request of every session of its kind. A kind registers the tools its
+  loops use. A description says what the model needs to choose the tool
+  and fill its input, and nothing its schema already says.
+
+### What a Delegation Moves
+
+A sub-agent spends its own window so its parent's stays small
+([Sub-Agents](#sub-agents)). That holds only while little crosses
+between them.
+
+- **A bounded objective.** A spawn's objective has a size bound.
+  It names large material by its handle and never pastes it.
+- **A bounded report.** A child's report has a size bound. Above
+  it, the report is stored as an artifact, and the parent's inbox holds
+  its preview and its handle, as a large tool result does ([Large
+  Results and Retrieval](#large-results-and-retrieval)).
+- **Caps of its own.** A child runs under its kind's step guard, sized
+  for its task, and under a budget scoped to its own session: a share
+  of what the tree has left. The tree's budget still bounds every
+  child. A child's cap only keeps one child from spending its siblings'
+  share.
+
+### Fewer and Cheaper Calls
+
+- **A mechanical task has a model role of its own.** A title, a
+  summary, a classification, or an extraction needs no judgment. Each
+  is a model role of its own, so a resolver can fill it with a cheaper
+  model ([Roles and Fills](#roles-and-fills)). None rides the main role,
+  whose fill is sized for the agent's hardest turn.
+- **Fewer calls before concurrent calls.** A loop's model calls and its
+  sub-agents follow the guideline's order for fixing calls
+  ([Operational Skills][g-ops-skills]). A fan-out is the last step,
+  never the first.
+- **A check costs what its risk is worth.** A check that is itself a
+  model call or a sub-agent, such as a result gate that asks a model,
+  runs where the work it gates calls for it: by that work's class and
+  effect, never on every result alike. It never runs again on an input
+  it has already judged.
+
+*Example:* the three sub-agents each get one hypothesis and the log
+excerpts it rests on, by handle. Each returns a short report, and the
+session's title comes from a cheap model role, never the main one.
+
+### Spend Is a Reading
+
+What a loop spent is read from what its calls recorded, never guessed.
+Each model call's usage record ([Usage and Cost](#usage-and-cost)) names
+its loop, its model role, its kind version, and its tree, in every
+storage mode. So the cost of a
+loop, a role, or a kind is a query, and so is the share of its input
+the cache served. A change made to save shows its saving on that
+reading, before and after.
+
+> **Principle:** Economy is spending less inside the bounds: one prefix
+> per kind version, tool definitions that earn their weight, a bounded
+> objective down and a bounded report up, a cap for each child, a cheap
+> model role for mechanical work, fewer calls before concurrent ones,
+> checks sized to their risk, and spend that is a reading.
+
 ## Privacy
 
 ### A Key per Session
@@ -1368,8 +1461,9 @@ own lifetimes.
 Some tenants accept no content at rest, sealed or not. A session's
 storage policy is chosen per session, by policy: **sealed** by default,
 or **memory-only**, where content lives only while a runtime holds it and
-the shape may still be persisted, when policy allows, so cost and audit
-survive. Both impls are wired at boot, and a decorator routes each
+the shape may still be persisted, when policy allows, so the audit
+survives. A call's cost survives in every mode, in its [usage
+record](#usage-and-cost). Both impls are wired at boot, and a decorator routes each
 session by its policy. A memory-only session keeps its runtime while it
 is parked, up to a declared time; past it, or on a crash, its loop ends
 `errored` and its shape stays.
@@ -1506,6 +1600,7 @@ The planned lens groups:
 | `trust` | `TRU` | Identity, Trust, and Attribution |
 | `agents` | `AGT` | Agent Kinds and Sub-Agents |
 | `bounds` | `BND` | Bounds and Budgets; Parking |
+| `economy` | `ECO` | Economy |
 | `privacy` | `PRV` | Privacy; Null Objects |
 
 A `high` lens is one whose breach spends outside the gate, lets a secret
@@ -1547,38 +1642,39 @@ own tools and data.
 closed-loop, distributed platform: runners and hosts, placement,
 evidence, trust across a customer's wall, and money.
 
-[g]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md
-[g-read]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#how-to-read-this
-[g-interfaces]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#interfaces
-[g-impls]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#multiple-impls-per-interface
-[g-decoration]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#composition-by-decoration
-[g-stages]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#stages
-[g-scopes]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#scopes
-[g-naming]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#naming-entities
-[g-immut]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#immutability
-[g-ids]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#identifiers
-[g-namespaces]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#namespaces-as-swimlanes
-[g-roles]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#database-roles
-[g-infra]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#infrastructure
-[g-cache]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#cache
-[g-secrets]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#secrets
-[g-gateway]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#the-gateway
-[g-calls]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#direction-of-calls
-[g-realtime]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#realtime-at-the-edge
-[g-lro]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#long-running-orchestrations
-[g-workq]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#the-work-queue
-[g-worker]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#shape-of-a-worker
-[g-twins]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#twins-for-external-services
-[g-refuses]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#what-a-process-refuses
-[g-ops]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#operations
-[g-handoff]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#correlation-across-a-handoff
-[g-exceptions]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#exceptions
-[g-adr]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#records-of-decisions
-[g-tests]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#tests
-[g-resilience]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/architecture.md#resilience-by-design
-[g-lenses]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/lenses/README.md
-[g-adopting]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/docs/adopting.md#upgrade-a-copy-of-the-scaffold
-[g-adr-0039]: https://github.com/baristaze/swe_guidelines/blob/v0.50.0/scaffold/acme_root/docs/adr/0039-long-running-work-is-a-record-a-guard-parks-and-a-bound-fails.md
+[g]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md
+[g-read]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#how-to-read-this
+[g-interfaces]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#interfaces
+[g-impls]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#multiple-impls-per-interface
+[g-decoration]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#composition-by-decoration
+[g-stages]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#stages
+[g-scopes]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#scopes
+[g-naming]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#naming-entities
+[g-immut]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#immutability
+[g-ids]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#identifiers
+[g-namespaces]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#namespaces-as-swimlanes
+[g-roles]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#database-roles
+[g-infra]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#infrastructure
+[g-cache]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#cache
+[g-secrets]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#secrets
+[g-gateway]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#the-gateway
+[g-calls]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#direction-of-calls
+[g-realtime]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#realtime-at-the-edge
+[g-lro]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#long-running-orchestrations
+[g-workq]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#the-work-queue
+[g-worker]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#shape-of-a-worker
+[g-twins]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#twins-for-external-services
+[g-refuses]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#what-a-process-refuses
+[g-ops]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#operations
+[g-ops-skills]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#operational-skills
+[g-handoff]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#correlation-across-a-handoff
+[g-exceptions]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#exceptions
+[g-adr]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#records-of-decisions
+[g-tests]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#tests
+[g-resilience]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/architecture.md#resilience-by-design
+[g-lenses]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/lenses/README.md
+[g-adopting]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/docs/adopting.md#upgrade-a-copy-of-the-scaffold
+[g-adr-0039]: https://github.com/baristaze/swe_guidelines/blob/v0.51.0/scaffold/acme_root/docs/adr/0039-long-running-work-is-a-record-a-guard-parks-and-a-bound-fails.md
 [d]: https://github.com/baristaze/distro_gentic/blob/main/distro_gentic_spec.md
 [d-money]: https://github.com/baristaze/distro_gentic/blob/main/distro_gentic_spec.md#money
 [d-evidence]: https://github.com/baristaze/distro_gentic/blob/main/distro_gentic_spec.md#evidence
