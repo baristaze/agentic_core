@@ -397,6 +397,85 @@ def test_the_root_cause_reads_print_what_the_report_needs() -> None:
             assert isinstance(printed, dict) and printed["error"] == code, route
 
 
+USAGE_FIRST = "orgs/<org_id>/sessions/<session_id>/usage?limit=200"
+USAGE_NEXT = USAGE_FIRST + "&cursor=<next_cursor>"
+
+
+def _usage_record(at: str, settled_whole: bool) -> dict[str, object]:
+    return {
+        "id": "5" * 32,
+        "created_at": at,
+        "hold_id": "6" * 32,
+        "session_id": "7" * 32,
+        "tree_id": "8" * 32,
+        "loop_id": "9" * 32,
+        "step_id": "a" * 32,
+        "agent_kind": "assistant",
+        "kind_version": 1,
+        "role": "main",
+        "provider": "acme",
+        "model": "acme-1",
+        "input_tokens": 10,
+        "cache_read_tokens": 100,
+        "cache_write_tokens": 5,
+        "output_tokens": 3,
+        "thinking_tokens": 0,
+        "cost_micros": 1000,
+        "latency_ms": 500,
+        "settled_whole": settled_whole,
+    }
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="jq is not installed")
+@pytest.mark.parametrize("name", SPEND_READERS)
+def test_a_spend_read_prints_the_calls_settled_whole_and_the_sessions_count(name: str) -> None:
+    """A call settled at its whole hold is marked, and each usage read carries
+    the mark out: as a turn's last field, or as a group's count. Every page
+    prints the session's count of calls, so a read that met records written
+    while it ran tells itself from a failed reconciliation; the session's
+    first read prints its tree."""
+    rollup = {
+        "calls": 2,
+        "input_tokens": 20,
+        "cache_read_tokens": 200,
+        "cache_write_tokens": 10,
+        "output_tokens": 6,
+        "thinking_tokens": 0,
+        "cost_micros": 2000,
+        "unpriced": 0,
+        "settled_whole": 1,
+        "latency_ms": 1000,
+    }
+    page = {
+        "session_id": "7" * 32,
+        "items": [
+            _usage_record("2026-01-01T00:00:00Z", False),
+            _usage_record("2026-01-01T00:01:00Z", True),
+        ],
+        "next_cursor": None,
+        "loops": [{"loop_id": "9" * 32, "rollup": rollup}],
+        "has_more_loops": False,
+        "total": rollup,
+    }
+    kept = {
+        read["route"]: read["kept"].replace("<loop_id>", "9" * 32)
+        for read in OPERATOR_READ.finditer(_skill(name))
+    }
+    for route in (USAGE_FIRST, USAGE_NEXT):
+        if route not in kept:
+            continue
+        printed = _jq(kept[route], page)
+        assert isinstance(printed, dict), route
+        if "turns" in printed:
+            assert [turn[-1] for turn in printed["turns"]] == [False, True], route
+        if "groups" in printed:
+            assert [group["settled_whole"] for group in printed["groups"]] == [1], route
+        calls = printed["total_calls"] if "total_calls" in printed else printed["total"]["calls"]
+        assert calls == 2, route
+    if name == "ops-session-spend":
+        assert _jq(kept[USAGE_FIRST], page)["tree_id"] == "8" * 32
+
+
 # The two reads of the error tracker a pass makes: the issues of the request,
 # and the events of each issue. An issue's title and an event's exception carry
 # the exception's text, which can quote what the tenant sent.
