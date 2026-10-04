@@ -45,7 +45,7 @@ from acme.om.steps.types.header import (
     ToolFailure,
     ToolRequestHeader,
 )
-from acme.om.steps.types.step import Actor, Step, StepType
+from acme.om.steps.types.step import Step, StepType
 from acme.om.tenancy import TenancyManagerInterface
 from acme.om.tools.manager import KeyedHash, ToolsManagerInterface
 from acme.om.tools.registry import ToolRegistry

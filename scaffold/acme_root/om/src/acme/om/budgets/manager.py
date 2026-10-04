@@ -54,4 +54,3 @@ class BudgetsManagerInterface(ABC):
         """The sweep, for one tenant past its own retention: every budget, a
         batch at most a call. Any other tenant returns 0 and reads nothing."""
         ...
-
