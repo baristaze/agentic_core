@@ -321,3 +321,10 @@ async def test_a_sub_agent_whose_ancestor_is_purged_runs_no_loop_over_postgres(
     loop = await a_sub_agent_loop(storage, tmp_path)
     purging = AgentSessionStoragePostgresImpl(pg_sessions)
     await sub_agents.a_sub_agent_whose_ancestor_is_purged_runs_no_loop(loop, purging)
+
+
+async def test_a_cancel_reaches_a_child_past_a_deleted_sibling_over_postgres(
+    storage: StoragePostgresImpl, tmp_path: Path
+) -> None:
+    loop = await a_sub_agent_loop(storage, tmp_path)
+    await sub_agents.a_cancel_reaches_a_child_past_a_deleted_sibling(loop)

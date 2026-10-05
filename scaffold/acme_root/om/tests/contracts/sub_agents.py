@@ -4,10 +4,10 @@ no more than the tree's budget, a parent that parks on its children and
 wakes on a report, a wait after each report, a deadline that ends a wait,
 a child gated by its parent's policy as well as its own, and a spawn
 asked twice that starts one child. A session with a sub-agent at work
-below it is not deleted, and a deleted one still holds the sub-agents
-below it to its kind. Each case takes a loop over the memory storage or
-over Postgres, so the unit suite and the integration suite run the same
-cases."""
+below it is not deleted, a deleted one still holds the sub-agents below
+it to its kind, and a cancel reaches a child past a deleted sibling.
+Each case takes a loop over the memory storage or over Postgres, so the
+unit suite and the integration suite run the same cases."""
 
 import asyncio
 from datetime import timedelta
@@ -31,6 +31,8 @@ from acme.om.context import TenantContext
 from acme.om.exceptions import NotFound, ValidationFailed
 from acme.om.steps.types.content import TextBlock, ToolUseBlock
 from acme.om.steps.types.header import (
+    ControlCommand,
+    ControlHeader,
     InputHeader,
     LoopOutcome,
     Park,
@@ -39,7 +41,7 @@ from acme.om.steps.types.header import (
     ToolRequestHeader,
     ToolResponseHeader,
 )
-from acme.om.steps.types.step import Step, StepType
+from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.tools.native.spawn_sub_agent import SPAWN_SUB_AGENT
 from acme.om.tools.native.wait_for_sub_agents import WAIT_FOR_SUB_AGENTS
 from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule
@@ -553,3 +555,43 @@ async def a_sub_agent_whose_ancestor_is_purged_runs_no_loop(
 
     assert run.outcome is LoopOutcome.ERRORED
     assert len(loop.anthropic.calls) == calls, "no model call"
+
+
+async def a_cancel_reaches_a_child_past_a_deleted_sibling(loop: Loop) -> None:
+    """A root starts two children. The first ends, and a person deletes it;
+    the second has not run. A person cancels the root, and the cascade
+    passes over the deleted child: the second ends cancelled, with no model
+    call after the cancel."""
+    root = await a_root(loop, "What are the quarterly total and count?")
+    loop.anthropic.add(
+        reply(spawn("the total"), spawn("the count")), reply(call(WAIT_FOR_SUB_AGENTS))
+    )
+    assert (await loop.loops.run(loop.owner, root)).park == CHILDREN_PARK
+    first, second = await children_of(loop, root)
+    loop.anthropic.add(reply(said("The total is 12.")))
+    assert (await loop.loops.run(loop.owner, first.id)).outcome is LoopOutcome.SUCCEEDED
+    sessions = loop.managers.agent_sessions
+    await sessions.delete_session(loop.owner, first.id)
+    assert (await sessions.get_session(loop.owner, second.id)).status is SessionStatus.PENDING
+    calls = len(loop.anthropic.calls)
+    cancel = Step(
+        id=new_id(),
+        created_at=loop.clock(),
+        session_id=root,
+        loop_id=new_id(),
+        type=StepType.CONTROL,
+        actor=Actor.PERSON,
+        origin=Origin.PORTAL,
+        header=ControlHeader(command=ControlCommand.CANCEL),
+    )
+    await loop.managers.steps.append_inputs(loop.owner, root, [cancel])
+
+    cancelled = await loop.loops.run(loop.owner, root)
+
+    assert cancelled.outcome is LoopOutcome.CANCELLED
+    (last,) = (await loop.history(second.id))[-1:]
+    assert isinstance(last.header, ControlHeader), "the cascade reached the second child"
+    assert last.header.command is ControlCommand.CANCEL
+    stopped = await loop.loops.run(loop.owner, second.id)
+    assert stopped.outcome is LoopOutcome.CANCELLED
+    assert len(loop.anthropic.calls) == calls, "no model call after the cancel"

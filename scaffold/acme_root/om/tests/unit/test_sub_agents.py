@@ -75,3 +75,8 @@ async def test_a_sub_agent_whose_ancestor_is_purged_runs_no_loop(tmp_path: Path)
     loop = loop_over(tmp_path, kinds=sub_agents.KINDS)
     purging = loop.storage.get_agent_session_storage()
     await sub_agents.a_sub_agent_whose_ancestor_is_purged_runs_no_loop(loop, purging)
+
+
+async def test_a_cancel_reaches_a_child_past_a_deleted_sibling(tmp_path: Path) -> None:
+    loop = loop_over(tmp_path, kinds=sub_agents.KINDS)
+    await sub_agents.a_cancel_reaches_a_child_past_a_deleted_sibling(loop)
