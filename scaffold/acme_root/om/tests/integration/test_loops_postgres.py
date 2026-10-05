@@ -1,19 +1,23 @@
 """The loop over Postgres: model, tool, model, each step persisted before it
 is acted on and its content sealed at rest; a lost run's open call
-settled by a new run, whose epoch refuses the old one; and a child's
-report in its parent's inbox, whole or by its handle."""
+settled by a new run, whose epoch refuses the old one; a child's report
+in its parent's inbox, whole or by its handle; and sub-agents a model
+starts and waits on through the engine's own tools (`contracts.
+sub_agents`)."""
 
 import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
+from contracts import sub_agents
 from contracts.loops import (
     ASSISTANT,
     BUILDER,
     DELIVERY,
     LEAD,
     WORKER,
+    Loop,
     call,
     loop_over,
     reply,
@@ -225,3 +229,50 @@ async def test_a_childs_report_wakes_its_parent_over_postgres_whole_or_by_its_ha
         if isinstance(block, TextBlock)
     )
     assert f"The whole report is artifact {handle.id}" in sent and middle not in sent
+
+
+async def a_sub_agent_loop(storage: StoragePostgresImpl, tmp_path: Path) -> Loop:
+    owner = await an_owner(storage, tmp_path)
+    return loop_over(tmp_path, storage=storage, owner=owner, kinds=sub_agents.KINDS)
+
+
+async def test_a_root_holds_ten_sub_agents_and_the_eleventh_is_refused_over_postgres(
+    storage: StoragePostgresImpl, tmp_path: Path
+) -> None:
+    loop = await a_sub_agent_loop(storage, tmp_path)
+    await sub_agents.a_root_holds_ten_sub_agents_and_the_eleventh_is_refused(loop)
+
+
+async def test_a_third_level_starts_and_a_fourth_is_refused_over_postgres(
+    storage: StoragePostgresImpl, tmp_path: Path
+) -> None:
+    loop = await a_sub_agent_loop(storage, tmp_path)
+    await sub_agents.a_third_level_starts_and_a_fourth_is_refused(loop)
+
+
+async def test_children_together_spend_no_more_than_the_trees_budget_over_postgres(
+    storage: StoragePostgresImpl, tmp_path: Path
+) -> None:
+    loop = await a_sub_agent_loop(storage, tmp_path)
+    await sub_agents.children_together_spend_no_more_than_the_trees_budget(loop)
+
+
+async def test_a_parent_parks_on_its_children_and_a_report_wakes_it_over_postgres(
+    storage: StoragePostgresImpl, tmp_path: Path
+) -> None:
+    loop = await a_sub_agent_loop(storage, tmp_path)
+    await sub_agents.a_parent_parks_on_its_children_and_a_report_wakes_it(loop)
+
+
+async def test_a_report_that_lands_before_the_park_still_wakes_the_parent_over_postgres(
+    storage: StoragePostgresImpl, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loop = await a_sub_agent_loop(storage, tmp_path)
+    await sub_agents.a_report_that_lands_before_the_park_still_wakes_the_parent(loop, monkeypatch)
+
+
+async def test_a_spawn_asked_twice_starts_one_child_over_postgres(
+    storage: StoragePostgresImpl, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loop = await a_sub_agent_loop(storage, tmp_path)
+    await sub_agents.a_spawn_asked_twice_starts_one_child(loop, monkeypatch)
