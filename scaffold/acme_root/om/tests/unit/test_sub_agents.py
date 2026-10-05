@@ -57,6 +57,26 @@ async def test_a_spawn_asked_twice_starts_one_child(
     await sub_agents.a_spawn_asked_twice_starts_one_child(loop, monkeypatch)
 
 
+async def test_a_session_with_a_sub_agent_at_work_below_it_is_not_deleted(
+    tmp_path: Path,
+) -> None:
+    loop = loop_over(tmp_path, kinds=sub_agents.KINDS)
+    await sub_agents.a_session_with_a_sub_agent_at_work_below_it_is_not_deleted(loop)
+
+
+async def test_a_deleted_session_still_holds_the_sub_agents_below_it_to_its_kind(
+    tmp_path: Path,
+) -> None:
+    loop = loop_over(tmp_path, kinds=sub_agents.KINDS)
+    await sub_agents.a_deleted_session_still_holds_the_sub_agents_below_it_to_its_kind(loop)
+
+
+async def test_a_sub_agent_whose_ancestor_is_purged_runs_no_loop(tmp_path: Path) -> None:
+    loop = loop_over(tmp_path, kinds=sub_agents.KINDS)
+    purging = loop.storage.get_agent_session_storage()
+    await sub_agents.a_sub_agent_whose_ancestor_is_purged_runs_no_loop(loop, purging)
+
+
 async def test_a_cancel_reaches_a_child_past_a_deleted_sibling(tmp_path: Path) -> None:
     loop = loop_over(tmp_path, kinds=sub_agents.KINDS)
     await sub_agents.a_cancel_reaches_a_child_past_a_deleted_sibling(loop)

@@ -672,13 +672,8 @@ async def test_a_purged_session_leaves_no_authority_or_tree_behind(tmp_path: Pat
     root = await start(managers, ctx)
     child = await managers.agents.spawn(ctx, root.id, spawn())
     sibling = await start(managers, ctx)
-    await sessions.delete_session(ctx, root.id)
-    await sessions.purge_across_tenants()
-    with pytest.raises(NotFound):
-        await authority(ctx, root.id)
-    assert await trees.read_tree(ctx.org_id, root.id) is not None, "its child is left"
-    # Its objective woke it: its loop reads it and ends, and the idle child
-    # may be deleted.
+    # Its objective woke the child: its loop reads it and ends, so nothing
+    # below the root is at work, and the root may be deleted.
     (objective,) = (await managers.steps.get_steps(ctx, child.id, 0, 1)).items
     request = make_request(child.id, objective.id, (objective.id,))
     response = make_response(child.id, objective.id, request.id)
@@ -686,6 +681,11 @@ async def test_a_purged_session_leaves_no_authority_or_tree_behind(tmp_path: Pat
     done = [request, response, ended(child.id, objective.id)]
     await managers.steps.append_steps(ctx, child.id, epoch, done)
     assert (await sessions.project_status(ctx, child.id)).status is SessionStatus.IDLE
+    await sessions.delete_session(ctx, root.id)
+    await sessions.purge_across_tenants()
+    with pytest.raises(NotFound):
+        await authority(ctx, root.id)
+    assert await trees.read_tree(ctx.org_id, root.id) is not None, "its child is left"
     await sessions.delete_session(ctx, child.id)
     await sessions.purge_across_tenants()
     with pytest.raises(NotFound):

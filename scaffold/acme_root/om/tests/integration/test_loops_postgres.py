@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from acme.infra.impl.configured import InfraConfiguredImpl
 from acme.infra.impl.settings import InfraSettings
+from acme.om.agent_sessions.storage.impl.postgres import AgentSessionStoragePostgresImpl
 from acme.om.agents.types.request import Spawn
 from acme.om.agents.types.run import RunEnd
 from acme.om.base import new_id
@@ -37,6 +38,7 @@ from acme.om.root import build_managers
 from acme.om.steps.types.content import TextBlock
 from acme.om.steps.types.header import InputHeader, LoopOutcome, ParkReason
 from acme.om.steps.types.step import StepType
+from acme.om.storage.impl.pg_base import LoginSessions
 from acme.om.storage.impl.postgres import StoragePostgresImpl
 from acme.om.storage.settings import MigrationSettings
 from acme.om.tools.types.call import JobCompletion
@@ -297,6 +299,28 @@ async def test_a_spawn_asked_twice_starts_one_child_over_postgres(
 ) -> None:
     loop = await a_sub_agent_loop(storage, tmp_path)
     await sub_agents.a_spawn_asked_twice_starts_one_child(loop, monkeypatch)
+
+
+async def test_a_session_with_a_sub_agent_at_work_below_it_is_not_deleted_over_postgres(
+    storage: StoragePostgresImpl, tmp_path: Path
+) -> None:
+    loop = await a_sub_agent_loop(storage, tmp_path)
+    await sub_agents.a_session_with_a_sub_agent_at_work_below_it_is_not_deleted(loop)
+
+
+async def test_a_deleted_session_still_holds_the_sub_agents_below_it_to_its_kind_over_postgres(
+    storage: StoragePostgresImpl, tmp_path: Path
+) -> None:
+    loop = await a_sub_agent_loop(storage, tmp_path)
+    await sub_agents.a_deleted_session_still_holds_the_sub_agents_below_it_to_its_kind(loop)
+
+
+async def test_a_sub_agent_whose_ancestor_is_purged_runs_no_loop_over_postgres(
+    storage: StoragePostgresImpl, pg_sessions: LoginSessions, tmp_path: Path
+) -> None:
+    loop = await a_sub_agent_loop(storage, tmp_path)
+    purging = AgentSessionStoragePostgresImpl(pg_sessions)
+    await sub_agents.a_sub_agent_whose_ancestor_is_purged_runs_no_loop(loop, purging)
 
 
 async def test_a_cancel_reaches_a_child_past_a_deleted_sibling_over_postgres(

@@ -2,11 +2,12 @@
 tree bounded by its height and its count, children that together spend
 no more than the tree's budget, a parent that parks on its children and
 wakes on a report, a wait after each report, a deadline that ends a wait,
-a child gated by its parent's policy as well as its own, a spawn
-asked twice that starts one child, and a cancel that reaches a child
-past a deleted sibling. Each case takes a loop over the memory
-storage or over Postgres, so the unit suite and the integration suite run
-the same cases."""
+a child gated by its parent's policy as well as its own, and a spawn
+asked twice that starts one child. A session with a sub-agent at work
+below it is not deleted, a deleted one still holds the sub-agents below
+it to its kind, and a cancel reaches a child past a deleted sibling.
+Each case takes a loop over the memory storage or over Postgres, so the
+unit suite and the integration suite run the same cases."""
 
 import asyncio
 from datetime import timedelta
@@ -15,6 +16,7 @@ from uuid import UUID
 import pytest
 
 from acme.om.agent_sessions.limits import deadline_park
+from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
 from acme.om.agents.loop_rules import APPROVAL_UNLOCK
 from acme.om.agents.rules import CHILDREN_PARK
@@ -26,6 +28,7 @@ from acme.om.base import new_id
 from acme.om.budgets.types.amount import Amount
 from acme.om.budgets.types.budget import BudgetScope, BudgetScopeKind, WindowKind
 from acme.om.context import TenantContext
+from acme.om.exceptions import NotFound, ValidationFailed
 from acme.om.steps.types.content import TextBlock, ToolUseBlock
 from acme.om.steps.types.header import (
     ControlCommand,
@@ -43,6 +46,7 @@ from acme.om.tools.native.spawn_sub_agent import SPAWN_SUB_AGENT
 from acme.om.tools.native.wait_for_sub_agents import WAIT_FOR_SUB_AGENTS
 from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule
 from acme.om.tools.types.tool import ToolClass
+from contracts.agent_session_storage import marked
 from contracts.budget_storage import make_budget
 from contracts.loops import ALLOWED, Loop, call, reply, said, use
 
@@ -84,7 +88,21 @@ CAREFUL = RESEARCH.model_copy(
 LOOSE = RESEARCH.model_copy(update={"name": "loose", "tools": (*RESEARCH.tools, "note")})
 """A kind that lets a write run unattended."""
 
-KINDS = (RESEARCH, SOLO, CAREFUL, LOOSE)
+STRICT = CAREFUL.model_copy(
+    update={
+        "name": "strict",
+        "policy": PolicyLayer(
+            rules=(
+                PolicyRule(authorization_class=ToolClass.READ, decision=Decision.ALLOW),
+                PolicyRule(authorization_class=ToolClass.SPAWN, decision=Decision.ALLOW),
+                PolicyRule(authorization_class=ToolClass.WRITE, decision=Decision.DENY),
+            )
+        ),
+    }
+)
+"""A kind that never lets a write run."""
+
+KINDS = (RESEARCH, SOLO, CAREFUL, LOOSE, STRICT)
 
 
 def spawn(title: str, kind: str | None = None) -> ToolUseBlock:
@@ -444,6 +462,99 @@ async def a_spawn_asked_twice_starts_one_child(loop: Loop, monkeypatch: pytest.M
     assert (await agents.tree_of(loop.owner, root)).size == 1
     (answer,) = answers(await loop.history(root), SPAWN_SUB_AGENT)
     assert failure_of(answer) is None and str(child.id) in text_of(answer)
+
+
+async def a_strict_tree(loop: Loop) -> tuple[AgentSession, AgentSession]:
+    """A root whose kind never lets a write run starts a sub-agent of a kind
+    that does, and that sub-agent starts one of its own and ends its loop.
+    Answers the middle session, idle, and the one below it, waiting to
+    run."""
+    root = await loop.start(STRICT.name)
+    await loop.say(root, "Note the total.")
+    loop.anthropic.add(
+        reply(spawn("the note", kind=LOOSE.name)), reply(said("A sub-agent notes it."))
+    )
+    await loop.loops.run(loop.owner, root)
+    (child,) = await children_of(loop, root)
+    loop.anthropic.add(reply(spawn("the note's line")), reply(said("Mine notes it.")))
+    await loop.loops.run(loop.owner, child.id)
+    (grandchild,) = await children_of(loop, child.id)
+    child = await loop.managers.agent_sessions.get_session(loop.owner, child.id)
+    assert (child.status, grandchild.depth) == (SessionStatus.IDLE, 3)
+    return child, grandchild
+
+
+async def mark_deleted(loop: Loop, session_id: UUID, *, claimed: bool = False) -> None:
+    """The session marked deleted under the storage, and claimed for its
+    purge when `claimed`, whatever the manager would refuse."""
+    storage = loop.storage.get_agent_session_storage()
+    found = await storage.read_session(loop.owner.org_id, session_id)
+    assert found is not None
+    gone = marked(found, found.version + 1, loop.clock(), claimed=claimed)
+    await storage.write_session(loop.owner.org_id, gone, found.version, ())
+
+
+async def a_session_with_a_sub_agent_at_work_below_it_is_not_deleted(loop: Loop) -> None:
+    """A middle session whose own loop ended is not deleted while the
+    sub-agent it started runs, and the refusal names that sub-agent. Once
+    nothing below it is at work, it is deleted."""
+    child, grandchild = await a_strict_tree(loop)
+    sessions = loop.managers.agent_sessions
+    lookup = loop.tools["lookup"]
+    lookup.holds = True
+    loop.anthropic.add(reply(use("lookup")), reply(said("The total is 12.")))
+    running = asyncio.ensure_future(loop.loops.run(loop.owner, grandchild.id))
+    await lookup.started.wait()
+
+    with pytest.raises(ValidationFailed) as refused:
+        await sessions.delete_session(loop.owner, child.id)
+
+    assert f"has sub-agent {grandchild.id}" in refused.value.message
+    assert (await sessions.get_session(loop.owner, child.id)).deleted_at is None
+    lookup.release.set()
+    assert (await running).outcome is LoopOutcome.SUCCEEDED
+    # The report of its sub-agent's end woke it: its own loop ends first.
+    loop.anthropic.add(reply(said("The note is made.")))
+    await loop.loops.run(loop.owner, child.id)
+    assert (await sessions.delete_session(loop.owner, child.id)).deleted_at is not None
+
+
+async def a_deleted_session_still_holds_the_sub_agents_below_it_to_its_kind(
+    loop: Loop,
+) -> None:
+    """A middle session marked deleted takes no kind out of what its
+    sub-agent's calls are decided under: a write the root's kind never lets
+    run is still denied, never held for a person, and never runs."""
+    child, grandchild = await a_strict_tree(loop)
+    await mark_deleted(loop, child.id)
+    with pytest.raises(NotFound):
+        await loop.managers.agent_sessions.get_session(loop.owner, child.id)
+    loop.anthropic.add(reply(use("note", "the total")), reply(said("I cannot note it.")))
+
+    run = await loop.loops.run(loop.owner, grandchild.id)
+
+    assert run.outcome is LoopOutcome.SUCCEEDED and run.park is None
+    (denied,) = answers(await loop.history(grandchild.id), "note")
+    assert failure_of(denied) is ToolFailure.DENIED
+    assert loop.tools["note"].ran_as == [], "the write never ran"
+
+
+async def a_sub_agent_whose_ancestor_is_purged_runs_no_loop(
+    loop: Loop, purging: AgentSessionStorageInterface
+) -> None:
+    """A middle session past its purge leaves no kind to read: the loop of
+    the sub-agent below it ends errored before any model call, so no call
+    is decided under less than every kind above it. `purging` holds the
+    purge login, which the loop's own storage does not."""
+    child, grandchild = await a_strict_tree(loop)
+    await mark_deleted(loop, child.id, claimed=True)
+    assert await purging.purge_session(loop.owner.org_id, child.id)
+    calls = len(loop.anthropic.calls)
+
+    run = await loop.loops.run(loop.owner, grandchild.id)
+
+    assert run.outcome is LoopOutcome.ERRORED
+    assert len(loop.anthropic.calls) == calls, "no model call"
 
 
 async def a_cancel_reaches_a_child_past_a_deleted_sibling(loop: Loop) -> None:

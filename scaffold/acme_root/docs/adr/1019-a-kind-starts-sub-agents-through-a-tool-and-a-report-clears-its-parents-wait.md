@@ -84,9 +84,11 @@ tenant's layer and the platform's ceilings, and the strictest decision
 holds. A spawn could instead refuse a kind looser than its parent's,
 but a rule may key on a target's attributes, which no spawn knows, so
 no comparison of two layers before the call is exact; deciding the
-call itself under each layer is. An ancestor marked deleted answers no
-kind, and takes a layer with no defaults: the tenant's layer decides,
-and a call it is silent on waits for a person.
+call itself under each layer is. An ancestor marked deleted still
+answers its kind, read from the row its tree keeps until its purge, and
+a session is not marked deleted while a session below it has a loop
+open. A child whose ancestor is past its purge runs no loop: that
+kind's layer is gone, and no layer stands in for it.
 
 **A tree is three levels deep and holds ten by default.** A kind that
 names no tree roots one of height 3, a root, its sub-agents, and
@@ -113,6 +115,9 @@ binds its other cyclic edges.
 - A kind a spawn names can narrow what its child runs unattended, never
   widen it, and each call of a child costs one more policy decision for
   each level above it.
+- A delete never loosens a sub-agent's calls. A person deletes a
+  session only once nothing below it is at work, and a sub-agent whose
+  ancestor is past its purge ends each loop it starts as errored.
 - A kind that spawns names `spawn_sub_agent` among its tools and a
   policy that allows the `spawn` class; a kind a spawn starts names a
   share.
