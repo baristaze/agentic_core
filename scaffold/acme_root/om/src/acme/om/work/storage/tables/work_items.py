@@ -31,6 +31,18 @@ class WorkItems(IdentifiableMixin, TrackableMixin, Base):
             "available_at",
             postgresql_where=text("status = 'queued'"),
         ),
+        # A read of one target's items of a kind within its tenant, newest
+        # first: whether one is open, and the latest. Without it, such a read
+        # filters the tenant's whole work history. The engine makes none
+        # itself; the index sits here so a copy that does never edits this
+        # table to add it.
+        Index(
+            "ix_work_items_org_id_kind_target_id_created_at",
+            "org_id",
+            "kind",
+            "target_id",
+            "created_at",
+        ),
     )
     kind: Mapped[str]
     target_id: Mapped[UUID]
