@@ -571,6 +571,45 @@ async def test_only_an_idle_session_is_deleted(managers: Managers) -> None:
         await managers.agent_sessions.delete_session(context(Role.VIEWER), sid)
 
 
+async def test_a_loop_open_below_a_session_refuses_its_delete(tmp_path: Path) -> None:
+    """The walk below a session reads a page of children at a time, and
+    goes on below a child marked deleted: a loop open two levels down,
+    behind a full page and under a deleted child, refuses the root's
+    delete and is named. The deleted child still answers its kind to the
+    session below it."""
+    storage = StorageMemoryImpl()
+    managers = build_managers(storage, InfraLocalImpl(tmp_path), tool_catalog=TOOLS)
+    sessions = AgentSessionsManagerImpl(
+        storage.get_agent_session_storage(),
+        managers.steps,
+        managers.tenancy,
+        managers.outbox,
+        AgentSessionsOptions(max_limit=1),
+        purged=nothing_held,
+    )
+    ctx = context(Role.MEMBER)
+    root = await sessions.create_session(ctx, make_session())
+    first, second = sorted(
+        [await sessions.create_session(ctx, make_session(parent=root)) for _ in range(2)],
+        key=lambda child: child.id,
+    )
+    below = await sessions.create_session(ctx, make_session(parent=second))
+    await sessions.delete_session(ctx, second.id)
+    await managers.steps.append_inputs(ctx, below.id, [make_message(below.id)])
+    assert (await sessions.project_status(ctx, below.id)).status is SessionStatus.PENDING
+
+    with pytest.raises(ValidationFailed) as refused:
+        await sessions.delete_session(ctx, root.id)
+
+    assert refused.value.message == f"agent session {root.id} has sub-agent {below.id} pending"
+    assert (await sessions.delete_session(ctx, first.id)).deleted_at is not None
+    above = await sessions.get_ancestors(ctx, below.id)
+    assert [(agent.session_id, agent.kind) for agent in above] == [
+        (second.id, second.kind),
+        (root.id, root.kind),
+    ]
+
+
 class Clock:
     """A clock a case moves by hand."""
 

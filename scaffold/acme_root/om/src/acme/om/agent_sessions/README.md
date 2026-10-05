@@ -56,7 +56,9 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
   nothing, until a person's message brings it back.
 - **List** the sessions in a status, a page at a time.
 - **Delete.** A deleted session is hidden from every read and list. Its
-  history and everything about it stay as they were.
+  history and everything about it stay as they were. A session with a
+  sub-agent at work below it is not deleted, and the refusal names the
+  sub-agent.
 - **Restore.** Unmarking a deleted session brings it back as it was,
   with its history.
 - **Purge.** Once a deleted session has waited out its retention, thirty
@@ -90,7 +92,8 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
 - **Every session belongs to one org.** Another org's session answers as
   one that never existed, and a session's parent is in its own org.
 - **A deleted session answers as one that never existed,** until it is
-  restored.
+  restored. Its kind alone is still read, for the sub-agents below it,
+  whose calls are decided under it.
 - **Nothing is purged on demand.** Only the sweep purges, and only what
   was deleted longer ago than the retention, or an org deleted longer ago
   than its own.

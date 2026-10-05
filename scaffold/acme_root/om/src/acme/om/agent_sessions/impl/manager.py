@@ -23,6 +23,7 @@ from acme.om.agent_sessions.types.agent_session import (
     SessionStatus,
 )
 from acme.om.attribution.rules import fold
+from acme.om.attribution.types.principal import AgentRef
 from acme.om.base import EMPTY_UUID, Platform, new_id, utcnow
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import NotFound, PreconditionFailed, TenantMismatch, ValidationFailed
@@ -136,6 +137,21 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         limit = max(1, min(limit, self._options.max_limit))
         rows = await self._storage.read_children(ctx.org_id, parent_id, after, limit + 1)
         return AgentSessionPage(items=tuple(rows[:limit]), has_more=len(rows) > limit)
+
+    async def get_ancestors(self, ctx: TenantContext, session_id: UUID) -> tuple[AgentRef, ...]:
+        ctx.require(Permission.READ)
+        above: list[AgentRef] = []
+        parent_id = (await self._read(ctx, session_id)).parent_id
+        while parent_id is not None:
+            # As stored: one marked deleted still answers its kind.
+            parent = await self._storage.read_session(ctx.org_id, parent_id)
+            if parent is None:
+                break
+            above.append(
+                AgentRef(kind=parent.kind, version=parent.kind_version, session_id=parent.id)
+            )
+            parent_id = parent.parent_id
+        return tuple(above)
 
     async def get_sessions(
         self,
@@ -269,6 +285,11 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         session = await self._read(ctx, session_id)
         if session.status is not SessionStatus.IDLE:
             raise ValidationFailed(f"agent session {session_id} is {session.status.value}")
+        below = await self._open_below(ctx, session_id)
+        if below is not None:
+            raise ValidationFailed(
+                f"agent session {session_id} has sub-agent {below.id} {below.status.value}"
+            )
         now = self._clock()
         marked = AgentSession.model_validate(
             {
@@ -382,6 +403,30 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
                 "what they hold could not be purged"
             )
         return len(found)
+
+    async def _open_below(self, ctx: TenantContext, session_id: UUID) -> AgentSession | None:
+        """The first session below `session_id`, children and theirs, a level
+        at a time, that has a loop open; the tree's count bounds the walk.
+        One marked deleted is never answered, and the walk goes on below it.
+        A check before the mark, not a lock: a sub-agent that wakes after it
+        is still decided under the kind of every session above it
+        (`get_ancestors`)."""
+        parents = [session_id]
+        while parents:
+            parent_id = parents.pop(0)
+            after: UUID | None = None
+            while True:
+                page = await self._storage.read_children(
+                    ctx.org_id, parent_id, after, self._options.max_limit
+                )
+                for child in page:
+                    if child.deleted_at is None and child.status is not SessionStatus.IDLE:
+                        return child
+                    parents.append(child.id)
+                if len(page) < self._options.max_limit:
+                    break
+                after = page[-1].id
+        return None
 
     async def _read(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
         """A session every read may answer: one marked deleted is hidden, as

@@ -255,6 +255,7 @@ class LoopManagerImpl(LoopManagerInterface):
             self._domain_classes,
         )
         tree = await self._agents.tree_of(ctx, session_id)
+        above = await self._policies_above(ctx, session)
         run = _Run(
             ctx=ctx,
             session=session,
@@ -266,9 +267,14 @@ class LoopManagerImpl(LoopManagerInterface):
             started_at=self._clock(),
             resumed=resumed,
             deadline=tree.deadline,
-            above=await self._policies_above(ctx, session),
+            above=above or (),
             jobs={} if loop is None else rules.started_jobs(history, loop_id),
         )
+        if above is None:
+            # Its calls are decided under every kind above it, and one of
+            # them went with its session's purge: no call is made under less.
+            log.warning("session %s has a session above it past its purge", session_id)
+            return await self._end(run, LoopOutcome.ERRORED)
         try:
             await self._models.resolve_fill_set(ctx, session_id, kind.roles, Eligibility())
         except (UnresolvedRole, UnpricedModel) as refused:
@@ -1163,23 +1169,17 @@ class LoopManagerImpl(LoopManagerInterface):
 
     async def _policies_above(
         self, ctx: TenantContext, session: AgentSession
-    ) -> tuple[PolicyLayer, ...]:
+    ) -> tuple[PolicyLayer, ...] | None:
         """The policy layers of the kinds above `session` in its tree, each
-        at the version its session pinned. An ancestor marked deleted
-        answers no kind, and takes a layer with no defaults: its calls are
-        decided by the tenant's layer, and wait for a person where it is
-        silent."""
-        layers: list[PolicyLayer] = []
-        parent_id = session.parent_id
-        while parent_id is not None:
-            try:
-                parent = await self._sessions.get_session(ctx, parent_id)
-            except NotFound:
-                layers.append(PolicyLayer())
-                break
-            layers.append(self._kinds.get(parent.kind, parent.kind_version).policy)
-            parent_id = parent.parent_id
-        return tuple(layers)
+        at the version its session pinned, an ancestor marked deleted among
+        them. None when a session above it is past its purge: its kind is
+        gone with its row, and no layer stands in for it."""
+        if session.parent_id is None:
+            return ()
+        above = await self._sessions.get_ancestors(ctx, session.id)
+        if len(above) < session.depth - 1:
+            return None
+        return tuple(self._kinds.get(agent.kind, agent.version).policy for agent in above)
 
     async def _report(
         self, run: _Run, *, outcome: LoopOutcome | None = None, park: Park | None = None
