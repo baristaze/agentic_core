@@ -1,3 +1,4 @@
+import contextlib
 from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
 from uuid import UUID
@@ -180,9 +181,11 @@ class AgentsManagerImpl(AgentsManagerInterface):
         await self._relay_all(ctx, rows)
         if deadline is None or deadline > self._clock():
             # The extension is the deadline park's unlock: a session of the
-            # tree that waits on it goes on, and its gates run again.
+            # tree that waits on it goes on, and its gates run again. A
+            # member marked deleted waits on nothing, and the rest go on.
             for member in (tree.id, *await self._below(ctx, tree.id)):
-                await self._sessions.wake_session(ctx, member, deadline_park())
+                with contextlib.suppress(NotFound):
+                    await self._sessions.wake_session(ctx, member, deadline_park())
         return moved
 
     async def cancel_children(self, ctx: TenantContext, session_id: UUID) -> tuple[UUID, ...]:
@@ -382,9 +385,13 @@ class AgentsManagerImpl(AgentsManagerInterface):
     async def _cancel(self, ctx: TenantContext, session_id: UUID) -> bool:
         """A `cancel` control on the loop the session has open, or is about
         to open, decided from its status brought up to its history: an idle
-        session has none and is left as it is. A session pending after its
-        loop ended waits on an input, which begins the next loop."""
-        session = await self._sessions.project_status(ctx, session_id)
+        session has none and is left as it is, and so is one marked deleted,
+        which was idle when it was marked. A session pending after its loop
+        ended waits on an input, which begins the next loop."""
+        try:
+            session = await self._sessions.project_status(ctx, session_id)
+        except NotFound:
+            return False
         cursor = await self._steps.get_cursor(ctx, session_id)
         if session.status is SessionStatus.IDLE or cursor.head == 0:
             return False

@@ -55,3 +55,8 @@ async def test_a_spawn_asked_twice_starts_one_child(
 ) -> None:
     loop = loop_over(tmp_path, kinds=sub_agents.KINDS)
     await sub_agents.a_spawn_asked_twice_starts_one_child(loop, monkeypatch)
+
+
+async def test_a_cancel_reaches_a_child_past_a_deleted_sibling(tmp_path: Path) -> None:
+    loop = loop_over(tmp_path, kinds=sub_agents.KINDS)
+    await sub_agents.a_cancel_reaches_a_child_past_a_deleted_sibling(loop)

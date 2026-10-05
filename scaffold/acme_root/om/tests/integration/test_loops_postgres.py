@@ -297,3 +297,10 @@ async def test_a_spawn_asked_twice_starts_one_child_over_postgres(
 ) -> None:
     loop = await a_sub_agent_loop(storage, tmp_path)
     await sub_agents.a_spawn_asked_twice_starts_one_child(loop, monkeypatch)
+
+
+async def test_a_cancel_reaches_a_child_past_a_deleted_sibling_over_postgres(
+    storage: StoragePostgresImpl, tmp_path: Path
+) -> None:
+    loop = await a_sub_agent_loop(storage, tmp_path)
+    await sub_agents.a_cancel_reaches_a_child_past_a_deleted_sibling(loop)
