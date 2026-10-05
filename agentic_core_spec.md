@@ -1100,7 +1100,12 @@ mistakes it for checked.
 ### Sub-Agents
 
 A sub-agent is a session with a parent, spawned through a `spawn`-class
-tool, so it is gated and audited like any other power.
+tool, so it is gated and audited like any other power. The engine ships
+that tool and a second one, which parks the parent on its children; a
+kind names both to start sub-agents and wait for them. A spawn takes
+the id of the call that asks for it, so a call asked again finds the
+child it made, and a bound the spawn reaches is the call's failure,
+which the model reads.
 
 - **Clean context.** A child starts from a self-contained objective, the
   constraints that bind it, its bounds, and the shape of a good report.
@@ -1111,7 +1116,10 @@ tool, so it is gated and audited like any other power.
 - **Reporting.** A child's report reaches its parent's inbox, as data,
   when the child's loop ends or when it needs a person. The parent
   learns of each status change when it happens and never polls.
-- **Waiting.** A parent keeps working, or parks on its children.
+- **Waiting.** A parent keeps working, or parks on its children. A
+  report that wakes it clears the park, and a wait with no child
+  running is refused, so a parent never waits on a report that cannot
+  come.
 - **Cancellation** cascades from parent to children.
 
 The tree is bounded:
@@ -1123,6 +1131,9 @@ The tree is bounded:
 | Concurrency | The most that run at once (optional) |
 | Money | The root's budget bounds the whole tree. A child draws on what the tree has left, never a copy of its parent's budget, and never creates budget. |
 | Time | One absolute deadline the whole tree shares: one instant, never a duration per call |
+
+A kind that names no tree limits of its own roots a tree three levels
+deep, a root, its sub-agents, and theirs, that holds ten sub-agents.
 
 A child parked on a budget or a provider does not disturb its parent:
 the wait belongs to the tree, and the unlock happens at the root.
