@@ -26,7 +26,7 @@ from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStat
 from acme.om.agents import AgentsManagerInterface
 from acme.om.agents import loop_rules as rules
 from acme.om.agents.loop import LoopManagerInterface
-from acme.om.agents.rules import CHILDREN_PARK, after_turn, notes_parent
+from acme.om.agents.rules import CHILDREN_PARK, after_turn, ends_parents_wait, notes_parent
 from acme.om.agents.sink import StreamSinkInterface
 from acme.om.agents.types.kind import AgentKind, AgentKindCatalog
 from acme.om.agents.types.result import Result, Turn
@@ -331,10 +331,12 @@ class LoopManagerImpl(LoopManagerInterface):
                     # is answered: no model call until a principal's message
                     # answers it, after a lost run as well.
                     return await self._park(run, QUESTION)
-                if rules.children_wait(history, response):
+                if rules.children_wait(history, response) and not await self._past_deadline(run):
                     # The agent waits on its sub-agents, and nothing has come
                     # since the request it answered: no model call until a
-                    # child's report wakes it, after a lost run as well.
+                    # child's report wakes it, after a lost run as well. Past
+                    # the tree's deadline no report can come, since every
+                    # child parks on it too: the loop parks on it below.
                     return await self._wait_on_children(run, history, response)
                 if not response.as_tool_uses() and not rules.judged(history, response):
                     stopped = await self._judge(run, history, response)
@@ -1120,8 +1122,13 @@ class LoopManagerImpl(LoopManagerInterface):
 
     async def _park(self, run: _Run, park: Park) -> LoopRun:
         await self._sessions.park(run.ctx, run.session_id, run.epoch, run.loop_id, park)
-        if run.session.parent_id is not None and notes_parent(park):
+        parent_id = run.session.parent_id
+        if parent_id is not None and notes_parent(park):
             await self._report(run, park=park)
+        elif parent_id is not None and ends_parents_wait(park):
+            # A parent that waits on its children leaves that wait, and parks
+            # on the deadline itself.
+            await self._sessions.wake_session(run.ctx, parent_id, CHILDREN_PARK)
         return self._result(run, RunEnd.PARKED, park=park)
 
     async def _wait_on_children(
@@ -1130,12 +1137,23 @@ class LoopManagerImpl(LoopManagerInterface):
         """Parks on the children. A report that landed after the history was
         read and before the park found no park to clear, so the run reads
         what came since and clears the park itself; one that lands after
-        the park clears it as it lands."""
+        the park clears it as it lands. The tree's deadline, passed in
+        between, is read the same way: a child that parked on it found no
+        park to clear."""
         parked = await self._park(run, CHILDREN_PARK)
         history = await self._history(run.ctx, run.session_id, history)
-        if not rules.children_wait(history, response):
+        passed = run.deadline is not None and self._clock() >= run.deadline
+        if passed or not rules.children_wait(history, response):
             await self._sessions.wake_session(run.ctx, run.session_id, CHILDREN_PARK)
         return parked
+
+    async def _past_deadline(self, run: _Run) -> bool:
+        """Whether the tree's deadline has passed. A person may have moved it
+        since this run read it, so a passed one is read again."""
+        if run.deadline is None or self._clock() < run.deadline:
+            return False
+        run.deadline = (await self._agents.tree_of(run.ctx, run.session_id)).deadline
+        return run.deadline is not None and self._clock() >= run.deadline
 
     async def _report(
         self, run: _Run, *, outcome: LoopOutcome | None = None, park: Park | None = None

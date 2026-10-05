@@ -4,7 +4,8 @@ parks on `children` before any further model call (`agents.loop_rules.
 children_wait`), and a child's report that wakes the parent clears the
 park (`agents.rules.CHILDREN_PARK`). With no child running there is
 nothing to wait for, and the call is refused, so a loop never parks on a
-report that cannot come."""
+report that cannot come. Past the tree's deadline none can come either,
+and the loop parks on the deadline instead."""
 
 from datetime import timedelta
 from uuid import UUID

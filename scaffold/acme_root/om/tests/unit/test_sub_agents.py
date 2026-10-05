@@ -33,6 +33,11 @@ async def test_a_root_waits_after_each_of_seven_reports_and_reads_them_all(tmp_p
     await sub_agents.a_root_waits_after_each_of_seven_reports_and_reads_them_all(loop)
 
 
+async def test_the_deadline_ends_a_wait_on_children(tmp_path: Path) -> None:
+    loop = loop_over(tmp_path, kinds=sub_agents.KINDS)
+    await sub_agents.the_deadline_ends_a_wait_on_children(loop)
+
+
 async def test_a_report_that_lands_before_the_park_still_wakes_the_parent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

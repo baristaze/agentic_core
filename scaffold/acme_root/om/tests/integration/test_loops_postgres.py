@@ -271,6 +271,13 @@ async def test_a_root_waits_after_each_of_seven_reports_and_reads_them_all_over_
     await sub_agents.a_root_waits_after_each_of_seven_reports_and_reads_them_all(loop)
 
 
+async def test_the_deadline_ends_a_wait_on_children_over_postgres(
+    storage: StoragePostgresImpl, tmp_path: Path
+) -> None:
+    loop = await a_sub_agent_loop(storage, tmp_path)
+    await sub_agents.the_deadline_ends_a_wait_on_children(loop)
+
+
 async def test_a_report_that_lands_before_the_park_still_wakes_the_parent_over_postgres(
     storage: StoragePostgresImpl, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

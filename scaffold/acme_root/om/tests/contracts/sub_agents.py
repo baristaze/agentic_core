@@ -1,16 +1,18 @@
 """Sub-agents through the engine's own tools, as a model starts them: a
 tree bounded by its height and its count, children that together spend
 no more than the tree's budget, a parent that parks on its children and
-wakes on a report, a wait after each report, and a spawn asked twice
-that starts one child. Each case takes a loop over the memory storage or
-over Postgres, so the unit suite and the integration suite run the same
-cases."""
+wakes on a report, a wait after each report, a deadline that ends a
+wait, and a spawn asked twice that starts one child. Each case takes a
+loop over the memory storage or over Postgres, so the unit suite and the
+integration suite run the same cases."""
 
 import asyncio
+from datetime import timedelta
 from uuid import UUID
 
 import pytest
 
+from acme.om.agent_sessions.limits import deadline_park
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
 from acme.om.agents.rules import CHILDREN_PARK
 from acme.om.agents.types.kind import AgentKind, DoneRule
@@ -290,6 +292,42 @@ async def a_root_waits_after_each_of_seven_reports_and_reads_them_all(loop: Loop
         if isinstance(block, TextBlock)
     )
     assert all(f"Sub-agent {child.id}" in read for child in children), "every report read"
+
+
+async def the_deadline_ends_a_wait_on_children(loop: Loop) -> None:
+    """The tree's deadline passes while a child works. The child parks on it,
+    and that ends its parent's wait, since no report can come before a
+    person moves the deadline: the parent leaves its park on `children` and
+    parks on the deadline, where its person is asked, as a single agent
+    would, with no model call. Moved, the deadline lets the parent wait on
+    its child again."""
+    root = await a_root(loop, "What is the quarterly total?")
+    deadline = loop.clock.now + timedelta(hours=1)
+    await loop.managers.agents.set_deadline(loop.owner, root, deadline)
+    loop.anthropic.add(reply(spawn("the total")), reply(call(WAIT_FOR_SUB_AGENTS)))
+    waiting = await loop.loops.run(loop.owner, root)
+    assert waiting.park == CHILDREN_PARK
+    (child,) = await children_of(loop, root)
+    calls = len(loop.anthropic.calls)
+    loop.clock.now = deadline + timedelta(seconds=1)
+
+    stopped = await loop.loops.run(loop.owner, child.id)
+
+    assert stopped.park == deadline_park()
+    sessions = loop.managers.agent_sessions
+    woken = await sessions.get_session(loop.owner, root)
+    assert (woken.status, woken.park) == (SessionStatus.PENDING, None), "its wait ended"
+
+    parked = await loop.loops.run(loop.owner, root)
+
+    assert parked.park == deadline_park(), "where its person is asked"
+    assert len(loop.anthropic.calls) == calls, "no model call past the deadline"
+    await loop.managers.agents.set_deadline(loop.owner, root, loop.clock.now + timedelta(hours=1))
+
+    again = await loop.loops.run(loop.owner, root)
+
+    assert again.park == CHILDREN_PARK, "the moved deadline lets it wait again"
+    assert len(loop.anthropic.calls) == calls
 
 
 async def a_report_that_lands_before_the_park_still_wakes_the_parent(
