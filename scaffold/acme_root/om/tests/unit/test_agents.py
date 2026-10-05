@@ -431,9 +431,7 @@ async def test_a_moved_deadline_unlocks_the_tree_past_a_deleted_session(
     request = make_request(gone.id, objective.id, (objective.id,))
     response = make_response(gone.id, objective.id, request.id)
     epoch = await steps.begin_run(ctx, gone.id)
-    await steps.append_steps(
-        ctx, gone.id, epoch, [request, response, ended(gone.id, objective.id)]
-    )
+    await steps.append_steps(ctx, gone.id, epoch, [request, response, ended(gone.id, objective.id)])
     assert (await sessions.project_status(ctx, gone.id)).status is SessionStatus.IDLE
     await sessions.delete_session(ctx, gone.id)
     (opening,) = (await steps.get_steps(ctx, child.id, 0, 1)).items
