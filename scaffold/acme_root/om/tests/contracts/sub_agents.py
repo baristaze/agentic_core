@@ -9,8 +9,6 @@ import asyncio
 from uuid import UUID
 
 import pytest
-from contracts.budget_storage import make_budget
-from contracts.loops import ALLOWED, Loop, call, reply, said, use
 
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
 from acme.om.agents.rules import CHILDREN_PARK
@@ -37,6 +35,8 @@ from acme.om.tools.native.spawn_sub_agent import SPAWN_SUB_AGENT
 from acme.om.tools.native.wait_for_sub_agents import WAIT_FOR_SUB_AGENTS
 from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule
 from acme.om.tools.types.tool import ToolClass
+from contracts.budget_storage import make_budget
+from contracts.loops import ALLOWED, Loop, call, reply, said, use
 
 SPAWNING = PolicyLayer(
     rules=(*ALLOWED.rules, PolicyRule(authorization_class=ToolClass.SPAWN, decision=Decision.ALLOW))
@@ -182,7 +182,9 @@ async def children_together_spend_no_more_than_the_trees_budget(loop: Loop) -> N
     children = sorted(await children_of(loop, root), key=lambda child: child.title)
     assert [child.kind for child in children] == [RESEARCH.name] * 3, "the unshared one never made"
     first, second, third = children
-    loop.anthropic.add(*[reply(use("lookup", f"page {n}")) for n in (1, 2)], reply(said("It holds.")))
+    loop.anthropic.add(
+        *[reply(use("lookup", f"page {n}")) for n in (1, 2)], reply(said("It holds."))
+    )
     loop.anthropic.add(*[reply(use("lookup", f"page {n}")) for n in range(3, 43)])
 
     ended = await loop.loops.run(loop.owner, first.id)
@@ -287,9 +289,7 @@ async def a_report_that_lands_before_the_park_still_wakes_the_parent(
     assert (woken.status, woken.park) == (SessionStatus.PENDING, None)
 
 
-async def a_spawn_asked_twice_starts_one_child(
-    loop: Loop, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def a_spawn_asked_twice_starts_one_child(loop: Loop, monkeypatch: pytest.MonkeyPatch) -> None:
     """A run lost while its spawn ran leaves the call open; the run that
     takes the loop up asks it again, under the same id, and gets the child
     the first made. The tree holds one child, and the lost run's answer is
