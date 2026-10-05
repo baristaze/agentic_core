@@ -19,7 +19,7 @@ from acme.om.agents.loop_rules import APPROVAL_UNLOCK
 from acme.om.agents.rules import CHILDREN_PARK
 from acme.om.agents.types.kind import AgentKind, DoneRule
 from acme.om.agents.types.request import Spawn
-from acme.om.agents.types.run import RunEnd
+from acme.om.agents.types.run import LoopRun, RunEnd
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.base import new_id
 from acme.om.budgets.types.amount import Amount
@@ -290,19 +290,18 @@ async def a_root_waits_after_each_of_seven_reports_and_reads_them_all(loop: Loop
     assert first.park == CHILDREN_PARK
     children = await children_of(loop, root)
     assert len(children) == 7
-    ends: list[RunEnd] = []
+    runs: list[LoopRun] = []
     for n, child in enumerate(children, start=1):
         loop.anthropic.add(reply(said(f"{child.title} holds.")))
         await loop.loops.run(loop.owner, child.id)
         last = n == len(children)
         loop.anthropic.add(reply(said("All seven hold.") if last else call(WAIT_FOR_SUB_AGENTS)))
-        run = await loop.loops.run(loop.owner, root)
-        ends.append(run.end)
+        runs.append(await loop.loops.run(loop.owner, root))
         if not last:
-            assert run.park == CHILDREN_PARK, f"the wait after report {n} parks"
+            assert runs[-1].park == CHILDREN_PARK, f"the wait after report {n} parks"
 
-    assert ends == [RunEnd.PARKED] * 6 + [RunEnd.ENDED]
-    assert run.outcome is LoopOutcome.SUCCEEDED
+    assert [run.end for run in runs] == [RunEnd.PARKED] * 6 + [RunEnd.ENDED]
+    assert runs[-1].outcome is LoopOutcome.SUCCEEDED
     waits = answers(await loop.history(root), WAIT_FOR_SUB_AGENTS)
     assert [failure_of(answer) for answer in waits] == [None] * 7
     read = "\n".join(
