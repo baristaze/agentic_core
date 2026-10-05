@@ -46,10 +46,13 @@ of](../../../../README.md).
   child's title, its objective, and its kind, the agent's own unless
   it names another. The child's id is the call's, so a call asked again
   finds the child it made. A bound the spawn reaches is the call's
-  failure, which the agent reads and acts on.
+  failure, which the agent reads and acts on. Each call of the child is
+  decided under its own kind's policy and under every kind's above it,
+  and the strictest decision holds.
 - **Wait** on sub-agents. Through the engine's wait tool, an agent with
   a child running parks on its children. A report that wakes it clears
-  the park; with no child running, the call is refused.
+  the park; with no child running, the call is refused. Past the tree's
+  deadline it parks on the deadline instead.
 - **Move the deadline** of a tree, for every session in it at once. A
   session that waited on the old one goes on.
 - **Cancel.** Cancelling a parent cancels every session below it that is
@@ -143,7 +146,10 @@ of](../../../../README.md).
   report clears the park. An input that landed after the request the
   agent answered, a report or a person's message, ends the wait before
   it parks, and the run that parks reads its history once more, so a
-  report that came just before the park is never missed (ADR 1019).
+  report that came just before the park is never missed. The tree's
+  deadline ends the wait too: a child that parks on it wakes its waiting
+  parent, which parks on it as well. A wait a report woke is no repeat,
+  so the error streak never counts it (ADR 1019).
 - **A nudge is a step.** When a delivery agent's turn calls no tool, the
   engine's notice is written before the next request, so no request
   holds two of the model's turns in a row. A reply cut by its output

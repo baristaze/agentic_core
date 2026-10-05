@@ -1112,14 +1112,18 @@ which the model reads.
   It never inherits its parent's history; context isolation is the
   point.
 - **No escalation.** A child's registry and principal are at most its
-  parent's, and it inherits its parent's untrusted mark.
+  parent's, and it inherits its parent's untrusted mark. Each of its
+  calls is decided under its own kind's policy and under that of every
+  kind above it, and the strictest decision holds.
 - **Reporting.** A child's report reaches its parent's inbox, as data,
   when the child's loop ends or when it needs a person. The parent
   learns of each status change when it happens and never polls.
 - **Waiting.** A parent keeps working, or parks on its children. A
   report that wakes it clears the park, and a wait with no child
   running is refused, so a parent never waits on a report that cannot
-  come.
+  come. Past the tree's deadline none can come: a waiting parent parks
+  on the deadline, as its children do. A wait a report woke is no
+  repeat of the one before it.
 - **Cancellation** cascades from parent to children.
 
 The tree is bounded:
