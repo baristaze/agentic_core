@@ -1310,7 +1310,7 @@ memory-only session's runtime, a host lease's hold time).
 | `budget` | The gate refused | A raise, or the window resets | At the reset |
 | `resource` | Waiting in line for a scarce resource, or for a workspace | A grant | On the grant |
 | `job` | A long-running tool job is working | The job's completion | On completion |
-| `children` | Waiting for sub-agents' reports | A report | On the report |
+| `children` | Waiting for sub-agents' reports | A report; the tree's deadline ends the wait | On the report; past the deadline it parks on `person` |
 | `handover` | A person holds the environment | They give it back | No |
 | `pause` | A principal paused | Resume | No |
 
