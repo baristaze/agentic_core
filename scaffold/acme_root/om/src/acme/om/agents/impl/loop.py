@@ -26,7 +26,7 @@ from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStat
 from acme.om.agents import AgentsManagerInterface
 from acme.om.agents import loop_rules as rules
 from acme.om.agents.loop import LoopManagerInterface
-from acme.om.agents.rules import after_turn, notes_parent
+from acme.om.agents.rules import CHILDREN_PARK, after_turn, notes_parent
 from acme.om.agents.sink import StreamSinkInterface
 from acme.om.agents.types.kind import AgentKind, AgentKindCatalog
 from acme.om.agents.types.result import Result, Turn
@@ -331,6 +331,11 @@ class LoopManagerImpl(LoopManagerInterface):
                     # is answered: no model call until a principal's message
                     # answers it, after a lost run as well.
                     return await self._park(run, QUESTION)
+                if rules.children_wait(history, response):
+                    # The agent waits on its sub-agents, and nothing has come
+                    # since the request it answered: no model call until a
+                    # child's report wakes it, after a lost run as well.
+                    return await self._wait_on_children(run, history, response)
                 if not response.as_tool_uses() and not rules.judged(history, response):
                     stopped = await self._judge(run, history, response)
                     if stopped is not None:
@@ -1118,6 +1123,19 @@ class LoopManagerImpl(LoopManagerInterface):
         if run.session.parent_id is not None and notes_parent(park):
             await self._report(run, park=park)
         return self._result(run, RunEnd.PARKED, park=park)
+
+    async def _wait_on_children(
+        self, run: _Run, history: Sequence[Step], response: Step
+    ) -> LoopRun:
+        """Parks on the children. A report that landed after the history was
+        read and before the park found no park to clear, so the run reads
+        what came since and clears the park itself; one that lands after
+        the park clears it as it lands."""
+        parked = await self._park(run, CHILDREN_PARK)
+        history = await self._history(run.ctx, run.session_id, history)
+        if not rules.children_wait(history, response):
+            await self._sessions.wake_session(run.ctx, run.session_id, CHILDREN_PARK)
+        return parked
 
     async def _report(
         self, run: _Run, *, outcome: LoopOutcome | None = None, park: Park | None = None

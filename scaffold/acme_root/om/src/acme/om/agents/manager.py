@@ -10,7 +10,8 @@ parent pays, it carries its parent's mark, and it draws on its tree's
 budget and deadline, under a share of its own that never adds to the
 tree's. Cancelling a parent cancels its children. A child's report
 reaches its parent's inbox, as data, when its loop ends or when it needs
-a person, so its parent never polls."""
+a person, so its parent never polls: it keeps working, or parks on its
+children until a report wakes it."""
 
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -97,7 +98,9 @@ class AgentsManagerInterface(ABC):
         its tail, and the handle of the artifact that keeps it whole. It
         wakes the parent through the inbox, so the projection that turns the
         parent pending asks for its run, except the note of a cancel that
-        came down from the parent (`rules.report_wakes`).
+        came down from the parent (`rules.report_wakes`); one that wakes a
+        parent parked on its children clears that park
+        (`rules.CHILDREN_PARK`).
         The report of a loop's end has an id derived from the loop, so a
         run that ends the loop again writes it once. None, with nothing
         written, for a session with no parent, a parent that is gone, and

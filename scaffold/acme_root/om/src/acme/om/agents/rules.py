@@ -1,7 +1,8 @@
 """Pure rules of agent kinds and trees: what a turn means under a kind's
 done rule, whether a tree has room for one more child, the tree a root
-starts with, the claim no gate is asked about, and what a child's report
-tells its parent. Values in, values out; no clock, no storage."""
+starts with, the claim no gate is asked about, what a child's report
+tells its parent, and the park a parent waits for it on. Values in,
+values out; no clock, no storage."""
 
 from datetime import datetime
 from uuid import UUID
@@ -20,6 +21,10 @@ OUTCOMES: dict[Claim, LoopOutcome] = {
     Claim.FAILED: LoopOutcome.FAILED,
 }
 """The outcome an accepted result ends its loop with."""
+
+CHILDREN_PARK = Park(reason=ParkReason.CHILDREN, unlock="report")
+"""The park of a loop whose agent waits on its sub-agents: a child's report
+that wakes the parent clears it."""
 
 
 def after_turn(kind: AgentKind, response: Step, nudges: int) -> Turn:

@@ -408,7 +408,8 @@ def loop_over(
         providers,
         outages or infra.get_outages(),
         sink,
-        engine_tools(managers.steps, reader) + every,
+        engine_tools(managers.steps, managers.agent_sessions, reader, lambda: managers.agents)
+        + every,
         options or LoopOptions(control_poll=timedelta(milliseconds=1)),
         clock,
         sleep,

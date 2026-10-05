@@ -42,10 +42,11 @@ class TreeLimits(Platform):
     """The bounds of a tree. Height 1 is a single agent, 2 lets the root have
     children that have none, and so on. Count is the most sub-agents the
     tree holds besides its root, and concurrency, when set, the most that
-    run at once."""
+    run at once. Out of the box a tree is three levels deep, a root, its
+    sub-agents, and theirs, and holds ten sub-agents."""
 
-    height: int = Field(ge=1)
-    count: int = Field(ge=0)
+    height: int = Field(default=3, ge=1)
+    count: int = Field(default=10, ge=0)
     concurrency: int | None = Field(default=None, ge=1)
 
 
@@ -58,7 +59,7 @@ class AgentKind(Platform):
     result_tool: str | None = None  # the tool a result-tool kind submits through
     max_nudges: int = Field(default=3, ge=1)  # turns that neither continue nor submit
     authority: AuthorityMode
-    tree: TreeLimits
+    tree: TreeLimits = TreeLimits()  # a kind that names none takes the default
     # How long a tree the kind roots has, from its start: turned into one
     # instant then, never a duration per call. None is no deadline.
     deadline: timedelta | None = None
