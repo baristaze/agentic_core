@@ -16,6 +16,7 @@ Run as a module: `python -m acme.om.storage.migrate ensure-logins`, then
 
 import argparse
 import asyncio
+import functools
 import importlib
 import os
 import re
@@ -34,7 +35,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from acme.om.storage.logins import ensure_logins
-from acme.om.storage.roles import DROPPED_TABLE_ROLES, TABLE_ROLES, DatabaseRole, role_for
+from acme.om.storage.roles import TABLE_ROLES, DatabaseRole, role_for
 from acme.om.storage.settings import MIGRATION_LOCK_TIMEOUT_SECONDS, MigrationSettings
 from acme.om.storage.tables.base import Base
 
@@ -44,6 +45,10 @@ _SCHEMA_REF = re.compile(r"\b(core|activity|queue|admin)\.([a-z_][a-z0-9_]*)")
 _INDEX_REF = re.compile(
     r"\b(?:DROP|ALTER) INDEX\s+(?:IF EXISTS\s+)?(core|activity|queue|admin)\.([a-z_][a-z0-9_]*)"
     r"|\bFUNCTION\s+(?:IF EXISTS\s+)?(core|activity|queue|admin)\.([a-z_][a-z0-9_]*)",
+    re.IGNORECASE,
+)
+_DROP_TABLE = re.compile(
+    r"\bDROP TABLE\s+(?:IF EXISTS\s+)?(core|activity|queue|admin)\.([a-z_][a-z0-9_]*)",
     re.IGNORECASE,
 )
 LOCK_NOT_AVAILABLE = "55P03"
@@ -92,6 +97,20 @@ def split_statements(sql: str) -> list[str]:
     return [statement.strip() for statement in statements if statement.strip()]
 
 
+@functools.cache
+def dropped_tables(role: DatabaseRole) -> frozenset[str]:
+    """Tables the role's chain made and later dropped: each one an up file of
+    the chain drops and the role map does not hold. No process reaches them,
+    so `role_for` does not know them; the chain names them, so the role check
+    reads them off the chain."""
+    return frozenset(
+        table
+        for path in (MIGRATIONS_DIR / "sql" / role.value).glob("*.up.sql")
+        for schema, table in _DROP_TABLE.findall(path.read_text())
+        if schema == role.value and table not in TABLE_ROLES
+    )
+
+
 def check_role_of_sql(role: DatabaseRole, sql: str) -> None:
     """Refuses a file that names a table of another role, by schema or by the role map.
     A dropped or altered index, and a function, are schema-qualified too; only
@@ -103,9 +122,9 @@ def check_role_of_sql(role: DatabaseRole, sql: str) -> None:
     for schema, table in _SCHEMA_REF.findall(_INDEX_REF.sub("", sql)):
         if schema != role.value:
             raise RuntimeError(f"{role.value} migration references {schema}.{table}")
-        if table == VERSION_TABLE:
+        if table == VERSION_TABLE or table in dropped_tables(role):
             continue
-        owner = DROPPED_TABLE_ROLES.get(table) or role_for(table)
+        owner = role_for(table)
         if owner is not role:
             raise RuntimeError(f"table {table} belongs to role {owner.value}")
 

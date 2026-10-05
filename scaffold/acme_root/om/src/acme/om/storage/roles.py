@@ -72,11 +72,6 @@ else, granted by the migrations that admit it and again by the login
 command, and the tenant fence admits it within the tenant its transaction
 names and never under the system scope (ADR 1010)."""
 
-DROPPED_TABLE_ROLES: dict[str, DatabaseRole] = {}
-"""Tables the migration chain made and later dropped. No process reaches
-them, so `role_for` does not know them; only the chain names them, and its
-role check reads this map beside the live one."""
-
 
 def role_for(table_name: str) -> DatabaseRole:
     try:
