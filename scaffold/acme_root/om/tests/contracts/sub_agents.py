@@ -16,6 +16,7 @@ from uuid import UUID
 import pytest
 
 from acme.om.agent_sessions.limits import deadline_park
+from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
 from acme.om.agents.loop_rules import APPROVAL_UNLOCK
 from acme.om.agents.rules import CHILDREN_PARK
@@ -536,14 +537,16 @@ async def a_deleted_session_still_holds_the_sub_agents_below_it_to_its_kind(
     assert loop.tools["note"].ran_as == [], "the write never ran"
 
 
-async def a_sub_agent_whose_ancestor_is_purged_runs_no_loop(loop: Loop) -> None:
+async def a_sub_agent_whose_ancestor_is_purged_runs_no_loop(
+    loop: Loop, purging: AgentSessionStorageInterface
+) -> None:
     """A middle session past its purge leaves no kind to read: the loop of
     the sub-agent below it ends errored before any model call, so no call
-    is decided under less than every kind above it."""
+    is decided under less than every kind above it. `purging` holds the
+    purge login, which the loop's own storage does not."""
     child, grandchild = await a_strict_tree(loop)
     await mark_deleted(loop, child.id, claimed=True)
-    storage = loop.storage.get_agent_session_storage()
-    assert await storage.purge_session(loop.owner.org_id, child.id)
+    assert await purging.purge_session(loop.owner.org_id, child.id)
     calls = len(loop.anthropic.calls)
 
     run = await loop.loops.run(loop.owner, grandchild.id)

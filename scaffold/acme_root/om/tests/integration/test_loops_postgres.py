@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from acme.infra.impl.configured import InfraConfiguredImpl
 from acme.infra.impl.settings import InfraSettings
+from acme.om.agent_sessions.storage.impl.postgres import AgentSessionStoragePostgresImpl
 from acme.om.agents.types.request import Spawn
 from acme.om.agents.types.run import RunEnd
 from acme.om.base import new_id
@@ -37,6 +38,7 @@ from acme.om.root import build_managers
 from acme.om.steps.types.content import TextBlock
 from acme.om.steps.types.header import InputHeader, LoopOutcome, ParkReason
 from acme.om.steps.types.step import StepType
+from acme.om.storage.impl.pg_base import LoginSessions
 from acme.om.storage.impl.postgres import StoragePostgresImpl
 from acme.om.storage.settings import MigrationSettings
 from acme.om.tools.types.call import JobCompletion
@@ -314,7 +316,8 @@ async def test_a_deleted_session_still_holds_the_sub_agents_below_it_to_its_kind
 
 
 async def test_a_sub_agent_whose_ancestor_is_purged_runs_no_loop_over_postgres(
-    storage: StoragePostgresImpl, tmp_path: Path
+    storage: StoragePostgresImpl, pg_sessions: LoginSessions, tmp_path: Path
 ) -> None:
     loop = await a_sub_agent_loop(storage, tmp_path)
-    await sub_agents.a_sub_agent_whose_ancestor_is_purged_runs_no_loop(loop)
+    purging = AgentSessionStoragePostgresImpl(pg_sessions)
+    await sub_agents.a_sub_agent_whose_ancestor_is_purged_runs_no_loop(loop, purging)
