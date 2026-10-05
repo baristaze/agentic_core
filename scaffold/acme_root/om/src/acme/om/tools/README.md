@@ -32,10 +32,11 @@ thing [Acme is made of](../../../../README.md).
   starts it and names it, and the agent waits for it without holding
   anything. It has a deadline of its own, never later than the whole
   task's. A job that costs money by the hour says how much, at most.
-- **The engine's own tools**: three a kind may name, each acting on
-  nothing outside the session: asking its person, writing its plan, and
-  reading part of a file attached to the session. They read and keep
-  the session's own records, so their class is reading.
+- **The engine's own tools**: five a kind may name. Four act on nothing
+  outside the session: asking its person, writing its plan, reading part
+  of a file attached to the session, and waiting on its sub-agents. They
+  read and keep the session's own records, so their class is reading.
+  The fifth starts a sub-agent, and its class is `spawn`.
 
 ## What can happen
 
@@ -73,6 +74,13 @@ thing [Acme is made of](../../../../README.md).
   bounded amount a call. A line or page longer than one read is read on
   from the offset the read before stopped at. How a file turns into text
   is the product's.
+- **Start a sub-agent** with a title, an objective that stands on its
+  own, and a kind, the agent's own unless it names another. The child
+  takes the call's id, so a call asked again finds the child it made,
+  and a bound the tree sets is the call's failure.
+- **Wait on sub-agents.** The call answers the children still running,
+  and the agent's loop waits, holding nothing, until one reports. With
+  none running, it is refused.
 - **Purge.** When a deleted session is purged, its workspace and the
   records of its commands go with its history.
 

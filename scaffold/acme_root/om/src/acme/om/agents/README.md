@@ -22,6 +22,8 @@ of](../../../../README.md).
 - **Tree**: a session and the sub-agents below it. It has a height (how
   deep it may go), a count (how many sub-agents it may hold), and one
   deadline every session in it shares. Its budget is the top session's.
+  A kind that names no tree of its own roots one three levels deep, a
+  session, its sub-agents, and theirs, that holds ten sub-agents.
 - **Hand-off**: work one kind passes to another, as a new session of its
   own.
 - **Loop**: what an agent does from what woke its session to how the
@@ -40,6 +42,17 @@ of](../../../../README.md).
 - **Start** a session on a kind. Its tree starts with it.
 - **Spawn** a sub-agent. It starts from a self-contained objective of
   bounded size, never its parent's history, one level down the tree.
+  An agent spawns through the engine's spawn tool, which names the
+  child's title, its objective, and its kind, the agent's own unless
+  it names another. The child's id is the call's, so a call asked again
+  finds the child it made. A bound the spawn reaches is the call's
+  failure, which the agent reads and acts on. Each call of the child is
+  decided under its own kind's policy and under every kind's above it,
+  and the strictest decision holds.
+- **Wait** on sub-agents. Through the engine's wait tool, an agent with
+  a child running parks on its children. A report that wakes it clears
+  the park; with no child running, the call is refused. Past the tree's
+  deadline it parks on the deadline instead.
 - **Move the deadline** of a tree, for every session in it at once. A
   session that waited on the old one goes on.
 - **Cancel.** Cancelling a parent cancels every session below it that is
@@ -62,8 +75,9 @@ of](../../../../README.md).
   a principal's cancel, or an error no park can clear. It parks when it
   cannot go on yet, holding no workspace while it waits: on its person,
   when the agent asked them, until a message answers; on a job its tool
-  started, until the job's report arrives or its deadline passes. A run
-  whose time is up yields, and the next run goes on.
+  started, until the job's report arrives or its deadline passes; on
+  its children, when the agent waits on them, until a report arrives. A
+  run whose time is up yields, and the next run goes on.
 - **Steer.** A message that lands while the loop runs is delivered by its
   next request. A cancel or a pause cuts in between steps, and a cancel
   or an interrupt stops a running tool.
@@ -127,6 +141,15 @@ of](../../../../README.md).
 - **A question waits for its answer.** Once the agent asks its person,
   the loop calls no model until a principal's message answers it, and
   the history says so, so a run that takes up a lost one waits too.
+- **A wait on children holds until a report.** Once the agent waits on
+  its sub-agents, the loop parks and calls no model until a child's
+  report clears the park. An input that landed after the request the
+  agent answered, a report or a person's message, ends the wait before
+  it parks, and the run that parks reads its history once more, so a
+  report that came just before the park is never missed. The tree's
+  deadline ends the wait too: a child that parks on it wakes its waiting
+  parent, which parks on it as well. A wait a report woke is no repeat,
+  so the error streak never counts it (ADR 1019).
 - **A nudge is a step.** When a delivery agent's turn calls no tool, the
   engine's notice is written before the next request, so no request
   holds two of the model's turns in a row. A reply cut by its output

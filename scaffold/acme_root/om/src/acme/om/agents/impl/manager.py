@@ -8,6 +8,7 @@ from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStat
 from acme.om.agents.gate import ResultGateInterface
 from acme.om.agents.manager import AgentsManagerInterface
 from acme.om.agents.rules import (
+    CHILDREN_PARK,
     claim_refusal,
     notes_parent,
     report_text,
@@ -227,7 +228,11 @@ class AgentsManagerImpl(AgentsManagerInterface):
         bounded = await self._windows.bound_report(ctx, parent.id, step)
         # Through the inbox: the projection that turns the parent pending
         # asks for its loop's run.
-        (stored,), _ = await self._sessions.receive(ctx, parent.id, [bounded])
+        (stored,), parent = await self._sessions.receive(ctx, parent.id, [bounded])
+        if report_wakes(report) and parent.park == CHILDREN_PARK:
+            # A parent that waits on its children waits for this report: it
+            # clears the park, and the parent's gates run again as it resumes.
+            await self._sessions.wake_session(ctx, parent.id, CHILDREN_PARK)
         return stored
 
     async def hand_off(

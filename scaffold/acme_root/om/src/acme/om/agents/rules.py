@@ -1,7 +1,8 @@
 """Pure rules of agent kinds and trees: what a turn means under a kind's
 done rule, whether a tree has room for one more child, the tree a root
-starts with, the claim no gate is asked about, and what a child's report
-tells its parent. Values in, values out; no clock, no storage."""
+starts with, the claim no gate is asked about, what a child's report
+tells its parent, and the park a parent waits for it on and what ends
+it. Values in, values out; no clock, no storage."""
 
 from datetime import datetime
 from uuid import UUID
@@ -20,6 +21,10 @@ OUTCOMES: dict[Claim, LoopOutcome] = {
     Claim.FAILED: LoopOutcome.FAILED,
 }
 """The outcome an accepted result ends its loop with."""
+
+CHILDREN_PARK = Park(reason=ParkReason.CHILDREN, unlock="report")
+"""The park of a loop whose agent waits on its sub-agents: a child's report
+that wakes the parent clears it."""
 
 
 def after_turn(kind: AgentKind, response: Step, nudges: int) -> Turn:
@@ -84,6 +89,14 @@ def notes_parent(park: Park) -> bool:
     on a budget or a provider belongs to the tree, unlocked at its root, so
     none of them disturbs the parent."""
     return park.reason is ParkReason.PERSON and park.unlock != DEADLINE_UNLOCK
+
+
+def ends_parents_wait(park: Park) -> bool:
+    """Whether a child's park ends its parent's wait on its children though
+    it tells the parent nothing: one on the tree's deadline. The deadline
+    is the parent's too, and no report can come before a person moves it,
+    so the parent leaves the wait and parks on the deadline itself."""
+    return park.reason is ParkReason.PERSON and park.unlock == DEADLINE_UNLOCK
 
 
 def report_wakes(report: Report) -> bool:

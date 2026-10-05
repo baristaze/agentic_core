@@ -50,6 +50,7 @@ from acme.om.steps.types.header import (
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.steps.types.stream import StreamPart, TextPart, ThinkingPart, ToolInputPart
 from acme.om.tools.native.ask_person import ASK_PERSON
+from acme.om.tools.native.wait_for_sub_agents import WAIT_FOR_SUB_AGENTS
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.types.call import JobCompletion
 from acme.om.windows.rules import exchanges
@@ -377,29 +378,49 @@ def question_waits(steps: Sequence[Step], response: Step) -> bool:
     answer: the history answers an `ask_person` call of the response
     without a failure, and no principal's message has landed since the
     request the response answers, so none is one the model read."""
-    asked = {
+    if not answered_call(steps, response, ASK_PERSON):
+        return False
+    return not any(principal_authored(step) for step in woken_since(steps, response))
+
+
+def children_wait(steps: Sequence[Step], response: Step) -> bool:
+    """Whether the agent waits on its sub-agents after `response`: the
+    history answers a `wait_for_sub_agents` call of the response without a
+    failure, and no waking input has landed since the request the response
+    answers, a child's report or a principal's message, so the model has
+    read everything that has come."""
+    if not answered_call(steps, response, WAIT_FOR_SUB_AGENTS):
+        return False
+    return not woken_since(steps, response)
+
+
+def answered_call(steps: Sequence[Step], response: Step, tool: str) -> bool:
+    """Whether the history answers a call of `tool` that `response` made
+    without a failure."""
+    made = {
         step.id
         for step in steps
         if isinstance(step.header, ToolRequestHeader)
-        and step.header.tool == ASK_PERSON
+        and step.header.tool == tool
         and response.id in step.refs
     }
-    answered = any(
+    return any(
         isinstance(step.header, ToolResponseHeader)
         and step.header.failure is None
-        and step.responds_to in asked
+        and step.responds_to in made
         for step in steps
     )
-    if not answered:
-        return False
+
+
+def woken_since(steps: Sequence[Step], response: Step) -> list[Step]:
+    """The waking inputs that landed after the request `response` answers,
+    which the model has not read."""
     since = next((step.seq for step in steps if step.id == response.responds_to), response.seq)
-    return not any(
-        step.seq > since
-        and principal_authored(step)
-        and isinstance(step.header, InputHeader)
-        and step.header.waking
+    return [
+        step
         for step in steps
-    )
+        if step.seq > since and isinstance(step.header, InputHeader) and step.header.waking
+    ]
 
 
 def stops_call(steps: Sequence[Step], request: Step, interruptible: bool) -> ControlCommand | None:

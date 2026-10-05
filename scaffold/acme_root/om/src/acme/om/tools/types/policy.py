@@ -4,8 +4,9 @@ the model says about the call: nothing here has a field for it.
 
 Three layers decide. The agent kind's defaults first; the tenant's layer
 narrows or loosens them; the platform's ceilings cap the result, so no
-tenant loosens a call past them. The tenant's layer is stored, with who may
-approve each class."""
+tenant loosens a call past them. A sub-agent's call is decided under the
+defaults of every kind above it as well, and the strictest decision holds.
+The tenant's layer is stored, with who may approve each class."""
 
 from enum import StrEnum
 from typing import ClassVar, Self

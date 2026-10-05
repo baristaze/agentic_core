@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -67,6 +67,7 @@ from acme.om.tools.rules import (
     reaches_outward,
     recovered_text,
     response,
+    strictest,
     verdict,
     with_reach,
 )
@@ -223,6 +224,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         *,
         holds_private: bool = True,
         tree_deadline: datetime | None = None,
+        above: Sequence[PolicyLayer] = (),
     ) -> Gate:
         ctx.require(Permission.WRITE)
         resolved = await self._resolve(ctx, registry, request, call_input)
@@ -272,7 +274,15 @@ class ToolsManagerImpl(ToolsManagerInterface):
             denied = self._answer(request, refusal, ToolFailure.DENIED)
             return Gate(outcome=GateOutcome.REFUSE, response=denied)
         policy = await self._policy(ctx)
-        decision = decide(call, defaults, policy.layer(), self._options.ceilings)
+        # A sub-agent's call is decided under its own kind's defaults and
+        # under those of every kind above it: a kind looser than its parent's
+        # never runs a call the parent's would hold.
+        decision = strictest(
+            *(
+                decide(call, layer, policy.layer(), self._options.ceilings)
+                for layer in (defaults, *above)
+            )
+        )
         if decision is Decision.ALLOW and authority.needs_person:
             decision = Decision.APPROVE
         if decision is Decision.ALLOW:

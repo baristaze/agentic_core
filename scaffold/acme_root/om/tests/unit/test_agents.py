@@ -138,6 +138,15 @@ def test_a_catalog_holds_every_version_and_answers_the_latest() -> None:
         AgentKindCatalog(kinds=(DELIVERY, DELIVERY))
 
 
+def test_a_kind_that_names_no_tree_is_three_levels_deep_and_holds_ten() -> None:
+    """A root, its sub-agents, and theirs, ten sub-agents at most besides the
+    root, with no bound on how many run at once."""
+    kind = AgentKind(
+        name="plain", version=1, done_rule=DoneRule.ANSWER, authority=AuthorityMode.DELEGATED
+    )
+    assert kind.tree == TreeLimits(height=3, count=10, concurrency=None)
+
+
 @pytest.mark.parametrize(
     "broken",
     [
