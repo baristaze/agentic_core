@@ -91,6 +91,7 @@ from acme.om.tools.types.call import (
     JobHandle,
     JobNotStarted,
 )
+from acme.om.tools.types.policy import PolicyLayer
 from acme.om.tools.types.tool import ToolMode
 from acme.om.windows import WindowsManagerInterface
 from acme.om.windows.gate import CallGateInterface
@@ -143,6 +144,9 @@ class _Run:
     started_at: datetime
     resumed: bool  # it resumed a park the loop wrote: the calls it held back never ran
     deadline: datetime | None = None
+    # The policy layers of the kinds above the session in its tree, nearest
+    # first: each of its calls is decided under them as under its own kind's.
+    above: tuple[PolicyLayer, ...] = ()
     workspace: Workspace | None = None
     made: set[UUID] = field(default_factory=lambda: set[UUID]())  # tool requests it wrote
     failures: int = 0  # provider errors in a row
@@ -262,6 +266,7 @@ class LoopManagerImpl(LoopManagerInterface):
             started_at=self._clock(),
             resumed=resumed,
             deadline=tree.deadline,
+            above=await self._policies_above(ctx, session),
             jobs={} if loop is None else rules.started_jobs(history, loop_id),
         )
         try:
@@ -745,6 +750,7 @@ class LoopManagerImpl(LoopManagerInterface):
                 # lost run may have started is settled by its effect, which
                 # the transport's record answers whatever the time.
                 tree_deadline=run.deadline if fresh else None,
+                above=run.above,
             )
         except PrincipalLapsed:
             if not fresh:
@@ -1154,6 +1160,26 @@ class LoopManagerImpl(LoopManagerInterface):
             return False
         run.deadline = (await self._agents.tree_of(run.ctx, run.session_id)).deadline
         return run.deadline is not None and self._clock() >= run.deadline
+
+    async def _policies_above(
+        self, ctx: TenantContext, session: AgentSession
+    ) -> tuple[PolicyLayer, ...]:
+        """The policy layers of the kinds above `session` in its tree, each
+        at the version its session pinned. An ancestor marked deleted
+        answers no kind, and takes a layer with no defaults: its calls are
+        decided by the tenant's layer, and wait for a person where it is
+        silent."""
+        layers: list[PolicyLayer] = []
+        parent_id = session.parent_id
+        while parent_id is not None:
+            try:
+                parent = await self._sessions.get_session(ctx, parent_id)
+            except NotFound:
+                layers.append(PolicyLayer())
+                break
+            layers.append(self._kinds.get(parent.kind, parent.kind_version).policy)
+            parent_id = parent.parent_id
+        return tuple(layers)
 
     async def _report(
         self, run: _Run, *, outcome: LoopOutcome | None = None, park: Park | None = None

@@ -1,10 +1,11 @@
 """Sub-agents through the engine's own tools, as a model starts them: a
 tree bounded by its height and its count, children that together spend
 no more than the tree's budget, a parent that parks on its children and
-wakes on a report, a wait after each report, a deadline that ends a
-wait, and a spawn asked twice that starts one child. Each case takes a
-loop over the memory storage or over Postgres, so the unit suite and the
-integration suite run the same cases."""
+wakes on a report, a wait after each report, a deadline that ends a wait,
+a child gated by its parent's policy as well as its own, and a spawn
+asked twice that starts one child. Each case takes a loop over the memory
+storage or over Postgres, so the unit suite and the integration suite run
+the same cases."""
 
 import asyncio
 from datetime import timedelta
@@ -14,6 +15,7 @@ import pytest
 
 from acme.om.agent_sessions.limits import deadline_park
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
+from acme.om.agents.loop_rules import APPROVAL_UNLOCK
 from acme.om.agents.rules import CHILDREN_PARK
 from acme.om.agents.types.kind import AgentKind, DoneRule
 from acme.om.agents.types.request import Spawn
@@ -61,7 +63,25 @@ sub-agents of its own kind."""
 SOLO = RESEARCH.model_copy(update={"name": "solo", "share": None})
 """A kind that names no share, so no spawn starts it."""
 
-KINDS = (RESEARCH, SOLO)
+CAREFUL = RESEARCH.model_copy(
+    update={
+        "name": "careful",
+        "tools": (*RESEARCH.tools, "note"),
+        "policy": PolicyLayer(
+            rules=(
+                PolicyRule(authorization_class=ToolClass.READ, decision=Decision.ALLOW),
+                PolicyRule(authorization_class=ToolClass.SPAWN, decision=Decision.ALLOW),
+                PolicyRule(authorization_class=ToolClass.WRITE, decision=Decision.APPROVE),
+            )
+        ),
+    }
+)
+"""A kind that holds every write for a person."""
+
+LOOSE = RESEARCH.model_copy(update={"name": "loose", "tools": (*RESEARCH.tools, "note")})
+"""A kind that lets a write run unattended."""
+
+KINDS = (RESEARCH, SOLO, CAREFUL, LOOSE)
 
 
 def spawn(title: str, kind: str | None = None) -> ToolUseBlock:
@@ -328,6 +348,27 @@ async def the_deadline_ends_a_wait_on_children(loop: Loop) -> None:
 
     assert again.park == CHILDREN_PARK, "the moved deadline lets it wait again"
     assert len(loop.anthropic.calls) == calls
+
+
+async def a_looser_kind_runs_no_call_its_parents_kind_would_hold(loop: Loop) -> None:
+    """A root whose kind holds every write for a person starts a sub-agent of
+    a kind that lets a write run unattended. The child's write is decided
+    under its parent's kind as well as its own, and the stricter holds: it
+    waits for a person, and never runs."""
+    root = await loop.start(CAREFUL.name)
+    await loop.say(root, "Note the total.")
+    loop.anthropic.add(
+        reply(spawn("the note", kind=LOOSE.name)), reply(said("A sub-agent notes it."))
+    )
+    await loop.loops.run(loop.owner, root)
+    (child,) = await children_of(loop, root)
+    assert child.kind == LOOSE.name
+    loop.anthropic.add(reply(use("note", "the total")))
+
+    held = await loop.loops.run(loop.owner, child.id)
+
+    assert held.park == Park(reason=ParkReason.PERSON, unlock=APPROVAL_UNLOCK)
+    assert loop.tools["note"].ran_as == [], "the write never ran"
 
 
 async def a_report_that_lands_before_the_park_still_wakes_the_parent(

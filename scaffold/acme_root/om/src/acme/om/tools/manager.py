@@ -14,7 +14,7 @@ too: its input's hash is keyed by it, and the transport's record of its
 command keeps the output sealed by it."""
 
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -84,6 +84,7 @@ class ToolsManagerInterface(ABC):
         *,
         holds_private: bool = True,
         tree_deadline: datetime | None = None,
+        above: Sequence[PolicyLayer] = (),
     ) -> Gate:
         """Where a call stands before it runs. A tool the registry does not
         hold, an input its schema refuses, and a preflight that refuses are
@@ -95,7 +96,9 @@ class ToolsManagerInterface(ABC):
         `holds_private` (its private data or credentials), and whether the
         call acts outward, read from its target. Then policy decides from the
         tool, its class, its effect, and its target's attributes (`defaults`
-        are the agent kind's), and a call the rule of two holds needs a
+        are the agent kind's; `above` are the kinds' above it in its tree,
+        and the call is decided under each of them too, the strictest
+        decision holding), and a call the rule of two holds needs a
         person even where policy allows it: an allowed call runs, under the
         context the gate's `authority` carries; a denied one is answered
         `denied`; and one that needs approval runs on a person's approval of
