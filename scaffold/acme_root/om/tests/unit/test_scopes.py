@@ -12,8 +12,8 @@ import pytest
 
 import acme.om
 from acme.om.storage.logins import RUNTIME_LOGIN, SYSTEM_LOGIN
-from acme.om.storage.migrate import MIGRATIONS_DIR, role_metadata
-from acme.om.storage.roles import DROPPED_TABLE_ROLES, TABLE_ROLES, DatabaseRole, role_for
+from acme.om.storage.migrate import MIGRATIONS_DIR, dropped_tables, role_metadata
+from acme.om.storage.roles import TABLE_ROLES, DatabaseRole, role_for
 from acme.om.storage.scopes import (
     POLICY_NAME,
     SYSTEM_POLICY_NAME,
@@ -172,7 +172,7 @@ def test_the_system_scope_clause_is_spelled_in_every_policy(role: DatabaseRole) 
     policies = {
         table
         for table in re.findall(rf"CREATE POLICY {POLICY_NAME} ON \w+\.(\w+)", sql)
-        if table not in DROPPED_TABLE_ROLES
+        if table not in dropped_tables(role)
     }
     assert len(policies) == len(fenced), (
         f"{role.value}: {len(policies)} policies for {len(fenced)} tables"

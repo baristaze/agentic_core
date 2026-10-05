@@ -141,9 +141,6 @@ revision on the fold.
      (`[[tool.arch-check.exception]]` in `pyproject.toml`) names the
      fold's file when the fold still holds what it allows, and goes when
      it does not.
-   - An entry of `DROPPED_TABLE_ROLES` in
-     `om/src/acme/om/storage/roles.py` names a table only a removed
-     step named. It is code: leave it, and list it in the report.
    - `deployment/migration-inputs.json` covers the fold's files by
      pattern, so it does not change. The fingerprint does: the next
      deploy of each environment runs the migrate task once, which finds

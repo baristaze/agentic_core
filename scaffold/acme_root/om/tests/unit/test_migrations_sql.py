@@ -1,16 +1,19 @@
 """The migration files obey the role rules without a database."""
 
+from pathlib import Path
+
 import pytest
 
 from acme.om.media.types.file import FileStatus
 from acme.om.storage.migrate import (
     MIGRATIONS_DIR,
     check_role_of_sql,
+    dropped_tables,
     head,
     role_metadata,
     split_statements,
 )
-from acme.om.storage.roles import DatabaseRole
+from acme.om.storage.roles import DatabaseRole, role_for
 
 
 def test_every_sql_file_names_only_its_own_role() -> None:
@@ -29,6 +32,21 @@ def test_a_file_naming_another_role_is_refused() -> None:
     check_role_of_sql(DatabaseRole.QUEUE, "ALTER INDEX queue.ix_work_items_a RENAME TO ix_b")
     with pytest.raises(RuntimeError):
         check_role_of_sql(DatabaseRole.CORE, "DROP INDEX queue.ix_work_items_org_id")
+
+
+def test_a_table_the_chain_dropped_is_known_to_its_own_chain_alone() -> None:
+    """The role map holds no table the chain dropped, so the role check
+    knows one from the chain's own drop, and only in the role that dropped it."""
+    dropped = {role: dropped_tables(role) for role in DatabaseRole}
+    for role, tables in dropped.items():
+        for table in tables:
+            with pytest.raises(LookupError):
+                role_for(table)
+            check_role_of_sql(role, f"CREATE TABLE {role.value}.{table} (id uuid)")
+            for other in DatabaseRole:
+                if table not in dropped[other]:
+                    with pytest.raises(LookupError):
+                        check_role_of_sql(other, f"CREATE TABLE {other.value}.{table} (id uuid)")
 
 
 def test_split_statements_drops_comments_and_blanks() -> None:
@@ -59,6 +77,37 @@ def test_a_function_is_checked_by_its_schema_alone() -> None:
     check_role_of_sql(DatabaseRole.CORE, "DROP FUNCTION core.touch_updated_at()")
     with pytest.raises(RuntimeError):
         check_role_of_sql(DatabaseRole.CORE, "CREATE FUNCTION queue.f() RETURNS trigger")
+
+
+def test_a_table_one_chain_drops_passes_that_role_and_fails_another(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only a role's own up files make a dropped table: a down file's drop does
+    not, and neither does a drop of a name the live role map gives another role."""
+    for role, up, down in (
+        (DatabaseRole.CORE, "DROP TABLE IF EXISTS core.retired_ledgers", "DROP TABLE core.ghosts"),
+        (DatabaseRole.QUEUE, "DROP TABLE queue.orgs", ""),
+    ):
+        sql = tmp_path / "sql" / role.value
+        sql.mkdir(parents=True)
+        (sql / "202601010000_retire.up.sql").write_text(f"{up};\n")
+        (sql / "202601010000_retire.down.sql").write_text(f"{down};\n")
+    monkeypatch.setattr("acme.om.storage.migrate.MIGRATIONS_DIR", tmp_path)
+    dropped_tables.cache_clear()
+    try:
+        assert dropped_tables(DatabaseRole.CORE) == {"retired_ledgers"}
+        assert dropped_tables(DatabaseRole.QUEUE) == frozenset()
+        check_role_of_sql(DatabaseRole.CORE, "CREATE TABLE core.retired_ledgers (id uuid)")
+        with pytest.raises(LookupError):
+            check_role_of_sql(DatabaseRole.QUEUE, "CREATE TABLE queue.retired_ledgers (id uuid)")
+        with pytest.raises(RuntimeError):
+            check_role_of_sql(DatabaseRole.QUEUE, "DROP TABLE core.retired_ledgers")
+        with pytest.raises(LookupError):
+            check_role_of_sql(DatabaseRole.CORE, "CREATE TABLE core.ghosts (id uuid)")
+        with pytest.raises(RuntimeError):
+            check_role_of_sql(DatabaseRole.QUEUE, "CREATE TABLE queue.orgs (id uuid)")
+    finally:
+        dropped_tables.cache_clear()
 
 
 @pytest.mark.parametrize("role", list(DatabaseRole))
