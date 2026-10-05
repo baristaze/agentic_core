@@ -11,6 +11,9 @@ no storage. The budget, a guard too, trips at the gate
 | Nudges | turns that neither continue nor submit | bound | ends `inconclusive` |
 | Run time | wall time of one run | yield | hands the loop back to the queue |
 
+A park on the loop's children ends a run of identical calls: a wait that
+a report woke made progress, so a parent may wait after each report.
+
 A guard parks, a bound ends the loop, a yield hands it to a new run. A bound
 is a loop that cannot make progress, which no raised limit cures, so it is
 read first: a loop that trips a bound and a guard at once ends. Its outcome
@@ -172,6 +175,10 @@ def tallied(tally: LoopTally, step: Step) -> LoopTally:
         return tally.model_copy(update={"tool_errors": tally.tool_errors + 1 if failed else 0})
     if isinstance(header, ParkedHeader) and header.park == step_guard_park():
         return tally.model_copy(update={"model_calls": 0})
+    if isinstance(header, ParkedHeader) and header.park.reason is ParkReason.CHILDREN:
+        # A wait on its children holds until a report wakes it, and the next
+        # call reads that report: the same wait asked after it is no repeat.
+        return tally.model_copy(update={"repeats": 0, "last_call": None})
     return tally
 
 

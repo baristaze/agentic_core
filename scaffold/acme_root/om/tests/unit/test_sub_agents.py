@@ -28,6 +28,11 @@ async def test_a_parent_parks_on_its_children_and_a_report_wakes_it(tmp_path: Pa
     await sub_agents.a_parent_parks_on_its_children_and_a_report_wakes_it(loop)
 
 
+async def test_a_root_waits_after_each_of_seven_reports_and_reads_them_all(tmp_path: Path) -> None:
+    loop = loop_over(tmp_path, kinds=sub_agents.KINDS)
+    await sub_agents.a_root_waits_after_each_of_seven_reports_and_reads_them_all(loop)
+
+
 async def test_a_report_that_lands_before_the_park_still_wakes_the_parent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

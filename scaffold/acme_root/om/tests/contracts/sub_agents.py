@@ -1,9 +1,10 @@
 """Sub-agents through the engine's own tools, as a model starts them: a
 tree bounded by its height and its count, children that together spend
 no more than the tree's budget, a parent that parks on its children and
-wakes on a report, and a spawn asked twice that starts one child. Each
-case takes a loop over the memory storage or over Postgres, so the unit
-suite and the integration suite run the same cases."""
+wakes on a report, a wait after each report, and a spawn asked twice
+that starts one child. Each case takes a loop over the memory storage or
+over Postgres, so the unit suite and the integration suite run the same
+cases."""
 
 import asyncio
 from uuid import UUID
@@ -251,6 +252,44 @@ async def a_parent_parks_on_its_children_and_a_report_wakes_it(loop: Loop) -> No
     second = answers(await loop.history(root), WAIT_FOR_SUB_AGENTS)[1]
     assert failure_of(second) is ToolFailure.PERMANENT
     assert "no sub-agent of yours is running" in text_of(second)
+
+
+async def a_root_waits_after_each_of_seven_reports_and_reads_them_all(loop: Loop) -> None:
+    """A root starts seven sub-agents and waits after each report, the same
+    call each time, seven times past an error streak of five. A wait a
+    report woke is no repeat of the one before it: the root reads all seven
+    reports and ends on its own answer, never `inconclusive`."""
+    root = await a_root(loop, "Test seven hypotheses.")
+    calls = [spawn(f"hypothesis {n}") for n in range(1, 8)]
+    loop.anthropic.add(reply(*calls), reply(call(WAIT_FOR_SUB_AGENTS)))
+
+    first = await loop.loops.run(loop.owner, root)
+
+    assert first.park == CHILDREN_PARK
+    children = await children_of(loop, root)
+    assert len(children) == 7
+    ends: list[RunEnd] = []
+    for n, child in enumerate(children, start=1):
+        loop.anthropic.add(reply(said(f"{child.title} holds.")))
+        await loop.loops.run(loop.owner, child.id)
+        last = n == len(children)
+        loop.anthropic.add(reply(said("All seven hold.") if last else call(WAIT_FOR_SUB_AGENTS)))
+        run = await loop.loops.run(loop.owner, root)
+        ends.append(run.end)
+        if not last:
+            assert run.park == CHILDREN_PARK, f"the wait after report {n} parks"
+
+    assert ends == [RunEnd.PARKED] * 6 + [RunEnd.ENDED]
+    assert run.outcome is LoopOutcome.SUCCEEDED
+    waits = answers(await loop.history(root), WAIT_FOR_SUB_AGENTS)
+    assert [failure_of(answer) for answer in waits] == [None] * 7
+    read = "\n".join(
+        block.text
+        for message in loop.anthropic.calls[-1].messages
+        for block in message.blocks
+        if isinstance(block, TextBlock)
+    )
+    assert all(f"Sub-agent {child.id}" in read for child in children), "every report read"
 
 
 async def a_report_that_lands_before_the_park_still_wakes_the_parent(
