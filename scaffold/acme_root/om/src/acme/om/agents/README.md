@@ -48,7 +48,8 @@ of](../../../../README.md).
   finds the child it made. A bound the spawn reaches is the call's
   failure, which the agent reads and acts on. Each call of the child is
   decided under its own kind's policy and under every kind's above it,
-  and the strictest decision holds.
+  a deleted session's among them, and the strictest decision holds. A
+  child whose ancestor is past its purge runs no loop.
 - **Wait** on sub-agents. Through the engine's wait tool, an agent with
   a child running parks on its children. A report that wakes it clears
   the park; with no child running, the call is refused. Past the tree's

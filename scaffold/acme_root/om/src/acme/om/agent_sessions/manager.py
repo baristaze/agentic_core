@@ -15,6 +15,7 @@ from acme.om.agent_sessions.types.agent_session import (
     AgentSessionPage,
     SessionStatus,
 )
+from acme.om.attribution.types.principal import AgentRef
 from acme.om.context import TenantContext
 from acme.om.steps.types.header import Park, ParkReason
 from acme.om.steps.types.step import Step
@@ -62,6 +63,17 @@ class AgentSessionsManagerInterface(ABC):
     ) -> AgentSessionPage:
         """One page of the sessions `parent_id` spawned, by id, strictly
         after `after`; `limit` is clamped."""
+        ...
+
+    @abstractmethod
+    async def get_ancestors(self, ctx: TenantContext, session_id: UUID) -> tuple[AgentRef, ...]:
+        """The agents above a session in its tree, its parent's first: each
+        one's kind, at the version its session pinned, and its session. Each
+        is read whether or not its session is marked deleted, from the row
+        the tree keeps until its purge, so a delete takes no kind out of
+        what a sub-agent's calls are decided under. A session past its purge
+        has no row, and the walk ends below it: fewer agents than the
+        session's depth less one."""
         ...
 
     @abstractmethod
@@ -148,9 +160,12 @@ class AgentSessionsManagerInterface(ABC):
     @abstractmethod
     async def delete_session(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
         """Marks an idle session deleted, and announces it. From then on every
-        read of it answers as one that never existed, while its history and
-        its shape stay as they were, until it is unmarked or its retention
-        ends. One with a loop open is `ValidationFailed`."""
+        read of it answers as one that never existed, but the kind
+        `get_ancestors` answers, while its history and its shape stay as
+        they were, until it is unmarked or its retention ends. One with a
+        loop open is `ValidationFailed`, and so is one with a session below
+        it, a child or theirs, that has a loop open, named in the refusal: a
+        sub-agent at work keeps the session it was spawned under."""
         ...
 
     @abstractmethod

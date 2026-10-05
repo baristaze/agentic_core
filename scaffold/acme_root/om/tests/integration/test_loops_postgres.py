@@ -297,3 +297,24 @@ async def test_a_spawn_asked_twice_starts_one_child_over_postgres(
 ) -> None:
     loop = await a_sub_agent_loop(storage, tmp_path)
     await sub_agents.a_spawn_asked_twice_starts_one_child(loop, monkeypatch)
+
+
+async def test_a_session_with_a_sub_agent_at_work_below_it_is_not_deleted_over_postgres(
+    storage: StoragePostgresImpl, tmp_path: Path
+) -> None:
+    loop = await a_sub_agent_loop(storage, tmp_path)
+    await sub_agents.a_session_with_a_sub_agent_at_work_below_it_is_not_deleted(loop)
+
+
+async def test_a_deleted_session_still_holds_the_sub_agents_below_it_to_its_kind_over_postgres(
+    storage: StoragePostgresImpl, tmp_path: Path
+) -> None:
+    loop = await a_sub_agent_loop(storage, tmp_path)
+    await sub_agents.a_deleted_session_still_holds_the_sub_agents_below_it_to_its_kind(loop)
+
+
+async def test_a_sub_agent_whose_ancestor_is_purged_runs_no_loop_over_postgres(
+    storage: StoragePostgresImpl, tmp_path: Path
+) -> None:
+    loop = await a_sub_agent_loop(storage, tmp_path)
+    await sub_agents.a_sub_agent_whose_ancestor_is_purged_runs_no_loop(loop)
