@@ -18,7 +18,8 @@
 # migrates to its own head, and its chains hold no revision of this branch.
 # Its suite reads this branch's .env over its own, so it reaches this stack.
 # It runs without its own migration tests, which hold its chain to its ORM and
-# fail on any newer schema, and without each test
+# fail on any newer schema, without the live tests, which spend and which
+# `make test-integration` leaves out too, and without each test
 # scripts/release_before_deselect.txt names. On the way out every record is
 # stamped back to this branch's heads, which `make migrate` reads next.
 #
@@ -81,7 +82,7 @@ for i in "${!releases[@]}"; do
   cat "$tree/.env.example" .env > "$tree/.env"
   stamped=1
   "${migrate[@]}" stamp --all --heads-of "$tree"
-  if (cd "$tree" && uv run pytest -q -m integration -p no:cacheprovider "${deselect[@]}"); then
+  if (cd "$tree" && uv run pytest -q -m "integration and not live" -p no:cacheprovider "${deselect[@]}"); then
     echo "release before: ${label} passes on this schema"
   else
     echo "release before: ${label} fails on this schema" >&2

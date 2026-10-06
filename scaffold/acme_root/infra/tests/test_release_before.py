@@ -6,7 +6,7 @@ required check costs a pull request nothing. One that changes a migration
 migrates once, then for each release before (the merge base, and the tip of
 origin/release when it exists and differs) stamps every role to that
 release's heads and runs its integration suite without its own migration
-tests and the tests the deselect file names. A failure fails the run and
+tests, the live tests, and the tests the deselect file names. A failure fails the run and
 names the release, and the records are stamped back to the branch either way.
 The fakes record every call; the real run over the compose stack is CI's.
 """
@@ -97,7 +97,9 @@ def repository(tmp_path: Path) -> tuple[Path, dict[str, str], str]:
     return repo, env, main
 
 
-def run(repo: Path, env: dict[str, str]) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
+def run(
+    repo: Path, env: dict[str, str]
+) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
     result = subprocess.run(
         ["bash", str(repo / "scripts" / "release_before.sh"), "main"],
         capture_output=True,
@@ -149,7 +151,7 @@ def test_the_merge_base_runs_alone_when_there_is_no_release_branch(tmp_path: Pat
         "pytest",
         "-q",
         "-m",
-        "integration",
+        "integration and not live",
         "-p",
         "no:cacheprovider",
         "--deselect",
