@@ -26,7 +26,7 @@ Terraform. Nothing is clicked into place in either.
 | The session runner | a host process (`scripts/dev.sh`) | none yet: it comes with the first environment that runs a session's loop ([ADR 1011](../docs/adr/1011-a-sessions-loop-runs-in-a-worker-of-its-own.md)) |
 | The portal | nginx in a container, or Vite on the host; each forwards `/v1` to the API | a private bucket behind CloudFront, which serves `/v1` from the load balancer too |
 | The company site | Vite on the host | the portal's module, called with the site's parameters |
-| Postgres | one container, one schema per database role | a managed instance |
+| Postgres | one container per database role, each with its own port and volume, so every local run proves nothing crosses a role | one managed instance, one schema per database role, for its price |
 | Valkey (cache, topics) | one container | a managed cluster, encrypted in transit |
 | Queues (`webhooks`) | ElasticMQ over the SQS API | SQS, with a dead-letter queue each |
 | Buckets | MinIO over the S3 API | S3, private and versioned |

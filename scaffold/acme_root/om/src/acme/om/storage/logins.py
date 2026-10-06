@@ -22,9 +22,12 @@ The policies name the logins, so the names are fixed here and a URL that
 names another login is refused rather than followed.
 
 `ensure_logins` runs as the master: the cloud's master user, or `acme`
-locally. It is idempotent. A second run finds every login, schema, owner, and
-grant already in place and changes nothing but the passwords, which it sets
-from the URLs again.
+locally. A login and a grant live on one instance, so it runs once on each
+database a role lives on, for the roles there: once for all four roles on the
+cloud's one instance, once per role on the local stack's four. It is
+idempotent. A second run finds every login, schema, owner, and grant already
+in place and changes nothing but the passwords, which it sets from the URLs
+again.
 """
 
 from collections.abc import Iterable
@@ -238,14 +241,20 @@ def _grant_purge(connection: Connection, schema: str) -> None:
             _run(connection, f"GRANT {PURGE} ON {schema}.{table} TO {PURGE_LOGIN}")
 
 
-def ensure_logins(connection: Connection, passwords: dict[str, str]) -> None:
-    """The whole command, in the caller's one transaction, as the master: the
-    four logins with the passwords their URLs carry, the master a member of
-    the migration login, every role schema and everything in it owned by the
-    migration login, the runtime and system logins granted DML now and on
-    every table to come, less the rewrite and the removal on an append-only
-    table, and the purge login granted SELECT and DELETE on its tables alone.
-    `passwords` maps each of the four logins to its password."""
+def ensure_logins(
+    connection: Connection,
+    passwords: dict[str, str],
+    roles: Iterable[DatabaseRole] = tuple(DatabaseRole),
+) -> None:
+    """The whole command on one database, in the caller's one transaction, as
+    the master: the four logins with the passwords their URLs carry, the
+    master a member of the migration login, the schema of each role in
+    `roles` and everything in it owned by the migration login, the runtime
+    and system logins granted DML now and on every table to come, less the
+    rewrite and the removal on an append-only table, and the purge login
+    granted SELECT and DELETE on its tables alone. `passwords` maps each of
+    the four logins to its password; `roles` are the roles this database
+    holds."""
     database = connection.execute(text("SELECT current_database()")).scalar_one()
     for login in (MIGRATION_LOGIN, RUNTIME_LOGIN, SYSTEM_LOGIN, PURGE_LOGIN):
         ensure_login(connection, login, passwords[login])
@@ -264,7 +273,7 @@ def ensure_logins(connection: Connection, passwords: dict[str, str]) -> None:
             connection,
             _formatted(connection, "GRANT CONNECT ON DATABASE %I TO %I", database, login),
         )
-    for role in DatabaseRole:
+    for role in roles:
         _own_schema(connection, role.value)
         _grant(connection, role.value)
         _grant_purge(connection, role.value)
