@@ -83,8 +83,9 @@ services:
       <<: *app-env
       ACME_METRICS_HOST: 0.0.0.0
       # The one process that purges a session's history, so the one that
-      # holds the purge login.
-      ACME_DATABASE_PURGE_URL: postgresql+asyncpg://acme_purge:acme_purge@postgres:5432/acme
+      # holds the purge login. It follows each role's URL to that role's
+      # instance, as the runtime and system logins do.
+      ACME_DATABASE_PURGE_URL: postgresql+asyncpg://acme_purge:acme_purge@postgres-core:5432/acme
       # The same Acme App as the API's: the worker deletes a deleted
       # account's person there. Without the key, that step waits, and the
       # account's personal org waits with it.

@@ -40,6 +40,7 @@ from acme.om.steps.types.header import InputHeader, LoopOutcome, ParkReason
 from acme.om.steps.types.step import StepType
 from acme.om.storage.impl.pg_base import LoginSessions
 from acme.om.storage.impl.postgres import StoragePostgresImpl
+from acme.om.storage.roles import DatabaseRole
 from acme.om.storage.settings import MigrationSettings
 from acme.om.tools.types.call import JobCompletion
 
@@ -102,7 +103,10 @@ async def test_a_loop_over_postgres_persists_each_step_first_and_seals_what_it_s
     ]
     assert [step.seq for step in steps] == list(range(1, 9))
     assert steps[-2].as_text() == "The total is 12."
-    engine = create_async_engine(migration_settings.master_url())
+    # The master's URL on activity's database, where the steps live: the local
+    # stack runs each role on an instance of its own.
+    activity = migration_settings.under_login(migration_settings.master_url())
+    engine = create_async_engine(activity[DatabaseRole.ACTIVITY])
     try:
         async with engine.connect() as connection:
             plain = await connection.scalar(

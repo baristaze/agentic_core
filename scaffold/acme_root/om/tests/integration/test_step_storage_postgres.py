@@ -21,7 +21,7 @@ from acme.om.steps.types.page import StepCursor
 from acme.om.storage.impl.pg_base import LoginSessions, SessionFactory, set_scope
 from acme.om.storage.impl.postgres import login_sessions
 from acme.om.storage.logins import PURGE_LOGIN, RUNTIME_LOGIN, SYSTEM_LOGIN
-from acme.om.storage.migrate import ensure_logins_at
+from acme.om.storage.migrate import ensure_logins_everywhere
 from acme.om.storage.roles import PURGED_TABLES, DatabaseRole
 from acme.om.storage.settings import MigrationSettings
 
@@ -135,7 +135,7 @@ async def test_no_serving_login_rewrites_or_removes_a_step(
     migration, which grants DML on every table, so it runs here first: the
     history stays append-only after it."""
     settings = migration_settings
-    await ensure_logins_at(settings.master_url(), settings.login_passwords())
+    await ensure_logins_everywhere(settings.master_databases(), settings.login_passwords())
     storage = StepStoragePostgresImpl(pg_sessions)
     org, session = new_id(), new_id()
     epoch = await storage.begin_run(org, session)
@@ -198,7 +198,7 @@ async def test_only_the_purge_login_deletes_a_step_and_only_in_the_tenant_it_nam
     step (the case above). A deploy makes the logins again before every
     migration, so that runs first."""
     settings = migration_settings
-    await ensure_logins_at(settings.master_url(), settings.login_passwords())
+    await ensure_logins_everywhere(settings.master_databases(), settings.login_passwords())
     storage = StepStoragePostgresImpl(pg_sessions)
     org, other, session = new_id(), new_id(), new_id()
     await storage.append_inputs(org, session, [make_message(session)])
@@ -222,15 +222,17 @@ async def test_only_the_purge_login_deletes_a_step_and_only_in_the_tenant_it_nam
         " WHERE c.relkind IN ('r', 'p') AND n.nspname = ANY(:schemas)"
     )
     held: set[tuple[str, str]] = set()
-    async with pg_sessions[DatabaseRole.ACTIVITY]() as db:
-        schemas = [role.value for role in DatabaseRole]
-        for table in (await db.execute(tables, {"schemas": schemas})).scalars():
-            for kind in EVERY_PRIVILEGE:
-                found = await db.execute(
-                    privilege, {"login": PURGE_LOGIN, "table": table, "privilege": kind}
-                )
-                if found.scalar_one():
-                    held.add((table.split(".")[1], kind))
+    # Each role's tables on that role's database: the local stack runs each
+    # role on an instance of its own.
+    for role in DatabaseRole:
+        async with pg_sessions[role]() as db:
+            for table in (await db.execute(tables, {"schemas": [role.value]})).scalars():
+                for kind in EVERY_PRIVILEGE:
+                    found = await db.execute(
+                        privilege, {"login": PURGE_LOGIN, "table": table, "privilege": kind}
+                    )
+                    if found.scalar_one():
+                        held.add((table.split(".")[1], kind))
     assert held == {(table, kind) for table in PURGED_TABLES for kind in ("SELECT", "DELETE")}
 
     assert await storage.purge_tenant(org, 10) == 2, "the step and its cursor"

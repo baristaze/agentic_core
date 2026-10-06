@@ -217,9 +217,10 @@ def test_eight_exported_urls_take_every_role_off_the_env_file(
         *second.role_urls().values(),
         *second.system_role_urls().values(),
         *second.migration_role_urls().values(),
+        *second.purge_role_urls().values(),
         *second.master_databases(),
     ]
-    assert len(urls) == 16
+    assert len(urls) == 20
     assert {make_url(url).database for url in urls} == {"acme_other"}
 
 
