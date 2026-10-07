@@ -10,7 +10,7 @@
       "name": "agentic-core",
       "source": "./",
       "description": "Lens-based review skills and scaffolding skills for an agentic engine, backed by its spec",
-      "version": "0.7.1",
+      "version": "0.8.0",
       "category": "development",
       "tags": ["agents", "engine", "review", "scaffold", "python"]
     }
