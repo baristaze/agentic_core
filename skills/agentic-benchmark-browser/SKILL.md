@@ -144,9 +144,12 @@ Facts that decide how the steps below go. Read them before the browser.
    its `note` asks the person to turn that setting off. Never change
    it yourself. Some sites show the line only once a message is sent,
    such as claude.ai's "Connected" line under the device's name: look again on the
-   conversation page right after the send, and when it shows there,
-   stop that session, record it `not-run` with the same `note`, and
-   score nothing it answered.
+   conversation page right after the send and at every poll. Whenever
+   such a line shows there, right after the send or at any poll, stop
+   that session with the page's stop control ("Stop response") and
+   record it `not-run` with the same `note`: its times are the moment
+   of the stop, its `polls` the polls made, and nothing it answered is
+   scored.
 
    Otherwise set the model and the effort, then verify with a
    screenshot of the chip. `model_label` is the model picker's checked
@@ -196,8 +199,10 @@ Facts that decide how the steps below go. Read them before the browser.
    `started_at`. Take one screenshot showing the sent message and the
    chip; it is a check and is not saved.
 6. Do step 4 and step 5 for every site first, then poll each site at
-   most thirty times, no more often than once a minute, and count its
-   polls into `polls`. A poll is one batch: first a scaled (0.4)
+   most thirty times, and count its polls into `polls`. A poll starts
+   at least a minute after the one before on the same site: when one
+   site is left, wait out the rest of that minute with ten-second waits
+   before its next poll. A poll is one batch: first a scaled (0.4)
    screenshot, which brings the tab to the front, then up to five
    ten-second waits. On claude.ai and grok.com the signal is in the
    page text: end the batch with one `get_page_text` and keep it to
@@ -225,9 +230,12 @@ Facts that decide how the steps below go. Read them before the browser.
    says which. After thirty polls or thirty minutes from the send,
    record `timed-out` with what the page shows so far.
 7. When a site is done, read the conversation URL from
-   `tabs_context_mcp` and drop its query string. Read the answer with
-   the site's copy button and `pbpaste`, as `references/copy-answer.md`
-   says, or, where that fails, with `get_page_text`. Find the
+   `tabs_context_mcp` and drop its query string. Read the answer once,
+   when the site is done, with the site's copy button and `pbpaste`, as
+   `references/copy-answer.md` says, or, where that fails, with
+   `get_page_text`. When the copy button is not there then, the page
+   text stands, and the answer is not read again later, even when the
+   button shows. Find the
    `Score: NN/100` line, and what the answer's Method says it read: a
    commit, a tag, or a branch and a date, for `read_version` ("not
    stated" when it names none). Save `<site>.md` in the run folder:
@@ -281,8 +289,9 @@ Facts that decide how the steps below go. Read them before the browser.
      answer. `url` is the address the tab shows, without its query
      string; `model_label` and `effort_label` are `not set`;
      `read_version` is `not stated`; `score` is null; `polls` is 0;
-     both times are the moment step 3 or step 4 found it; and
-     `<site>.md` holds the header only.
+     both times are the moment step 3 or step 4 found it, except for a
+     session step 4 stopped after the send, whose times and `polls` are
+     as step 4 says; and `<site>.md` holds the header only.
 
    An answer cut short by a tool-use limit that still satisfies the
    report format is `ok` with a `note`; do not press Continue. `note`
@@ -300,9 +309,11 @@ Facts that decide how the steps below go. Read them before the browser.
    list, and each value is inside the `type`, `enum`, `minimum`,
    `maximum`, and `format` the schema gives its key. A value outside
    them is corrected, never bent to fit.
-9. Per site that sent the prompt, bring its score line into view, or,
-   where there is none, the first line the page wrote back: an answer,
-   a `refused` decline, or an `errored` message. Click an empty margin
+9. Per site that sent the prompt, a `not-run` session step 4 stopped
+   after the send included, bring its score line into view, or, where
+   there is none, the first line the page wrote back: an answer, a
+   `refused` decline, an `errored` message, or what a stopped session
+   wrote before its stop. Click an empty margin
    to clear a stray selection or menu, `find` the line, and
    `scroll_to` its reference. Where `find` is refused, scroll the
    conversation with the `computer` tool's `scroll` until a screenshot
