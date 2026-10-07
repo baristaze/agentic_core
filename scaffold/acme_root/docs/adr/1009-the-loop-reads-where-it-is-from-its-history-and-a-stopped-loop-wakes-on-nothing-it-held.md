@@ -29,7 +29,10 @@ whole of it, since a call that was sent is usually billed. A call a lost
 run left open is settled by its effect before the run does anything
 else, a park included, and is never run as new. So a call still open at
 a park the loop wrote is one it held back, and the run that resumes the
-park runs it. A call that would wait for a person after a lost run is
+park runs it. A park on the workspace comes before the run has a
+workspace to settle anything in. It is marked unsettled unless its run
+resumed a settled park, and the run that resumes it settles the calls by
+their effect. A call that would wait for a person after a lost run is
 answered with its outcome unknown rather than parked open. A result the
 gate accepted is recorded in its answer, and the loop ends on it once
 every call of the turn is answered.

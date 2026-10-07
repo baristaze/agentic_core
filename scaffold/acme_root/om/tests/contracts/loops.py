@@ -30,6 +30,8 @@ from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import Platform, new_id, utcnow
 from acme.om.budgets.types.amount import Amount
 from acme.om.context import CredentialKind, RequestContext, Role, TenantContext, build_context
+from acme.om.models.impl.credentials import CallCredentialsPlatformImpl
+from acme.om.models.layer import ModelsLayer
 from acme.om.root import Managers, build_managers, engine_tools
 from acme.om.steps.types.content import TextBlock, ToolUseBlock
 from acme.om.steps.types.header import LoopOutcome, ParkReason
@@ -44,6 +46,7 @@ from acme.om.tools.tool import JobToolInterface, ToolInterface, ToolRuntime
 from acme.om.tools.types.call import JobHandle, JobStarted
 from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule, Target
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolMode, ToolSpec
+from acme.om.windows.gate import CallGateInterface
 from acme.om.windows.impl.gate import CallGateBudgetImpl
 from contracts.doubles import APP, context
 from contracts.factories import make_org
@@ -350,6 +353,8 @@ def loop_over(
     owner: TenantContext | None = None,
     sink: StreamSinkMemoryImpl | None = None,
     jitter: Callable[[], float] = random.random,
+    call_gate: Callable[[Managers, Clock], CallGateInterface] | None = None,
+    models_layer: ModelsLayer | None = None,
     reader: AttachmentReaderInterface | None = None,
     extra: tuple[ToolInterface, ...] = (),
     ceilings: PolicyLayer | None = None,
@@ -360,8 +365,11 @@ def loop_over(
     the loop draws its retry waits from. The loop's catalog holds the
     engine's tools before the suite's, over `reader`, None the null, and
     `extra` after them: a product's own tool, which a kind of `kinds`
-    names. `ceilings` None keeps the platform's, and `sessions` None is the
-    sessions' own options."""
+    names. `call_gate` None is the budgets' gate behind the call gate; a
+    suite of a gate of its own builds it from the managers and the clock.
+    `models_layer` goes to the root as a layer's root hands it in, and the
+    loop takes the layer's call credentials. `ceilings` None keeps the
+    platform's, and `sessions` None is the sessions' own options."""
     infra = InfraLocalImpl(tmp_path)
     anthropic = ModelProviderScriptedImpl(ProviderName.ANTHROPIC)
     openai = ModelProviderScriptedImpl(ProviderName.OPENAI)
@@ -382,19 +390,18 @@ def loop_over(
         principal_context=live,
         tool_catalog=every,
         attachment_reader=reader,
+        models_layer=models_layer,
         tools_options=None if ceilings is None else ToolsOptions(ceilings=ceilings),
         agent_sessions_options=sessions,
     )
     clock = Clock()
-    calls = CallGateBudgetImpl(
-        managers.budget_gate, managers.pricing, managers.agent_sessions, managers.budgets, clock
-    )
 
     async def sleep(seconds: float) -> None:
         clock.now += timedelta(seconds=seconds)
         await asyncio.sleep(0)
 
     sink = sink or StreamSinkMemoryImpl()
+    options = options or LoopOptions(control_poll=timedelta(milliseconds=1))
     loops = LoopManagerImpl(
         managers.steps,
         managers.agent_sessions,
@@ -404,13 +411,27 @@ def loop_over(
         managers.models,
         managers.windows,
         managers.tools,
-        calls,
-        providers,
+        (
+            CallGateBudgetImpl(
+                managers.budget_gate,
+                managers.pricing,
+                managers.agent_sessions,
+                managers.budgets,
+                clock,
+            )
+            if call_gate is None
+            else call_gate(managers, clock)
+        ),
+        (
+            CallCredentialsPlatformImpl(providers, options.credential)
+            if models_layer is None
+            else models_layer.credentials(providers)
+        ),
         outages or infra.get_outages(),
         sink,
         engine_tools(managers.steps, managers.agent_sessions, reader, lambda: managers.agents)
         + every,
-        options or LoopOptions(control_poll=timedelta(milliseconds=1)),
+        options,
         clock,
         sleep,
         jitter=jitter,

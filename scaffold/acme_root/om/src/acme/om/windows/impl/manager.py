@@ -5,7 +5,7 @@ from uuid import UUID
 from pydantic import Field
 
 from acme.infra.buckets import Buckets, BucketsInterface
-from acme.integrations.model_providers import ModelProvidersInterface, reply_of
+from acme.integrations.model_providers import reply_of
 from acme.integrations.model_providers.calls import ModelReply
 from acme.integrations.model_providers.failures import ModelCallFailed
 from acme.integrations.model_providers.types import StopReason
@@ -22,6 +22,7 @@ from acme.om.exceptions import (
     PreconditionFailed,
     ValidationFailed,
 )
+from acme.om.models.credentials import CallCredentialsInterface
 from acme.om.models.manager import ModelsManagerInterface
 from acme.om.models.types.fill import MAIN, SUMMARIZER, Fill, FillSet, ModelRole
 from acme.om.steps import StepsManagerInterface
@@ -66,7 +67,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
         tenancy: TenancyManagerInterface,
         models: ModelsManagerInterface,
         attribution: AttributionManagerInterface,
-        providers: ModelProvidersInterface,
+        credentials: CallCredentialsInterface,
         buckets: BucketsInterface,
         gate: CallGateInterface,
         hashes: PromptHashInterface,
@@ -75,12 +76,14 @@ class WindowsManagerImpl(WindowsManagerInterface):
         options: WindowsOptions,
         clock: Callable[[], datetime] = utcnow,
     ) -> None:
+        """`credentials` answers the client a compaction's call runs on: the
+        platform's key, or a tenant's."""
         self._storage = storage
         self._steps = steps
         self._tenancy = tenancy
         self._models = models
         self._attribution = attribution
-        self._providers = providers
+        self._credentials = credentials
         self._buckets = buckets
         self._gate = gate
         self._hashes = hashes
@@ -379,8 +382,9 @@ class WindowsManagerImpl(WindowsManagerInterface):
         # The summarizer delivers nothing: it is paid for by the spender the
         # latest model request named, as attribution answers for it.
         paid = rendered.attribution
+        used = await self._credentials.client_for(ctx, summarizer.provider)
         hold = await self._gate.authorize(
-            ctx, session_id, paid.spender, SUMMARIZER, summarizer, call
+            ctx, session_id, paid.spender, SUMMARIZER, summarizer, call, credential=used.credential
         )
         request = rules.request_step(
             rendered, paid, session_id, loop_id, new_id(), self._clock(), hold_id=hold
@@ -392,8 +396,11 @@ class WindowsManagerImpl(WindowsManagerInterface):
             raise
         started = self._clock()
         try:
-            reply = await reply_of(self._providers.get(summarizer.provider).stream(call))
+            reply = await reply_of(used.client.stream(call))
         except ModelCallFailed as failed:
+            # The failure names the key the call went out on, so whatever it
+            # says of a key is said of that one, whichever is live by then.
+            failed.credential = used.credential
             # Nothing streamed back: the call was never sent, or the provider
             # refused it before processing it, so the hold is released. A
             # stream that broke after it began is billed, whole.

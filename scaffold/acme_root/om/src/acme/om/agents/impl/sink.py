@@ -1,5 +1,8 @@
+from uuid import UUID
+
 from acme.infra.base import QuietNull
 from acme.om.agents.sink import StreamSinkInterface
+from acme.om.context import TenantContext
 from acme.om.steps.types.stream import StreamPart
 
 
@@ -8,6 +11,12 @@ class StreamSinkNullImpl(StreamSinkInterface, QuietNull):
     is the live view, and the steps still hold everything that was said."""
 
     def emit(self, part: StreamPart) -> None:
+        return None
+
+    def opened(self, ctx: TenantContext, session_id: UUID, step_id: UUID) -> None:
+        return None
+
+    def completed(self, ctx: TenantContext, session_id: UUID, step_id: UUID) -> None:
         return None
 
 
@@ -20,3 +29,9 @@ class StreamSinkMemoryImpl(StreamSinkInterface):
 
     def emit(self, part: StreamPart) -> None:
         self.parts.append(part)
+
+    def opened(self, ctx: TenantContext, session_id: UUID, step_id: UUID) -> None:
+        return None
+
+    def completed(self, ctx: TenantContext, session_id: UUID, step_id: UUID) -> None:
+        return None

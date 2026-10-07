@@ -39,6 +39,7 @@ from acme.om.exceptions import (
     Unavailable,
     ValidationFailed,
 )
+from acme.om.models.impl.credentials import CallCredentialsPlatformImpl
 from acme.om.models.impl.manager import ModelsManagerImpl, ModelsOptions
 from acme.om.models.impl.resolver import ModelResolverTableImpl, ResolverOptions
 from acme.om.models.prices import ModelPricesInterface
@@ -146,6 +147,8 @@ class Gate(CallGateInterface):
         role: ModelRole,
         fill: Fill,
         call: ModelCall,
+        *,
+        credential: str,
     ) -> UUID:
         if self.refusing:
             raise Unavailable("the session's budget is spent")
@@ -250,7 +253,7 @@ def an_engine(
         managers.tenancy,
         models,
         Payer(),  # pyright: ignore[reportAbstractUsage] (a partial double)
-        providers,
+        CallCredentialsPlatformImpl(providers),
         infra.get_buckets(),
         gate,
         hashes,
@@ -987,5 +990,5 @@ async def test_a_root_with_the_nulls_wired_refuses_to_hash_or_spend(tmp_path: Pa
     call = ModelCall(model=SUMMARY_FILL.model, messages=(), max_output_tokens=1)
     with pytest.raises(Unavailable, match="budget gate"):
         await CallGateNullImpl().authorize(
-            ctx, history.session_id, PAYER, SUMMARIZER, SUMMARY_FILL, call
+            ctx, history.session_id, PAYER, SUMMARIZER, SUMMARY_FILL, call, credential="platform"
         )

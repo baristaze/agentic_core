@@ -30,10 +30,14 @@ class CallGateInterface(ABC):
         role: ModelRole,
         fill: Fill,
         call: ModelCall,
+        *,
+        credential: str,
     ) -> UUID:
         """The id of a hold of the call's worst case on the budgets of
-        `spender`, who pays for it. A refusal raises with nothing held and
-        nothing spent, and the call is never made."""
+        `spender`, who pays for it. `credential` names the key the call goes
+        out on (`models.credentials`): the platform's, or a tenant's. A
+        refusal raises with nothing held and nothing spent, and the call is
+        never made."""
         ...
 
     @abstractmethod

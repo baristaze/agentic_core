@@ -29,12 +29,14 @@ class LoopManagerInterface(ABC):
         or parked on an unlock that has not happened) is answered `idle`
         with nothing written. Otherwise the run resumes a loop whose unlock
         happened, or begins the loop its waking input asks for; it prepares
-        the session's workspace before its first model call, and a workspace
-        that cannot meet the kind's isolation spec ends the loop `errored`
-        before any call is made. It settles a lost run's open requests by
-        their effect, then drives the loop until it ends, parks, or yields
-        its run time. `stale` when a later run took the claim: nothing more
-        is written, and the transport refuses this run's commands."""
+        the session's workspace before its first model call. A workspace no
+        provider can meet the spec of parks the loop on `resource`, to ask
+        again after the options' wait, and one whose durable state is gone
+        (`WorkspaceLost`) parks it for a person, both before any call is made.
+        It settles a lost run's open requests by their effect, then drives the
+        loop until it ends, parks, or yields its run time. `stale` when a
+        later run took the claim: nothing more is written, and the transport
+        refuses this run's commands."""
         ...
 
     @abstractmethod
