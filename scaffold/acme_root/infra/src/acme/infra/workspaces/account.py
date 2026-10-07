@@ -11,11 +11,11 @@ or its environment. No program that runs with this process's privileges
 sees the command's environment: it reaches the command after the switch.
 
 The account serves one workspace at a time, so every process of the
-account is that workspace's. A release ends each of them, by its uid and by
-its directory, and closes the workspace to the account, so the next
-workspace's commands never reach its files. A purge clears what the
-account wrote, as the account, then removes the directory without
-following a link out of it.
+account is that workspace's. A release ends each of them, as the account,
+whatever `/proc` hides from this process, then each one in its directory,
+and closes the workspace to the account, so the next workspace's commands
+never reach its files. A purge clears what the account wrote, as the
+account, then removes the directory without following a link out of it.
 
 What stays a product's: which account its host gives its agents, the
 grants it adds to that account, and how its host image makes it."""
@@ -27,11 +27,13 @@ import pwd
 import re
 import shutil
 import sys
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID
 
+from acme.infra.exceptions import InfraException
 from acme.infra.workspaces import (
     EgressMode,
     IsolationMode,
@@ -43,7 +45,7 @@ from acme.infra.workspaces import (
     refusal,
 )
 from acme.infra.workspaces.host import remove_directory
-from acme.infra.workspaces.stragglers import PROC, end_account, end_stragglers
+from acme.infra.workspaces.stragglers import PROC, end_stragglers
 
 LIMITS = frozenset({"processes"})
 """What the mode enforces of a spec's limits: the account's processes, which
@@ -53,8 +55,8 @@ so a spec that asks for either is refused."""
 
 CAPABILITIES = {5: "CAP_KILL", 6: "CAP_SETGID", 7: "CAP_SETUID", 8: "CAP_SETPCAP"}
 """What this process holds to run a command as the account: the switch of
-uid and gid, the drop of the bounding set, and the end of the account's
-processes."""
+uid and gid, the drop of the bounding set, and the end of a command's tree
+at its deadline."""
 
 ACCOUNT_NAME = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 
@@ -90,6 +92,30 @@ CLEAR = "chmod -R u+rwx -- home tmp; rm -rf -- home tmp"
 """What removes, as the account, what was written in a workspace: its own
 directories first opened to it, those it closed even to itself included.
 Neither command follows a link it meets."""
+
+ENDING_SECONDS = 10.0
+"""The longest the end of an account's processes keeps ending them."""
+
+END = """kill -KILL -1 2>/dev/null
+left=
+for status in /proc/[0-9]*/status; do
+  pid=${status#/proc/}; pid=${pid%/status}
+  [ "$pid" = "$$" ] && continue
+  real= effective= saved= state=
+  { while read -r key first second third _; do
+      case $key in Uid:) real=$first effective=$second saved=$third ;; State:) state=$first ;; esac
+    done < "$status"; } 2>/dev/null
+  case $state in Z|X) continue ;; esac
+  case " $real $effective $saved " in *" $0 "*) echo "$pid"; left=1 ;; esac
+done
+[ -z "$left" ]"""
+"""What ends every process of the account, as the account, whose uid is
+`$0`: `kill -KILL -1` signals each one the account may, whatever this
+process's view of `/proc` hides, and no fork escapes it. Then the account's
+own view of `/proc` is read for one still alive, other than this shell; a
+zombie is dead, whoever reaps it. It answers 0 when none is, and prints
+each one alive otherwise. It runs builtins alone, so it starts no process
+of the account."""
 
 
 def temporary(home: Path) -> Path:
@@ -134,6 +160,13 @@ class Switch:
         ]
 
 
+class ProcessesOutlived(InfraException):
+    """Processes of an account still alive after their end: what is left of
+    one workspace could act in the next."""
+
+    code = "processes_outlived"
+
+
 def effective_capabilities() -> set[int]:
     """The capabilities in this process's effective set; none where `/proc`
     does not show them."""
@@ -174,6 +207,40 @@ def switch_to(account: str) -> Switch:
     if missing:
         raise IsolationRefused(f"this process lacks {', '.join(missing)} to run as {account!r}")
     return Switch(account, entry.pw_uid, entry.pw_gid, setpriv, prlimit)
+
+
+async def end_account(switch: Switch, seconds: float = ENDING_SECONDS) -> None:
+    """Ends every process of the account, whatever its directory, as the
+    account (`END`), again until the account's own view of `/proc` shows
+    none alive. `ProcessesOutlived` when some are after `seconds`, or the
+    end cannot run."""
+    deadline = time.monotonic() + seconds
+    while True:
+        ending = await asyncio.create_subprocess_exec(
+            *switch.argv(END, (str(switch.uid),)),
+            cwd="/",
+            env={},
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        try:
+            out, _ = await asyncio.wait_for(
+                ending.communicate(), max(deadline - time.monotonic(), 1.0)
+            )
+        except TimeoutError:
+            ending.kill()
+            await ending.wait()
+            out = b""
+        if ending.returncode == 0:
+            return
+        if time.monotonic() > deadline:
+            alive = " ".join(out.decode(errors="replace").split()) or "unknown, the end did not run"
+            raise ProcessesOutlived(
+                f"processes of {switch.account!r} alive after {seconds}s: {alive}"
+            )
+        await asyncio.sleep(0.05)
 
 
 class WorkspaceAccountImpl(WorkspaceProviderInterface):
@@ -221,7 +288,7 @@ class WorkspaceAccountImpl(WorkspaceProviderInterface):
                 await asyncio.to_thread(_closed, job)
                 return
             try:
-                await end_account(switch.uid)
+                await end_account(switch)
                 await end_stragglers(job)
             finally:
                 await asyncio.to_thread(_closed, job)
@@ -240,7 +307,7 @@ class WorkspaceAccountImpl(WorkspaceProviderInterface):
                 await asyncio.to_thread(remove_directory, job)
                 return
             try:
-                await end_account(switch.uid)
+                await end_account(switch)
                 await end_stragglers(job)
                 await self._cleared(job, switch)
                 await asyncio.to_thread(remove_directory, job)
@@ -271,7 +338,7 @@ class WorkspaceAccountImpl(WorkspaceProviderInterface):
         if lock is None:
             return False
         try:
-            await end_account(switch.uid)
+            await end_account(switch)
             await asyncio.to_thread(_handed_over, lock, self._root.resolve(), job)
         except BaseException:
             os.close(lock)
@@ -303,7 +370,7 @@ class WorkspaceAccountImpl(WorkspaceProviderInterface):
         except TimeoutError:
             pass
         finally:
-            await end_account(switch.uid)
+            await end_account(switch)
             await clearing.wait()
 
 

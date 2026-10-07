@@ -53,10 +53,14 @@ the account, so a link there reaches only what the account may.
 time, across every process that shares the root: a lock beside the
 workspaces holds it, and a prepare while another workspace holds it is
 refused. So every process of the account is that workspace's. A release
-ends each of them, by its uid and by its directory, and closes the
+ends each of them, then those in its directory, and closes the
 workspace's directory to the account, so the next workspace's commands
 never reach its files. A fresh hold first ends what a crash left of the
 account, and closes the directory of the workspace it served last.
+The account's processes are ended as the account (`kill -KILL -1`),
+which reaches each one, whatever `/proc` hides from this process, and
+which no fork escapes. The end is repeated until the account's own view
+of `/proc` shows none alive, or it fails.
 
 **This process follows no link there.** It reads, writes, and lists in
 the workspace with more than the account may. So a path is walked one

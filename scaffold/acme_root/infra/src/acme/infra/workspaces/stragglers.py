@@ -9,21 +9,14 @@ A process is the workspace's when its working directory is inside the
 workspace's directory. Each one is ended by its own id, never by its group,
 so nothing whose directory is elsewhere is touched, and never this process,
 its parent, or one of its group. They are found on `/proc` where the host
-has it, by `lsof` where it has not, and not at all where it has neither.
-
-A workspace whose commands run as an account of their own has every
-process of that account as its own, wherever its directory is: those are
-ended by their uid (`end_account`)."""
+has it, by `lsof` where it has not, and not at all where it has neither."""
 
 import asyncio
 import os
 import shutil
 import signal
-import time
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-
-from acme.infra.exceptions import InfraException
 
 PROC = Path("/proc")
 
@@ -33,16 +26,6 @@ the kill, so one that forks while it is being ended is caught."""
 
 LISTING_SECONDS = 10.0
 """The longest a listing of the host's processes is waited on."""
-
-ENDING_SECONDS = 10.0
-"""The longest the end of an account's processes keeps ending them."""
-
-
-class ProcessesOutlived(InfraException):
-    """Processes of an account still alive after their end: what is left of
-    one workspace could act in the next."""
-
-    code = "processes_outlived"
 
 
 def _inside(path: str, root: str) -> bool:
@@ -158,53 +141,3 @@ async def end_stragglers(root: Path) -> set[int]:
         found |= walked
     _signal(found, signal.SIGKILL)
     return set(found)
-
-
-def _of_account(uid: int) -> dict[int, int]:
-    """Each live process whose real, effective, or saved uid is `uid`, as
-    `/proc` shows it, with its parent's id. A zombie is dead, whoever reaps
-    it."""
-    found: dict[int, int] = {}
-    for entry in PROC.iterdir():
-        if not entry.name.isdigit():
-            continue
-        try:
-            status = (entry / "status").read_text()
-        except OSError:
-            continue
-        fields = dict(line.split(":", 1) for line in status.splitlines() if ":" in line)
-        parent = fields.get("PPid", "").strip()
-        if (
-            str(uid) in fields.get("Uid", "").split()[:3]
-            and not fields.get("State", "").strip().startswith("Z")
-            and parent.isdigit()
-        ):
-            found[int(entry.name)] = int(parent)
-    return found
-
-
-async def end_account(uid: int, seconds: float = ENDING_SECONDS) -> set[int]:
-    """Ends every process of the account `uid`, whatever its directory: freezes
-    each one `/proc` shows, walking again after each freeze, kills every one
-    found, and walks again until none is alive. Answers the ids it ended;
-    `ProcessesOutlived` when some are alive after `seconds`. It takes the
-    right to signal another account's processes, and never ends root's or
-    this process's own account."""
-    if uid in {0, os.getuid(), os.geteuid()}:
-        raise ValueError(f"uid {uid} is root or this process's own")
-    ended: set[int] = set()
-    deadline = time.monotonic() + seconds
-    while found := await asyncio.to_thread(_of_account, uid):
-        if time.monotonic() > deadline:
-            alive = " ".join(str(pid) for pid in sorted(found))
-            raise ProcessesOutlived(f"processes of uid {uid} alive after {seconds}s: {alive}")
-        for _ in range(FREEZES):
-            _signal(_freezable(found), signal.SIGSTOP)
-            walked = await asyncio.to_thread(_of_account, uid)
-            if walked.keys() <= found.keys():
-                break
-            found |= walked
-        _signal(found, signal.SIGKILL)
-        ended |= found.keys()
-        await asyncio.sleep(0.05)
-    return ended

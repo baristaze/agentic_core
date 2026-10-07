@@ -439,6 +439,27 @@ def cannot_switch() -> str | None:
 needs_an_account = pytest.mark.skipif(cannot_switch() is not None, reason=f"{cannot_switch()}")
 
 
+def proc_hides_others() -> bool:
+    """Whether `/proc` hides another account's processes from this one, as a
+    unit with `ProtectProc=invisible` sees it: mounted with `hidepid`, and
+    this process outside the group it exempts, root's unless `gid=` names
+    another."""
+    try:
+        mounts = Path("/proc/self/mounts").read_text()
+    except OSError:
+        return False
+    options: dict[str, str] = {}
+    for fields in (line.split() for line in mounts.splitlines()):
+        if len(fields) > 3 and fields[1] == "/proc":
+            pairs = (option.partition("=") for option in fields[3].split(","))
+            options = {key: value for key, _, value in pairs}
+    exempt = int(options.get("gid", "0"))
+    return options.get("hidepid", "0") not in {"0", "off"} and exempt not in {
+        os.getgid(),
+        *os.getgroups(),
+    }
+
+
 @pytest.fixture
 def account_root() -> Iterator[Path]:
     """A root the account passes through, unlike the test's own temporary
@@ -468,11 +489,19 @@ async def ran(
 
 
 def alive(pid: int) -> bool:
-    """Whether `pid` runs; a zombie is dead, whoever reaps it."""
+    """Whether `pid` runs, as the kernel answers a signal of none, which no
+    `/proc` hides; a zombie, where `/proc` shows one, is dead, whoever reaps
+    it."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
     try:
         status = Path(f"/proc/{pid}/status").read_text()
     except OSError:
-        return False
+        return True
     return not re.search(r"^State:\s+Z", status, re.MULTILINE)
 
 
@@ -594,6 +623,30 @@ async def test_an_account_release_ends_its_command_and_what_left_its_session_and
     assert (home / "left.pid").exists(), "a release keeps the files"
     await provider.purge(org, workspace_id)
     assert not home.parent.exists()
+
+
+@needs_an_account
+@pytest.mark.skipif(not proc_hides_others(), reason="/proc here shows every account's processes")
+async def test_an_account_release_ends_what_it_left_where_proc_hides_it_from_this_process(
+    account_root: Path, tmp_path: Path
+) -> None:
+    """Where `/proc` hides another account's processes from this one, a
+    process the account left running is still ended by the release."""
+    provider = WorkspaceAccountImpl(account_root, ACCOUNT)
+    org, workspace_id = new_id(), new_id()
+    workspace = await provider.prepare(org, workspace_id, spec(IsolationMode.ACCOUNT))
+    try:
+        script = "(cd / && exec setsid sleep 300 </dev/null >/dev/null 2>&1) & echo $!"
+        result = await ran(as_account(tmp_path / "records"), workspace, script)
+        assert result.exit_code == 0, result.stderr
+        left = int(result.stdout.strip())
+        assert alive(left)
+        shown = await asyncio.to_thread(os.path.exists, f"/proc/{left}")
+        assert not shown, "this process's /proc hides it"
+        await provider.release(workspace)
+        assert await still_alive(left) == []
+    finally:
+        await provider.purge(org, workspace_id)
 
 
 @needs_an_account
