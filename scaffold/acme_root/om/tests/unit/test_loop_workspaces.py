@@ -88,6 +88,7 @@ async def test_a_refusal_that_clears_parks_on_the_resource_and_asks_again_after_
     assert loop.anthropic.calls == [], "no call was made"
 
     monkeypatch.setattr(loop.managers.tools, "prepare_workspace", prepare)
+    assert waiting.park.retry_at is not None
     loop.clock.now = waiting.park.retry_at
     await loop.managers.agent_sessions.wake_session(loop.owner, session_id, waiting.park)
     loop.anthropic.add(reply(said("The total is 12.")))
