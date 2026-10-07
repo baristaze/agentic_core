@@ -152,7 +152,12 @@ Facts that decide how the steps below go. Read them before the browser.
    that session with the page's stop control ("Stop response") and
    record it `not-run` with the same `note`: its times are the moment
    of the stop, its `polls` the polls made, the poll that saw the line
-   included, and nothing it answered is scored.
+   included, and nothing it answered is scored. A line that first shows
+   after the site is done, while its answer is read or its picture
+   taken, counts the same: the session is `not-run` with the same
+   `note`, its `started_at` the send time, its finish time the moment
+   the line was seen, its `polls` the polls made, and nothing it
+   answered is scored.
 
    Otherwise set the model and the effort, then verify with a
    screenshot of the chip. `model_label` is the model picker's checked
@@ -204,7 +209,8 @@ Facts that decide how the steps below go. Read them before the browser.
    chip; it is a check and is not saved.
 6. Do step 4 and step 5 for every site first, then poll each site at
    most thirty times, and count its polls into `polls`. A poll starts
-   at least a minute after the one before on the same site: when one
+   at least a minute after the start of that site's last poll, and a
+   site's first poll at least a minute after its send: when one
    site is left, wait out the rest of that minute with ten-second waits
    before its next poll. A poll is one batch: first a scaled (0.4)
    screenshot, which brings the tab to the front, then up to five
@@ -294,8 +300,9 @@ Facts that decide how the steps below go. Read them before the browser.
      string; `model_label` and `effort_label` are `not set`;
      `read_version` is `not stated`; `score` is null; `polls` is 0;
      both times are the moment step 3 or step 4 found it, except for a
-     session step 4 stopped after the send, whose times and `polls` are
-     as step 4 says; and `<site>.md` holds the header only.
+     session step 4 stopped after the send, or found once the site was
+     done, whose times and `polls` are as step 4 says; and `<site>.md`
+     holds the header only.
 
    An answer cut short by a tool-use limit that still satisfies the
    report format is `ok` with a `note`; do not press Continue. `note`
