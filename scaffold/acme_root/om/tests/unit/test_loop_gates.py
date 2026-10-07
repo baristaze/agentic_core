@@ -24,8 +24,8 @@ from acme.om.steps.types.header import Park, ParkReason
 from acme.om.steps.types.step import StepType
 from acme.om.windows.impl.gate import CallGateBudgetImpl
 
-REVIEW = Park(reason=ParkReason.PERSON, unlock="review")
-"""A gate's own park: a call it wants a person to look at first."""
+NORM = Park(reason=ParkReason.PERSON, unlock="norm")
+"""A gate's own park: a call far above its session's norm, for a person."""
 
 
 class Parking(CallGateBudgetImpl):
@@ -82,7 +82,7 @@ class Parking(CallGateBudgetImpl):
 
 
 CASES = [
-    (GateParked(REVIEW, "far above the session's norm"), REVIEW),
+    (GateParked(NORM, "far above the session's norm"), NORM),
     (
         SpenderUnknown("the engine cannot tell who pays for this call"),
         Park(reason=ParkReason.PERSON, unlock=SPENDER_UNLOCK),
