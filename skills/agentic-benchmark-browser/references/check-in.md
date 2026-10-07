@@ -20,6 +20,12 @@ score: there is nothing to measure. When
 `benchmark/runs/browser-judge-agentic/<run_id>/` is already there, stop
 and say so: a checked-in run is never written over.
 
+Before anything is written, read the names of the repositories of the
+account the prompt's URL names, for step 3, with
+`gh repo list <the URL's owner> --limit 200 --json name -q '.[].name'`.
+When it fails, or `gh` is not signed in, write nothing, and the output
+says the run was not checked in and why.
+
 ## The folder
 
 1. With `python3`, make `benchmark/runs/browser-judge-agentic/<run_id>/`
@@ -31,7 +37,13 @@ and say so: a checked-in run is never written over.
      the whole value of the `- URL:` line in each answer's header;
    - every other address of a conversation, in a `note` or an answer,
      which is what matches
-     `https?://(?:chatgpt\.com/(?:c|share)/|claude\.ai/(?:chat|share)/|gemini\.google\.com/(?:app|share)/\w|grok\.com/(?:c|share)/)[^\s"')\]]*`.
+     `https?://(?:chatgpt\.com/(?:c|share)/|claude\.ai/(?:chat|share)/|gemini\.google\.com/(?:app|share)/\w|grok\.com/(?:c|share)/)[^\s"')\]]*`;
+   - each name on the person's list of names never published, when the
+     list exists: `~/.config/benchmark_browser/redact.txt`, kept
+     outside the repository, one name per line. Replace it in any case,
+     wherever it stands, an adjacent's name of step 3 included. This
+     runs before any copy is read back, and neither the file nor a name
+     from it is ever printed.
 3. Read every copy in full. Replace with `[redacted]`, with `python3`
    and by exact string, each of these where it stands, the words alone
    and not the sentence around them (`"[redacted], Connected"`):
@@ -43,15 +55,18 @@ and say so: a checked-in run is never written over.
    - a conversation title from a page's sidebar; a progress or tool
      line of the answer is not one;
    - the name of another repository of the person's, or of the account
-     the prompt's URL names, alone or as `<owner>/<name>`, in any case,
-     when the prompt does not name it and it is not a layer this
-     repository builds on. The one layer is the guideline, which
-     `AGENTS.md` links: its name stays. Read those names with
-     `gh repo list <the URL's owner> --limit 200 --json name -q '.[].name'`,
-     and redact each one an answer names, but this repository's and the
-     layers' it builds on. A system an answer compares
-     with, a framework or a product of another maker, is not such a
-     repository, and it stays.
+     the prompt's URL names, in any case, when the prompt does not name
+     it and it is not a layer this repository builds on. The one layer
+     is the guideline, which `AGENTS.md` links: its name stays. Redact
+     each name the `gh repo list` above read that an answer names, but
+     this repository's and the layers' it builds on, and only where it
+     names that repository: as `<owner>/<name>`, in a URL, or where the
+     sentence says it is a repository or a project. The same word in
+     its ordinary sense stays, and so does a folder or a file of the
+     repositories the prompt and the layers name. A system an answer
+     compares with, a framework or a product of another maker, is not
+     such a repository, and it stays, unless the person's list of
+     step 2 names it.
 
    The prompt stays as sent: two runs compare only when it is the same
    text. The repository's own URL, the one in the prompt, stays
