@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from acme.om.budgets.types.breach import Refusal
-    from acme.om.steps.types.header import ToolFailure
+    from acme.om.steps.types.header import Park, ToolFailure
 
 
 class PlatformException(Exception):
@@ -377,6 +377,19 @@ class SpenderUnknown(BudgetsException, NotAuthorized):
     code = "spender_unknown"
 
 
+class GateParked(BudgetsException):
+    """A gate that parks the call itself, on a reason and an unlock of its
+    own: a platform's gate, for what no breach of a budget says, such as a
+    call far above its session's norm. Nothing is held, nothing is spent,
+    and the loop parks on `park`."""
+
+    code = "gate_parked"
+
+    def __init__(self, park: Park, message: str) -> None:
+        super().__init__(message)
+        self.park = park
+
+
 class ModelsException(PlatformException): ...
 
 
@@ -393,6 +406,18 @@ class UnresolvedRole(ModelsException, ValidationFailed):
     session's eligibility admits."""
 
     code = "unresolved_model_role"
+
+
+class NoCredential(ModelsException, PreconditionFailed):
+    """A call that needs a key the tenant does not hold, or holds no longer:
+    nothing is spent, nothing falls back to the platform's key, and the
+    session parks on the provider until a key is saved (`unlock`)."""
+
+    code = "no_credential"
+
+    def __init__(self, provider: str, message: str) -> None:
+        super().__init__(message)
+        self.unlock = f"{provider}:key"
 
 
 class WindowsException(PlatformException): ...

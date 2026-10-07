@@ -74,7 +74,9 @@ compaction first, or one inside an open tool-use cycle with thinking on.
 fallbacks, filtered by the session's eligibility. With a tenant's own
 key, resolution and fallback stay among the providers the tenant holds
 keys for, and a session whose fill needs a key the tenant lacks parks
-with that reason: nothing starts silently on the platform's key. Under
+on the provider until one is saved: nothing starts silently on the
+platform's key. A key the provider does not take at all is offered to no
+call again, and no outage is reported for the provider. Under
 zero data retention, only fills eligible for it may be resolved or
 fallen back to, enforced like a tenant's own key.
 
@@ -86,7 +88,8 @@ and how it is filtered; what happens when no eligible fill exists.
 
 **Violation.** A fallback to an undeclared model, or to a provider the
 tenant holds no key for; a call that runs on the platform's key when the
-tenant's is missing; a session under zero data retention resolved to a
+tenant's is missing; a refused key read as the provider's outage; a
+session under zero data retention resolved to a
 fill that retains.
 
 **Severity.** medium

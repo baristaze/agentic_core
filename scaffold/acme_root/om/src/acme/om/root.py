@@ -47,9 +47,11 @@ from acme.om.idempotency import IdempotencyManagerInterface
 from acme.om.idempotency.impl.manager import IdempotencyManagerImpl, IdempotencyOptions
 from acme.om.media import MediaManagerInterface
 from acme.om.media.impl.manager import MediaManagerImpl, MediaOptions
+from acme.om.models.impl.credentials import CallCredentialsPlatformImpl
 from acme.om.models.impl.manager import ModelsManagerImpl, ModelsOptions
 from acme.om.models.impl.prices import ModelPricesFromPricingImpl
 from acme.om.models.impl.resolver import ModelResolverTableImpl, ResolverOptions
+from acme.om.models.layer import ModelsLayer
 from acme.om.models.manager import ModelsManagerInterface
 from acme.om.models.prices import ModelPricesInterface
 from acme.om.orchestrations import OrchestrationsManagerInterface
@@ -241,6 +243,7 @@ def build_managers(
     budgets_options: BudgetsOptions | None = None,
     models_options: ModelsOptions | None = None,
     model_prices: ModelPricesInterface | None = None,
+    models_layer: ModelsLayer | None = None,
     call_gate: CallGateInterface | None = None,
     prompt_hash: PromptHashInterface | None = None,
     artifact_seal: ArtifactSealInterface | None = None,
@@ -272,6 +275,9 @@ def build_managers(
     `model_prices` is what the resolver asks before it picks a model. None
     asks the one source of prices, the budgets' list table, so a model with
     no row of its own resolves nowhere.
+
+    `models_layer` is a layer's own models: the client each model call runs
+    on. None keeps the engine's: every call on the platform's key.
 
     `call_gate` is the budget gate every model call passes, the loop's and a
     compaction's, and `prompt_hash` the key service's hash a request's
@@ -427,6 +433,12 @@ def build_managers(
     providers = (
         absent_model_providers() if integrations is None else integrations.get_model_providers()
     )
+    # The key each call goes out on: the platform's, unless a layer says.
+    credentials = (
+        CallCredentialsPlatformImpl(providers, (loop_options or LoopOptions()).credential)
+        if models_layer is None
+        else models_layer.credentials(providers)
+    )
     # The one gate every model call passes, priced from the one source.
     calls = call_gate or CallGateBudgetImpl(gate, pricing, agent_sessions, budgets)
     windows = WindowsManagerImpl(
@@ -435,7 +447,7 @@ def build_managers(
         tenancy,
         models,
         attribution,
-        providers,
+        credentials,
         infra.get_buckets(),
         calls,
         prompt_hash or PromptHashPrivacyImpl(privacy),
@@ -529,7 +541,7 @@ def build_managers(
             windows,
             tools,
             calls,
-            providers,
+            credentials,
             infra.get_outages(),
             stream_sink or StreamSinkNullImpl(),
             catalog,

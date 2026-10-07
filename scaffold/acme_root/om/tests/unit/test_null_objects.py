@@ -90,7 +90,15 @@ LOUD: list[tuple[object, object, Callable[[], Awaitable[Any]]]] = [
     (
         CallGateInterface,
         CallGateNullImpl(),
-        lambda: CallGateNullImpl().authorize(CTX, uuid4(), PAYER, "main", None, CALL),  # type: ignore[arg-type]
+        lambda: CallGateNullImpl().authorize(
+            CTX,
+            uuid4(),
+            PAYER,
+            "main",
+            None,  # type: ignore[arg-type]
+            CALL,
+            credential="platform",
+        ),
     ),
     (
         PromptHashInterface,

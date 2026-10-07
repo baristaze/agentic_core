@@ -7,7 +7,11 @@ Isolation is chosen up front and never weakened. A provider meets a spec
 whole or refuses it with `IsolationRefused`, before it creates anything, and
 never hands back a weaker place in its stead. A released workspace keeps its
 files and loses its instance: the next prepare under the same id finds the
-files again. A purged one keeps nothing."""
+files again. A purged one keeps nothing.
+
+What a workspace is rebuilt from may be gone for good, such as the branch a
+checkout tracks. A layer that prepares one then raises `WorkspaceLost`, and
+the loop parks, loudly, for a person."""
 
 from abc import ABC, abstractmethod
 from collections.abc import Collection
@@ -18,7 +22,7 @@ from uuid import UUID
 from pydantic import Field, model_validator
 
 from acme.infra.base import InfraModel
-from acme.infra.exceptions import InfraValidationFailed
+from acme.infra.exceptions import InfraException, InfraValidationFailed
 
 __all__ = [
     "EgressMode",
@@ -28,6 +32,7 @@ __all__ = [
     "IsolationSpec",
     "ResourceLimits",
     "Workspace",
+    "WorkspaceLost",
     "WorkspaceProviderInterface",
     "refusal",
 ]
@@ -95,9 +100,26 @@ class Workspace(InfraModel):
 
 class IsolationRefused(InfraValidationFailed):
     """A provider cannot meet a spec. Refused before anything is created,
-    never met with something weaker."""
+    never met with something weaker. A refusal that `clears` waits for a
+    workspace that may come, and the loop that asked parks on the resource
+    and asks again. Any other, such as a spec the provider does not
+    support, never clears, and the loop that asked ends `errored`."""
 
     code = "isolation_refused"
+
+    def __init__(self, message: str | None = None, *, clears: bool = False) -> None:
+        super().__init__(message)
+        self.clears = clears
+
+
+class WorkspaceLost(InfraException):
+    """What a workspace is rebuilt from is gone, or cannot be brought in, and
+    nothing says how, such as a branch deleted under it or one that moved
+    on both sides: never rebuilt from something else in its stead, and the
+    loop that asked parks, loudly, for a person."""
+
+    http_status = 409
+    code = "workspace_lost"
 
 
 def refusal(
@@ -124,7 +146,8 @@ class WorkspaceProviderInterface(ABC):
         """The workspace under `workspace_id`, prepared to `spec`: made, or
         found again with its files after a release. `IsolationRefused`, with
         nothing created, when this provider cannot meet every part of the
-        spec or cannot reach what it would prepare it on."""
+        spec or cannot reach what it would prepare it on; it `clears` only
+        when a workspace may come for the spec later."""
         ...
 
     @abstractmethod

@@ -21,6 +21,7 @@ from acme.integrations.model_providers.anthropic import (
     ModelProviderAnthropicImpl,
     classify,
     request_body,
+    unauthenticated,
 )
 from acme.integrations.model_providers.calls import (
     FileData,
@@ -448,6 +449,21 @@ def test_each_error_is_read_into_its_kind(case: dict[str, Any]) -> None:
     assert message
 
 
+@pytest.mark.parametrize(
+    "case",
+    [c for c in ERRORS if c["kind"] == ErrorKind.CREDENTIAL.value],
+    ids=lambda c: str(c["status"]),
+)
+def test_only_an_authentication_error_says_the_key_itself_was_not_taken(
+    case: dict[str, Any],
+) -> None:
+    """A 401's own error refuses the key; a 403's, a permission or a region
+    the key lacks, is the call's alone."""
+    body = case["body"]
+    raw = body if isinstance(body, str) else json.dumps(body)
+    assert unauthenticated(raw.encode()) is (case["status"] == 401)
+
+
 def test_the_cases_cover_every_kind() -> None:
     assert {ErrorKind(c["kind"]) for c in ERRORS} == set(ErrorKind)
 
@@ -496,6 +512,21 @@ async def test_a_call_runs_on_its_own_credential_when_it_carries_one() -> None:
     with pytest.raises(ModelCallFailed) as failed:
         await reply_of(adapter(handler, key=None).stream(CALL))
     assert failed.value.kind is ErrorKind.CREDENTIAL and len(seen) == 1
+
+
+@pytest.mark.parametrize(
+    "case",
+    [c for c in ERRORS if c["kind"] == ErrorKind.CREDENTIAL.value],
+    ids=lambda c: str(c["status"]),
+)
+async def test_only_a_401_refuses_the_key_a_403_is_the_calls_alone(case: dict[str, Any]) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(case["status"], json=case["body"])
+
+    with pytest.raises(ModelCallFailed) as failed:
+        await reply_of(adapter(handler).stream(CALL))
+    assert failed.value.kind is ErrorKind.CREDENTIAL
+    assert failed.value.key_refused is (case["status"] == 401)
 
 
 async def test_a_refusal_carries_its_kind_its_status_and_the_providers_wait() -> None:

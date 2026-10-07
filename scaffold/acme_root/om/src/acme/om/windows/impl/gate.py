@@ -45,6 +45,8 @@ class CallGateNullImpl(CallGateInterface):
         role: ModelRole,
         fill: Fill,
         call: ModelCall,
+        *,
+        credential: str,
     ) -> UUID:
         raise Unavailable("no budget gate is wired, so no compaction is called")
 
@@ -123,6 +125,8 @@ class CallGateBudgetImpl(CallGateInterface):
         role: ModelRole,
         fill: Fill,
         call: ModelCall,
+        *,
+        credential: str,
     ) -> UUID:
         session = await self._sessions.get_session(ctx, session_id)
         price = self._pricing.price_of(fill.provider.value, fill.model)

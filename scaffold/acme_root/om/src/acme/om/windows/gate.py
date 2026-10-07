@@ -6,7 +6,8 @@ its rate until its deadline, settled once it ends. A model call the
 provider billed leaves a usage record at its settlement, in every storage
 mode, at its usage or, marked, at its whole hold (ADR 1014). This is the
 narrow face of the gate the windows and the loop read; a root wires the
-budgets' gate behind it."""
+budgets' gate behind it. A gate a layer supplies may park a call or a job
+on a reason of its own (`GateParked`), and the loop parks where it says."""
 
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -30,10 +31,14 @@ class CallGateInterface(ABC):
         role: ModelRole,
         fill: Fill,
         call: ModelCall,
+        *,
+        credential: str,
     ) -> UUID:
         """The id of a hold of the call's worst case on the budgets of
-        `spender`, who pays for it. A refusal raises with nothing held and
-        nothing spent, and the call is never made."""
+        `spender`, who pays for it. `credential` names the key the call goes
+        out on (`models.credentials`): the platform's, or a tenant's. A
+        refusal raises with nothing held and nothing spent, and the call is
+        never made."""
         ...
 
     @abstractmethod

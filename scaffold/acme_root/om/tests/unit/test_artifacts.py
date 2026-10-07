@@ -20,6 +20,7 @@ from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
 from acme.om.base import new_id
 from acme.om.context import Role, TenantContext
 from acme.om.exceptions import KeyRevoked, NotFound, Unavailable
+from acme.om.models.impl.credentials import CallCredentialsPlatformImpl
 from acme.om.privacy.impl.artifacts import ArtifactSealKeysImpl
 from acme.om.privacy.impl.keys import SessionKeysImpl
 from acme.om.privacy.types.session_privacy import StorageMode, StoragePolicy
@@ -199,7 +200,7 @@ async def test_a_deleted_tenants_artifacts_go_a_batch_a_pass(roots: Roots) -> No
         members,
         managers.models,
         managers.attribution,
-        absent_model_providers(),
+        CallCredentialsPlatformImpl(absent_model_providers()),
         roots.infra.get_buckets(),
         CallGateNullImpl(),
         PromptHashNullImpl(),

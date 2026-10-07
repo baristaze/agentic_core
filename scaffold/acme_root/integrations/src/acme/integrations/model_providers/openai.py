@@ -245,6 +245,14 @@ SPEND_WORDS = (
 )
 
 
+def unauthenticated(body: str | bytes | dict[str, Any]) -> bool:
+    """Whether the error is OpenAI's own word for a key it does not take,
+    `invalid_api_key`, as against a permission or a region the key lacks."""
+    decoded = body if isinstance(body, dict) else json_object(body)
+    error = decoded.get("error") if isinstance(decoded.get("error"), dict) else decoded
+    return field(error, "code") == "invalid_api_key"
+
+
 def classify(status: int | None, body: str | bytes | dict[str, Any]) -> tuple[ErrorKind, str]:
     """A provider error's kind, from its status and its message: the
     provider answers a spent quota with the status of a rate limit, so the
@@ -351,8 +359,14 @@ class OpenAIReply:
                 self._final = response
         elif kind in ("response.failed", "error"):
             error = field(payload, "response", "error") if kind == "response.failed" else payload
-            error_kind, message = classify(None, error if isinstance(error, dict) else {})
-            raise ModelCallFailed(error_kind, message, partial=self.partial())
+            found = error if isinstance(error, dict) else {}
+            error_kind, message = classify(None, found)
+            raise ModelCallFailed(
+                error_kind,
+                message,
+                partial=self.partial(),
+                authentication=unauthenticated(found),
+            )
         return []
 
     def _items_out(
@@ -534,6 +548,7 @@ class ModelProviderOpenAIImpl(ModelProviderInterface):
                         message,
                         status=response.status_code,
                         retry_after=retry_after(response.headers),
+                        authentication=unauthenticated(raw),
                     )
                 async for event, data in sse_events(response.aiter_lines()):
                     for part in folded.feed(event, data):
