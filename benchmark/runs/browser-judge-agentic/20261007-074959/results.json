@@ -1,0 +1,70 @@
+{
+  "run_id": "20261007-074959",
+  "started_at": "2026-10-07T07:49:59Z",
+  "finished_at": "2026-10-07T08:11:04Z",
+  "repository_head": "3929a0ca5bf222772b04c465ec4aa78635bcefe7",
+  "prompt": "You are a highly senior software engineer and software architect specializing in agentic systems and AI application infrastructure.\n\nEvaluate the `agentic_core` repository at https://github.com/baristaze/agentic_core strictly on its software design and architecture merits. Read the whole repository at its default branch: its specification, `agentic_core_spec.md`, and everything else it holds.\n\nYour goal is not merely to review `agentic_core` in isolation. Your goal is to determine:\n\n1. What architectural problem it is actually solving.\n2. How good its design is for that problem.\n3. Which existing systems are its closest architectural adjacents.\n4. Where `agentic_core` is concretely stronger, weaker, broader, narrower, or simply different.\n5. How all compared systems score under one consistent architectural rubric.\n\nEvaluate the material itself. Do not be biased by who wrote it, an agent or a human, by how fast it was written, or by how new it is.\n\n## Evaluation process\n\nFollow this order deliberately. Do not skip ahead.\n\n### 1. Understand and classify `agentic_core`\n\nFirst, read the repository in full.\n\nDetermine:\n\n- What problem `agentic_core` is trying to solve.\n- Its intended abstraction level.\n- Its architectural role inside an application.\n- Its core execution model.\n- Its primary abstractions.\n- Its intended extension points.\n- What it owns.\n- What it deliberately delegates elsewhere.\n- What it is.\n- Equally importantly, what it is not.\n\nDo not force it into the category of \"agent framework\" if a more precise category describes it better. Name the category you would file it under, in a few words, and say why that name fits better than the obvious ones.\n\nThen identify the closest existing architectural adjacents.\n\nPotential examples include:\n\n- Pydantic AI\n- Claude Agent SDK\n- LangGraph / LangChain\n- OpenAI Agents SDK\n- Temporal or another durable-execution engine, where the overlap is durability rather than the agent loop\n- other systems that are more directly comparable to what `agentic_core` actually provides\n\nThese examples are suggestions, not mandatory choices.\n\nSelect the **2 to 3 most relevant adjacents based on architectural overlap**, not popularity.\n\nFor each selected adjacent, briefly explain why it is a relevant comparison and what portion of `agentic_core` it overlaps with.\n\n### 2. Define and freeze the scoring rubric\n\nBefore scoring anything, define a common architectural evaluation rubric.\n\nThe rubric should fit the category you identified in step 1.\n\nPotential areas include:\n\n- conceptual model and abstraction quality\n- separation of concerns\n- composability and extensibility\n- agent/model/provider independence\n- state and context management\n- orchestration and control-flow model\n- tool/action abstraction\n- streaming and event model\n- observability and debuggability\n- error handling and failure semantics\n- determinism, replayability, and testability\n- concurrency and async model\n- type safety and contract clarity\n- security and isolation boundaries\n- cost and resource accounting\n- framework interoperability and escape hatches\n- operational complexity\n- developer ergonomics\n- architectural coherence and simplicity\n\nModify, combine, remove, or add criteria where appropriate after understanding the actual design.\n\nAvoid excessive fragmentation. Prefer approximately **8 to 12 meaningful architectural criteria** rather than a long checklist of overlapping concerns.\n\nFor each criterion:\n\n1. Give it a concise name.\n2. Define exactly what it measures.\n3. Describe what a `10/10` architecture would look like.\n4. Assign a weight.\n5. Ensure all weights sum to exactly **100**.\n\nOnce defined, **freeze the rubric**.\n\nDo not change criteria, definitions, weights, or scoring interpretation after you start scoring `agentic_core` or its adjacents.\n\n### 3. Evaluate `agentic_core`\n\nScore `agentic_core` against every frozen criterion on a **0 to 10 scale**.\n\nUse the scale consistently:\n\n- `0-2`: fundamentally absent, broken, or architecturally unsuitable\n- `3-4`: significant weaknesses or major missing pieces\n- `5-6`: reasonable but materially incomplete or compromised\n- `7-8`: strong architecture with identifiable limitations\n- `9`: excellent, unusually strong design\n- `10`: exceptional and difficult to improve materially for the intended scope\n\nDo not treat `10` as merely \"supports the feature.\"\n\nFor every score:\n\n- Ground the assessment in concrete design decisions from the repository, and name where each comes from: the file, and the section when it is the specification.\n- Distinguish specified architecture from aspirational language.\n- Identify important ambiguities and underspecified behavior.\n- Do not award points for functionality that is merely implied.\n- Do not penalize intentional narrowness when it improves coherence.\n- Do not penalize the project simply because it is new.\n\nCalculate the weighted result: the sum of each score times its weight, divided by 10, rounded to a whole number.\n\n### 4. Evaluate the selected adjacents\n\nApply the **exact same frozen rubric** to every selected adjacent.\n\nUse their current architecture and primary documentation or source repositories where possible. Name the version or the date of what you read.\n\nEvaluate architectural properties, not ecosystem momentum.\n\nDo **not** use any of the following as scoring criteria:\n\n- age of the project\n- GitHub stars\n- follower count\n- community size\n- market share\n- production adoption\n- company backing\n- version number\n- number of integrations, where that number comes from ecosystem size rather than from the design\n\nWhere an adjacent's architecture is not documented well enough to score a criterion, say so, score only what is documented, and mark that score as low confidence. Never fill a gap with what the system probably does.\n\nCompare like with like. Where an adjacent covers less than `agentic_core` (or more), score each criterion on what each system specifies for it, and say in a line that the scopes differ. Do not reward or penalize scope that the criterion does not measure.\n\nCalculate each adjacent's weighted result the same way.\n\n### 5. Compare\n\nPut every system side by side under the frozen rubric.\n\nThen say, concretely, where `agentic_core` is:\n\n- stronger: a design decision an adjacent lacks, and what it buys;\n- weaker: a decision an adjacent makes better, and what it costs `agentic_core`;\n- broader or narrower: what one owns that the other leaves to the application;\n- simply different: a trade-off where neither side is better, and when each choice wins.\n\nEach point names the design decision behind it, not a feature list.\n\n### 6. Recommend\n\nName the changes to the repository that would raise its score most, most valuable first. Each names the criterion it moves and roughly by how much. Prefer a change that removes or clarifies over one that adds.\n\n## Report format\n\nAnswer in this shape, so evaluations compare:\n\n- First line: `Score: NN/100`, the weighted score of `agentic_core`, and nothing else on that line.\n- `## Classification`: what it is, its abstraction level, what it owns, what it delegates, and what it is not, one line each; then the category you would file it under, in a few words.\n- `## Adjacents`: each selected system, why it was chosen, and the part of `agentic_core` it overlaps, one line each.\n- `## Rubric`: a table of each criterion, what it measures, what a `10/10` looks like, and its weight; the weights sum to 100.\n- `## Scores`: a table with one row per criterion (its weight, then each system's score) and a last row of each system's weighted result out of 100.\n- `## agentic_core, criterion by criterion`: for each criterion, its score and its grounding in the repository, with the ambiguities that held it back, a short paragraph each.\n- `## Where it differs`: stronger, weaker, broader or narrower, and different, one line each.\n- `## What I would change`: concrete edits to the repository, most valuable first, one line each.\n- `## Method`: what you read (the repository's files, with the commit or the date you read them at, and each adjacent's documentation or source with its version or date), how deep, and which scores rest on thin evidence, one line each.",
+  "contract": null,
+  "sizes": {
+    "model": "m",
+    "effort": "m"
+  },
+  "note": "sizes m, m resolved to: chatgpt.com Latest, High; claude.ai Opus 5.5, High; gemini.google.com 3.1 Pro, none; grok.com Expert, none",
+  "sessions": [
+    {
+      "site": "chatgpt.com",
+      "url": "[redacted]",
+      "model_label": "Latest",
+      "effort_label": "High",
+      "started_at": "2026-10-07T07:51:15Z",
+      "finished_at": "2026-10-07T08:08:50Z",
+      "score": 89,
+      "read_version": "main as served on October 7, 2026",
+      "polls": 7,
+      "response_path": "chatgpt.com.md",
+      "status": "ok"
+    },
+    {
+      "site": "claude.ai",
+      "url": "[redacted]",
+      "model_label": "not set",
+      "effort_label": "not set",
+      "started_at": "2026-10-07T07:55:32Z",
+      "finished_at": "2026-10-07T07:55:32Z",
+      "score": null,
+      "read_version": "not stated",
+      "polls": 0,
+      "response_path": "claude.ai.md",
+      "status": "not-run",
+      "note": "the prompt went as one pasted card; right after the send the header showed a device as \"Asleep or app closed\", not Connected, and the session went on; at its first poll the conversation page said \"Computer actions available\", so the session was stopped and nothing it answered is scored; please turn off computer actions for claude.ai conversations before the next run"
+    },
+    {
+      "site": "gemini.google.com",
+      "url": "[redacted]",
+      "model_label": "3.1 Pro",
+      "effort_label": "none",
+      "started_at": "2026-10-07T07:52:53Z",
+      "finished_at": "2026-10-07T07:59:43Z",
+      "score": null,
+      "read_version": "not stated",
+      "polls": 2,
+      "response_path": "gemini.google.com.md",
+      "status": "refused",
+      "note": "it declined, saying it has no live internet access to read the GitHub URL, and asked for the files to be pasted into the chat"
+    },
+    {
+      "site": "grok.com",
+      "url": "[redacted]",
+      "model_label": "Expert",
+      "effort_label": "none",
+      "started_at": "2026-10-07T07:53:19Z",
+      "finished_at": "2026-10-07T07:57:39Z",
+      "score": 86,
+      "read_version": "3929a0ca5bf222772b04c465ec4aa78635bcefe7 (2026-10-06, release 0.7.0)",
+      "polls": 2,
+      "response_path": "grok.com.md",
+      "status": "ok",
+      "note": "the answer was already done at the first poll, and the finish time is that poll's time, the first of the two polls that matched"
+    }
+  ]
+}
