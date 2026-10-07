@@ -230,6 +230,13 @@ def request_body(call: ModelCall) -> tuple[dict[str, Any], tuple[Dropped, ...]]:
     return body, tuple(dropped)
 
 
+def unauthenticated(body: str | bytes | dict[str, Any]) -> bool:
+    """Whether the error is Anthropic's own authentication error: the key
+    itself was not taken, as against a permission it lacks."""
+    decoded = body if isinstance(body, dict) else json_object(body)
+    return get(decoded, "error", "type") == "authentication_error"
+
+
 def classify(status: int | None, body: str | bytes | dict[str, Any]) -> tuple[ErrorKind, str]:
     """A provider error's kind, from its status and its message: the
     provider answers a spent balance as an invalid request, and an overlong
@@ -338,7 +345,12 @@ class AnthropicReply:
             self._finished = True
         elif kind == "error":
             error_kind, message = classify(None, payload)
-            raise ModelCallFailed(error_kind, message, partial=self.partial())
+            raise ModelCallFailed(
+                error_kind,
+                message,
+                partial=self.partial(),
+                authentication=unauthenticated(payload),
+            )
         return []
 
     def _start(self, payload: dict[str, Any]) -> list[StreamPart]:
@@ -540,6 +552,7 @@ class ModelProviderAnthropicImpl(ModelProviderInterface):
                         message,
                         status=response.status_code,
                         retry_after=retry_after(response.headers),
+                        authentication=unauthenticated(raw),
                     )
                 async for event, data in sse_events(response.aiter_lines()):
                     for part in folded.feed(event, data):
