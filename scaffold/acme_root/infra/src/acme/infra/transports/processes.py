@@ -40,19 +40,26 @@ PROC = Path("/proc")
 
 
 async def spawn(
-    argv: Sequence[str], cwd: Path, env: Mapping[str, str]
+    argv: Sequence[str],
+    cwd: Path,
+    env: Mapping[str, str],
+    *,
+    umask: int = -1,
+    stdin: int = asyncio.subprocess.DEVNULL,
 ) -> asyncio.subprocess.Process:
     """Starts `argv` as the leader of a session of its own, so its group is
-    its tree, with nothing on its standard input and with only `env` for an
-    environment."""
+    its tree, with only `env` for an environment, with nothing on its
+    standard input unless `stdin` names a descriptor, and with `umask` where
+    one is given."""
     return await asyncio.create_subprocess_exec(
         *argv,
         cwd=cwd,
         env=dict(env),
-        stdin=asyncio.subprocess.DEVNULL,
+        stdin=stdin,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         start_new_session=True,
+        umask=umask,
     )
 
 

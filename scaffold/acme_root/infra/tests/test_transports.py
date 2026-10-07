@@ -8,13 +8,20 @@ process's environment holds nothing of the engine's. A command's whole tree
 ends at its deadline. An output past its bound keeps its head and its tail,
 and a viewer that fails never stops the command. A command from a stale run
 is refused. How a command ended is recorded under its key, its output sealed
-by the seal it came with, and the records go when they are purged."""
+by the seal it came with, and the records go when they are purged.
+
+The local transport given an account holds the same over the account mode,
+where the host can switch to the account TEST_WORKSPACE_ACCOUNT names, and
+is skipped, with the reason, where it cannot."""
 
 import asyncio
 import base64
+import os
+import shutil
 import subprocess
 import sys
-from collections.abc import AsyncIterator
+import tempfile
+from collections.abc import AsyncIterator, Iterator
 from datetime import timedelta
 from pathlib import Path
 from uuid import UUID
@@ -43,10 +50,12 @@ from acme.infra.workspaces import (
     EgressMode,
     EgressPolicy,
     IsolationMode,
+    IsolationRefused,
     IsolationSpec,
     Workspace,
     WorkspaceProviderInterface,
 )
+from acme.infra.workspaces.account import WorkspaceAccountImpl, switch_to
 from acme.infra.workspaces.container import WorkspaceContainerImpl
 from acme.infra.workspaces.host import WorkspaceHostImpl
 
@@ -382,6 +391,92 @@ class TestTransportLocal(TransportContract):
         with pytest.raises(CapabilityMissing):
             await transport.run(workspace, sent, seal=SEAL)
         assert not (Path(workspace.location) / "ran").exists()
+
+
+ACCOUNT = os.environ.get("TEST_WORKSPACE_ACCOUNT", "")
+
+
+def cannot_switch() -> str | None:
+    """Why this host cannot run a command as the account under test; None
+    when it can."""
+    if not ACCOUNT:
+        return "TEST_WORKSPACE_ACCOUNT names no account this process may switch to"
+    try:
+        switch_to(ACCOUNT)
+    except IsolationRefused as refused:
+        return refused.message
+    return None
+
+
+@pytest.mark.skipif(cannot_switch() is not None, reason=f"{cannot_switch()}")
+class TestTransportAccount(TransportContract):
+    """Every command runs as the account, and a path follows no link."""
+
+    @pytest.fixture
+    def root(self) -> Iterator[Path]:
+        """A root the account passes through, unlike the test's own
+        temporary directory, which only this process enters."""
+        root = Path(tempfile.mkdtemp(prefix="workspaces-"))
+        root.chmod(0o711)
+        yield root
+        shutil.rmtree(root, ignore_errors=True)
+
+    @pytest.fixture
+    async def workspace(self, root: Path) -> AsyncIterator[Workspace]:
+        provider = WorkspaceAccountImpl(root, ACCOUNT)
+        spec = IsolationSpec(mode=IsolationMode.ACCOUNT, egress=EgressPolicy(mode=EgressMode.OPEN))
+        workspace = await provider.prepare(new_id(), new_id(), spec)
+        yield workspace
+        await provider.release(workspace)
+        await provider.purge(workspace.org_id, workspace.id)
+
+    @pytest.fixture
+    def transport(
+        self, records: Path, workspace: Workspace, broker: BrokerTwinImpl
+    ) -> TransportInterface:
+        python = Path(sys.executable).parent
+        return TransportLocalImpl(
+            records,
+            secrets_for(workspace.org_id),
+            broker,
+            search_path=f"{python}:{DEFAULT_PATH}",
+            account=ACCOUNT,
+        )
+
+    async def test_a_link_the_account_plants_is_never_followed(
+        self, transport: TransportInterface, workspace: Workspace, tmp_path: Path
+    ) -> None:
+        """This process reads and writes with more than the account may, so
+        a link there, wherever it points, is refused."""
+        outside = tmp_path / "outside.txt"
+        outside.write_text("the engine's")
+        planted = f"ln -s {outside} link; mkdir real; ln -s real into"
+        result = await transport.run(workspace, command("sh", "-c", planted), seal=SEAL)
+        assert result.exit_code == 0, result.stderr
+        with pytest.raises(PathOutsideWorkspace):
+            await transport.read_file(workspace, "link", 100)
+        with pytest.raises(PathOutsideWorkspace):
+            await transport.write_file(workspace, "link", b"the model's", epoch=1)
+        with pytest.raises(PathOutsideWorkspace):
+            await transport.write_file(workspace, "into/x", b"the model's", epoch=1)
+        with pytest.raises(PathOutsideWorkspace):
+            await transport.list_files(workspace, "into", 10)
+        assert outside.read_text() == "the engine's"
+
+    async def test_a_file_of_this_process_with_a_second_link_is_never_read_or_written(
+        self, transport: TransportInterface, workspace: Workspace, root: Path
+    ) -> None:
+        """A hard link in the workspace to a file of this process outside it,
+        as the account makes on a host that lets it link a file it does not
+        own, is refused, and the file outside stays as it was."""
+        outside = root / "outside.txt"
+        outside.write_text("the engine's")
+        os.link(outside, Path(workspace.location) / "hard")
+        with pytest.raises(PathOutsideWorkspace):
+            await transport.read_file(workspace, "hard", 100)
+        with pytest.raises(PathOutsideWorkspace):
+            await transport.write_file(workspace, "hard", b"the model's", epoch=1)
+        assert outside.read_text() == "the engine's"
 
 
 async def test_the_null_transport_refuses_every_call() -> None:

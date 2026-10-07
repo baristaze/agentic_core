@@ -38,6 +38,7 @@ from acme.infra.transports.container import TransportContainerImpl
 from acme.infra.transports.local import TransportLocalImpl
 from acme.infra.transports.twin import TransportNullImpl
 from acme.infra.workspaces import WorkspaceProviderInterface
+from acme.infra.workspaces.account import WorkspaceAccountImpl
 from acme.infra.workspaces.container import WorkspaceContainerImpl
 from acme.infra.workspaces.host import WorkspaceHostImpl
 from acme.infra.workspaces.twin import WorkspaceNullImpl
@@ -56,8 +57,10 @@ UNSAFE_IN_CLOUD: tuple[tuple[str, str, str], ...] = (
     ("keys_backend", "memory", "ACME_KEYS_BACKEND"),
     # A directory on the host confines files only: a tenant's command would
     # reach other tenants' workspaces, the records, and this process's own
-    # environment. A deployed process runs tools in containers, or none.
+    # environment. An account serves one workspace at a time, on a host that
+    # grants the switch. A deployed process runs tools in containers, or none.
     ("workspace_backend", "host", "ACME_WORKSPACE_BACKEND"),
+    ("workspace_backend", "account", "ACME_WORKSPACE_BACKEND"),
 )
 
 
@@ -191,6 +194,12 @@ class InfraConfiguredImpl(InfraInterface):
             return (
                 WorkspaceHostImpl(settings.workspaces_root),
                 TransportLocalImpl(records, self._secrets, broker),
+            )
+        if settings.workspace_backend == "account":
+            account = settings.workspace_account
+            return (
+                WorkspaceAccountImpl(settings.workspaces_root, account),
+                TransportLocalImpl(records, self._secrets, broker, account=account),
             )
         if settings.workspace_backend == "container":
             timeout = timedelta(seconds=settings.docker_timeout_seconds)
