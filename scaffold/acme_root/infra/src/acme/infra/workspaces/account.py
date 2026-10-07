@@ -1,4 +1,5 @@
-"""A directory on this host whose commands run as an account of their own.
+"""A directory on this host whose commands run as an account of their own
+(ADR 1021).
 
 A directory confines where files go and nothing else. An account confines
 what a command reaches of the host: each command runs as a named account,

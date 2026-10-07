@@ -862,7 +862,8 @@ capabilities in the guideline's sense ([Infrastructure][g-infra]):
 
 - A **workspace provider** prepares, releases, and purges the place an
   agent works, to an **isolation spec**: a mode (a VM, a container, a
-  directory on a host, or a twin for tests), an egress policy, and
+  directory on a host, the same directory with its commands run as an
+  account of the host, or a twin for tests), an egress policy, and
   resource limits.
 - An **execution transport** runs a command there, streamed, and reads,
   writes, and lists files there, wherever "there" is: this process, a
@@ -874,6 +875,11 @@ capabilities in the guideline's sense ([Infrastructure][g-infra]):
 Isolation is chosen up front and never weakened. A provider that cannot
 meet a session's isolation spec refuses before the first model call; it
 never falls back to something weaker.
+
+A directory confines files alone. Its commands can run as an account of
+the host, apart from the engine's, one workspace at a time: they reach
+nothing of the engine's, and nothing they start outlives the workspace's
+release.
 
 An environment may vanish between loops: an instance is released, and a
 session is not. The next loop prepares another, and an

@@ -535,7 +535,8 @@ async def test_a_command_runs_as_the_account_with_no_group_no_capability_and_no_
     )
     try:
         script = (
-            "id -u; id -g; id -G; ulimit -u; echo $HOME; echo $TMPDIR; "
+            "id -u; id -g; id -G; sed -n 's/^Max processes *\\([0-9]*\\).*/\\1/p' /proc/self/limits; "
+            "echo $HOME; echo $TMPDIR; "
             "grep -E '^(CapInh|CapPrm|CapEff|CapAmb|NoNewPrivs):' /proc/self/status; "
             "env | cut -d= -f1 | sort | tr '\\n' ' '"
         )

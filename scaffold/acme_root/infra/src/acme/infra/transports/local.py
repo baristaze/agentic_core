@@ -33,7 +33,7 @@ DEFAULT_PATH = "/usr/local/bin:/usr/bin:/bin"
 """The search path of a command's environment, which holds nothing else of
 this process's."""
 
-ENTER = 'set -a; . /proc/self/fd/0; set +a; exec </dev/null; cd -- "$0" && exec "$@"'
+ENTER = 'set -a; eval "$(cat)"; set +a; exec </dev/null; cd -- "$0" && exec "$@"'
 """What runs first as the account: the command's environment, read from its
 standard input, so no program that runs with this process's privileges sees
 it and no listing of the host's processes shows it; then the command's
@@ -299,6 +299,10 @@ def _walked(root: Path, parts: Sequence[str], *, make: bool = False) -> int:
         for part in parts:
             try:
                 below = os.open(part, DIRECTORY, dir_fd=folder)
+            except NotADirectoryError:
+                if stat.S_ISLNK(os.stat(part, dir_fd=folder, follow_symlinks=False).st_mode):
+                    raise OSError(errno.ELOOP, "a link", part) from None
+                raise
             except FileNotFoundError:
                 if not make:
                     raise
