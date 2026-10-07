@@ -105,16 +105,15 @@ kinds and sub-agents, budgets and bounds, parking, privacy, and testing.
 
 **Out of scope:** general software design, which is the guideline's;
 running a fleet (runners, hosts, placement, billing, integrations),
-which is [`distro_gentic`][d]'s; and a product's
-prompts, tools, and agent kinds, which are the product's, such as
-`rodeo`.
+which is a platform's ([Next](#next-the-platform)); and a product's
+prompts, tools, and agent kinds, which are the product's.
 
 ```mermaid
 flowchart BT
     G["swe_guidelines<br/>general software design"]
     C["agentic_core<br/>the engine"]
-    D["distro_gentic<br/>the platform"]
-    R["rodeo<br/>a product on the platform"]
+    D["a platform<br/>a fleet that embeds the engine"]
+    R["a product<br/>on the platform"]
     C -->|adopts| G
     D -->|embeds| C
     R -->|is an instance of| D
@@ -671,8 +670,8 @@ decoration][g-decoration]) guards a call that spends its timeout. A
 provider that fails fast needs another guard: an **outage signal**, an
 interface keyed by provider and credential, which parks a session at
 once while the provider is known to be failing. One process needs none,
-and its null object never signals; a fleet shares one ([`distro_gentic`
-Money][d-money]).
+and its null object never signals; a fleet shares one, which its
+platform supplies.
 
 ## Tools
 
@@ -1268,8 +1267,7 @@ platform's key or the tenant's own pays. A pricing interface supplies
 prices from one source, and every model a resolver can pick has a price
 of its own. A model priced by a default row turns every figure built on
 it into a guess, the budgets that bind on it included. Abstract units
-and charges are the platform's ([`distro_gentic`
-Money][d-money]).
+and charges are a platform's.
 
 ### The Tenant's Own Key
 
@@ -1561,9 +1559,8 @@ success. The key service has no quiet null; a test uses its memory impl.
 - **Determinism:** a fake clock and a deterministic id source make
   recovery, deadlines, and parking testable.
 
-Judging an agent kind's behavior is the platform's job ([`distro_gentic`
-Evidence][d-evidence]); the engine makes it
-reproducible.
+Judging an agent kind's behavior is a platform's job; the engine makes
+it reproducible.
 
 ## The Object Model
 
@@ -1711,5 +1708,3 @@ evidence, trust across a customer's wall, and money.
 [g-adopting]: https://github.com/baristaze/swe_guidelines/blob/v0.52.2/docs/adopting.md#upgrade-a-copy-of-the-scaffold
 [g-adr-0039]: https://github.com/baristaze/swe_guidelines/blob/v0.52.2/scaffold/acme_root/docs/adr/0039-long-running-work-is-a-record-a-guard-parks-and-a-bound-fails.md
 [d]: https://github.com/baristaze/distro_gentic/blob/main/distro_gentic_spec.md
-[d-money]: https://github.com/baristaze/distro_gentic/blob/main/distro_gentic_spec.md#money
-[d-evidence]: https://github.com/baristaze/distro_gentic/blob/main/distro_gentic_spec.md#evidence
