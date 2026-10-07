@@ -569,13 +569,14 @@ async def test_an_account_release_ends_its_command_and_what_left_its_session_and
 ) -> None:
     """The account's processes are the workspace's, wherever they run: a
     release ends the command still running and a process it left in a
-    session of its own, and keeps the files, which a purge removes."""
+    session of its own, outside the workspace's directory, and keeps the
+    files, which a purge removes."""
     provider = WorkspaceAccountImpl(account_root, ACCOUNT)
     org, workspace_id = new_id(), new_id()
     workspace = await provider.prepare(org, workspace_id, spec(IsolationMode.ACCOUNT))
     transport = as_account(tmp_path / "records")
     script = (
-        "setsid sleep 300 </dev/null >/dev/null 2>&1 & echo $! > left.pid; "
+        "(cd / && exec setsid sleep 300 </dev/null >/dev/null 2>&1) & echo $! > left.pid; "
         "echo $$ > command.pid; exec sleep 300"
     )
     command = asyncio.create_task(ran(transport, workspace, script, seconds=120))
