@@ -14,18 +14,23 @@ takes over. It leaves the step a stream adds up to and its recovery to
 arrives: text, thinking, and tool-call arguments. Tool output streams
 while the tool runs. Artifacts a tool produces stream as ordered parts:
 opened, appended, and completed with a final size and hash. Every
-sub-agent streams too, so a viewer can follow a whole tree. Emission
-never blocks the loop: a slow viewer is the carrier's problem, never the
-agent's.
+sub-agent streams too, so a viewer can follow a whole tree. A stream
+opens before its first part and completes once its step is stored or its
+call has failed, and the carrier is told both. Emission never blocks the
+loop: a slow viewer is the carrier's problem, never the agent's, and a
+carrier that fails costs the live view alone.
 
 **Source.** Streams.
 
-**Look for.** The stream sink and where the loop emits to it; whether an
-emit can wait on a viewer; the parts of an artifact and its completion.
+**Look for.** The stream sink and where the loop emits to it; where it
+tells the sink a stream opened and completed, and whether a failed call
+completes it; whether an emit can wait on a viewer; the parts of an
+artifact and its completion.
 
-**Violation.** A response emitted only once it is whole; an emit that
-awaits a viewer's acknowledgement or a full buffer; an artifact
-completed with no size or no hash.
+**Violation.** A response emitted only once it is whole; a stream told
+complete only on success, so a failed call leaves it open; an emit, or a
+stream's open or close, that awaits a viewer or fails the loop; an
+artifact completed with no size or no hash.
 
 **Severity.** medium
 
