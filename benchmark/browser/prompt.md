@@ -1,16 +1,20 @@
 # The prompt
 
-This is the prompt for run 2 onward. It is sent as written, with the
-specification, `agentic_core_spec.md`, attached to the message. Run 1
-was sent with a shorter prompt, which is in its
+This is the prompt for run 2 onward. It names the repository's public
+URL, and the product reads the whole repository there, at its default
+branch. It is sent as written, alone: its report format is part of it,
+so nothing follows it. Run 1 was sent with a shorter prompt and the
+spec as a file, and both are in its
 [results.json](../runs/browser-judge-agentic/20261002-063600/results.json).
 A run records the prompt as it sent it, and two runs compare only when
 both texts are the same.
+[agentic-benchmark-browser](../../skills/agentic-benchmark-browser/SKILL.md)
+sends it.
 
 ```text
 You are a highly senior software engineer and software architect specializing in agentic systems and AI application infrastructure.
 
-Evaluate the attached `agentic_core` specification strictly on its software design and architecture merits.
+Evaluate the `agentic_core` repository at https://github.com/baristaze/agentic_core strictly on its software design and architecture merits. Read the whole repository at its default branch: its specification, `agentic_core_spec.md`, and everything else it holds.
 
 Your goal is not merely to review `agentic_core` in isolation. Your goal is to determine:
 
@@ -28,7 +32,7 @@ Follow this order deliberately. Do not skip ahead.
 
 ### 1. Understand and classify `agentic_core`
 
-First, read the specification in full.
+First, read the repository in full.
 
 Determine:
 
@@ -123,7 +127,7 @@ Do not treat `10` as merely "supports the feature."
 
 For every score:
 
-- Ground the assessment in concrete design decisions from the specification, and name the section they come from.
+- Ground the assessment in concrete design decisions from the repository, and name where each comes from: the file, and the section when it is the specification.
 - Distinguish specified architecture from aspirational language.
 - Identify important ambiguities and underspecified behavior.
 - Do not award points for functionality that is merely implied.
@@ -173,7 +177,7 @@ Each point names the design decision behind it, not a feature list.
 
 ### 6. Recommend
 
-Name the changes to the specification that would raise its score most, most valuable first. Each names the criterion it moves and roughly by how much. Prefer a change that removes or clarifies over one that adds.
+Name the changes to the repository that would raise its score most, most valuable first. Each names the criterion it moves and roughly by how much. Prefer a change that removes or clarifies over one that adds.
 
 ## Report format
 
@@ -184,8 +188,8 @@ Answer in this shape, so evaluations compare:
 - `## Adjacents`: each selected system, why it was chosen, and the part of `agentic_core` it overlaps, one line each.
 - `## Rubric`: a table of each criterion, what it measures, what a `10/10` looks like, and its weight; the weights sum to 100.
 - `## Scores`: a table with one row per criterion (its weight, then each system's score) and a last row of each system's weighted result out of 100.
-- `## agentic_core, criterion by criterion`: for each criterion, its score and its grounding in the specification, with the ambiguities that held it back, a short paragraph each.
+- `## agentic_core, criterion by criterion`: for each criterion, its score and its grounding in the repository, with the ambiguities that held it back, a short paragraph each.
 - `## Where it differs`: stronger, weaker, broader or narrower, and different, one line each.
-- `## What I would change`: concrete edits to the specification, most valuable first, one line each.
-- `## Method`: what you read (the specification's sections, each adjacent's documentation or source with its version or date), how deep, and which scores rest on thin evidence, one line each.
+- `## What I would change`: concrete edits to the repository, most valuable first, one line each.
+- `## Method`: what you read (the repository's files, with the commit or the date you read them at, and each adjacent's documentation or source with its version or date), how deep, and which scores rest on thin evidence, one line each.
 ```

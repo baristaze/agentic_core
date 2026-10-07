@@ -3,7 +3,7 @@
 Step 11 reads this, only when the arguments have `compare=`.
 
 List the earlier runs with `python3`:
-`sorted((Path.home() / "Downloads" / "benchmark_browser").glob("*/results.json"))`,
+`sorted((Path.home() / "Downloads" / "benchmark_browser" / "browser-judge-agentic").glob("*/results.json"))`,
 since the tools have no `ls` and `glob` does not expand `~`. With run
 ids named, read those only, and name a named run that has no
 `results.json` as missing. Keep the runs whose `prompt` and `contract`

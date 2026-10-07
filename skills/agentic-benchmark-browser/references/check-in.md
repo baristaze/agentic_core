@@ -1,15 +1,15 @@
 # Check the run in
 
 Step 12 reads this. It writes the run into a checkout of this
-repository, as the benchmark's page shows it: text only, and redacted.
+repository, as the scenario's page shows it: text only, and redacted.
 Every path below is the checkout's, from its root, which is the working
 directory.
 
 ## When it runs
 
-The working directory is a checkout when `architecture.md`,
-`.claude-plugin/plugin.json`, `benchmark/runs/README.md`,
-`benchmark/runs/browser-judge-swe/README.md`, and
+The working directory is a checkout when `agentic_core_spec.md`,
+`.claude-plugin/plugin.json`,
+`benchmark/runs/browser-judge-agentic/README.md`, and
 `benchmark/schema/browser-session.schema.json` are all files there,
 checked with `python3`. The working directory decides, never the
 folder this skill was read from. When it is not a checkout, write
@@ -17,13 +17,13 @@ nothing, and the output says the run was not checked in and why.
 
 Write nothing either, and say so, when no session of the run has a
 score: there is nothing to measure. When
-`benchmark/runs/browser-judge-swe/<run_id>/` is already there, stop and say so:
-a checked-in run is never written over.
+`benchmark/runs/browser-judge-agentic/<run_id>/` is already there, stop
+and say so: a checked-in run is never written over.
 
 ## The folder
 
-1. With `python3`, make `benchmark/runs/browser-judge-swe/<run_id>/` and copy
-   into it the run folder's `results.json` and each session's
+1. With `python3`, make `benchmark/runs/browser-judge-agentic/<run_id>/`
+   and copy into it the run folder's `results.json` and each session's
    `response_path`, and nothing else: the screenshots stay where they
    are.
 2. With `python3`, on the copies, replace with `[redacted]`:
@@ -42,21 +42,26 @@ a checked-in run is never written over.
      that names the person;
    - a conversation title from a page's sidebar; a progress or tool
      line of the answer is not one;
-   - the name of the guideline's reference implementation, alone or as
-     `<owner>/<name>`, in any case: it is the repository the closing
-     Next section of `architecture.md` links.
+   - the name of another repository of the person's, or of the account
+     the prompt's URL names, alone or as `<owner>/<name>`, in any case,
+     when the prompt does not name it and it is not a layer this
+     repository builds on. The one layer is the guideline, which
+     `AGENTS.md` links: its name stays. A system an answer compares
+     with, a framework or a product of another maker, is not such a
+     repository, and it stays.
 
-   The prompt and the contract stay as typed: two runs compare only
-   when both are the same text. The repository's own URL, the one in
-   the prompt, stays wherever it appears, its owner's handle included.
-   Nothing else changes, so the diff against the run folder is the
-   redactions alone. Read each copy back after the replacements.
+   The prompt stays as sent: two runs compare only when it is the same
+   text. The repository's own URL, the one in the prompt, stays
+   wherever it appears, its owner's handle included. Nothing else
+   changes, so the diff against the run folder is the redactions alone.
+   Read each copy back after the replacements.
 
 ## The row
 
-Insert the run's row into the table of `benchmark/runs/browser-judge-swe/README.md`
-with `Edit`, directly under its delimiter row, so the newest run is on
-top. The cells, in the header's order, from the copied `results.json`:
+Insert the run's row into the table of
+`benchmark/runs/browser-judge-agentic/README.md` with `Edit`, directly
+under its delimiter row, so the newest run is on top. The cells, in the
+header's order, from the copied `results.json`:
 
 - Run: the run id, linking `<run_id>/results.json`.
 - Started (UTC): `started_at` as `YYYY-MM-DD HH:MM`.
@@ -83,9 +88,10 @@ top. The cells, in the header's order, from the copied `results.json`:
   of each run a row names, in its `results.json` in the checkout, with
   `python3`. When one has all three the same, the row takes that row's
   letter; otherwise the next letter no row uses, `A` when there is none.
-  A session whose answer names `benchmark/runs/browser-judge-swe` or an
-  earlier run, or says what an earlier run scored, read the earlier
-  scores: its run takes the next letter no row uses, whatever it shares.
+  A session whose answer names `benchmark/runs/browser-judge-agentic`
+  or an earlier run, or says what an earlier run scored, read the
+  earlier scores: its run takes the next letter no row uses, whatever
+  it shares.
 - Note: for each session that is not `ok`, its site, a colon, and why:
   the remark of its `note` that says so, in its own words, shortened to
   one clause, such as `grok.com: Expert needs a SuperGrok plan`; its
@@ -98,14 +104,23 @@ top. The cells, in the header's order, from the copied `results.json`:
 
 ## The check
 
-Run `make runs`. When it refuses, fix what it names in the files this
-step wrote and run `make runs` again: the first run plus at most 3
-reruns, then stop, leave the files as they are, and say which check
-fails and why. When it refuses anything outside those files, such as
-another run's folder, or does not run at all, such as with `uv`
-missing, stop at once, leave the files as they are, and say what it
-printed.
+Hold the folder this step wrote with `python3`:
+
+- its `results.json` reads as JSON and holds to
+  `benchmark/schema/browser-session.schema.json` as step 8 of the skill
+  holds the run folder's: every required key is there, no key is there
+  that the schema does not list, and each value is inside the `type`,
+  `enum`, `minimum`, `maximum`, and `format` the schema gives its key,
+  at the top and in each session;
+- every session's `url` is `[redacted]`;
+- every session's `response_path` is a file of the folder, and the
+  folder holds `results.json`, those files, and nothing else;
+- no file of the folder matches the address pattern of step 2.
+
+When a check fails, fix what it names in the files this step wrote and
+hold the folder again: the first hold plus at most 3 more, then stop,
+leave the files as they are, and say which check fails and why.
 
 Stage nothing, commit nothing, and open no pull request: the person
 reads the diff and does. The output names the folder written, the row,
-and what `make runs` printed last.
+and what the check found.

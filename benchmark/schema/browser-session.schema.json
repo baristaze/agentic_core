@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/baristaze/swe_guidelines/benchmark/schema/browser-session.schema.json",
+  "$id": "https://github.com/baristaze/agentic_core/benchmark/schema/browser-session.schema.json",
   "title": "A browser-driven benchmark run",
   "type": "object",
   "required": [
@@ -32,11 +32,14 @@
     },
     "prompt": {
       "type": "string",
-      "description": "the prompt as it was typed, before the contract; two runs compare only when this text and the contract are both the same"
+      "description": "the prompt as it was sent; two runs compare only when this text and the contract are both the same"
     },
     "contract": {
-      "type": "string",
-      "description": "the contract as it was typed after the prompt, in the same message; part of what two runs must share to compare"
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "the text typed after the prompt, in the same message, or null when nothing was; part of what two runs must share to compare"
     },
     "sizes": {
       "type": "object",

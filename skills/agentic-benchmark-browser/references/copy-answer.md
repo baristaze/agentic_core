@@ -15,7 +15,7 @@ wrote them. The page text holds only what the page draws.
 2. Click it once, then read the clipboard with `pbpaste` (macOS).
 3. Check that the paste is this answer. It is not the prompt, and it is
    not the paste an earlier site gave in this run. Where the answer
-   gave a score, it holds the contract's `Score: NN/100` line with the
+   gave a score, it holds the report format's `Score: NN/100` line with the
    score the page shows. Where it gave none, it starts with the words
    the answer starts with on the page. The page is read for this check
    with `find`, or with a screenshot and a `zoom` where `find` is

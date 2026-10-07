@@ -1,15 +1,17 @@
 ---
-name: arch-benchmark-browser
-description: "Run the benchmark prompt in the chatgpt.com, claude.ai, gemini.google.com, and grok.com products, signed in, and save each answer with its conversation URL as proof; in a checkout of this repository, also check the run in, redacted, with its row."
-allowed-tools: Read, Write, Edit, Bash(mkdir:*), Bash(date:*), Bash(python3:*), Bash(git ls-remote:*), Bash(pbpaste:*), Bash(make runs), mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__tabs_close_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__browser_batch
+name: agentic-benchmark-browser
+description: "Run the scenario browser-judge-agentic: send its prompt, which names this repository's public URL, in the chatgpt.com, claude.ai, gemini.google.com, and grok.com products, signed in, and save each answer with its conversation URL as proof; in a checkout of this repository, also check the run in, redacted, with its row."
+allowed-tools: Read, Write, Edit, Bash(mkdir:*), Bash(date:*), Bash(python3:*), Bash(git ls-remote:*), Bash(pbpaste:*), mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__tabs_close_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__browser_batch
 disable-model-invocation: true
 ---
 
-# arch-benchmark-browser
+# agentic-benchmark-browser
 
-Ask four products the same question and keep the answers with their
-proof. The prompt, contract, size map, and schema live at
-`../../benchmark/browser/` and
+Ask four products the same question about this repository and keep the
+answers with their proof. It runs one scenario,
+`browser-judge-agentic`. The prompt and the size map live at
+`../../benchmark/browser/prompt.md` and
+`../../benchmark/browser/sizes.yaml`, and the schema at
 `../../benchmark/schema/browser-session.schema.json`, paths from this
 skill's folder as `realpath` resolves it. If any is missing, stop and
 say the installation is incomplete.
@@ -36,8 +38,8 @@ Facts that decide how the steps below go. Read them before the browser.
   a line that starts with a dash and a space becomes a bullet. On
   chatgpt.com and claude.ai the next line gets one too, and backticks
   become inline code; grok.com keeps backticks as typed.
-  gemini.google.com's composer is plain text. Step 5 types the contract
-  so that no dash becomes a bullet.
+  gemini.google.com's composer is plain text. So step 5 pastes the
+  prompt, whose Markdown would turn into rich text if it were typed.
 - Enter sends on all four composers. A new line inside the message is
   `shift+Return`. Type one line, press `shift+Return`, type the next;
   a blank line is two `shift+Return`.
@@ -100,24 +102,27 @@ Facts that decide how the steps below go. Read them before the browser.
   chip's label ("Fast") or a hover line ("Add to chat"). The answer
   starts after the speaker label and ends at its own last line.
   grok.com writes no speaker label: its answer starts after the echoed
-  prompt, whose last line is the contract's last item, and after the
-  "Worked for" line where one shows. Step 6 and step 7 both mean the
-  answer so bounded. The score is the line that matches
+  prompt, whose last line is the prompt's last line (the report
+  format's `## Method` item), or after the card the paste became, and
+  after the "Worked for" line where one shows. Step 6 and step 7 both
+  mean the answer so bounded. The score is the line that matches
   `Score: NN/100`, wherever it is. gemini.google.com's page text also
   holds the sidebar's conversation titles. They are the person's:
   never copy them.
 
 ## Procedure
 
-1. Read `prompt.md`, which holds both the prompt and the contract, and
-   `sizes.yaml`. The browser README is for people and is not an input.
-   Resolve, per site, the model and effort labels the sizes ask for.
-   Say them before touching the browser, and always put them in the
-   run's `note` in `results.json`.
+1. Read `prompt.md` and `sizes.yaml`. The prompt is the text inside
+   `prompt.md`'s one `text` fence. Its report format is part of it, so
+   nothing is sent after it; the prose around the fence is for people
+   and is not sent. Resolve, per site, the model and effort labels the
+   sizes ask for. Say them before touching the browser, and always put
+   them in the run's `note` in `results.json`.
 2. Note the run's start with `date -u +%Y-%m-%dT%H:%M:%SZ`, the form
    of every time the run records; make the run folder
-   `~/Downloads/benchmark_browser/<YYYYMMDD-HHMMSS>/` from the same
-   moment, in UTC. Every file of the run goes there. Then read
+   `~/Downloads/benchmark_browser/browser-judge-agentic/<YYYYMMDD-HHMMSS>/`
+   from the same moment, in UTC. Every file of the run goes there, and
+   no other scenario's run does. Then read
    the commit the repository's default branch points at, with
    `git ls-remote <url> HEAD`, where `<url>` is the repository URL in
    the prompt. The first field it prints is the run's
@@ -174,13 +179,22 @@ Facts that decide how the steps below go. Read them before the browser.
    the session `smaller-mode`. A locked entry is not tried again in the
    run. When no smaller size's entry stays checked, send nothing: the
    session is `not-run`, and `note` names the locked entries.
-5. Click the composer and type the prompt from `prompt.md`, a blank
-   line, and the contract, line by line with `shift+Return` between
-   lines. Type each of the contract's items without its leading dash:
-   this is the one place that rule lives, and `contract` records the
-   text as typed. Send with `Return`. The send time, from `date -u`, is
-   the session's `started_at`. Take one screenshot showing the sent
-   message and the chip; it is a check and is not saved.
+5. Put the prompt on the clipboard with `python3`: read `prompt.md`,
+   take the text inside its one `text` fence, without the fence's lines
+   and with no newline after its last line, and give it to `pbcopy` as
+   its input (`subprocess.run(["pbcopy"], input=text.encode(),
+   check=True)`). Do it per site, just before that site's paste. Then
+   click the composer, press `cmd+v`, and take a screenshot. The
+   composer holds the pasted text, or a card the product made of the
+   long paste, and nothing else: a draft from before is cleared and the
+   paste made again. A card is the pasted text, and it is sent as it
+   is; the session's `note` says the prompt went as one. Where the
+   composer is still empty, press `cmd+v` once more. Where it stays
+   empty, type the prompt instead, line by line with `shift+Return`
+   between lines and two for a blank line, and `note` says the prompt
+   was typed. Send with `Return`. The send time, from `date -u`, is the session's
+   `started_at`. Take one screenshot showing the sent message and the
+   chip; it is a check and is not saved.
 6. Do step 4 and step 5 for every site first, then poll each site at
    most thirty times, no more often than once a minute, and count its
    polls into `polls`. A poll is one batch: first a scaled (0.4)
@@ -271,13 +285,14 @@ Facts that decide how the steps below go. Read them before the browser.
      `<site>.md` holds the header only.
 
    An answer cut short by a tool-use limit that still satisfies the
-   contract is `ok` with a `note`; do not press Continue. `note` holds
-   every remark on the session, in the order they arose, separated by
-   "; ". A session with no remark has no `note` key.
+   report format is `ok` with a `note`; do not press Continue. `note`
+   holds every remark on the session, in the order they arose,
+   separated by "; ". A session with no remark has no `note` key.
 8. Write `results.json` in the run folder in the schema, with `python3`:
    `run_id` is the folder name, `started_at` and `repository_head` from
-   step 2, `finished_at` from the moment of writing, `prompt` and
-   `contract` the two texts as typed, `sizes` the two sizes, `note`
+   step 2, `finished_at` from the moment of writing, `prompt` the text
+   step 5 sent, `contract` null, since nothing is sent after the
+   prompt, `sizes` the two sizes, `note`
    with the labels step 1 resolved, and one entry per site, whose
    `response_path` is `<site>.md`. Read it back with `python3` and hold
    it to the schema file, at the top and in each session: every
@@ -303,9 +318,8 @@ Facts that decide how the steps below go. Read them before the browser.
 11. Only when the arguments have `compare=`: compare this run with the
     earlier ones as `references/compare.md` says.
 12. Only when the working directory is a checkout of this repository:
-    check the run in there, redacted, with its row, and run
-    `make runs`, as `references/check-in.md` says. It opens no pull
-    request.
+    check the run in there, redacted, with its row, and hold it to its
+    schema, as `references/check-in.md` says. It opens no pull request.
 
 ## Output
 
