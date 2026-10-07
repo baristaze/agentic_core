@@ -26,7 +26,7 @@ from acme.om.budgets.types.hold import BillUnknown, Hold, HoldRequest
 from acme.om.context import Role
 from acme.om.storage.impl.pg_base import LoginSessions, SessionFactory, set_scope
 from acme.om.storage.logins import RUNTIME_LOGIN, SYSTEM_LOGIN
-from acme.om.storage.migrate import ensure_logins_at
+from acme.om.storage.migrate import ensure_logins_everywhere
 from acme.om.storage.roles import DatabaseRole
 from acme.om.storage.settings import MigrationSettings
 
@@ -110,7 +110,7 @@ async def test_no_serving_login_rewrites_or_removes_a_hold_or_a_settlement(
     itself, after a deploy made the logins again. The tally beside them stays
     theirs to move."""
     settings = migration_settings
-    await ensure_logins_at(settings.master_url(), settings.login_passwords())
+    await ensure_logins_everywhere(settings.master_databases(), settings.login_passwords())
     storage = LedgerStoragePostgresImpl(pg_sessions)
     org = new_id()
     line = a_line(cost_micros=10_000)

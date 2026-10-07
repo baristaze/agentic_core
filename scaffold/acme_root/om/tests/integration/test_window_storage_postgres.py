@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from acme.om.storage.impl.pg_base import LoginSessions
 from acme.om.storage.logins import PURGE_LOGIN, RUNTIME_LOGIN, SYSTEM_LOGIN
-from acme.om.storage.migrate import ensure_logins_at
+from acme.om.storage.migrate import ensure_logins_everywhere
 from acme.om.storage.roles import DatabaseRole
 from acme.om.storage.settings import MigrationSettings
 from acme.om.windows.storage import WindowStorageInterface
@@ -31,7 +31,7 @@ async def test_only_the_purge_login_removes_an_artifact(
     DML on every table, so it runs here first: the records stay append-only
     to the serving logins after it, and the purge login keeps its reach."""
     settings = migration_settings
-    await ensure_logins_at(settings.master_url(), settings.login_passwords())
+    await ensure_logins_everywhere(settings.master_databases(), settings.login_passwords())
     privilege = text("SELECT has_table_privilege(:login, 'activity.artifacts', :privilege)")
     held: set[tuple[str, str]] = set()
     async with pg_sessions[DatabaseRole.ACTIVITY]() as db:
