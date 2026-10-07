@@ -43,7 +43,7 @@ class WorkspaceHostImpl(WorkspaceProviderInterface):
     async def purge(self, org_id: UUID, workspace_id: UUID) -> None:
         directory = self._directory(org_id, workspace_id)
         await end_stragglers(directory)
-        await asyncio.to_thread(_removed, directory)
+        await asyncio.to_thread(remove_directory, directory)
 
     def describe(self) -> str:
         return f"workspaces=host({self._root})"
@@ -59,7 +59,7 @@ class WorkspaceHostImpl(WorkspaceProviderInterface):
         return self._root.resolve() / org_id.hex / workspace_id.hex
 
 
-def _removed(directory: Path) -> None:
+def remove_directory(directory: Path) -> None:
     """The directory and everything in it gone, a directory a command left
     read-only, or unreadable, included, as a module cache leaves its own.
     One already gone is no error, and a file that still cannot be removed

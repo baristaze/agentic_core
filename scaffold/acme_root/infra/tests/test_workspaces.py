@@ -2,23 +2,36 @@
 whole or refuses it, before it creates anything, and never hands back a
 weaker place: not the host directory for a container, and not a container
 with open egress for one that asked for none. A host directory's release
-ends what its commands left running there."""
+ends what its commands left running there.
+
+An account workspace runs its commands as an account of the host, which the
+cases that need one name in TEST_WORKSPACE_ACCOUNT. They are skipped, with
+the reason, on a host that cannot switch to it: one not on Linux, or a
+process without the capabilities the switch takes, as in most CI."""
 
 import asyncio
 import contextlib
 import os
 import re
+import shutil
 import signal
+import tempfile
+from collections.abc import Iterator
 from datetime import timedelta
 from pathlib import Path
 
 import pytest
 
-from acme.infra.base import new_id
+from acme.infra.base import new_id, utcnow
 from acme.infra.docker import DockerReply
 from acme.infra.exceptions import BackendFailed
 from acme.infra.impl.configured import InfraConfiguredImpl
 from acme.infra.impl.settings import InfraSettings
+from acme.infra.secrets.local import SecretsLocalImpl
+from acme.infra.transports import CommandResult, CommandSpec
+from acme.infra.transports.broker import BrokerNullImpl
+from acme.infra.transports.local import TransportLocalImpl
+from acme.infra.transports.twin import RecordSealTwin
 from acme.infra.workspaces import (
     EgressMode,
     EgressPolicy,
@@ -29,6 +42,8 @@ from acme.infra.workspaces import (
     Workspace,
     WorkspaceProviderInterface,
 )
+from acme.infra.workspaces import account as accounts
+from acme.infra.workspaces.account import WorkspaceAccountImpl, switch_to
 from acme.infra.workspaces.container import (
     ICC,
     OPEN_NETWORK,
@@ -50,6 +65,7 @@ def spec(mode: IsolationMode, egress: EgressPolicy = OPEN, **limits: float) -> I
 HOST_REFUSES = [
     spec(IsolationMode.VM),
     spec(IsolationMode.CONTAINER),
+    spec(IsolationMode.ACCOUNT),
     spec(IsolationMode.TWIN),
     spec(IsolationMode.HOST, NONE),
     spec(IsolationMode.HOST, ALLOWLIST),
@@ -367,7 +383,12 @@ async def test_a_container_spec_with_no_docker_is_refused_and_never_swapped_for_
 async def test_the_twin_and_the_null_provider_refuse_every_mode_not_theirs(
     provider: WorkspaceProviderInterface,
 ) -> None:
-    for mode in (IsolationMode.VM, IsolationMode.CONTAINER, IsolationMode.HOST):
+    for mode in (
+        IsolationMode.VM,
+        IsolationMode.CONTAINER,
+        IsolationMode.HOST,
+        IsolationMode.ACCOUNT,
+    ):
         with pytest.raises(IsolationRefused):
             await provider.prepare(new_id(), new_id(), spec(mode, NONE))
     if isinstance(provider, WorkspaceNullImpl):
@@ -388,3 +409,241 @@ def test_an_allowlist_names_its_hosts_and_no_other_egress_does() -> None:
 def test_the_absent_workspace_is_the_none_mode() -> None:
     absent = Workspace.absent(new_id(), new_id())
     assert absent.spec.mode is IsolationMode.NONE and absent.location == ""
+
+
+ACCOUNT = os.environ.get("TEST_WORKSPACE_ACCOUNT", "")
+
+ACCOUNT_REFUSES = [
+    spec(IsolationMode.HOST),
+    spec(IsolationMode.CONTAINER),
+    spec(IsolationMode.ACCOUNT, NONE),
+    spec(IsolationMode.ACCOUNT, ALLOWLIST),
+    spec(IsolationMode.ACCOUNT, memory_mb=512),
+    spec(IsolationMode.ACCOUNT, cpus=1),
+    spec(IsolationMode.ACCOUNT, processes=64, memory_mb=512),
+]
+
+
+def cannot_switch() -> str | None:
+    """Why this host cannot run a command as the account under test; None
+    when it can."""
+    if not ACCOUNT:
+        return "TEST_WORKSPACE_ACCOUNT names no account this process may switch to"
+    try:
+        switch_to(ACCOUNT)
+    except IsolationRefused as refused:
+        return refused.message
+    return None
+
+
+needs_an_account = pytest.mark.skipif(cannot_switch() is not None, reason=f"{cannot_switch()}")
+
+
+@pytest.fixture
+def account_root() -> Iterator[Path]:
+    """A root the account passes through, unlike the test's own temporary
+    directory, which only this process enters."""
+    root = Path(tempfile.mkdtemp(prefix="workspaces-"))
+    root.chmod(0o711)
+    yield root
+    shutil.rmtree(root, ignore_errors=True)
+
+
+def as_account(records: Path) -> TransportLocalImpl:
+    return TransportLocalImpl(
+        records, SecretsLocalImpl(None, {}), BrokerNullImpl(), account=ACCOUNT
+    )
+
+
+async def ran(
+    transport: TransportLocalImpl, workspace: Workspace, script: str, seconds: float = 30
+) -> CommandResult:
+    sent = CommandSpec(
+        argv=("sh", "-c", script),
+        key=new_id(),
+        epoch=1,
+        deadline=utcnow() + timedelta(seconds=seconds),
+    )
+    return await transport.run(workspace, sent, seal=RecordSealTwin().seal)
+
+
+def alive(pid: int) -> bool:
+    """Whether `pid` runs; a zombie is dead, whoever reaps it."""
+    try:
+        status = Path(f"/proc/{pid}/status").read_text()
+    except OSError:
+        return False
+    return not re.search(r"^State:\s+Z", status, re.MULTILINE)
+
+
+async def still_alive(*pids: int) -> list[int]:
+    """The pids still running, given a few seconds to be gone."""
+    left = list(pids)
+    for _ in range(30):
+        if not (left := [pid for pid in pids if alive(pid)]):
+            return []
+        await asyncio.sleep(0.1)
+    return left
+
+
+@pytest.mark.parametrize("asked", ACCOUNT_REFUSES, ids=lambda s: s.model_dump_json())
+async def test_an_account_workspace_refuses_what_it_cannot_hold_and_makes_nothing(
+    tmp_path: Path, asked: IsolationSpec
+) -> None:
+    """Egress, a share of the cpus, and a bound on memory are each refused
+    before anything runs: the mode never holds a weaker form of them."""
+    root = tmp_path / "workspaces"
+    provider = WorkspaceAccountImpl(root, ACCOUNT or "acme-agent")
+    with pytest.raises(IsolationRefused):
+        await provider.prepare(new_id(), new_id(), asked)
+    assert not root.exists(), "nothing is made for a spec that is refused"
+
+
+async def test_an_account_workspace_on_a_host_that_cannot_switch_is_refused(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "workspaces"
+    provider = WorkspaceAccountImpl(root, "no-such-account-here")
+    with pytest.raises(IsolationRefused):
+        await provider.prepare(new_id(), new_id(), spec(IsolationMode.ACCOUNT, processes=64))
+    assert not root.exists()
+
+
+@needs_an_account
+async def test_an_account_workspace_without_the_switchs_capabilities_is_refused(
+    monkeypatch: pytest.MonkeyPatch, account_root: Path
+) -> None:
+    monkeypatch.setattr(accounts, "effective_capabilities", lambda: {5})
+    with pytest.raises(IsolationRefused, match="CAP_SETGID, CAP_SETUID, CAP_SETPCAP"):
+        await WorkspaceAccountImpl(account_root, ACCOUNT).prepare(
+            new_id(), new_id(), spec(IsolationMode.ACCOUNT)
+        )
+    assert await asyncio.to_thread(os.listdir, account_root) == []
+
+
+@needs_an_account
+async def test_a_command_runs_as_the_account_with_no_group_no_capability_and_no_way_to_gain_one(
+    monkeypatch: pytest.MonkeyPatch, account_root: Path, tmp_path: Path
+) -> None:
+    """Its uid and gid, no supplementary group, every capability set empty,
+    `no_new_privs`, the processes it asked for at most, and an environment
+    of its own, its home and temporary directory in the workspace's."""
+    monkeypatch.setenv("ENGINE_OWN", "this process's alone")
+    provider = WorkspaceAccountImpl(account_root, ACCOUNT)
+    workspace = await provider.prepare(
+        new_id(), new_id(), spec(IsolationMode.ACCOUNT, processes=64)
+    )
+    try:
+        script = (
+            "id -u; id -g; id -G; ulimit -u; echo $HOME; echo $TMPDIR; "
+            "grep -E '^(CapInh|CapPrm|CapEff|CapAmb|NoNewPrivs):' /proc/self/status; "
+            "env | cut -d= -f1 | sort | tr '\\n' ' '"
+        )
+        result = await ran(as_account(tmp_path / "records"), workspace, script)
+        assert result.exit_code == 0, result.stderr
+        uid, gid, groups, processes, home, tmp, *held, names = result.stdout.splitlines()
+        account = switch_to(ACCOUNT)
+        assert (int(uid), int(gid), groups.split()) == (
+            account.uid,
+            account.gid,
+            [str(account.gid)],
+        )
+        assert processes == "64"
+        assert home == workspace.location and tmp == str(Path(workspace.location).parent / "tmp")
+        assert dict(line.split(":\t") for line in held) == {
+            "CapInh": "0000000000000000",
+            "CapPrm": "0000000000000000",
+            "CapEff": "0000000000000000",
+            "CapAmb": "0000000000000000",
+            "NoNewPrivs": "1",
+        }
+        assert "ENGINE_OWN" not in names.split() and "TMPDIR" in names.split()
+    finally:
+        await provider.purge(workspace.org_id, workspace.id)
+
+
+@needs_an_account
+async def test_an_account_release_ends_its_command_and_what_left_its_session_and_a_purge_its_files(
+    account_root: Path, tmp_path: Path
+) -> None:
+    """The account's processes are the workspace's, wherever they run: a
+    release ends the command still running and a process it left in a
+    session of its own, and keeps the files, which a purge removes."""
+    provider = WorkspaceAccountImpl(account_root, ACCOUNT)
+    org, workspace_id = new_id(), new_id()
+    workspace = await provider.prepare(org, workspace_id, spec(IsolationMode.ACCOUNT))
+    transport = as_account(tmp_path / "records")
+    script = (
+        "setsid sleep 300 </dev/null >/dev/null 2>&1 & echo $! > left.pid; "
+        "echo $$ > command.pid; exec sleep 300"
+    )
+    command = asyncio.create_task(ran(transport, workspace, script, seconds=120))
+    home = Path(workspace.location)
+    for _ in range(100):
+        if (home / "left.pid").exists() and (home / "command.pid").exists():
+            break
+        await asyncio.sleep(0.1)
+    pids = [int((home / name).read_text()) for name in ("command.pid", "left.pid")]
+    assert all(alive(pid) for pid in pids)
+    await provider.release(workspace)
+    result = await asyncio.wait_for(command, 30)
+    assert result.exit_code != 0 and not result.timed_out
+    assert await still_alive(*pids) == []
+    assert (home / "left.pid").exists(), "a release keeps the files"
+    await provider.purge(org, workspace_id)
+    assert not home.parent.exists()
+
+
+@needs_an_account
+async def test_an_account_purge_follows_no_link_the_account_planted_and_clears_what_it_closed(
+    account_root: Path, tmp_path: Path
+) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "kept.txt").write_text("the engine's")
+    before = (outside / "kept.txt").stat()
+    provider = WorkspaceAccountImpl(account_root, ACCOUNT)
+    workspace = await provider.prepare(new_id(), new_id(), spec(IsolationMode.ACCOUNT))
+    plant = (
+        f"ln -s {outside}/kept.txt file-link; ln -s {outside} dir-link; "
+        "mkdir -p closed/deep; touch closed/deep/f; ln -s ../../file-link closed/deep/l; "
+        "chmod 500 closed/deep; chmod 0 closed; touch $TMPDIR/scratch"
+    )
+    result = await ran(as_account(tmp_path / "records"), workspace, plant)
+    assert result.exit_code == 0, result.stderr
+    await provider.release(workspace)
+    await provider.purge(workspace.org_id, workspace.id)
+    assert not Path(workspace.location).parent.exists()
+    after = (outside / "kept.txt").stat()
+    assert (outside / "kept.txt").read_text() == "the engine's"
+    assert (after.st_mode, after.st_uid, after.st_mtime) == (
+        before.st_mode,
+        before.st_uid,
+        before.st_mtime,
+    )
+    assert [path.name for path in outside.iterdir()] == ["kept.txt"]
+
+
+@needs_an_account
+async def test_the_account_serves_one_workspace_at_a_time_and_a_released_one_is_closed_to_it(
+    account_root: Path, tmp_path: Path
+) -> None:
+    provider = WorkspaceAccountImpl(account_root, ACCOUNT)
+    transport = as_account(tmp_path / "records")
+    first = await provider.prepare(new_id(), new_id(), spec(IsolationMode.ACCOUNT))
+    second: Workspace | None = None
+    try:
+        await ran(transport, first, "echo first > notes.txt")
+        with pytest.raises(IsolationRefused, match="one at a time"):
+            await provider.prepare(new_id(), new_id(), spec(IsolationMode.ACCOUNT))
+        await provider.release(first)
+        second = await provider.prepare(new_id(), new_id(), spec(IsolationMode.ACCOUNT))
+        reached = await ran(transport, second, f"cat {first.location}/notes.txt")
+        assert reached.exit_code != 0 and "first" not in reached.stdout
+        with pytest.raises(IsolationRefused, match="one at a time"):
+            await provider.prepare(first.org_id, first.id, spec(IsolationMode.ACCOUNT))
+    finally:
+        if second is not None:
+            await provider.release(second)
+            await provider.purge(second.org_id, second.id)
+        await provider.purge(first.org_id, first.id)

@@ -49,6 +49,7 @@ def local_settings(tmp_path: Path, **overrides: object) -> InfraSettings:
         ("queues_backend", "memory"),
         ("keys_backend", "memory"),
         ("workspace_backend", "host"),
+        ("workspace_backend", "account"),
     ],
 )
 def test_deployed_environments_refuse_local_backends(
@@ -207,6 +208,10 @@ def test_the_keys_root_comes_from_settings_and_refuses_another_shape(tmp_path: P
     ("backend", "lines"),
     [
         ("host", ["workspaces=host({root})", "transport=local"]),
+        (
+            "account",
+            ["workspaces=account(acme-agent, {root})", "transport=local(acme-agent)"],
+        ),
         ("container", ["workspaces=container(python:3.14-slim)", "transport=container"]),
     ],
 )

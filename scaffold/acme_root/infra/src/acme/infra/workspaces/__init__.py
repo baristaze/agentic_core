@@ -37,6 +37,7 @@ class IsolationMode(StrEnum):
     VM = "vm"
     CONTAINER = "container"
     HOST = "host"  # a directory on a host
+    ACCOUNT = "account"  # a directory on a host, its commands run as an account of its own
     TWIN = "twin"  # the twin, for tests
     NONE = "none"  # no workspace at all: every transport refuses it
 
