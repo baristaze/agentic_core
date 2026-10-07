@@ -318,7 +318,9 @@ Facts that decide how the steps below go. Read them before the browser.
    there is none, the first line the page wrote back: an answer, a
    `refused` decline, an `errored` message, or what a stopped session
    wrote before its stop. A session stopped right after the send that
-   wrote nothing before the stop brings into view the line step 4
+   wrote nothing before the stop brings into view the stop's own line
+   (claude.ai writes "Claude's response was interrupted"), or, where
+   the page writes none, the message sent; never the line step 4
    found. Click an empty margin
    to clear a stray selection or menu, `find` the line, and
    `scroll_to` its reference. Where `find` is refused, scroll the
@@ -326,7 +328,9 @@ Facts that decide how the steps below go. Read them before the browser.
    shows the line. Take one `zoom` of the conversation column with
    `save_to_disk`. Its region is right of the sidebar and below the
    page's header, where claude.ai writes the conversation's own title:
-   it shows that line and the chip, and no conversation title. Copy it
+   it shows that line and the chip, and no conversation title. No zoom
+   shows a line that names a device: the region leaves it out, even
+   where the chip is then left out with it. Copy it
    into the run folder as `<site>` with the extension of the path the
    tool reports (`<site>.png` when it saves PNG), with `python3`
    (`shutil.copyfile` from that path). These are the evidence a pull

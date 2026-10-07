@@ -59,11 +59,15 @@ says the run was not checked in and why.
      it and it is not a layer this repository builds on. The one layer
      is the guideline, which `AGENTS.md` links: its name stays. Redact
      each name the `gh repo list` above read that an answer names, but
-     this repository's and the layers' it builds on, and only where it
+     this repository's and the layers' it builds on. A name that is not
+     an ordinary word is redacted wherever it stands: bare, in
+     backticks, as `<owner>/<name>`, or in a URL. A name that is also an
+     ordinary word or a common abbreviation, one an answer may use in
+     its ordinary sense (such as `scaffold`), is redacted only where it
      names that repository: as `<owner>/<name>`, in a URL, or where the
-     sentence says it is a repository or a project. The same word in
-     its ordinary sense stays, and so does a folder or a file of the
-     repositories the prompt and the layers name. A system an answer
+     sentence says it is a repository or a project; in its ordinary
+     sense it stays. A folder or a file of the repositories the prompt
+     and the layers name stays. A system an answer
      compares with, a framework or a product of another maker, is not
      such a repository, and it stays, unless the person's list of
      step 2 names it.
