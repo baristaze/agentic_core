@@ -1,7 +1,7 @@
 ---
 name: agentic-benchmark-browser
 description: "Run the scenario browser-judge-agentic: send its prompt, which names this repository's public URL, in the chatgpt.com, claude.ai, gemini.google.com, and grok.com products, signed in, and save each answer with its conversation URL as proof; in a checkout of this repository, also check the run in, redacted, with its row."
-allowed-tools: Read, Write, Edit, Bash(mkdir:*), Bash(date:*), Bash(python3:*), Bash(git ls-remote:*), Bash(pbpaste:*), mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__tabs_close_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__browser_batch
+allowed-tools: Read, Write, Edit, Bash(mkdir:*), Bash(date:*), Bash(python3:*), Bash(git ls-remote:*), Bash(gh repo list:*), Bash(pbpaste:*), mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__tabs_close_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__browser_batch
 disable-model-invocation: true
 ---
 
@@ -144,12 +144,15 @@ Facts that decide how the steps below go. Read them before the browser.
    its `note` asks the person to turn that setting off. Never change
    it yourself. Some sites show the line only once a message is sent,
    such as claude.ai's "Connected" line under the device's name: look again on the
-   conversation page right after the send and at every poll. Whenever
+   conversation page right after the send and at every poll. Any line
+   that names a device of the person's, under the header or in the
+   composer, is such a line, whatever state it reads ("Connected",
+   "Asleep or app closed"). Whenever
    such a line shows there, right after the send or at any poll, stop
    that session with the page's stop control ("Stop response") and
    record it `not-run` with the same `note`: its times are the moment
-   of the stop, its `polls` the polls made, and nothing it answered is
-   scored.
+   of the stop, its `polls` the polls made, the poll that saw the line
+   included, and nothing it answered is scored.
 
    Otherwise set the model and the effort, then verify with a
    screenshot of the chip. `model_label` is the model picker's checked
@@ -195,7 +198,8 @@ Facts that decide how the steps below go. Read them before the browser.
    composer is still empty, press `cmd+v` once more. Where it stays
    empty, type the prompt instead, line by line with `shift+Return`
    between lines and two for a blank line, and `note` says the prompt
-   was typed. Send with `Return`. The send time, from `date -u`, is the session's
+   was typed; `prompt` still records the fence's text, as the file
+   holds it, whatever the composer rendered. Send with `Return`. The send time, from `date -u`, is the session's
    `started_at`. Take one screenshot showing the sent message and the
    chip; it is a check and is not saved.
 6. Do step 4 and step 5 for every site first, then poll each site at

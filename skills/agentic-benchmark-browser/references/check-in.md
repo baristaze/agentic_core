@@ -46,7 +46,10 @@ and say so: a checked-in run is never written over.
      the prompt's URL names, alone or as `<owner>/<name>`, in any case,
      when the prompt does not name it and it is not a layer this
      repository builds on. The one layer is the guideline, which
-     `AGENTS.md` links: its name stays. A system an answer compares
+     `AGENTS.md` links: its name stays. Read those names with
+     `gh repo list <the URL's owner> --limit 200 --json name -q '.[].name'`,
+     and redact each one an answer names, but this repository's and the
+     layers' it builds on. A system an answer compares
      with, a framework or a product of another maker, is not such a
      repository, and it stays.
 
