@@ -14,7 +14,7 @@ from pydantic import Field, ValidationError
 from acme.infra.exceptions import InfraException
 from acme.infra.outages import Outage, OutageSignalInterface
 from acme.infra.transports import OutputSink
-from acme.infra.workspaces import Workspace, WorkspaceLost
+from acme.infra.workspaces import IsolationRefused, Workspace, WorkspaceLost
 from acme.integrations.model_providers import ModelProviderInterface
 from acme.integrations.model_providers.calls import Finished, ModelCall, ModelReply
 from acme.integrations.model_providers.failures import ModelCallFailed
@@ -300,7 +300,7 @@ class LoopManagerImpl(LoopManagerInterface):
             # is never made, and nothing is spent on a loop that cannot run.
             run.workspace = await self._tools.prepare_workspace(ctx, session_id, kind.isolation)
         except InfraException as refused:
-            if refused.code == ISOLATION_REFUSED:
+            if isinstance(refused, IsolationRefused) and refused.clears:
                 # No host can give it the workspace yet: no weaker one, and
                 # no call spent. It waits on the resource and asks again.
                 log.warning("session %s waits for a workspace: %s", session_id, refused)
@@ -312,6 +312,11 @@ class LoopManagerImpl(LoopManagerInterface):
                     unsettled=not resumed,
                 )
                 return await self._park(run, park)
+            if refused.code == ISOLATION_REFUSED:
+                # A provider that cannot meet the spec refuses it whole: no
+                # weaker workspace, and no call spent on a loop that cannot run.
+                log.warning("session %s has no workspace: %s", session_id, refused)
+                return await self._end(run, LoopOutcome.ERRORED)
             if refused.code != WorkspaceLost.code:
                 raise
             # What the workspace is rebuilt from is gone: nothing restarts

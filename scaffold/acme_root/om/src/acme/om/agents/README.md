@@ -165,9 +165,10 @@ of](../../../../README.md).
   a few times in a row earns a notice too, before the streak ends the
   loop.
 - **An interrupt stops the call it names,** and no other.
-- **Isolation is refused, never weakened.** A workspace no provider can
-  meet the spec of parks the loop on `resource` before its first model
-  call, and it asks again after a wait. One whose durable state is gone
+- **Isolation is refused, never weakened.** A refusal of the kind's spec
+  that cannot clear ends the loop before its first model call. One that
+  waits for a workspace that may come parks the loop on `resource`, and
+  it asks again after a wait. A workspace whose durable state is gone
   parks the loop, loudly, for a person.
 - **Emission never waits.** A part is handed to the carrier, and the
   loop goes on. The carrier is told when a stream opens and when it

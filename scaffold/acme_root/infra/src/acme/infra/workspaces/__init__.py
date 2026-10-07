@@ -99,9 +99,16 @@ class Workspace(InfraModel):
 
 class IsolationRefused(InfraValidationFailed):
     """A provider cannot meet a spec. Refused before anything is created,
-    never met with something weaker."""
+    never met with something weaker. A refusal that `clears` waits for a
+    workspace that may come, and the loop that asked parks on the resource
+    and asks again. Any other, such as a spec the provider does not
+    support, never clears, and the loop that asked ends `errored`."""
 
     code = "isolation_refused"
+
+    def __init__(self, message: str | None = None, *, clears: bool = False) -> None:
+        super().__init__(message)
+        self.clears = clears
 
 
 class WorkspaceLost(InfraException):
@@ -138,7 +145,8 @@ class WorkspaceProviderInterface(ABC):
         """The workspace under `workspace_id`, prepared to `spec`: made, or
         found again with its files after a release. `IsolationRefused`, with
         nothing created, when this provider cannot meet every part of the
-        spec or cannot reach what it would prepare it on."""
+        spec or cannot reach what it would prepare it on; it `clears` only
+        when a workspace may come for the spec later."""
         ...
 
     @abstractmethod

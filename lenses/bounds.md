@@ -256,7 +256,7 @@ its evidence.
 the reason, the unlock, and the retry time a park records.
 
 **Violation.** An outage, a budget refusal, a missing key, a workspace
-that cannot be had, or a missing answer that ends the loop `errored` or
+that cannot be had yet, or a missing answer that ends the loop `errored` or
 `failed`; a park with no reason or no unlock; a retry time on a park
 only a person can clear.
 

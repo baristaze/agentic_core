@@ -873,10 +873,13 @@ capabilities in the guideline's sense ([Infrastructure][g-infra]):
 
 Isolation is chosen up front and never weakened. A provider that cannot
 meet a session's isolation spec refuses before the first model call; it
-never falls back to something weaker. The loop parks on the resource and
-asks again after a wait. What a workspace is rebuilt from may be gone for
-good, such as the branch it tracks; the loop then parks for a person, and
-nothing is rebuilt from something else in its stead.
+never falls back to something weaker. A refusal says whether it can
+clear. One that cannot, such as a spec the provider does not support,
+ends the loop `errored`. One that waits for a workspace that may come
+parks the loop on the resource, and the loop asks again after a wait.
+What a workspace is rebuilt from may be gone for good, such as the branch
+it tracks; the loop then parks for a person, and nothing is rebuilt from
+something else in its stead.
 
 An environment may vanish between loops: an instance is released, and a
 session is not. The next loop prepares another, and an
