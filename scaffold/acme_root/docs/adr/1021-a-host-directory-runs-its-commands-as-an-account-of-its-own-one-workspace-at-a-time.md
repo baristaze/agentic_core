@@ -37,7 +37,8 @@ spec that asks for either is refused, and so is any egress but open.
 Prepare refuses a host that cannot switch: not Linux, no `setpriv` or
 `prlimit`, an account that is missing, root's, or this process's own, a
 process outside the account's group, or one without the capabilities
-the switch takes.
+the switch takes. It refuses a host that lets an account link a file it
+does not own (`fs.protected_hardlinks`), too.
 
 **Nothing privileged sees the command's environment.** The programs
 that switch run with an empty environment, since a variable such as
@@ -66,7 +67,7 @@ of `/proc` shows none alive, or it fails.
 the workspace with more than the account may. So a path is walked one
 step at a time, never through a link, to a regular file of the account
 or of this process, never one of another owner that a hard link
-reaches.
+reaches, and never one of this process's with a second link.
 
 **A purge clears as the account.** A purge ends the account's
 processes, clears what the account wrote, as the account, its own

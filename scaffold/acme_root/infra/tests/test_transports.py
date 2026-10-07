@@ -463,6 +463,21 @@ class TestTransportAccount(TransportContract):
             await transport.list_files(workspace, "into", 10)
         assert outside.read_text() == "the engine's"
 
+    async def test_a_file_of_this_process_with_a_second_link_is_never_read_or_written(
+        self, transport: TransportInterface, workspace: Workspace, root: Path
+    ) -> None:
+        """A hard link in the workspace to a file of this process outside it,
+        as the account makes on a host that lets it link a file it does not
+        own, is refused, and the file outside stays as it was."""
+        outside = root / "outside.txt"
+        outside.write_text("the engine's")
+        os.link(outside, Path(workspace.location) / "hard")
+        with pytest.raises(PathOutsideWorkspace):
+            await transport.read_file(workspace, "hard", 100)
+        with pytest.raises(PathOutsideWorkspace):
+            await transport.write_file(workspace, "hard", b"the model's", epoch=1)
+        assert outside.read_text() == "the engine's"
+
 
 async def test_the_null_transport_refuses_every_call() -> None:
     null = TransportNullImpl()

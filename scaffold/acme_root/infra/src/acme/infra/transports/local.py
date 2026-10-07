@@ -321,7 +321,8 @@ def _walked(root: Path, parts: Sequence[str], *, make: bool = False) -> int:
 def _file(root: Path, path: str, flags: int, owners: Collection[int]) -> int:
     """The regular file `path` names below `root`, open, reached without
     following a link at any step, and of one of `owners`: never a file of
-    another's that a hard link reaches."""
+    another's that a hard link reaches, and never one of this process's
+    with a second link, which may be its own file outside the workspace."""
     *parts, name = relative_path(path).parts or ("",)
     if not name:
         raise IsADirectoryError(path)
@@ -331,7 +332,8 @@ def _file(root: Path, path: str, flags: int, owners: Collection[int]) -> int:
     finally:
         os.close(folder)
     info = os.fstat(fd)
-    if stat.S_ISREG(info.st_mode) and info.st_uid in owners:
+    linked = info.st_uid == os.getuid() and info.st_nlink > 1
+    if stat.S_ISREG(info.st_mode) and info.st_uid in owners and not linked:
         return fd
     os.close(fd)
     if stat.S_ISREG(info.st_mode):

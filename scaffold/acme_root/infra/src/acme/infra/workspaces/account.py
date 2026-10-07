@@ -58,6 +58,11 @@ CAPABILITIES = {5: "CAP_KILL", 6: "CAP_SETGID", 7: "CAP_SETUID", 8: "CAP_SETPCAP
 uid and gid, the drop of the bounding set, and the end of a command's tree
 at its deadline."""
 
+HARDLINKS = PROC / "sys" / "fs" / "protected_hardlinks"
+"""Where the host says whether an account may link a file it does not own,
+which would reach this process's files from the workspace: 1 when it may
+not."""
+
 ACCOUNT_NAME = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 
 SERVED = re.compile(r"[0-9a-f]{32}/[0-9a-f]{32}")
@@ -179,6 +184,15 @@ def effective_capabilities() -> set[int]:
     return {bit for bit in range(64) if mask >> bit & 1}
 
 
+def links_protected() -> bool:
+    """Whether the host keeps an account from linking a file it does not
+    own; not where it does not say."""
+    try:
+        return HARDLINKS.read_text().strip() == "1"
+    except OSError:
+        return False
+
+
 def switch_to(account: str) -> Switch:
     """How this process runs a command as `account`. `IsolationRefused`
     naming what this host lacks: Linux; the account, apart from root and
@@ -251,7 +265,9 @@ class WorkspaceAccountImpl(WorkspaceProviderInterface):
 
     The account serves one workspace at a time, across every process that
     shares the root: a prepare while it serves another is refused, and a
-    purge then removes only what this process can."""
+    purge then removes only what this process can. A host that lets an
+    account link a file it does not own is refused too: the link would
+    reach this process's files from the workspace."""
 
     def __init__(self, root: Path, account: str) -> None:
         self._root = root
@@ -265,6 +281,11 @@ class WorkspaceAccountImpl(WorkspaceProviderInterface):
         if why is not None:
             raise IsolationRefused(why)
         switch = await asyncio.to_thread(switch_to, self._account)
+        if not await asyncio.to_thread(links_protected):
+            raise IsolationRefused(
+                "this host lets an account link a file it does not own "
+                "(fs.protected_hardlinks is not 1)"
+            )
         job = self._job(org_id, workspace_id)
         async with self._turn:
             fresh = self._held is None

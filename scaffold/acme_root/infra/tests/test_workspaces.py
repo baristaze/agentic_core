@@ -551,6 +551,23 @@ async def test_an_account_workspace_without_the_switchs_capabilities_is_refused(
 
 
 @needs_an_account
+async def test_an_account_workspace_on_a_host_that_lets_an_account_link_anothers_file_is_refused(
+    monkeypatch: pytest.MonkeyPatch, account_root: Path, tmp_path: Path
+) -> None:
+    """A hard link the account makes to a file of this process outside the
+    workspace would reach it from inside: a host that allows one is refused
+    before anything is made."""
+    setting = tmp_path / "protected_hardlinks"
+    setting.write_text("0\n")
+    monkeypatch.setattr(accounts, "HARDLINKS", setting)
+    with pytest.raises(IsolationRefused, match="protected_hardlinks"):
+        await WorkspaceAccountImpl(account_root, ACCOUNT).prepare(
+            new_id(), new_id(), spec(IsolationMode.ACCOUNT)
+        )
+    assert await asyncio.to_thread(os.listdir, account_root) == []
+
+
+@needs_an_account
 async def test_a_command_runs_as_the_account_with_no_group_no_capability_and_no_way_to_gain_one(
     monkeypatch: pytest.MonkeyPatch, account_root: Path, tmp_path: Path
 ) -> None:
