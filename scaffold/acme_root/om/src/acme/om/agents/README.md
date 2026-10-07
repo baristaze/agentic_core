@@ -127,7 +127,13 @@ of](../../../../README.md).
   and each tool answer's id is the run's own, so a run that lost its
   claim stops at its next write (ADR 1009).
 - **Every model call passes the gate first,** and records who spoke and
-  who pays as [attribution](../attribution/README.md) answers.
+  who pays as [attribution](../attribution/README.md) answers. A gate
+  that parks the call parks the loop where it says, and one that cannot
+  tell who pays parks it for a person; nothing is spent either way.
+- **Each call runs on the key it resolves.** The key is asked for before
+  every call, and a call whose key cannot be had parks on its provider
+  until one is saved. A key the provider refuses is that key's alone: it
+  is offered to no call again, and no outage is reported.
 - **A provider error is handled by its kind.** One worth retrying is
   retried in the process, after a wait that grows and is partly random,
   never sooner than the provider asks. Then the provider is known to be
@@ -159,10 +165,14 @@ of](../../../../README.md).
   a few times in a row earns a notice too, before the streak ends the
   loop.
 - **An interrupt stops the call it names,** and no other.
-- **Isolation is refused, never weakened.** A workspace that cannot meet
-  the kind's spec ends the loop before its first model call.
+- **Isolation is refused, never weakened.** A refusal of the kind's spec
+  that cannot clear ends the loop before its first model call. One that
+  waits for a workspace that may come parks the loop on `resource`, and
+  it asks again after a wait. A workspace whose durable state is gone
+  parks the loop, loudly, for a person.
 - **Emission never waits.** A part is handed to the carrier, and the
-  loop goes on.
+  loop goes on. The carrier is told when a stream opens and when it
+  completes, also when its call fails.
 
 ## How another namespace composes it
 

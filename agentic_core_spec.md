@@ -872,7 +872,13 @@ capabilities in the guideline's sense ([Infrastructure][g-infra]):
 
 Isolation is chosen up front and never weakened. A provider that cannot
 meet a session's isolation spec refuses before the first model call; it
-never falls back to something weaker.
+never falls back to something weaker. A refusal says whether it can
+clear. One that cannot, such as a spec the provider does not support,
+ends the loop `errored`. One that waits for a workspace that may come
+parks the loop on the resource, and the loop asks again after a wait.
+What a workspace is rebuilt from may be gone for good, such as the branch
+it tracks; the loop then parks for a person, and nothing is rebuilt from
+something else in its stead.
 
 An environment may vanish between loops: an instance is released, and a
 session is not. The next loop prepares another, and an
@@ -905,9 +911,12 @@ A stream part is typed (a text delta, a thinking delta, a chunk of tool
 output, an artifact part), numbered within its stream, and carries the
 id of the step it will add up to. A part is never stored as a step or an
 event. Text parts add up to the step stored when the stream ends; an
-artifact's bytes are its content, written as they arrive. Emission never
-blocks the loop: a slow viewer is the carrier's problem, never the
-agent's. A whole response is a collector over the stream, never the
+artifact's bytes are its content, written as they arrive. A stream
+opens before its first part and completes once its step is stored or its
+call has failed, and the carrier is told both, so a viewer is never left
+on a stream that has ended. Emission never blocks the loop: a slow viewer
+is the carrier's problem, never the agent's, and a carrier that fails
+costs the live view alone. A whole response is a collector over the stream, never the
 other way around. Every sub-agent streams too, so a viewer can follow a
 whole tree.
 
@@ -1223,7 +1232,10 @@ stream or a crash after the call was sent is usually billed.
 A refusal reports every budget it breaches, not only the first, because
 clearing one would reveal the next. Each breach names the one action
 that clears it and when its window resets. The engine fails closed for
-spend: when it cannot tell who pays, nothing is spent.
+spend: when it cannot tell who pays, nothing is spent, and the loop parks
+for a person. A gate a platform supplies may also park a call or a job on
+a reason of its own, such as a call far above its session's norm: nothing
+is held, and the loop parks where the gate says.
 
 The engine's own ledger counts in process. A platform supplies a shared
 one, so a window counts across sessions. Whether a tenant prepays or
@@ -1263,10 +1275,14 @@ and charges are a platform's.
 
 A tenant's own provider key changes who pays the provider, never what is
 gated: the same budgets apply, at the same reference cost. The
-credential is resolved per call. Resolution and fallback stay among the
-providers the tenant holds keys for, and a session whose fill needs a
-key the tenant lacks parks with that reason. Nothing starts silently on
-the platform's key.
+credential is resolved per call, and the call names it to the gate and
+to the outage signal, so an outage is that key's alone. Resolution and
+fallback stay among the providers the tenant holds keys for, and a
+session whose fill needs a key the tenant lacks parks on the provider
+until one is saved. Nothing starts silently on the platform's key. A key
+the provider does not take at all is that key's failure: it is offered to
+no call again, and no outage is reported for the provider. A permission
+or a region the key lacks is the call's alone.
 
 ### Time, Steps, and Streaks
 
@@ -1303,17 +1319,21 @@ memory-only session's runtime, a host lease's hold time).
 
 | Reason | Examples | Unlock | Unlocks without a person |
 |---|---|---|---|
-| `person` | A question, an approval, a passed deadline, the step guard, a principal to reassign | An answer, a decision, an extension | No |
-| `provider` | An outage, a rate limit, a billing or credential error | The provider recovers; a key or account is fixed | At the retry time, for outages and rate limits |
+| `person` | A question, an approval, a passed deadline, the step guard, a principal to reassign, a lost workspace | An answer, a decision, an extension | No |
+| `provider` | An outage, a rate limit, a billing or credential error, a missing key | The provider recovers; a key or account is fixed | At the retry time, for outages and rate limits |
 | `budget` | The gate refused | A raise, or the window resets | At the reset |
-| `resource` | Waiting in line for a scarce resource, or for a workspace | A grant | On the grant |
+| `resource` | Waiting in line for a scarce resource, or for a workspace | A grant | On the grant; for a workspace, at the retry time |
 | `job` | A long-running tool job is working | The job's completion | On completion |
 | `children` | Waiting for sub-agents' reports | A report; the tree's deadline ends the wait | On the report; past the deadline it parks on `person` |
 | `handover` | A person holds the environment | They give it back | No |
 | `pause` | A principal paused | Resume | No |
 
 A `parked` step writes no outcome. It carries its reason, its unlock,
-and its retry time; no retry time means only a person can unblock it.
+and its retry time; no retry time means only a person can unblock it. A
+gate supplied from outside may name a reason and an unlock of its own. A
+park on the workspace comes before its run has settled a lost run's
+calls, so it says so, and the run that resumes it settles them by their
+effect.
 When the unlock happens, a `resumed` step starts a new run. Raising a
 budget is the instruction to continue. Treating "cannot continue right
 now" as "this did not work" throws away a long conversation and its

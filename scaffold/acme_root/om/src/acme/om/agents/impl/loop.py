@@ -14,8 +14,8 @@ from pydantic import Field, ValidationError
 from acme.infra.exceptions import InfraException
 from acme.infra.outages import Outage, OutageSignalInterface
 from acme.infra.transports import OutputSink
-from acme.infra.workspaces import Workspace
-from acme.integrations.model_providers import ModelProvidersInterface
+from acme.infra.workspaces import IsolationRefused, Workspace, WorkspaceLost
+from acme.integrations.model_providers import ModelProviderInterface
 from acme.integrations.model_providers.calls import Finished, ModelCall, ModelReply
 from acme.integrations.model_providers.failures import ModelCallFailed
 from acme.integrations.model_providers.types import ErrorAnswer, ErrorKind, StopReason
@@ -41,17 +41,21 @@ from acme.om.exceptions import (
     BudgetRefused,
     CompactionFailed,
     ContextOverflow,
+    GateParked,
+    NoCredential,
     NoSpender,
     NotAuthorized,
     NotFound,
     PlatformException,
     PrincipalLapsed,
+    SpenderUnknown,
     StaleWriter,
     Unavailable,
     UnpricedModel,
     UnresolvedRole,
     ValidationFailed,
 )
+from acme.om.models.credentials import CallClient, CallCredentialsInterface
 from acme.om.models.manager import ModelsManagerInterface
 from acme.om.models.types.fill import MAIN, SUMMARIZER, Eligibility, Fill
 from acme.om.steps import StepsManagerInterface
@@ -104,11 +108,15 @@ Sleep = Callable[[float], Awaitable[None]]
 """How the loop waits, injected beside its clock, so a test never sleeps."""
 
 HANDOVER_UNLOCK = "give_back"
+WORKSPACE_UNLOCK = "workspace"
+PERMISSION = "permission"
+"""The cause a park names for a credential error that is no refusal of the
+key: a permission, a region, or a model the key cannot reach."""
 
 
 class LoopOptions(Platform):
-    # The credential the loop's calls run on, as the outage signal names it:
-    # the platform's own key.
+    # The name of the platform's own key, as the outage signal keeps it,
+    # which a root gives the call credentials it wires.
     credential: str = Field(default="platform", min_length=1)
     retries: int = Field(default=2, ge=0)  # in-process retries of an error worth retrying
     # The first backoff, doubled after each, half of it fixed and half drawn
@@ -127,6 +135,9 @@ class LoopOptions(Platform):
     # The same call failing this many times in a row, and each multiple of
     # it, earns the model a notice to change its approach.
     repeats_noticed: int = Field(default=3, ge=1)
+    # How long a loop no host can give its workspace waits, parked on the
+    # resource, before it asks again.
+    workspace_wait: timedelta = timedelta(minutes=1)
 
 
 @dataclass
@@ -183,7 +194,7 @@ class LoopManagerImpl(LoopManagerInterface):
         windows: WindowsManagerInterface,
         tools: ToolsManagerInterface,
         gate: CallGateInterface,
-        providers: ModelProvidersInterface,
+        credentials: CallCredentialsInterface,
         outages: OutageSignalInterface,
         sink: StreamSinkInterface,
         catalog: Sequence[ToolInterface],
@@ -194,6 +205,8 @@ class LoopManagerImpl(LoopManagerInterface):
         domain_classes: Sequence[str] = (),
         jitter: Callable[[], float] = random.random,
     ) -> None:
+        """`credentials` answers the client each call runs on and the
+        credential it carries: the platform's key, or a tenant's."""
         self._jitter = jitter
         self._steps = steps
         self._sessions = sessions
@@ -204,7 +217,7 @@ class LoopManagerImpl(LoopManagerInterface):
         self._windows = windows
         self._tools = tools
         self._gate = gate
-        self._providers = providers
+        self._credentials = credentials
         self._outages = outages
         self._sink = sink
         self._catalog = tuple(catalog)
@@ -245,10 +258,12 @@ class LoopManagerImpl(LoopManagerInterface):
                 # Its unlock happened: a new run takes it up, and its gates
                 # run again before its next call. A park the loop wrote
                 # itself came at a safe point, so the calls it held back
-                # never ran; a hand-over was written from outside, while a
-                # call may have been running, and is settled by effect.
+                # never ran. A hand-over was written from outside, while a
+                # call may have been running, and a park on the workspace
+                # may come before its run settled a lost run's calls: those
+                # are settled by effect.
                 session = await self._sessions.resume(ctx, session_id, epoch, loop_id)
-                resumed = loop.park.reason is not ParkReason.HANDOVER
+                resumed = loop.park.reason is not ParkReason.HANDOVER and not loop.park.unsettled
         kind = self._kinds.get(session.kind, session.kind_version)
         registry = ToolRegistry(
             (tool for tool in self._catalog if tool.spec.name in session.tools),
@@ -285,12 +300,31 @@ class LoopManagerImpl(LoopManagerInterface):
             # is never made, and nothing is spent on a loop that cannot run.
             run.workspace = await self._tools.prepare_workspace(ctx, session_id, kind.isolation)
         except InfraException as refused:
-            # A provider that cannot meet the spec refuses it whole: no
-            # weaker workspace, and no call spent on a loop that cannot run.
-            if refused.code != ISOLATION_REFUSED:
+            if isinstance(refused, IsolationRefused) and refused.clears:
+                # No host can give it the workspace yet: no weaker one, and
+                # no call spent. It waits on the resource and asks again.
+                log.warning("session %s waits for a workspace: %s", session_id, refused)
+                retry_at = self._clock() + self._options.workspace_wait
+                park = Park(
+                    reason=ParkReason.RESOURCE,
+                    unlock=WORKSPACE_UNLOCK,
+                    retry_at=retry_at,
+                    unsettled=not resumed,
+                )
+                return await self._park(run, park)
+            if refused.code == ISOLATION_REFUSED:
+                # A provider that cannot meet the spec refuses it whole: no
+                # weaker workspace, and no call spent on a loop that cannot run.
+                log.warning("session %s has no workspace: %s", session_id, refused)
+                return await self._end(run, LoopOutcome.ERRORED)
+            if refused.code != WorkspaceLost.code:
                 raise
-            log.warning("session %s has no workspace: %s", session_id, refused)
-            return await self._end(run, LoopOutcome.ERRORED)
+            # What the workspace is rebuilt from is gone: nothing restarts
+            # from scratch in its stead, and a person says what comes next.
+            # The loop parks with everything it reached kept.
+            log.error("session %s lost its workspace: %s", session_id, refused)
+            park = Park(reason=ParkReason.PERSON, unlock=WORKSPACE_UNLOCK, unsettled=not resumed)
+            return await self._park(run, park)
         try:
             return await self._drive(run, history)
         except StaleWriter:
@@ -393,11 +427,15 @@ class LoopManagerImpl(LoopManagerInterface):
         fill = fill_set.fill_for(MAIN)
         if fill is None:
             return await self._end(run, LoopOutcome.ERRORED)
+        try:
+            # The key the call goes out on, the tenant's own when it pays its
+            # provider: read per call, so a rotated key is never used.
+            used = await self._credentials.client_for(ctx, fill.provider)
+        except PlatformException as refused:
+            return await self._refused(run, refused)
         # A provider known to be failing for this credential parks the loop
         # at once, before anything is rendered, held, or spent.
-        outage = await self._outages.current(
-            fill.provider.value, self._options.credential, self._clock()
-        )
+        outage = await self._outages.current(fill.provider.value, used.credential, self._clock())
         if outage is not None:
             return await self._park(run, provider_park(fill, outage.retry_at))
         prompts = rules.kind_prompts(run.kind, run.registry)
@@ -430,15 +468,16 @@ class LoopManagerImpl(LoopManagerInterface):
                 )
         except ModelCallFailed as failed:
             # The compaction's call to the summarizer failed: its own
-            # provider's error, which no switch of the main role mends.
+            # provider's error, on the key that call went out on, which no
+            # switch of the main role mends.
             summarizer = fill_set.fill_for(SUMMARIZER) or fill
-            return await self._failed(run, summarizer, None, failed)
+            return await self._failed(run, summarizer, None, failed, failed.credential)
         except PlatformException as refused:
             return await self._refused(run, refused)
         try:
-            replied = await self._call(run, fill, rendered)
+            replied = await self._call(run, fill, rendered, used)
         except ModelCallFailed as failed:
-            return await self._failed(run, fill, rendered, failed)
+            return await self._failed(run, fill, rendered, failed, used.credential)
         except PlatformException as refused:
             return await self._refused(run, refused)
         run.failures, run.refused = 0, None
@@ -456,14 +495,23 @@ class LoopManagerImpl(LoopManagerInterface):
 
     async def _refused(self, run: _Run, refused: PlatformException) -> LoopRun:
         """What stops a model turn before its call is made: the gate's refusal
-        parks on the budget, nobody to pay parks for a person, and a window
-        that cannot be read ends the loop. Anything else is not the loop's to
-        answer."""
+        parks on the budget, a gate that parks the call parks where it says,
+        nobody to pay parks for a person, and a window that cannot be read
+        ends the loop. Anything else is not the loop's to answer."""
         match refused:
             case BudgetRefused():
                 return await self._park(run, budget_park(refused.refusal, self._clock()))
-            case NoSpender():
+            case GateParked():
+                return await self._park(run, refused.park)
+            case NoSpender() | SpenderUnknown():
+                log.info("session %s: %s", run.session_id, refused.message)
                 park = Park(reason=ParkReason.PERSON, unlock=rules.SPENDER_UNLOCK)
+                return await self._park(run, park)
+            case NoCredential():
+                # The tenant's key for the provider is missing or refused:
+                # nothing runs on another, and a key saved unlocks it.
+                log.info("session %s: %s", run.session_id, refused.message)
+                park = Park(reason=ParkReason.PROVIDER, unlock=refused.unlock)
                 return await self._park(run, park)
             case CompactionFailed() | ContextOverflow() | Unavailable():
                 log.warning("session %s: %s", run.session_id, refused.message)
@@ -471,13 +519,18 @@ class LoopManagerImpl(LoopManagerInterface):
             case _:
                 raise refused
 
-    async def _call(self, run: _Run, fill: Fill, rendered: RenderedRequest) -> Step:
+    async def _call(
+        self, run: _Run, fill: Fill, rendered: RenderedRequest, used: CallClient
+    ) -> Step:
         """One model call: who spoke and who pays, the gate's hold, the request
         persisted, the stream emitted as it arrives, and the response
-        persisted before anything acts on it."""
+        persisted before anything acts on it. The call goes out on `used`,
+        and the gate holds it knowing which key that is."""
         ctx, session_id = run.ctx, run.session_id
         said = rendered.attribution
-        hold = await self._gate.authorize(ctx, session_id, said.spender, MAIN, fill, rendered.call)
+        hold = await self._gate.authorize(
+            ctx, session_id, said.spender, MAIN, fill, rendered.call, credential=used.credential
+        )
         request = request_step(
             rendered, said, session_id, run.loop_id, new_id(), self._clock(), hold_id=hold
         )
@@ -488,6 +541,7 @@ class LoopManagerImpl(LoopManagerInterface):
             await self._gate.settle(ctx, hold, None, billed=False, site=None)
             raise
         response_id = new_id()
+        self._tell(run, self._sink.opened, response_id)
         started = self._clock()
 
         def site() -> CallSite:
@@ -495,37 +549,43 @@ class LoopManagerImpl(LoopManagerInterface):
             return CallSite(loop_id=run.loop_id, step_id=response_id, latency_ms=elapsed)
 
         try:
-            reply = await self._stream(run, fill, rendered.call, response_id)
-        except ModelCallFailed as failed:
-            # Nothing streamed back: the call was refused before it was
-            # processed, and the hold is released. A stream that broke is
-            # usually billed, so it counts whole, and what arrived is kept.
-            if failed.partial is None:
-                await self._gate.settle(ctx, hold, None, billed=False, site=None)
-                closing = rules.abandoned_step(response_id, self._clock(), request)
-            else:
-                await self._gate.settle(
-                    ctx, hold, None, billed=True, site=site(), partial=failed.partial.usage
-                )
-                closing = rules.response_step(response_id, self._clock(), request, failed.partial)
-            await self._steps.append_steps(ctx, session_id, run.epoch, [closing])
-            raise
-        except BaseException:
-            with contextlib.suppress(Exception):
-                await self._gate.settle(ctx, hold, None, billed=True, site=site())
-            raise
-        await self._gate.settle(ctx, hold, reply.usage, billed=True, site=site())
-        stored = rules.response_step(response_id, self._clock(), request, reply)
-        (stored,) = await self._steps.append_steps(ctx, session_id, run.epoch, [stored])
-        return stored
+            try:
+                reply = await self._stream(run, used.client, rendered.call, response_id)
+            except ModelCallFailed as failed:
+                # Nothing streamed back: the call was refused before it was
+                # processed, and the hold is released. A stream that broke is
+                # usually billed, so it counts whole, and what arrived is kept.
+                if failed.partial is None:
+                    await self._gate.settle(ctx, hold, None, billed=False, site=None)
+                    closing = rules.abandoned_step(response_id, self._clock(), request)
+                else:
+                    await self._gate.settle(
+                        ctx, hold, None, billed=True, site=site(), partial=failed.partial.usage
+                    )
+                    closing = rules.response_step(
+                        response_id, self._clock(), request, failed.partial
+                    )
+                await self._steps.append_steps(ctx, session_id, run.epoch, [closing])
+                raise
+            except BaseException:
+                with contextlib.suppress(Exception):
+                    await self._gate.settle(ctx, hold, None, billed=True, site=site())
+                raise
+            await self._gate.settle(ctx, hold, reply.usage, billed=True, site=site())
+            stored = rules.response_step(response_id, self._clock(), request, reply)
+            (stored,) = await self._steps.append_steps(ctx, session_id, run.epoch, [stored])
+            return stored
+        finally:
+            # Over, whichever way: its step is stored, or its call failed.
+            self._tell(run, self._sink.completed, response_id)
 
     async def _stream(
-        self, run: _Run, fill: Fill, call: ModelCall, response_id: UUID
+        self, run: _Run, client: ModelProviderInterface, call: ModelCall, response_id: UUID
     ) -> ModelReply:
         """The provider's stream, each part emitted as it arrives, never
         waited on; the reply is the one its last part carries."""
         numbers = itertools.count()
-        async for part in self._providers.get(fill.provider).stream(call):
+        async for part in client.stream(call):
             if isinstance(part, Finished):
                 return part.reply
             emitted = rules.stream_part(run.session_id, response_id, next(numbers), part)
@@ -539,17 +599,37 @@ class LoopManagerImpl(LoopManagerInterface):
         try:
             self._sink.emit(part)
         except Exception:
-            if not run.sink_failed:
-                run.sink_failed = True
-                log.warning("session %s: the stream sink failed", run.session_id, exc_info=True)
+            self._sink_failed(run)
+
+    def _tell(
+        self, run: _Run, tell: Callable[[TenantContext, UUID, UUID], None], step_id: UUID
+    ) -> None:
+        """Tells the sink a stream opened or completed, as `_emit` hands it a
+        part: a sink that fails costs the live view alone."""
+        try:
+            tell(run.ctx, run.session_id, step_id)
+        except Exception:
+            self._sink_failed(run)
+
+    def _sink_failed(self, run: _Run) -> None:
+        if not run.sink_failed:
+            run.sink_failed = True
+            log.warning("session %s: the stream sink failed", run.session_id, exc_info=True)
 
     async def _failed(
-        self, run: _Run, fill: Fill, rendered: RenderedRequest | None, failed: ModelCallFailed
+        self,
+        run: _Run,
+        fill: Fill,
+        rendered: RenderedRequest | None,
+        failed: ModelCallFailed,
+        credential: str | None,
     ) -> LoopRun | None:
         """A provider error, handled by its kind. `rendered` is the main
         request that failed, or None when the compaction's call did, which
-        neither falls back nor compacts again. None goes on to the next model
-        turn."""
+        neither falls back nor compacts again; `credential` names the key the
+        call went out on, so an outage or a refusal is that key's alone, and
+        None, when no call says, reports neither. None goes on to the next
+        model turn."""
         answer = failed.kind.answer
         now = self._clock()
         main = rendered is not None
@@ -566,13 +646,14 @@ class LoopManagerImpl(LoopManagerInterface):
             # parks at once until the retry time; this one falls back to its
             # next declared fallback when it has one, and parks too when not.
             retry_at = now + max(wait, self._options.outage_wait)
-            outage = Outage(
-                provider=fill.provider.value,
-                credential=self._options.credential,
-                kind=failed.kind.value,
-                retry_at=retry_at,
-            )
-            await self._outages.report(outage, now)
+            if credential is not None:
+                outage = Outage(
+                    provider=fill.provider.value,
+                    credential=credential,
+                    kind=failed.kind.value,
+                    retry_at=retry_at,
+                )
+                await self._outages.report(outage, now)
             if main and await self._fall_back(run, fill):
                 return None
             return await self._park(run, provider_park(fill, retry_at))
@@ -586,7 +667,16 @@ class LoopManagerImpl(LoopManagerInterface):
                 return None
             return await self._end(run, LoopOutcome.ERRORED)
         if answer is ErrorAnswer.PARK:
-            unlock = f"{fill.provider.value}:{failed.kind.value}"
+            cause = failed.kind.value
+            if failed.key_refused and credential is not None:
+                # The provider did not take the key itself: every session
+                # that needs it waits for a new one, and no other moves.
+                await self._credentials.refused(run.ctx, fill.provider, credential)
+            elif failed.kind is ErrorKind.CREDENTIAL:
+                # A permission the key lacks, a region it refuses, a model it
+                # cannot reach: this call's alone, so this session alone waits.
+                cause = PERMISSION
+            unlock = f"{fill.provider.value}:{cause}"
             return await self._park(run, Park(reason=ParkReason.PROVIDER, unlock=unlock))
         log.warning("session %s: %s", run.session_id, failed)
         return await self._end(run, LoopOutcome.ERRORED)
@@ -660,8 +750,8 @@ class LoopManagerImpl(LoopManagerInterface):
     def _never_ran(self, run: _Run, request: Step) -> bool:
         """Whether no run may have started a call: this run wrote it, or a
         park the loop wrote held it back. A run settles a lost run's calls
-        before it parks, so a call still open at such a park is one it
-        never started."""
+        before it parks, or marks the park unsettled, so a call still open
+        at a settled park is one it never started."""
         return request.id in run.made or run.resumed
 
     async def _recover_calls(self, run: _Run) -> LoopRun | None:
@@ -782,29 +872,38 @@ class LoopManagerImpl(LoopManagerInterface):
         # The call runs under the live context of the principal attribution
         # answered for it, asked again for this call.
         call_ctx = gate.authority.context
+        # The call's output streams as the response it adds up to: the stream
+        # opens before the call runs, and completes once that step is stored.
+        step_id = response_id(request, run.epoch)
         on_output = self._output(run, request)
+        self._tell(run, self._sink.opened, step_id)
         try:
-            if fresh:
-                ran = await self._execute(run, call_ctx, tool, request, use.input, on_output)
-            else:
-                ran = await self._tools.recover(
-                    call_ctx,
-                    run.registry,
-                    request,
-                    use.input,
-                    run.workspace,
-                    epoch=run.epoch,
-                    tree_deadline=run.deadline,
-                    on_output=on_output,
-                )
-        except NotAuthorized as refused:
-            ran = self._stopped(request, refused.message, ToolFailure.DENIED)
-        if isinstance(ran, ControlCommand):
-            text = f"stopped by a principal's {ran.value} before it answered"
-            await self._answer(run, request, self._stopped(request, text, ToolFailure.INTERRUPTED))
-            return _Settled(cancelled=ran is ControlCommand.CANCEL)
-        await self._answer(run, request, ran)
-        return _Settled()
+            try:
+                if fresh:
+                    ran = await self._execute(run, call_ctx, tool, request, use.input, on_output)
+                else:
+                    ran = await self._tools.recover(
+                        call_ctx,
+                        run.registry,
+                        request,
+                        use.input,
+                        run.workspace,
+                        epoch=run.epoch,
+                        tree_deadline=run.deadline,
+                        on_output=on_output,
+                    )
+            except NotAuthorized as refused:
+                ran = self._stopped(request, refused.message, ToolFailure.DENIED)
+            if isinstance(ran, ControlCommand):
+                text = f"stopped by a principal's {ran.value} before it answered"
+                stopped = self._stopped(request, text, ToolFailure.INTERRUPTED)
+                await self._answer(run, request, stopped)
+                return _Settled(cancelled=ran is ControlCommand.CANCEL)
+            await self._answer(run, request, ran)
+            return _Settled()
+        finally:
+            # Over, whichever way: its step is stored, or the call failed.
+            self._tell(run, self._sink.completed, step_id)
 
     async def _execute(
         self,
@@ -868,9 +967,11 @@ class LoopManagerImpl(LoopManagerInterface):
         """Starts a job its gate let run, by a deadline of its own never later
         than the tree's, and parks the loop on it. A job that spends passes
         the budget gate first, paid for by whoever its call was asked for: a
-        refusal parks on the budget, and nothing starts. A job that will not
-        start is answered with its failure, and its hold released only when
-        the start was refused before any work began."""
+        refusal parks on the budget, a gate that parks the job parks where it
+        says, and nobody to pay parks for a person, as a model call's gate
+        does; nothing starts. A job that will not start is answered with its
+        failure, and its hold released only when the start was refused before
+        any work began."""
         assert run.workspace is not None
         now = self._clock()
         deadline = job_deadline(now, tool.spec.timeout, run.deadline)
@@ -890,6 +991,11 @@ class LoopManagerImpl(LoopManagerInterface):
                 )
             except BudgetRefused as refused:
                 return _Settled(park=budget_park(refused.refusal, self._clock()))
+            except GateParked as parked:
+                return _Settled(park=parked.park)
+            except SpenderUnknown as unknown:
+                log.info("session %s: %s", run.session_id, unknown.message)
+                return _Settled(park=Park(reason=ParkReason.PERSON, unlock=rules.SPENDER_UNLOCK))
         try:
             started = await self._tools.start_job(
                 call_ctx,

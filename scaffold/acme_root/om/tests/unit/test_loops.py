@@ -29,7 +29,16 @@ from contracts.loops import (
 )
 from contracts.step_storage import make_request, make_response
 
-from acme.infra.workspaces import EgressMode, EgressPolicy, IsolationMode, IsolationSpec
+from acme.infra.exceptions import InfraException
+from acme.infra.workspaces import (
+    EgressMode,
+    EgressPolicy,
+    IsolationMode,
+    IsolationRefused,
+    IsolationSpec,
+    Workspace,
+    WorkspaceLost,
+)
 from acme.integrations.model_providers.calls import ModelCall
 from acme.integrations.model_providers.scripted import ScriptedFailure
 from acme.integrations.model_providers.types import ErrorKind, StopReason
@@ -259,7 +268,9 @@ async def test_a_request_a_lost_run_left_open_is_closed_and_its_hold_settled_who
     gate = CallGateBudgetImpl(
         managers.budget_gate, managers.pricing, managers.agent_sessions, managers.budgets
     )
-    hold = await gate.authorize(ctx, session_id, person(ctx.user_id), MAIN, fill, rendered.call)
+    hold = await gate.authorize(
+        ctx, session_id, person(ctx.user_id), MAIN, fill, rendered.call, credential="platform"
+    )
     lost = request_step(
         rendered, rendered.attribution, session_id, trigger.id, new_id(), loop.clock(), hold_id=hold
     )
@@ -488,6 +499,33 @@ async def test_a_workspace_that_cannot_meet_the_spec_ends_the_loop_before_any_ca
     assert [step.type for step in steps] == [StepType.MESSAGE, StepType.LOOP_ENDED]
 
 
+# A workspace whose branch is lost, and nothing says why, waits for a person:
+# the loop parks before any call, and nothing restarts from scratch.
+
+
+async def test_a_lost_workspace_parks_the_loop_for_a_person_before_any_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loop = loop_over(tmp_path)
+    session_id = await loop.start("delivery")
+    await loop.say(session_id, "Build it.")
+    loop.anthropic.add(reply(said("Never asked.")))
+
+    async def lost(*args: object, **kwargs: object) -> Workspace:
+        raise WorkspaceLost("the branch of the session is gone, and nothing says why")
+
+    monkeypatch.setattr(loop.managers.tools, "prepare_workspace", lost)
+    run = await loop.loops.run(loop.owner, session_id)
+
+    assert run.end is RunEnd.PARKED and run.park is not None, "never ended errored"
+    assert (run.park.reason, run.park.unlock, run.park.retry_at) == (
+        ParkReason.PERSON,
+        "workspace",
+        None,
+    ), "a person clears it, never a clock"
+    assert loop.anthropic.calls == [] and loop.anthropic.remaining == 1, "no call was made"
+
+
 # Steering: controls out of band, and taking over.
 
 
@@ -691,6 +729,90 @@ async def test_a_call_a_lost_run_may_have_started_is_settled_by_its_effect_befor
     assert answer.seq < next(s.seq for s in steps if s.type is StepType.PARKED), (
         "settled before the park"
     )
+
+
+@pytest.mark.parametrize(
+    ("refusal", "reason"),
+    [
+        (
+            IsolationRefused("no host can give it the workspace yet", clears=True),
+            ParkReason.RESOURCE,
+        ),
+        (WorkspaceLost("the branch of the session is gone"), ParkReason.PERSON),
+    ],
+)
+async def test_a_call_a_lost_run_may_have_started_is_settled_by_its_effect_after_a_workspace_park(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    refusal: InfraException,
+    reason: ParkReason,
+) -> None:
+    loop = loop_over(tmp_path)
+    session_id = await loop.start()
+    await loop.say(session_id, "Note the fix.")
+    loop.anthropic.add(reply(use("note", use_id="use_note")), reply(said("Checked; done.")))
+    note = loop.tools["note"]
+    note.holds = True
+    lost = asyncio.ensure_future(loop.loops.run(loop.owner, session_id))
+    await note.started.wait()
+    prepare = loop.managers.tools.prepare_workspace
+
+    async def refused(*args: object, **kwargs: object) -> Workspace:
+        raise refusal
+
+    monkeypatch.setattr(loop.managers.tools, "prepare_workspace", refused)
+    parked = await loop.loops.run(loop.owner, session_id)
+    note.release.set()
+    await lost
+    monkeypatch.setattr(loop.managers.tools, "prepare_workspace", prepare)
+    await loop.managers.steps.append_inputs(
+        loop.owner, session_id, [control(loop, session_id, ControlCommand.UNLOCK)]
+    )
+    resumed = await loop.loops.run(loop.owner, session_id)
+
+    assert parked.park is not None and parked.park.reason is reason
+    assert resumed.outcome is LoopOutcome.SUCCEEDED
+    assert len(note.ran_as) == 1, "the unsafe call never runs a second time"
+    steps = await loop.history(session_id)
+    (request,) = of_type(steps, StepType.TOOL_REQUEST)
+    assert getattr(answer_to(steps, request).header, "failure", None) is ToolFailure.INTERRUPTED
+
+
+async def test_an_approved_call_held_back_by_a_park_runs_once_after_a_workspace_park(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loop = loop_over(tmp_path)
+    session_id = await loop.start()
+    await loop.say(session_id, "Find the total and send it.")
+    loop.anthropic.add(
+        reply(use("lookup", use_id="use_lookup")),
+        reply(use("send", use_id="use_send")),
+        reply(said("Sent.")),
+    )
+    asked = await loop.loops.run(loop.owner, session_id)
+    assert asked.park is not None and asked.park.unlock == "approval"
+    send = next(
+        s
+        for s in of_type(await loop.history(session_id), StepType.TOOL_REQUEST)
+        if isinstance(s.header, ToolRequestHeader) and s.header.tool == "send"
+    )
+    await loop.managers.tools.decide_call(loop.owner, session_id, send.seq, approve=True)
+    prepare = loop.managers.tools.prepare_workspace
+
+    async def refused(*args: object, **kwargs: object) -> Workspace:
+        raise IsolationRefused("no host can give it the workspace yet", clears=True)
+
+    monkeypatch.setattr(loop.managers.tools, "prepare_workspace", refused)
+    waiting = await loop.loops.run(loop.owner, session_id)
+    monkeypatch.setattr(loop.managers.tools, "prepare_workspace", prepare)
+    await loop.managers.steps.append_inputs(
+        loop.owner, session_id, [control(loop, session_id, ControlCommand.UNLOCK)]
+    )
+    sent = await loop.loops.run(loop.owner, session_id)
+
+    assert waiting.park is not None and waiting.park.reason is ParkReason.RESOURCE
+    assert sent.outcome is LoopOutcome.SUCCEEDED
+    assert loop.tools["send"].ran_as == [loop.owner.user_id], "it never ran, so it runs"
 
 
 async def test_a_cancel_answers_a_call_a_lost_run_may_have_started_as_unknown(

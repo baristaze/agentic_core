@@ -44,18 +44,22 @@ its worst-case exposure, and the gate answers with a hold or a refusal
 listing every breach; after the response, the engine records usage and
 settles the hold. A check after the call overshoots every stop by one
 call. The engine fails closed for spend: when it cannot tell who pays,
-nothing is spent.
+nothing is spent, and the loop parks for a person. A gate a platform
+supplies may park a call on a reason of its own, and the loop parks
+where it says.
 
 **Source.** Bounds and Budgets, One Gate, Before the Call; Breaches and
 Failing Closed.
 
 **Look for.** Every path that calls a provider or starts a spending job,
 and the gate's authorization before it; what the engine does with a
-refusal and with an unknown spender.
+refusal, with a gate's own park, and with an unknown spender, on a model
+call's path and a spending job's.
 
 **Violation.** A model call, a compaction, a side role's call, or a
 spending job with no authorization before it; a budget checked only
-after the call; a call made when the spender is unknown.
+after the call; a call made when the spender is unknown; an unknown
+spender or a gate's own park that raises out of the loop or ends it.
 
 **Severity.** high
 
@@ -240,18 +244,21 @@ it.
 its reason (a person, a provider, a budget, a resource, a job, children,
 a hand-over, or a pause) and the one action that clears it. A parked
 step writes no outcome; it carries its reason, its unlock, and its
-retry time, and no retry time means only a person can unblock it.
-Treating "cannot continue right now" as "this did not work" throws away
-a long conversation and its evidence.
+retry time, and no retry time means only a person can unblock it. A
+workspace that cannot be had yet parks on the resource, and one whose
+durable state is gone parks for a person. Treating "cannot continue
+right now" as "this did not work" throws away a long conversation and
+its evidence.
 
 **Source.** Parking.
 
 **Look for.** Every path that stops a loop for something it waits on;
 the reason, the unlock, and the retry time a park records.
 
-**Violation.** An outage, a budget refusal, or a missing answer that
-ends the loop `errored` or `failed`; a park with no reason or no unlock;
-a retry time on a park only a person can clear.
+**Violation.** An outage, a budget refusal, a missing key, a workspace
+that cannot be had yet, or a missing answer that ends the loop `errored` or
+`failed`; a park with no reason or no unlock; a retry time on a park
+only a person can clear.
 
 **Severity.** medium
 
