@@ -291,7 +291,8 @@ class WorkspaceAccountImpl(WorkspaceProviderInterface):
             fresh = self._held is None
             if not await self._took(workspace_id, job, switch):
                 raise IsolationRefused(
-                    f"the account {self._account!r} serves another workspace, and one at a time"
+                    f"the account {self._account!r} serves another workspace, and one at a time",
+                    clears=True,
                 )
             try:
                 await asyncio.to_thread(_opened, job, switch.gid)

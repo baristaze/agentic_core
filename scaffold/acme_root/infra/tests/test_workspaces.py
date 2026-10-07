@@ -43,7 +43,7 @@ from acme.infra.workspaces import (
     WorkspaceProviderInterface,
 )
 from acme.infra.workspaces import account as accounts
-from acme.infra.workspaces.account import WorkspaceAccountImpl, switch_to
+from acme.infra.workspaces.account import Switch, WorkspaceAccountImpl, switch_to
 from acme.infra.workspaces.container import (
     ICC,
     OPEN_NETWORK,
@@ -565,6 +565,47 @@ async def test_an_account_workspace_on_a_host_that_lets_an_account_link_anothers
             new_id(), new_id(), spec(IsolationMode.ACCOUNT)
         )
     assert await asyncio.to_thread(os.listdir, account_root) == []
+
+
+async def test_only_the_refusal_that_waits_for_the_other_workspace_clears(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A prepare refused while the account serves another workspace clears
+    once that one is released, so the loop that asked parks and asks again.
+    A spec the mode cannot hold, a host that cannot switch, and a host that
+    lets an account link another's file never clear: that loop ends."""
+    root = tmp_path / "workspaces"
+    asked = spec(IsolationMode.ACCOUNT, processes=64)
+    never: list[IsolationRefused] = []
+    for refused in ACCOUNT_REFUSES:
+        with pytest.raises(IsolationRefused) as caught:
+            await WorkspaceAccountImpl(root, "acme-agent").prepare(new_id(), new_id(), refused)
+        never.append(caught.value)
+    with pytest.raises(IsolationRefused) as caught:
+        await WorkspaceAccountImpl(root, "no-such-account-here").prepare(new_id(), new_id(), asked)
+    never.append(caught.value)
+
+    def switched(account: str) -> Switch:
+        return Switch(account=account, uid=2001, gid=2001, setpriv="setpriv", prlimit="prlimit")
+
+    async def serves_another(*_: object) -> bool:
+        return False
+
+    monkeypatch.setattr(accounts, "switch_to", switched)
+    setting = tmp_path / "protected_hardlinks"
+    setting.write_text("0\n")
+    monkeypatch.setattr(accounts, "HARDLINKS", setting)
+    with pytest.raises(IsolationRefused, match="protected_hardlinks") as caught:
+        await WorkspaceAccountImpl(root, "acme-agent").prepare(new_id(), new_id(), asked)
+    never.append(caught.value)
+
+    setting.write_text("1\n")
+    monkeypatch.setattr(WorkspaceAccountImpl, "_took", serves_another)
+    with pytest.raises(IsolationRefused, match="one at a time") as caught:
+        await WorkspaceAccountImpl(root, "acme-agent").prepare(new_id(), new_id(), asked)
+    assert caught.value.clears
+    assert [refused.message for refused in never if refused.clears] == []
+    assert not root.exists()
 
 
 @needs_an_account
