@@ -5,49 +5,39 @@ included, stay on its GitHub release. Releases are tagged
 `vMAJOR.MINOR.PATCH`; see `CONTRIBUTING.md` for what bumps which
 number.
 
-## 0.9.0 (2026-10-07)
+## 0.10.0 (2026-10-08)
 
-The engine holds the seams a platform built inside its loop, and a
-directory on a host can run its commands as an account of its own.
-Minor: an adopter's gate, sink, and loop wiring change, as Changed
-says; nothing is reversed.
+The account mode runs whole under a hardened unit, and a transport
+reads a file from an offset and ends a command at its own exit. Minor:
+a transport an adopter wrote takes the offset, as Changed says; nothing
+is reversed.
 
 ### Added
 
-- Each model call asks `CallCredentialsInterface` for its client and
-  key, in the loop and in a compaction. The engine's own answer is the
-  platform's key; a root's models layer supplies another. A call whose
-  key cannot be had parks on its provider, with unlock
-  `<provider>:key`, and spends nothing; a key its provider refuses is
-  marked refused, and no outage is reported (#66).
-- A gate that raises `GateParked` parks the loop where it says, and
-  `SpenderUnknown` parks on a person, on the model-call path and the
-  job path (#66).
-- A stream sink is told `opened` and `completed` around a model stream
-  and a tool call, also when the call fails (#66).
-- A workspace refusal that says it clears parks the loop on the
-  resource and asks again; any other ends the loop `errored`, as
-  before. A lost workspace parks on a person, the park unsettled, and
-  ADR 1009 says how its calls settle (#66).
-- The account mode (`IsolationMode.ACCOUNT`, ADR 1021): a directory on
-  a host whose commands run as one named account, with no
-  supplementary group, no capability, `no_new_privs`, and a process
-  limit when asked. The account serves one workspace at a time. Its
-  release ends every process of the account as the account, so a
-  hidden `/proc` hides none of them; its purge removes the directory
-  without following a link; its transport refuses a file of the runner
-  with a second link; and it refuses a host without protected hard
-  links (#67).
-- A claude.ai run of `browser-judge-agentic` on 2026-10-07, at sizes
-  `m, m` on v0.8.0: 77 (#69).
+- The account mode's prepare runs under a unit with `ProcSubset=pid`
+  and `RestrictSUIDSGID=yes`. Where the host shows
+  `fs.protected_hardlinks`, it decides; where the unit hides it, the
+  runner's `ACME_WORKSPACE_PROTECTED_HARDLINKS` declares it, off by
+  default, so an undeclared hidden setting is refused. A workspace's
+  home and tmp are `0o770` without the setgid bit, owned by the
+  account's group, with a default ACL that gives that group what is made
+  below them; a filesystem that keeps no ACL is refused at prepare
+  (#71).
+- `read_file` takes an offset in every transport and reads only what
+  follows it, without following a link at any step, in host mode as in
+  the account mode (#73).
+- A command is over when its own process exits. Its output drains for
+  two seconds; what still holds it is then ended (as the account, in
+  the account mode), and the output is cut off after a grace. A child
+  left holding the output no longer keeps a command to its deadline
+  (#73, ADR 1023).
+- A claude.ai run of `browser-judge-agentic` on 2026-10-08, with its
+  permission mode at Auto, at sizes `m, m` on v0.9.0: 76 (#72).
 
 ### Changed
 
-- For an adopter: `CallGateInterface.authorize` takes `credential`;
-  `LoopManagerImpl` and `WindowsManagerImpl` take the credentials in
-  place of the providers registry; a `StreamSinkInterface` implements
-  `opened` and `completed`; `IsolationRefused` takes `clears` (#66).
-- `agentic-benchmark-browser` polls a site for up to three hours, 180
-  polls, and the schema's `polls` follows (#68).
-- The spec names the layers above the engine only in its Next section
-  (#65).
+- For an adopter: `TransportInterface.read_file` takes `offset`
+  (default 0), and a negative one raises `InfraValidationFailed`;
+  `WorkspaceAccountImpl` takes `protected_hardlinks`, which
+  `InfraConfiguredImpl` passes from the settings (#71, #73).
+- ADR 1021 states the hardened unit's two settings (#71).
