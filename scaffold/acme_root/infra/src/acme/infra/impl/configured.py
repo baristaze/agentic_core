@@ -198,7 +198,11 @@ class InfraConfiguredImpl(InfraInterface):
         if settings.workspace_backend == "account":
             account = settings.workspace_account
             return (
-                WorkspaceAccountImpl(settings.workspaces_root, account),
+                WorkspaceAccountImpl(
+                    settings.workspaces_root,
+                    account,
+                    protected_hardlinks=settings.workspace_protected_hardlinks,
+                ),
                 TransportLocalImpl(records, self._secrets, broker, account=account),
             )
         if settings.workspace_backend == "container":

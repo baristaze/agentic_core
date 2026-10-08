@@ -98,10 +98,14 @@ class InfraSettings(BaseSettings):
     # (ADR 1021); `container` a container per workspace on the local Docker,
     # from the image. A deployed environment refuses `host` and `account`.
     # The root also holds each transport's records of how commands ended,
-    # beside the workspaces.
+    # beside the workspaces. `account` refuses a host that lets an account
+    # link a file it does not own; where this process cannot read the
+    # host's fs.protected_hardlinks, as under a unit with ProcSubset=pid,
+    # `workspace_protected_hardlinks` declares it on.
     workspace_backend: Literal["none", "host", "account", "container"] = "none"
     workspaces_root: Path = Path(".local/workspaces")
     workspace_account: str = "acme-agent"
+    workspace_protected_hardlinks: bool = False
     workspace_image: str = "python:3.14-slim"
 
     aws_region: str = "us-east-1"
