@@ -300,7 +300,14 @@ class InfraConfiguredImpl(InfraInterface):
     async def start(self) -> None:
         if self._valkey is not None:
             await self._valkey.start()
-        for capability in (self._topics, self._buckets, self._queues, self._secrets, self._keys, self._flags):
+        for capability in (
+            self._topics,
+            self._buckets,
+            self._queues,
+            self._secrets,
+            self._keys,
+            self._flags,
+        ):
             await capability.start()
         await self._outages.start()
         for runtime in (self._broker, self._workspaces, self._transport):
@@ -314,7 +321,14 @@ class InfraConfiguredImpl(InfraInterface):
         await self._outages.close()
         for cache in self._caches.values():
             await cache.close()
-        for capability in (self._flags, self._keys, self._secrets, self._queues, self._buckets, self._topics):
+        for capability in (
+            self._flags,
+            self._keys,
+            self._secrets,
+            self._queues,
+            self._buckets,
+            self._topics,
+        ):
             await capability.close()
         if self._valkey is not None:
             await self._valkey.close()
