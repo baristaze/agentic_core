@@ -48,6 +48,7 @@ run does not record.
 
 | Run | Started (UTC) | Head | Sizes | chatgpt.com | claude.ai | gemini.google.com | grok.com | Set | Note |
 |---|---|---|---|---|---|---|---|---|---|
+| [20261008-045555](20261008-045555/results.json) | 2026-10-08 04:55 | `3922410` | m, m | — | [76](20261008-045555/claude.ai.md) Opus 5.5, High | — | — | B | — |
 | [20261007-145103](20261007-145103/results.json) | 2026-10-07 14:51 | `a5ad9cc` | m, m | — | [77](20261007-145103/claude.ai.md) Opus 5.5, High | — | — | B | — |
 | [20261007-074959](20261007-074959/results.json) | 2026-10-07 07:49 | `3929a0c` | m, m | [89](20261007-074959/chatgpt.com.md) Latest, High | [not-run](20261007-074959/claude.ai.md) | [refused](20261007-074959/gemini.google.com.md) 3.1 Pro | [86](20261007-074959/grok.com.md) Expert | B | the sizes and the prompt differ from every other run's; claude.ai: the conversation page said "Computer actions available"; gemini.google.com: it declined, saying it has no live internet access to read the GitHub URL |
 | [20261002-063600](20261002-063600/results.json) | 2026-10-02 06:36 | `57f4a09` | —, — | [92](20261002-063600/chatgpt.com.md) Extra High | [80](20261002-063600/claude.ai.md) | [91](20261002-063600/gemini.google.com.md) 3.1 Pro | [84](20261002-063600/grok.com.md) | A | A manual run with the first prompt; gemini.google.com.md is page text, as its share page has no copy button |
