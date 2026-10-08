@@ -4,6 +4,13 @@ pumped through the command's redaction as it arrives, kept within a bound
 error that stopped it, usually is), and its whole tree ended at the
 deadline.
 
+A command is over when its own process exits. Its output is read on for a
+short bound (`DRAIN_SECONDS`), and what still holds it then is ended: every
+process of its group, and every one descended from one. Its own pid may name
+another process by then; its group cannot while a process of it lives. So a
+process a command left holding its output never holds the command to its
+deadline.
+
 A tree is the process, every process descended from it, and its process
 group. Ending it freezes what is below the process first, walking the tree
 again after each freeze, so a process that forks while it is being ended is
@@ -30,6 +37,10 @@ log = logging.getLogger(__name__)
 
 GRACE_SECONDS = 2.0
 """How long the output of an ended tree is read before it is cut off."""
+
+DRAIN_SECONDS = 2.0
+"""How long a command's output is read once its own process has exited,
+before what still holds it is ended."""
 
 FREEZES = 3
 """Walks of the tree, each followed by a freeze, before the kill."""
@@ -68,16 +79,34 @@ async def tree(pid: int) -> list[int]:
     host's processes: `ps` where the host has it, `/proc` where it has not,
     as in a slim image. With neither, `pid` alone, and its group still ends
     with it."""
-    children = await _children()
-    found, frontier = [pid], [pid]
+    return _below(await _listing(), [pid])
+
+
+async def of_group(group: int) -> list[int]:
+    """Every process of the group `group`, and every process descended from
+    one, from one listing of the host's processes."""
+    listing = await _listing()
+    return _below(listing, [pid for pid, _, found in listing if found == group])
+
+
+def _below(listing: Sequence[tuple[int, int, int]], roots: Sequence[int]) -> list[int]:
+    """`roots` and every process descended from one, each once."""
+    children: dict[int, list[int]] = {}
+    for pid, parent, _ in listing:
+        children.setdefault(parent, []).append(pid)
+    found = list(dict.fromkeys(roots))
+    seen, frontier = set(found), found
     while frontier:
-        frontier = [child for parent in frontier for child in children.get(parent, [])]
+        frontier = [
+            child for parent in frontier for child in children.get(parent, []) if child not in seen
+        ]
+        seen.update(frontier)
         found += frontier
     return found
 
 
-async def _children() -> dict[int, list[int]]:
-    """Each process's children, by its pid."""
+async def _listing() -> list[tuple[int, int, int]]:
+    """Each process, as its pid, its parent's, and its group's."""
     try:
         listing = await asyncio.create_subprocess_exec(
             "ps",
@@ -86,29 +115,31 @@ async def _children() -> dict[int, list[int]]:
             "pid=",
             "-o",
             "ppid=",
+            "-o",
+            "pgid=",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
         )
     except OSError:
-        return await asyncio.to_thread(_children_in_proc)
+        return await asyncio.to_thread(_listing_in_proc)
     out, _ = await listing.communicate()
     if listing.returncode != 0:
-        return await asyncio.to_thread(_children_in_proc)
-    children: dict[int, list[int]] = {}
+        return await asyncio.to_thread(_listing_in_proc)
+    found: list[tuple[int, int, int]] = []
     for line in out.decode().splitlines():
         fields = line.split()
-        if len(fields) == 2 and fields[0].isdigit() and fields[1].isdigit():
-            children.setdefault(int(fields[1]), []).append(int(fields[0]))
-    return children
+        if len(fields) == 3 and all(field.isdigit() for field in fields):
+            found.append((int(fields[0]), int(fields[1]), int(fields[2])))
+    return found
 
 
-def _children_in_proc() -> dict[int, list[int]]:
-    """Each process's children, read off `/proc/<pid>/stat`; none where the
-    host has no `/proc`. A process's name may hold spaces and parentheses,
-    so its parent is read after the last `)`."""
-    children: dict[int, list[int]] = {}
+def _listing_in_proc() -> list[tuple[int, int, int]]:
+    """Each process, read off `/proc/<pid>/stat`; none where the host has no
+    `/proc`. A process's name may hold spaces and parentheses, so its parent
+    and its group are read after the last `)`."""
+    found: list[tuple[int, int, int]] = []
     if not PROC.is_dir():
-        return children
+        return found
     for entry in PROC.iterdir():
         if not entry.name.isdigit():
             continue
@@ -117,9 +148,9 @@ def _children_in_proc() -> dict[int, list[int]]:
         except OSError:
             continue
         fields = stat[stat.rfind(")") + 1 :].split()  # state, parent, group, ...
-        if len(fields) > 1 and fields[1].isdigit():
-            children.setdefault(int(fields[1]), []).append(int(entry.name))
-    return children
+        if len(fields) > 2 and fields[1].isdigit() and fields[2].isdigit():
+            found.append((int(entry.name), int(fields[1]), int(fields[2])))
+    return found
 
 
 def _signal(pids: Sequence[int], number: signal.Signals) -> None:
@@ -144,6 +175,21 @@ async def end_tree(pid: int) -> None:
         _signal([pid], signal.SIGKILL)
         try:
             os.killpg(pid, signal.SIGKILL)
+        except ProcessLookupError, PermissionError:
+            pass
+
+
+async def end_group(group: int) -> None:
+    """Freezes every process of the group `group` and every process below
+    one, walking again after each freeze, then kills each one found and the
+    group: what a command left, once its own process is over."""
+    try:
+        for _ in range(FREEZES):
+            _signal(await of_group(group), signal.SIGSTOP)
+        _signal(await of_group(group), signal.SIGKILL)
+    finally:
+        try:
+            os.killpg(group, signal.SIGKILL)
         except ProcessLookupError, PermissionError:
             pass
 
@@ -264,9 +310,13 @@ async def drive(
     deadline: datetime,
     on_output: OutputSink | None,
     end: Callable[[], Awaitable[None]],
+    end_left: Callable[[], Awaitable[None]],
 ) -> Driven:
-    """Reads the process's output until it ends, ending its tree with `end`
-    when the deadline comes first, and when the run is cancelled."""
+    """Reads the process's output until the process is over. At the deadline,
+    and when the run is cancelled, its tree ends with `end`. Once it has
+    exited by itself, its output is read for `DRAIN_SECONDS`, and what still
+    holds it then ends with `end_left`, as it does when the run is cancelled
+    after the exit."""
     assert process.stdout is not None and process.stderr is not None
     pumps = [
         _Pump("stdout", process.stdout, redactor, max_output, on_output),
@@ -280,21 +330,19 @@ async def drive(
         if waiting not in done:
             timed_out = True
             await end()
-        # The process is over; its output ends once every process that holds
-        # its pipes is, and past the deadline the rest of the tree goes too.
-        _, open_ = await asyncio.wait(
-            reading, timeout=GRACE_SECONDS if timed_out else _left(deadline)
-        )
-        if open_ and not timed_out:
-            await end()
-            _, open_ = await asyncio.wait(open_, timeout=GRACE_SECONDS)
+            _, open_ = await asyncio.wait(reading, timeout=GRACE_SECONDS)
+        else:
+            _, open_ = await asyncio.wait(reading, timeout=DRAIN_SECONDS)
+            if open_:
+                await end_left()
+                _, open_ = await asyncio.wait(open_, timeout=GRACE_SECONDS)
         for task in open_:
             task.cancel()
         await asyncio.wait({waiting}, timeout=GRACE_SECONDS)
     except BaseException:
         for task in (*reading, waiting):
             task.cancel()
-        await end()
+        await (end() if process.returncode is None else end_left())
         raise
     stdout, stderr = (pump.text() for pump in pumps)
     waiting.cancel()

@@ -20,6 +20,7 @@ from acme.infra.transports import (
     RecordSeal,
     StaleCommand,
     TransportInterface,
+    file_offset,
     relative_path,
     require_mode,
 )
@@ -124,13 +125,16 @@ class TransportTwinImpl(TransportInterface):
         self._epochs.pop(workspace_id, None)
         self._files.pop(workspace_id, None)
 
-    async def read_file(self, workspace: Workspace, path: str, max_bytes: int) -> bytes:
+    async def read_file(
+        self, workspace: Workspace, path: str, max_bytes: int, offset: int = 0
+    ) -> bytes:
         self._serve(workspace)
+        start = file_offset(offset)
         files = self._files.get(workspace.id, {})
         name = str(relative_path(path))
         if name not in files:
             raise InfraNotFound(f"no file {path!r} in the workspace")
-        return files[name][:max_bytes]
+        return files[name][start : start + max_bytes]
 
     async def write_file(self, workspace: Workspace, path: str, data: bytes, epoch: int) -> None:
         self._serve(workspace)
@@ -187,7 +191,9 @@ class TransportNullImpl(TransportInterface):
     ) -> CommandResult | None:
         raise CapabilityMissing("this agent has no workspace")
 
-    async def read_file(self, workspace: Workspace, path: str, max_bytes: int) -> bytes:
+    async def read_file(
+        self, workspace: Workspace, path: str, max_bytes: int, offset: int = 0
+    ) -> bytes:
         raise CapabilityMissing("this agent has no workspace")
 
     async def write_file(self, workspace: Workspace, path: str, data: bytes, epoch: int) -> None:

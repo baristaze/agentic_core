@@ -131,8 +131,8 @@ class ToolRuntime:
             raise ToolFailed(ToolFailure.TIMEOUT, command_text(result, self._answer_chars))
         return result
 
-    async def read_file(self, path: str, max_bytes: int) -> bytes:
-        return await self._transport.read_file(self._workspace, path, max_bytes)
+    async def read_file(self, path: str, max_bytes: int, offset: int = 0) -> bytes:
+        return await self._transport.read_file(self._workspace, path, max_bytes, offset)
 
     async def write_file(self, path: str, data: bytes) -> None:
         self._writable("write a file")

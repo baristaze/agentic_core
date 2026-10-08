@@ -8,14 +8,20 @@ process's environment holds nothing of the engine's. A command's whole tree
 ends at its deadline. An output past its bound keeps its head and its tail,
 and a viewer that fails never stops the command. A command from a stale run
 is refused. How a command ended is recorded under its key, its output sealed
-by the seal it came with, and the records go when they are purged.
+by the seal it came with, and the records go when they are purged. A file
+is read from an offset, with only what follows it answered.
 
-The local transport given an account holds the same over the account mode,
-where the host can switch to the account TEST_WORKSPACE_ACCOUNT names, and
-is skipped, with the reason, where it cannot."""
+On this host, a command is over when its own process exits: a process it
+left holding its output is ended once the output has drained for its bound.
+A file is read from its offset without a byte before it read, and never
+through a link. The local transport given an account holds the same over
+the account mode, where the host can switch to the account
+TEST_WORKSPACE_ACCOUNT names, and is skipped, with the reason, where it
+cannot; there, what a command left is ended as the account."""
 
 import asyncio
 import base64
+import errno
 import os
 import shutil
 import subprocess
@@ -30,7 +36,7 @@ import pytest
 
 from acme.infra.base import new_id, utcnow
 from acme.infra.docker import DOCKER_VARIABLES
-from acme.infra.exceptions import InfraNotFound
+from acme.infra.exceptions import InfraNotFound, InfraValidationFailed
 from acme.infra.secrets.local import SecretsLocalImpl
 from acme.infra.transports import (
     CapabilityMissing,
@@ -44,6 +50,7 @@ from acme.infra.transports import (
 from acme.infra.transports.broker import BrokerNullImpl, BrokerTwinImpl
 from acme.infra.transports.container import TransportContainerImpl
 from acme.infra.transports.local import DEFAULT_PATH, TransportLocalImpl
+from acme.infra.transports.processes import DRAIN_SECONDS, GRACE_SECONDS
 from acme.infra.transports.redaction import forms, marker
 from acme.infra.transports.twin import RecordSealTwin, TransportNullImpl
 from acme.infra.workspaces import (
@@ -84,6 +91,13 @@ sys.stdout.write("split:" + token[:7]); sys.stdout.flush(); time.sleep(0.3)
 sys.stdout.write(token[7:] + "\n"); sys.stdout.flush()
 print("names:" + ",".join(sorted(os.environ)))
 """
+
+LEAVES_A_CHILD = 'sleep 60 & echo "$!" > left.pid; (sleep 0.3; echo late) & echo started; exit 7'
+"""A command that exits with a child holding its output, and another that
+prints once it has exited."""
+
+IO = Path("/proc/self/io")
+"""Where this process's count of the bytes it has read is, on Linux."""
 
 SPAWNS_A_TREE = r"""
 import os, subprocess, time
@@ -320,6 +334,23 @@ class TransportContract:
             with pytest.raises(PathOutsideWorkspace):
                 await transport.read_file(workspace, outside, 10)
 
+    async def test_a_read_from_an_offset_answers_only_what_follows_it(
+        self, transport: TransportInterface, workspace: Workspace
+    ) -> None:
+        """A caller that follows a growing file reads only what is new."""
+        await transport.write_file(workspace, "run.log", b"first\n", epoch=1)
+        assert await transport.read_file(workspace, "run.log", 100) == b"first\n"
+        grown = await transport.run(
+            workspace, command("sh", "-c", "printf 'second\\n' >> run.log"), seal=SEAL
+        )
+        assert grown.exit_code == 0, grown.stderr
+        assert await transport.read_file(workspace, "run.log", 100, offset=6) == b"second\n"
+        assert await transport.read_file(workspace, "run.log", 3, offset=8) == b"con"
+        for past in (13, 14):
+            assert await transport.read_file(workspace, "run.log", 100, offset=past) == b""
+        with pytest.raises(InfraValidationFailed):
+            await transport.read_file(workspace, "run.log", 100, offset=-1)
+
     async def test_a_workspace_of_no_agent_or_another_mode_is_refused_loudly(
         self, transport: TransportInterface, workspace: Workspace
     ) -> None:
@@ -354,7 +385,71 @@ def engine_credential(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(ENGINE_CREDENTIAL, "postgresql://engine:not-for-tools@127.0.0.1/acme")
 
 
-class TestTransportLocal(TransportContract):
+class LocalContract(TransportContract):
+    """What the local transport holds, as this process and as an account."""
+
+    async def test_a_command_is_over_when_its_own_process_exits(
+        self, transport: TransportInterface, workspace: Workspace
+    ) -> None:
+        await self._left_ends(transport, workspace)
+
+    async def _left_ends(self, transport: TransportInterface, workspace: Workspace) -> None:
+        """A process the command left holding its output never holds it to
+        its deadline: what is printed while the output drains is kept, and
+        the process is ended at the drain's bound."""
+        started = utcnow()
+        result = await transport.run(
+            workspace, command("sh", "-c", LEAVES_A_CHILD, seconds=60), seal=SEAL
+        )
+        took = utcnow() - started
+        assert (result.exit_code, result.timed_out) == (7, False), result.stderr
+        assert result.stdout == "started\nlate\n"
+        assert took < timedelta(seconds=DRAIN_SECONDS + GRACE_SECONDS + 2), took
+        left = (await transport.read_file(workspace, "left.pid", 100)).decode().split()
+        assert len(left) == 1, left
+        alive = await self._alive(transport, workspace, left)
+        assert alive == [], f"left running: {alive}"
+
+    async def test_a_read_follows_no_link_in_the_workspace(
+        self, transport: TransportInterface, workspace: Workspace
+    ) -> None:
+        """A caller that polls a path reads the file there, never one a link
+        swapped in, wherever the link points."""
+        await transport.write_file(workspace, "run.log", b"0123456789", epoch=1)
+        planted = "ln -s run.log follow.log; mkdir real; cp run.log real/; ln -s real into"
+        result = await transport.run(workspace, command("sh", "-c", planted), seal=SEAL)
+        assert result.exit_code == 0, result.stderr
+        for linked in ("follow.log", "into/run.log"):
+            for offset in (0, 4):
+                with pytest.raises(PathOutsideWorkspace):
+                    await transport.read_file(workspace, linked, 100, offset=offset)
+        assert await transport.read_file(workspace, "real/run.log", 3, offset=4) == b"456"
+
+    @pytest.mark.skipif(not IO.exists(), reason="needs /proc/self/io, which counts what is read")
+    async def test_a_read_from_an_offset_reads_no_byte_before_it(
+        self, transport: TransportInterface, workspace: Workspace
+    ) -> None:
+        """A stream's poll costs what is new, never the file again: this
+        process reads far fewer bytes than the offset skips."""
+        skipped = 8 * 1024 * 1024
+        await transport.write_file(workspace, "big.log", b"0" * skipped + b"the tail", epoch=1)
+        before = read_so_far()
+        assert await transport.read_file(workspace, "big.log", 100, offset=skipped) == b"the tail"
+        read = read_so_far() - before
+        assert read < skipped // 8, f"{read} bytes read to answer 8"
+
+
+def read_so_far() -> int:
+    """The bytes this process has read, by every thread, as Linux counts
+    them (`rchar`)."""
+    for line in IO.read_text().splitlines():
+        key, _, value = line.partition(":")
+        if key == "rchar":
+            return int(value)
+    raise AssertionError(f"no rchar in {IO}")
+
+
+class TestTransportLocal(LocalContract):
     @pytest.fixture
     async def workspace(self, tmp_path: Path) -> Workspace:
         provider = WorkspaceHostImpl(tmp_path / "workspaces")
@@ -409,7 +504,7 @@ def cannot_switch() -> str | None:
 
 
 @pytest.mark.skipif(cannot_switch() is not None, reason=f"{cannot_switch()}")
-class TestTransportAccount(TransportContract):
+class TestTransportAccount(LocalContract):
     """Every command runs as the account, and a path follows no link."""
 
     @pytest.fixture
@@ -462,6 +557,19 @@ class TestTransportAccount(TransportContract):
         with pytest.raises(PathOutsideWorkspace):
             await transport.list_files(workspace, "into", 10)
         assert outside.read_text() == "the engine's"
+
+    async def test_what_a_command_left_is_ended_as_the_account(
+        self, transport: TransportInterface, workspace: Workspace, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Where this process may not signal the account's processes, what a
+        command left holding its output still ends: the account ends it."""
+
+        def refused(*_: object) -> None:
+            raise PermissionError(errno.EPERM, "not this process's to signal")
+
+        monkeypatch.setattr(os, "kill", refused)
+        monkeypatch.setattr(os, "killpg", refused)
+        await self._left_ends(transport, workspace)
 
     async def test_a_file_of_this_process_with_a_second_link_is_never_read_or_written(
         self, transport: TransportInterface, workspace: Workspace, root: Path
