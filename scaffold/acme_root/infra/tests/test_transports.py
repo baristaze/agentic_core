@@ -518,7 +518,10 @@ class TestTransportAccount(LocalContract):
 
     @pytest.fixture
     async def workspace(self, root: Path) -> AsyncIterator[Workspace]:
-        provider = WorkspaceAccountImpl(root, ACCOUNT)
+        """Under a unit that hides the host's linking setting, the test
+        declares it on, as a runner's settings do; where it shows, it
+        decides."""
+        provider = WorkspaceAccountImpl(root, ACCOUNT, protected_hardlinks=True)
         spec = IsolationSpec(mode=IsolationMode.ACCOUNT, egress=EgressPolicy(mode=EgressMode.OPEN))
         workspace = await provider.prepare(new_id(), new_id(), spec)
         yield workspace
