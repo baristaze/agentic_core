@@ -10,11 +10,13 @@ account may, and nothing of this process's: not its files, its credential,
 or its environment. No program that runs with this process's privileges
 sees the command's environment: it reaches the command after the switch.
 
-The account serves one workspace at a time, so every process of the
-account is that workspace's. A release ends each of them, as the account,
-whatever `/proc` hides from this process, then each one in its directory,
-and closes the workspace to the account, so the next workspace's commands
-never reach its files. A purge clears what the account wrote, as the
+What a command left holding its output once its own process has exited
+is ended as the account, which reaches the account's processes alone
+(ADR 1023). The account serves one workspace at a time, so every process
+of the account is that workspace's. A release ends each of them, as the
+account, whatever `/proc` hides from this process, then each one in its
+directory, and closes the workspace to the account, so the next
+workspace's commands never reach its files. A purge clears what the account wrote, as the
 account, then removes the directory without following a link out of it.
 
 It runs under a hardened unit, which hides `/proc/sys` (`ProcSubset=pid`)
