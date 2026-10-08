@@ -363,7 +363,7 @@ async def _exited(process: asyncio.subprocess.Process) -> None:
     at its exit, while `Process.wait()` returns, on CPython before 3.14.7,
     only once every pipe of it has closed: a process it left holding its
     output would hold the command to its deadline."""
-    while process.returncode is None:
+    while process.returncode is None:  # noqa: ASYNC110 - no public event marks the exit
         await asyncio.sleep(EXIT_POLL_SECONDS)
 
 
