@@ -19,6 +19,10 @@ program that loads what a command chose hands them over. And an
 account's processes are no tree: one a command left in a session of its
 own outlives the command's process group.
 
+The process that runs untrusted code runs under a hardened unit, too. It
+hides the host's settings in `/proc/sys` (`ProcSubset=pid`) and refuses
+every setuid and setgid bit (`RestrictSUIDSGID=yes`).
+
 ## Decision
 
 **A mode of its own.** `account` is an isolation mode beside `host`: a
@@ -38,7 +42,17 @@ Prepare refuses a host that cannot switch: not Linux, no `setpriv` or
 `prlimit`, an account that is missing, root's, or this process's own, a
 process outside the account's group, or one without the capabilities
 the switch takes. It refuses a host that lets an account link a file it
-does not own (`fs.protected_hardlinks`), too.
+does not own, too. The host's `fs.protected_hardlinks` decides where this
+process can read it, whatever is declared. Where it cannot, the runner's
+settings declare it on, or the host is refused.
+
+**The mode runs whole under the hardened unit.** It reads only the
+per-process entries of `/proc`. A workspace's home and temporary
+directory are the account's group's, with no setgid bit. A default ACL on
+each shares what is made below them with that group, whoever makes it,
+so this process reads what the account writes there, and the account
+reads what this process writes. A root on a filesystem that keeps no ACL
+is refused.
 
 **Nothing privileged sees the command's environment.** The programs
 that switch run with an empty environment, since a variable such as
@@ -95,8 +109,12 @@ ended as a leftover.
   each.
 - The mode runs on Linux alone, by a process that holds `CAP_SETUID`,
   `CAP_SETGID`, `CAP_SETPCAP`, and `CAP_KILL` and is in the account's
-  group, under a root the account passes through. Its tests are skipped
-  elsewhere, with the reason.
+  group, under a root the account passes through, on a filesystem that
+  keeps ACLs. Its tests are skipped elsewhere, with the reason.
+- Under a unit with `ProcSubset=pid`, the runner declares the host's
+  `fs.protected_hardlinks` on (`ACME_WORKSPACE_PROTECTED_HARDLINKS`). A
+  product uses the provider whole there: the workspace's directories, its
+  records, and its clearing.
 - A deployed environment refuses the backend, as it refuses the host
   one: a deployed process runs tools in containers, or none.
 - What the account closed even to itself stays until a purge holds the
