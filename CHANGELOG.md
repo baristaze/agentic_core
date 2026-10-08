@@ -5,39 +5,27 @@ included, stay on its GitHub release. Releases are tagged
 `vMAJOR.MINOR.PATCH`; see `CONTRIBUTING.md` for what bumps which
 number.
 
-## 0.10.0 (2026-10-08)
+## 0.11.0 (2026-10-08)
 
-The account mode runs whole under a hardened unit, and a transport
-reads a file from an offset and ends a command at its own exit. Minor:
-a transport an adopter wrote takes the offset, as Changed says; nothing
-is reversed.
+The engine's base moves to the guideline at v0.53.0, which makes a
+feature flag an infra capability behind `FlagsInterface`, with its
+provider chosen at boot, and gives a client its session's flags as one
+snapshot from `GET /v1/flags`. Minor: the base carries the guideline's
+one reversal, DEL-22; the engine's own rules reverse nothing.
 
 ### Added
 
-- The account mode's prepare runs under a unit with `ProcSubset=pid`
-  and `RestrictSUIDSGID=yes`. Where the host shows
-  `fs.protected_hardlinks`, it decides; where the unit hides it, the
-  runner's `ACME_WORKSPACE_PROTECTED_HARDLINKS` declares it, off by
-  default, so an undeclared hidden setting is refused. A workspace's
-  home and tmp are `0o770` without the setgid bit, owned by the
-  account's group, with a default ACL that gives that group what is made
-  below them; a filesystem that keeps no ACL is refused at prepare
-  (#71).
-- `read_file` takes an offset in every transport and reads only what
-  follows it, without following a link at any step, in host mode as in
-  the account mode (#73).
-- A command is over when its own process exits. Its output drains for
-  two seconds; what still holds it is then ended (as the account, in
-  the account mode), and the output is cut off after a grace. A child
-  left holding the output no longer keeps a command to its deadline
-  (#73, ADR 1023).
-- A claude.ai run of `browser-judge-agentic` on 2026-10-08, with its
-  permission mode at Auto, at sizes `m, m` on v0.9.0: 76 (#72).
+- From the guideline's v0.53.0, in the scaffold: `FlagsInterface` in
+  infra beside the engine's keys and runtime, built last and closed
+  first; `ACME_FLAGS_BACKEND` (`memory`, `launchdarkly` through
+  OpenFeature, or `none`); `media-uploads` gating a new upload with
+  `403 feature_off`; `GET /v1/flags` with its `ETag`; the portal's
+  snapshot and its paused notice; ADR 0085 (#75).
 
 ### Changed
 
-- For an adopter: `TransportInterface.read_file` takes `offset`
-  (default 0), and a negative one raises `InfraValidationFailed`;
-  `WorkspaceAccountImpl` takes `protected_hardlinks`, which
-  `InfraConfiguredImpl` passes from the settings (#71, #73).
-- ADR 1021 states the hardened unit's two settings (#71).
+- The spec's links and the lenses' README cite the guideline at v0.53.0
+  (#75).
+- From the guideline: DEL-22, reversed. A vendor's flag SDK outside the
+  infra flags package is the violation, and DEL-52 keeps one out of a
+  browser app (#75).
