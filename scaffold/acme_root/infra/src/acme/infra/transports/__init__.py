@@ -55,6 +55,7 @@ __all__ = [
     "SecretVia",
     "StaleCommand",
     "TransportInterface",
+    "file_offset",
     "relative_path",
     "require_mode",
 ]
@@ -176,6 +177,13 @@ def relative_path(path: str) -> PurePosixPath:
     return relative
 
 
+def file_offset(offset: int) -> int:
+    """An offset into a file, refused when it is before the file's start."""
+    if offset < 0:
+        raise InfraValidationFailed(f"an offset of {offset} is before the start of the file")
+    return offset
+
+
 def require_mode(workspace: Workspace, mode: IsolationMode, transport: str) -> None:
     """Refuses, loudly, a workspace the transport does not serve: the absent
     workspace of a session that has none, or one of another mode."""
@@ -203,9 +211,11 @@ class TransportInterface(ABC):
     ) -> CommandResult:
         """Runs the command, streaming its redacted output to `on_output`,
         and records how it ended under its key, its output sealed by `seal`.
-        A non-zero exit is a result. At the deadline the command's whole
-        process tree ends, and the result says it timed out; a run that is
-        cancelled ends the tree too. `StaleCommand` for an epoch below one
+        A non-zero exit is a result. The command is over when its own
+        process exits: what it left holding its output then ends, after a
+        short drain. At the deadline the command's whole process tree ends,
+        and the result says it timed out; a run that is cancelled ends the
+        tree too. `StaleCommand` for an epoch below one
         this workspace has seen, with nothing run."""
         ...
 
@@ -229,8 +239,13 @@ class TransportInterface(ABC):
         ...
 
     @abstractmethod
-    async def read_file(self, workspace: Workspace, path: str, max_bytes: int) -> bytes:
-        """At most `max_bytes` of the file."""
+    async def read_file(
+        self, workspace: Workspace, path: str, max_bytes: int, offset: int = 0
+    ) -> bytes:
+        """At most `max_bytes` of the file from `offset`, with no byte before
+        it read, so a caller that follows a growing file reads only what is
+        new; empty at or past its end. `InfraValidationFailed` for a
+        negative offset."""
         ...
 
     @abstractmethod

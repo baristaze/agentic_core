@@ -20,14 +20,21 @@ from acme.infra.transports import (
     PathOutsideWorkspace,
     RecordSeal,
     TransportInterface,
+    file_offset,
     relative_path,
     require_mode,
 )
 from acme.infra.transports.injection import BASE_LANG, injected
-from acme.infra.transports.processes import drive, end_tree, spawn
+from acme.infra.transports.processes import drive, end_group, end_tree, spawn
 from acme.infra.transports.records import RecordBook, opened_result, sealed_record
 from acme.infra.workspaces import IsolationMode, Workspace
-from acme.infra.workspaces.account import SHARED_MODE, UMASK, switch_to, temporary
+from acme.infra.workspaces.account import (
+    SHARED_MODE,
+    UMASK,
+    end_group_as,
+    switch_to,
+    temporary,
+)
 
 DEFAULT_PATH = "/usr/local/bin:/usr/bin:/bin"
 """The search path of a command's environment, which holds nothing else of
@@ -51,14 +58,17 @@ class TransportLocalImpl(TransportInterface):
     directory on it: the transport of the host provider. A command is a
     process of its own session, whose environment is built from nothing: the
     search path, the workspace as its home, a locale, the command's own
-    variables, and its injected secrets. A path names a place inside the
+    variables, and its injected secrets. A file is read without following a
+    link at any step, so a caller that polls a path reads the file there and
+    nothing a link swapped in. Any other path names a place inside the
     workspace, links resolved, or it is refused.
 
     Given an account, it is the transport of the account provider
     (`acme.infra.workspaces.account`): each command runs as the account,
-    with its temporary directory beside the workspace, and a path is
-    followed without a link at any step, since the account plants what it
-    likes there and this process reads and writes with more than it may."""
+    with its temporary directory beside the workspace, what a command left
+    is ended as the account, and every path is followed without a link at
+    any step, since the account plants what it likes there and this process
+    reads and writes with more than it may."""
 
     def __init__(
         self,
@@ -113,6 +123,7 @@ class TransportLocalImpl(TransportInterface):
                         deadline=command.deadline,
                         on_output=on_output,
                         end=lambda: end_tree(process.pid),
+                        end_left=lambda: self._end_left(process.pid),
                     )
                     result = CommandResult(
                         key=command.key,
@@ -169,27 +180,29 @@ class TransportLocalImpl(TransportInterface):
         await asyncio.to_thread(_written, write, script)
         return process
 
+    async def _end_left(self, group: int) -> None:
+        """Ends what a command left once its own process is over: as this
+        process, or as the account, which reaches the account's processes
+        alone, whatever this process may signal."""
+        if self._account is None:
+            await end_group(group)
+            return
+        await end_group_as(await asyncio.to_thread(switch_to, self._account), group)
+
     async def _owners(self) -> frozenset[int]:
         """Whose files a path may reach in an account's workspace."""
         assert self._account is not None
         switch = await asyncio.to_thread(switch_to, self._account)
         return frozenset({os.getuid(), switch.uid})
 
-    async def read_file(self, workspace: Workspace, path: str, max_bytes: int) -> bytes:
-        if self._account is not None:
-            root = self._root(workspace)
-            with _beneath(path, "file"):
-                return await asyncio.to_thread(_read, root, path, max_bytes, await self._owners())
-        target = _inside(self._root(workspace), path)
-
-        def read() -> bytes:
-            try:
-                with target.open("rb") as handle:
-                    return handle.read(max_bytes)
-            except (FileNotFoundError, IsADirectoryError) as error:
-                raise InfraNotFound(f"no file {path!r} in the workspace") from error
-
-        return await asyncio.to_thread(read)
+    async def read_file(
+        self, workspace: Workspace, path: str, max_bytes: int, offset: int = 0
+    ) -> bytes:
+        root = self._root(workspace)
+        start = file_offset(offset)
+        owners = None if self._account is None else await self._owners()
+        with _beneath(path, "file"):
+            return await asyncio.to_thread(_read, root, path, max_bytes, start, owners)
 
     async def write_file(self, workspace: Workspace, path: str, data: bytes, epoch: int) -> None:
         root = self._root(workspace)
@@ -318,11 +331,12 @@ def _walked(root: Path, parts: Sequence[str], *, make: bool = False) -> int:
     return folder
 
 
-def _file(root: Path, path: str, flags: int, owners: Collection[int]) -> int:
+def _file(root: Path, path: str, flags: int, owners: Collection[int] | None) -> int:
     """The regular file `path` names below `root`, open, reached without
-    following a link at any step, and of one of `owners`: never a file of
-    another's that a hard link reaches, and never one of this process's
-    with a second link, which may be its own file outside the workspace."""
+    following a link at any step. Where `owners` are named, of one of them:
+    never a file of another's that a hard link reaches, and never one of
+    this process's with a second link, which may be its own file outside the
+    workspace."""
     *parts, name = relative_path(path).parts or ("",)
     if not name:
         raise IsADirectoryError(path)
@@ -332,17 +346,23 @@ def _file(root: Path, path: str, flags: int, owners: Collection[int]) -> int:
     finally:
         os.close(folder)
     info = os.fstat(fd)
+    if not stat.S_ISREG(info.st_mode):
+        os.close(fd)
+        raise IsADirectoryError(path)
     linked = info.st_uid == os.getuid() and info.st_nlink > 1
-    if stat.S_ISREG(info.st_mode) and info.st_uid in owners and not linked:
-        return fd
-    os.close(fd)
-    if stat.S_ISREG(info.st_mode):
+    if owners is not None and (info.st_uid not in owners or linked):
+        os.close(fd)
         raise PathOutsideWorkspace(f"{path!r} is not a file of the workspace")
-    raise IsADirectoryError(path)
+    return fd
 
 
-def _read(root: Path, path: str, max_bytes: int, owners: Collection[int]) -> bytes:
+def _read(
+    root: Path, path: str, max_bytes: int, offset: int, owners: Collection[int] | None
+) -> bytes:
+    """At most `max_bytes` of the file from `offset`, which is sought, so no
+    byte before it is read."""
     with os.fdopen(_file(root, path, os.O_RDONLY, owners), "rb") as handle:
+        handle.seek(offset)
         return handle.read(max_bytes)
 
 

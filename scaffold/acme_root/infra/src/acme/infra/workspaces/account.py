@@ -10,11 +10,13 @@ account may, and nothing of this process's: not its files, its credential,
 or its environment. No program that runs with this process's privileges
 sees the command's environment: it reaches the command after the switch.
 
-The account serves one workspace at a time, so every process of the
-account is that workspace's. A release ends each of them, as the account,
-whatever `/proc` hides from this process, then each one in its directory,
-and closes the workspace to the account, so the next workspace's commands
-never reach its files. A purge clears what the account wrote, as the
+What a command left holding its output once its own process has exited
+is ended as the account, which reaches the account's processes alone
+(ADR 1023). The account serves one workspace at a time, so every process
+of the account is that workspace's. A release ends each of them, as the
+account, whatever `/proc` hides from this process, then each one in its
+directory, and closes the workspace to the account, so the next
+workspace's commands never reach its files. A purge clears what the account wrote, as the
 account, then removes the directory without following a link out of it.
 
 It runs under a hardened unit, which hides `/proc/sys` (`ProcSubset=pid`)
@@ -134,6 +136,36 @@ own view of `/proc` is read for one still alive, other than this shell; a
 zombie is dead, whoever reaps it. It answers 0 when none is, and prints
 each one alive otherwise. It runs builtins alone, so it starts no process
 of the account."""
+
+
+END_GROUP = """group=$0 found=' ' pass=0
+kill -STOP "-$group" 2>/dev/null
+while [ "$pass" -lt 3 ]; do
+  for stat in /proc/[0-9]*/stat; do
+    pid=${stat#/proc/}; pid=${pid%/stat}
+    [ "$pid" = "$$" ] && continue
+    case $found in *" $pid "*) continue ;; esac
+    line=
+    { read -r line < "$stat"; } 2>/dev/null
+    set -f; set -- ${line##*) }; set +f
+    if [ "$3" != "$group" ]; then
+      case $found in *" $2 "*) ;; *) continue ;; esac
+    fi
+    kill -STOP "$pid" 2>/dev/null
+    found="$found$pid "
+  done
+  pass=$((pass + 1))
+done
+kill -KILL "-$group" $found 2>/dev/null
+exit 0"""
+"""What ends, as the account, what a command whose group is `$0` left once
+its own process is over: each process of the group, and each one descended
+from one, frozen as the account's own view of `/proc` shows it, walked again
+after each freeze, then killed with the group. A process's name may hold
+spaces and parentheses, so its parent and its group are read after the last
+`) `. As the account, it signals the account's processes alone, whichever
+process a pid names by then. It runs builtins alone, so it starts no
+process of the account."""
 
 
 def temporary(home: Path) -> Path:
@@ -294,6 +326,26 @@ async def end_account(switch: Switch, seconds: float = ENDING_SECONDS) -> None:
                 f"processes of {switch.account!r} alive after {seconds}s: {alive}"
             )
         await asyncio.sleep(0.05)
+
+
+async def end_group_as(switch: Switch, group: int, seconds: float = ENDING_SECONDS) -> None:
+    """Ends, as the account, what a command whose group is `group` left
+    (`END_GROUP`). An end that has not finished after `seconds` is cut off;
+    what it left then ends with the workspace's release."""
+    ending = await asyncio.create_subprocess_exec(
+        *switch.argv(END_GROUP, (str(group),)),
+        cwd="/",
+        env={},
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    try:
+        await asyncio.wait_for(ending.wait(), seconds)
+    except TimeoutError:
+        ending.kill()
+        await ending.wait()
 
 
 class WorkspaceAccountImpl(WorkspaceProviderInterface):

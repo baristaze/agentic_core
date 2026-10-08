@@ -16,6 +16,7 @@ from acme.infra.transports import (
     OutputSink,
     RecordSeal,
     TransportInterface,
+    file_offset,
     relative_path,
     require_mode,
 )
@@ -28,6 +29,12 @@ from acme.infra.workspaces.container import MOUNT
 LAUNCHER = 'echo $$ > "$1"; shift; exec "$@"'
 """Writes the command's own pid where the end of its tree finds it, then
 becomes the command."""
+
+READ_FROM = (
+    'test -f "$1" || { echo "no file $1" >&2; exit 1; }; tail -c "+$2" -- "$1" | head -c "$3"'
+)
+"""At most `$3` bytes of the file `$1` from its byte `$2`, counted from one:
+`tail` seeks a regular file to it, so no byte before it is read."""
 
 END_TREE = r"""
 root=$(cat "$1" 2>/dev/null) || exit 0
@@ -121,10 +128,13 @@ class TransportContainerImpl(TransportInterface):
                     docker_environment(injection.env),
                 )
 
-                async def end() -> None:
+                async def end_inside() -> None:
                     await docker(
                         "exec", name, "sh", "-c", END_TREE, "sh", pidfile, bound=self._timeout
                     )
+
+                async def end() -> None:
+                    await end_inside()
                     await end_tree(process.pid)
 
                 driven = await drive(
@@ -134,6 +144,7 @@ class TransportContainerImpl(TransportInterface):
                     deadline=command.deadline,
                     on_output=on_output,
                     end=end,
+                    end_left=end_inside,
                 )
                 result = CommandResult(
                     key=command.key,
@@ -159,11 +170,23 @@ class TransportContainerImpl(TransportInterface):
     async def purge_records(self, workspace_id: UUID) -> None:
         await asyncio.to_thread(self._book.purge, workspace_id)
 
-    async def read_file(self, workspace: Workspace, path: str, max_bytes: int) -> bytes:
+    async def read_file(
+        self, workspace: Workspace, path: str, max_bytes: int, offset: int = 0
+    ) -> bytes:
         name = self._container(workspace)
         target = _inside(path)
+        start = file_offset(offset) + 1
         reply = await docker(
-            "exec", name, "head", "-c", str(max_bytes), "--", target, bound=self._timeout
+            "exec",
+            name,
+            "sh",
+            "-c",
+            READ_FROM,
+            "sh",
+            target,
+            str(start),
+            str(max_bytes),
+            bound=self._timeout,
         )
         if not reply.ok:
             raise InfraNotFound(f"no file {path!r} in the workspace: {reply.reason()}")
