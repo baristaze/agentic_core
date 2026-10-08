@@ -59,6 +59,7 @@ LOCAL_DEFAULT_SERVES_THE_CLOUD = {
     "workspace_backend": "the API and the sweep run no tool, so they prepare no workspace",
     "workspaces_root": "the host, account, and container workspace backends only",
     "workspace_account": "the account workspace backend only",
+    "workspace_protected_hardlinks": "the account workspace backend only",
     "workspace_image": "the container workspace backend only",
     "docker_timeout_seconds": "the container workspace backend only",
     "log_level": "INFO everywhere",

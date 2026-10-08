@@ -7,7 +7,10 @@ ends what its commands left running there.
 An account workspace runs its commands as an account of the host, which the
 cases that need one name in TEST_WORKSPACE_ACCOUNT. They are skipped, with
 the reason, on a host that cannot switch to it: one not on Linux, or a
-process without the capabilities the switch takes, as in most CI."""
+process without the capabilities the switch takes, as in most CI. Their
+root's filesystem keeps ACLs. One more runs under a unit with
+`ProcSubset=pid` and `RestrictSUIDSGID=yes` alone, and is skipped, with the
+reason, anywhere else."""
 
 import asyncio
 import contextlib
@@ -15,6 +18,7 @@ import os
 import re
 import shutil
 import signal
+import stat
 import tempfile
 from collections.abc import Iterator
 from datetime import timedelta
@@ -567,6 +571,67 @@ async def test_an_account_workspace_on_a_host_that_lets_an_account_link_anothers
     assert await asyncio.to_thread(os.listdir, account_root) == []
 
 
+HIDDEN = "hidden"
+"""The host's setting as a unit with `ProcSubset=pid` leaves it: no file."""
+
+
+@pytest.mark.parametrize(
+    ("setting", "declared", "refused"),
+    [
+        ("0\n", False, "protected_hardlinks is not 1"),
+        ("0\n", True, "protected_hardlinks is not 1"),
+        (HIDDEN, False, "cannot read fs.protected_hardlinks"),
+        (HIDDEN, True, None),
+        ("1\n", False, None),
+    ],
+    ids=["reads-0", "reads-0-declared-on", "hidden", "hidden-declared-on", "reads-1"],
+)
+async def test_the_hosts_hard_link_setting_is_read_where_it_shows_and_declared_where_it_is_hidden(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    setting: str,
+    declared: bool,
+    refused: str | None,
+) -> None:
+    """A host that lets an account link a file it does not own is refused,
+    before anything is made, and so is one whose setting this process cannot
+    read and the runner's settings do not declare on. The host's own setting
+    outranks the declaration; where it is hidden, a declaration lets the
+    prepare on, to the hold of the account."""
+    path = tmp_path / "protected_hardlinks"
+    if setting != HIDDEN:
+        path.write_text(setting)
+    monkeypatch.setattr(accounts, "HARDLINKS", path)
+
+    def switched(account: str) -> Switch:
+        return Switch(account=account, uid=2001, gid=2001, setpriv="setpriv", prlimit="prlimit")
+
+    async def serves_another(*_: object) -> bool:
+        return False
+
+    monkeypatch.setattr(accounts, "switch_to", switched)
+    monkeypatch.setattr(WorkspaceAccountImpl, "_took", serves_another)
+    root = tmp_path / "workspaces"
+    infra = InfraConfiguredImpl(
+        InfraSettings.model_validate(
+            {
+                "environment": "local",
+                "secrets_file": tmp_path / "secrets.env",
+                "workspace_backend": "account",
+                "workspaces_root": root,
+                "workspace_protected_hardlinks": declared,
+            }
+        )
+    )
+    with pytest.raises(IsolationRefused) as caught:
+        await infra.get_workspaces().prepare(new_id(), new_id(), spec(IsolationMode.ACCOUNT))
+    if refused is None:
+        assert "one at a time" in caught.value.message, "past the host, to the account's hold"
+    else:
+        assert refused in caught.value.message and not caught.value.clears
+    assert not root.exists()
+
+
 async def test_only_the_refusal_that_waits_for_the_other_workspace_clears(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -760,3 +825,87 @@ async def test_the_account_serves_one_workspace_at_a_time_and_a_released_one_is_
             await provider.release(second)
             await provider.purge(second.org_id, second.id)
         await provider.purge(first.org_id, first.id)
+
+
+def hardened() -> str | None:
+    """Why this process runs under no unit that hides `/proc/sys`
+    (`ProcSubset=pid`) and refuses a setgid bit (`RestrictSUIDSGID=yes`);
+    None when it does."""
+    if not (accounts.PROC / "self").is_dir() or (accounts.PROC / "sys").exists():
+        return "/proc/sys shows here: no unit with ProcSubset=pid"
+    probe = Path(tempfile.mkdtemp(prefix="setgid-"))
+    try:
+        probe.chmod(0o2770)
+    except PermissionError:
+        return None
+    finally:
+        probe.rmdir()
+    return "a setgid bit is set here: no unit with RestrictSUIDSGID=yes"
+
+
+def processes_of(uid: int) -> list[int]:
+    """The live processes `/proc` shows whose real, effective, or saved uid
+    is `uid`."""
+    found: list[int] = []
+    for status in Path("/proc").glob("[0-9]*/status"):
+        try:
+            text = status.read_text()
+        except OSError:
+            continue
+        uids = re.search(r"^Uid:\s+(\d+)\s+(\d+)\s+(\d+)", text, re.MULTILINE)
+        state = re.search(r"^State:\s+(\S)", text, re.MULTILINE)
+        if uids and str(uid) in uids.groups() and not (state and state.group(1) in "ZX"):
+            found.append(int(status.parent.name))
+    return found
+
+
+@needs_an_account
+@pytest.mark.skipif(hardened() is not None, reason=f"{hardened()}")
+async def test_under_a_hardened_unit_a_workspace_prepares_runs_as_the_account_releases_and_purges(
+    account_root: Path, tmp_path: Path
+) -> None:
+    """Under a unit that hides `/proc/sys` and refuses a setgid bit, with the
+    host's setting declared on: the home and the temporary directory carry
+    no setgid bit, and the account writes both; a file this process writes
+    there, the account reads, and one the account writes, this process
+    reads. A release ends every process of the account and closes the
+    workspace; a purge removes it and follows no link the account
+    planted."""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "kept.txt").write_text("the engine's")
+    account = switch_to(ACCOUNT)
+    provider = WorkspaceAccountImpl(account_root, ACCOUNT, protected_hardlinks=True)
+    transport = as_account(tmp_path / "records")
+    workspace = await provider.prepare(
+        new_id(), new_id(), spec(IsolationMode.ACCOUNT, processes=64)
+    )
+    home = Path(workspace.location)
+    try:
+        for shared in (home, accounts.temporary(home)):
+            made = shared.stat()
+            assert (stat.S_IMODE(made.st_mode), made.st_gid) == (0o770, account.gid)
+        await transport.write_file(workspace, "src/in.txt", b"the engine's file", epoch=1)
+        script = (
+            "set -e; cat src/in.txt; echo; echo the account > src/out.txt; "
+            'touch "$HOME/home-file" "$TMPDIR/tmp-file"; '
+            f"ln -s {outside}/kept.txt file-link; ln -s {outside} dir-link; "
+            "(cd / && exec setsid sleep 300 </dev/null >/dev/null 2>&1) & echo $!"
+        )
+        result = await ran(transport, workspace, script)
+        assert result.exit_code == 0, result.stderr
+        read, left = result.stdout.splitlines()
+        assert read == "the engine's file"
+        assert await transport.read_file(workspace, "src/out.txt", 100) == b"the account\n"
+        for written in (home / "home-file", accounts.temporary(home) / "tmp-file"):
+            assert written.stat().st_uid == account.uid
+        assert alive(int(left))
+        await provider.release(workspace)
+        assert await still_alive(int(left)) == []
+        assert processes_of(account.uid) == []
+        assert stat.S_IMODE(home.parent.stat().st_mode) == 0o700, "closed to the account"
+    finally:
+        await provider.purge(workspace.org_id, workspace.id)
+    assert not home.parent.exists()
+    assert (outside / "kept.txt").read_text() == "the engine's"
+    assert [path.name for path in outside.iterdir()] == ["kept.txt"]
