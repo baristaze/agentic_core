@@ -108,6 +108,18 @@ class InfraSettings(BaseSettings):
     workspace_protected_hardlinks: bool = False
     workspace_image: str = "python:3.14-slim"
 
+    # Where the flags' rules come from: the memory impl over a rules file
+    # (local only, refused at boot anywhere else), LaunchDarkly through
+    # OpenFeature, or none, where every flag reads the default its
+    # declaration gives and the boot line says so.
+    flags_backend: Literal["memory", "launchdarkly", "none"] = "memory"
+    flags_file: Path = Path(".local/flags.json")
+    # The server-side SDK key of the LaunchDarkly environment. A process
+    # credential, injected at start from the secret store in a deployed
+    # environment and read from the environment locally. Empty or "off"
+    # means not set, and `launchdarkly` without it is refused at boot.
+    launchdarkly_sdk_key: SecretStr | None = Field(default=None, repr=False)
+
     aws_region: str = "us-east-1"
 
     # Every outbound call carries a timeout, one per client, so a downstream
@@ -119,6 +131,9 @@ class InfraSettings(BaseSettings):
     # A Docker command that prepares, releases, or reaches into a container
     # workspace; the first prepare may pull the image.
     docker_timeout_seconds: float = 120.0
+    # The flag vendor's connect and read, and the most boot waits for its
+    # first rules before it runs on the code's defaults.
+    flags_timeout_seconds: float = Field(default=10.0, gt=0)
 
     log_level: str = "INFO"
     log_json: bool = False
@@ -136,6 +151,16 @@ class InfraSettings(BaseSettings):
     def _root_key_empty_is_none(cls, value: SecretStr | None) -> SecretStr | None:
         """Empty, a random root per process."""
         if value is None or not value.get_secret_value().strip():
+            return None
+        return value
+
+    @field_validator("launchdarkly_sdk_key")
+    @classmethod
+    def _launchdarkly_key_off_is_none(cls, value: SecretStr | None) -> SecretStr | None:
+        """Empty or "off" means not set; the cloud secret starts as "off". Named
+        for its field: a process's settings mix this class with others, and a
+        validator another class names the same would replace this one."""
+        if value is None or value.get_secret_value().strip().lower() in ("", "off"):
             return None
         return value
 

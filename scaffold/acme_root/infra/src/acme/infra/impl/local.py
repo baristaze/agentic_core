@@ -7,6 +7,8 @@ from acme.infra.buckets import BucketsInterface
 from acme.infra.buckets.local import BucketsLocalImpl
 from acme.infra.cache import CacheInterface, CacheScope
 from acme.infra.cache.memory import CacheMemoryImpl
+from acme.infra.flags import FlagsInterface
+from acme.infra.flags.memory import FlagsMemoryImpl
 from acme.infra.keys import KeyServiceInterface
 from acme.infra.keys.memory import KeyServiceMemoryImpl
 from acme.infra.outages import OutageSignalInterface
@@ -40,6 +42,7 @@ class InfraLocalImpl(InfraInterface):
         self._workspaces = WorkspaceTwinImpl()
         self._broker = BrokerTwinImpl()
         self._transport = TransportTwinImpl(self._secrets, self._broker)
+        self._flags = FlagsMemoryImpl(file=root / "flags.json")
 
     def get_cache(self, scope: CacheScope) -> CacheInterface:
         return self._caches[scope]
@@ -71,6 +74,9 @@ class InfraLocalImpl(InfraInterface):
     def get_broker(self) -> CredentialBrokerInterface:
         return self._broker
 
+    def get_flags(self) -> FlagsInterface:
+        return self._flags
+
     def describe(self) -> list[str]:
         return [
             *(cache.describe() for cache in self._caches.values()),
@@ -83,10 +89,18 @@ class InfraLocalImpl(InfraInterface):
             self._workspaces.describe(),
             self._transport.describe(),
             self._broker.describe(),
+            self._flags.describe(),
         ]
 
     async def start(self) -> None:
-        for capability in (self._topics, self._buckets, self._queues, self._secrets, self._keys):
+        for capability in (
+            self._topics,
+            self._buckets,
+            self._queues,
+            self._secrets,
+            self._keys,
+            self._flags,
+        ):
             await capability.start()
         await self._outages.start()
         for runtime in (self._broker, self._workspaces, self._transport):
@@ -98,5 +112,12 @@ class InfraLocalImpl(InfraInterface):
         await self._outages.close()
         for cache in self._caches.values():
             await cache.close()
-        for capability in (self._keys, self._secrets, self._queues, self._buckets, self._topics):
+        for capability in (
+            self._flags,
+            self._keys,
+            self._secrets,
+            self._queues,
+            self._buckets,
+            self._topics,
+        ):
             await capability.close()
