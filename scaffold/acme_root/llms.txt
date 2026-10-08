@@ -27,7 +27,7 @@ served to it. Exposure is by listing, never by folder.
 - [Models](om/src/acme/om/models/README.md): model roles, fills, fill sets and their switches, the resolver, and prices
 - [Windows](om/src/acme/om/windows/README.md): what a model reads: the request rendered from the history, the window sized for its model, the pinned zone, compaction into summaries, and artifacts
 - [Tools](om/src/acme/om/tools/README.md): the tool contract, the registry, policy by class and target, approvals bound to one call, failures, recovery by effect, jobs
-- [Infrastructure](infra/README.md): cache, buckets, topics, queues, secrets, keys, the outage signal, observability, workspaces and the transport; what each promises and which twin runs where
+- [Infrastructure](infra/README.md): cache, buckets, topics, queues, secrets, keys, flags, the outage signal, observability, workspaces and the transport; what each promises and which twin runs where
 - [Integrations](integrations/README.md): the identity provider, its twin, the absent provider, and the webhook check; the model providers, their adapters, and the scripted twin
 - [The API process](services/api/README.md): the routes by area, the gateway's guarantees, the subcommands
 - [The maintenance worker](workers/maintenance/README.md): the work queue's loop, the provider deliveries, and the sweep
@@ -61,6 +61,7 @@ served to it. Exposure is by listing, never by folder.
 - [Support runbook](docs/runbooks/support.md): how a support investigation runs
 - [Tenant isolation runbook](docs/runbooks/tenant-isolation.md): the cross-tenant cases and what they catch
 - [WorkOS runbook](docs/runbooks/providers/workos.md): the identity provider for a newcomer: its environments, the application and its key, the redirects, the webhook, the bootstrap, and rotation
+- [LaunchDarkly runbook](docs/runbooks/providers/launchdarkly.md): the flag provider: how a rule reaches an org or a person, the SDK key, the switch from none, and what breaks
 - [Deployment](deployment/README.md): what runs where, locally and in the cloud, and the branch convention
 
 ## Tenant users and admins

@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 
 from acme.infra.buckets import BucketsInterface
 from acme.infra.cache import CacheInterface, CacheScope
+from acme.infra.flags import FlagsInterface
 from acme.infra.keys import KeyServiceInterface
 from acme.infra.outages import OutageSignalInterface
 from acme.infra.queues import QueuesInterface
@@ -53,6 +54,9 @@ class InfraInterface(ABC):
     def get_broker(self) -> CredentialBrokerInterface:
         """The broker the transport attaches a brokered secret through."""
         ...
+
+    @abstractmethod
+    def get_flags(self) -> FlagsInterface: ...
 
     @abstractmethod
     def describe(self) -> list[str]:
