@@ -42,6 +42,9 @@ DRAIN_SECONDS = 2.0
 """How long a command's output is read once its own process has exited,
 before what still holds it is ended."""
 
+EXIT_POLL_SECONDS = 0.05
+"""How often a running command's own process is looked at for its exit."""
+
 FREEZES = 3
 """Walks of the tree, each followed by a freeze, before the kill."""
 
@@ -323,7 +326,7 @@ async def drive(
         _Pump("stderr", process.stderr, redactor, max_output, on_output),
     ]
     reading = [asyncio.create_task(pump.run()) for pump in pumps]
-    waiting = asyncio.create_task(process.wait())
+    waiting = asyncio.create_task(_exited(process))
     timed_out = False
     try:
         done, _ = await asyncio.wait({waiting}, timeout=_left(deadline))
@@ -353,6 +356,15 @@ async def drive(
         timed_out=timed_out,
         truncated=any(pump.truncated for pump in pumps),
     )
+
+
+async def _exited(process: asyncio.subprocess.Process) -> None:
+    """Returns once the process has exited. Its return code is set
+    at its exit, while `Process.wait()` returns, on CPython before 3.14.7,
+    only once every pipe of it has closed: a process it left holding its
+    output would hold the command to its deadline."""
+    while process.returncode is None:
+        await asyncio.sleep(EXIT_POLL_SECONDS)
 
 
 def _left(deadline: datetime) -> float:
