@@ -268,4 +268,5 @@ def test_a_workspace_backend_builds_its_provider_and_its_transport_together(
     infra = InfraConfiguredImpl(
         local_settings(tmp_path, workspace_backend=backend, workspaces_root=root)
     )
-    assert infra.describe()[-3:-1] == [line.format(root=root) for line in lines]
+    runtime = [line for line in infra.describe() if line.startswith(("workspaces=", "transport="))]
+    assert runtime == [line.format(root=root) for line in lines]
