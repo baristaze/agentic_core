@@ -4,12 +4,16 @@ the gate is told which key the call carries. A call whose key cannot be had
 parks its session on the provider until a key is saved, with nothing held
 and no usage recorded. A key the provider does not take is marked refused,
 and no outage is reported for the provider; a permission the key lacks is
-the call's alone, and the key stays."""
+the call's alone, and the key stays. A tenant's own key that fails is
+marked under the tenant's org: its other sessions park on it, and another
+org's key of the same name still calls."""
 
+import dataclasses
 from pathlib import Path
 from uuid import UUID
 
 import pytest
+from contracts.doubles import context
 from contracts.loops import Clock, Loop, loop_over, reply, said
 
 from acme.infra.base import SYSTEM_SCOPE
@@ -19,13 +23,13 @@ from acme.integrations.model_providers.scripted import ScriptedFailure
 from acme.integrations.model_providers.types import ErrorKind, ProviderName
 from acme.om.agents.types.run import RunEnd
 from acme.om.attribution.types.principal import Principal
-from acme.om.context import TenantContext
+from acme.om.context import Role, TenantContext
 from acme.om.exceptions import NoCredential
 from acme.om.models.credentials import PLATFORM_CREDENTIAL, CallClient, CallCredentialsInterface
 from acme.om.models.layer import ModelsLayer
 from acme.om.models.types.fill import Fill, ModelRole
 from acme.om.root import Managers
-from acme.om.steps.types.header import ParkReason
+from acme.om.steps.types.header import LoopOutcome, ParkReason
 from acme.om.steps.types.step import StepType
 from acme.om.windows.impl.gate import CallGateBudgetImpl
 
@@ -158,3 +162,39 @@ async def test_a_key_its_provider_refuses_is_marked_refused_and_no_outage_is_rep
     assert len(loop.anthropic.calls) == 1, "parked at once: no retry on the same key"
     for holder, credential in ((loop.owner.org_id, KEY), (SYSTEM_SCOPE, PLATFORM_CREDENTIAL)):
         assert await loop.outages.current(holder, "anthropic", credential) is None, credential
+
+
+async def test_a_tenant_keys_outage_is_marked_under_its_org_and_parks_that_org_alone(
+    tmp_path: Path,
+) -> None:
+    loop = loop_over(tmp_path, models_layer=ModelsLayer(credentials=OwnKey().over))
+    learner = await loop.start()
+    await loop.say(learner, "What is the total?")
+    overloaded = ScriptedFailure(kind=ErrorKind.OVERLOADED, retry_after=2)
+    loop.anthropic.add(overloaded, overloaded, overloaded)
+    loop.openai.add(reply(said("The total is 12."), model="gpt-6.1-sol"))
+
+    await loop.loops.run(loop.owner, learner)
+
+    assert len(loop.anthropic.calls) == 3, "two retries in process, then the outage"
+    mark = await loop.outages.current(loop.owner.org_id, "anthropic", KEY)
+    assert mark is not None, "the tenant's key is marked under the tenant's org"
+    for credential in (KEY, loop.credential):
+        assert await loop.outages.current(SYSTEM_SCOPE, "anthropic", credential) is None
+
+    second = await loop.start()
+    await loop.say(second, "And the average?")
+    parked = await loop.loops.run(loop.owner, second)
+
+    assert parked.end is RunEnd.PARKED and parked.park is not None
+    assert parked.park.retry_at == mark.retry_at
+    assert len(loop.anthropic.calls) == 3, "the same org parks without a call"
+
+    other = dataclasses.replace(loop, owner=context(Role.OWNER))
+    third = await other.start()
+    await other.say(third, "Hello?")
+    loop.anthropic.add(reply(said("Hi.")))
+    answered = await other.loops.run(other.owner, third)
+
+    assert answered.outcome is LoopOutcome.SUCCEEDED
+    assert len(loop.anthropic.calls) == 4, "another org's key of the same name still calls"
