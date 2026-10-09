@@ -133,7 +133,7 @@ class LoopOptions(Platform):
     # A wait longer than this is not spent in process: the loop falls back,
     # or parks on the provider.
     retry_cap: timedelta = timedelta(seconds=30)
-    # The least time an outage is reported for when the loop parks on it.
+    # The least time an outage is marked for when the loop parks on it.
     outage_wait: timedelta = timedelta(seconds=30)
     # How often a running tool's controls are read: a cancel or an interrupt
     # stops it within this.
@@ -486,8 +486,9 @@ class LoopManagerImpl(LoopManagerInterface):
             used = await self._credentials.client_for(ctx, fill.provider)
         except PlatformException as refused:
             return await self._refused(run, refused)
-        # A provider known to be failing for this credential parks the loop
-        # at once, before anything is rendered, held, or spent.
+        # A provider marked failing for this credential parks the loop at
+        # once, before anything is rendered, held, or spent, until the mark's
+        # retry time by the loop's own clock.
         outage = await self._outages.current(
             self._holder(ctx, used.credential), fill.provider.value, used.credential
         )
@@ -537,6 +538,11 @@ class LoopManagerImpl(LoopManagerInterface):
             return await self._refused(run, refused)
         run.failures, run.refused = 0, None
         run.tried.clear()
+        # The provider answered on this key: a mark on the pair is over, so no
+        # other session parks on it.
+        await self._outages.clear(
+            self._holder(ctx, used.credential), fill.provider.value, used.credential
+        )
         header = replied.header
         if (
             isinstance(header, ModelResponseHeader)
@@ -688,7 +694,7 @@ class LoopManagerImpl(LoopManagerInterface):
         request that failed, or None when the compaction's call did, which
         neither falls back nor compacts again; `credential` names the key the
         call went out on, so an outage or a refusal is that key's alone, and
-        None, when no call says, reports neither. None goes on to the next
+        None, when no call says, marks neither. None goes on to the next
         model turn."""
         answer = failed.kind.answer
         now = self._clock()
@@ -702,9 +708,10 @@ class LoopManagerImpl(LoopManagerInterface):
                 await self._sleep(wait.total_seconds())
                 return None
             # The retries are spent: the provider is failing for this
-            # credential. Every session that would call it learns so, and
-            # parks at once until the retry time; this one falls back to its
-            # next declared fallback when it has one, and parks too when not.
+            # credential. The mark tells every session that would call it, in
+            # every process on the shared cache, and each parks at once until
+            # the retry time; this one falls back to its next declared
+            # fallback when it has one, and parks too when not.
             retry_at = now + max(wait, self._options.outage_wait)
             if credential is not None:
                 outage = Outage(

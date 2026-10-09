@@ -667,11 +667,16 @@ sooner than the provider's retry-after. A provider SDK keeps its own
 retries minimal, because the engine owns the policy and cannot see what
 an SDK swallows. The guideline's breaker ([Composition by
 decoration][g-decoration]) guards a call that spends its timeout. A
-provider that fails fast needs another guard: an **outage signal**, an
-interface keyed by provider and credential, which parks a session at
-once while the provider is known to be failing. One process needs none,
-and its null object never signals; a fleet shares one, which its
-platform supplies.
+provider that fails fast needs another guard: the guideline's **outage
+signal** ([Composition by decoration][g-decoration], [CON-24][g-outage]),
+a mark that every process reads, keyed by the provider and the
+credential, with a time to retry. A session's loop is its caller. The pair is the key
+the call goes out on, by name: a tenant's own under its org, the
+platform's under the system scope. The loop reads the mark before a
+model call, marks the pair when its retries are spent, and clears it
+when a call answers. A session that reads a mark parks on the provider
+at once, before anything is rendered, held, or spent, and makes no call
+until the mark's retry time ([Parking](#parking)).
 
 ## Tools
 
@@ -1288,7 +1293,7 @@ fallback stay among the providers the tenant holds keys for, and a
 session whose fill needs a key the tenant lacks parks on the provider
 until one is saved. Nothing starts silently on the platform's key. A key
 the provider does not take at all is that key's failure: it is offered to
-no call again, and no outage is reported for the provider. A permission
+no call again, and no outage is marked for the provider. A permission
 or a region the key lacks is the call's alone.
 
 ### Time, Steps, and Streaks
@@ -1577,8 +1582,8 @@ success. The key service has no quiet null; a test uses its memory impl.
   `model_request` reproduces its prompt hash; a mismatch is a rendering
   regression.
 - **A conformance kit:** contract cases every impl of an engine
-  interface must pass (step storage, key service, ledger, outage signal,
-  transport, workspace provider, provider adapter), which an adopter
+  interface must pass (step storage, key service, ledger, transport,
+  workspace provider, provider adapter), which an adopter
   imports, in the guideline's shape for contract cases ([Tests][g-tests]).
 - **Determinism:** a fake clock and a deterministic id source make
   recovery, deadlines, and parking testable.
@@ -1608,8 +1613,8 @@ attribution is `attribution` beside its identity plane.
 
 Provider adapters are clients of external services, so they live under
 `integrations/`, each with the scripted provider as its twin. The
-workspace provider, the transport, the key service, and the outage
-signal are capabilities under `infra/`.
+workspace provider, the transport, and the key service are
+capabilities under `infra/`, beside the guideline's.
 
 ## Deviations from the Guideline
 
@@ -1704,6 +1709,7 @@ evidence, trust across a customer's wall, and money.
 [g-interfaces]: https://github.com/baristaze/swe_guidelines/blob/v0.55.0/architecture.md#interfaces
 [g-impls]: https://github.com/baristaze/swe_guidelines/blob/v0.55.0/architecture.md#multiple-impls-per-interface
 [g-decoration]: https://github.com/baristaze/swe_guidelines/blob/v0.55.0/architecture.md#composition-by-decoration
+[g-outage]: https://github.com/baristaze/swe_guidelines/blob/v0.55.0/lenses/contracts.md#con-24-a-providers-outage-is-one-mark-that-every-process-reads
 [g-stages]: https://github.com/baristaze/swe_guidelines/blob/v0.55.0/architecture.md#stages
 [g-scopes]: https://github.com/baristaze/swe_guidelines/blob/v0.55.0/architecture.md#scopes
 [g-naming]: https://github.com/baristaze/swe_guidelines/blob/v0.55.0/architecture.md#naming-entities

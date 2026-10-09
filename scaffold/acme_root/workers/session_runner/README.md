@@ -18,6 +18,11 @@ inside the API ([ADR 1011](../../docs/adr/1011-a-sessions-loop-runs-in-a-worker-
   while the loop runs. It is the maintenance worker's claim loop, taken
   whole: capacity, the renewal and its fence, liveness, and the drain on
   stop.
+- **The lane** is the loops' own, `loop` (`ACME_RUNNER_LANE`): the relay
+  lands every `LOOP` item there, so a cap on the maintenance worker's lane
+  counts none of a tenant's running loops, and its wakes still run. A
+  runner set to a lane the relay lands no loop on refuses to start, and
+  names both.
 - **The run** takes the session's next writer epoch before it reads the
   history. A run that lost its claim, to a lease that ran out or to a
   person who took the environment over, can append no step and send no

@@ -34,6 +34,7 @@ from acme.om.work.types.work_item import (
     WorkItem,
     WorkKind,
     WorkStatus,
+    relayed_lane,
 )
 
 log = logging.getLogger(__name__)
@@ -145,10 +146,10 @@ class WorkManagerImpl(WorkManagerInterface):
         same on every run of the relay (`relayed_key`). The request that
         caused the work and its trace context come from the row too, which
         names the request that made the write: the row is the whole handoff,
-        so nothing here is minted afresh. The lane is the
-        default one; a row carries no routing of its own. A kind whose payload
-        is a `ScheduledPayload`, and a wake that names a time, waits in the
-        queue until its `not_before`."""
+        so nothing here is minted afresh. The lane is the kind's
+        (`WORK_LANES`), the default one for most; a row carries no routing of
+        its own. A kind whose payload is a `ScheduledPayload`, and a wake that
+        names a time, waits in the queue until its `not_before`."""
         kind = row.kind.removeprefix(WORK_ROW_PREFIX)
         if kind not in {k.value for k in WorkKind}:
             raise ValidationFailed(f"outbox row {row.id} asks for unknown work {row.kind}")
@@ -165,6 +166,7 @@ class WorkManagerImpl(WorkManagerInterface):
                 kind=WorkKind(kind),
                 target_id=row.target_id,
                 idempotency_key=relayed_key(WorkKind(kind), row, now),
+                lane=relayed_lane(WorkKind(kind)),
                 request_id=row.request_id,  # the request that made the write
                 traceparent=row.traceparent,  # its trace context, for the run's link
                 payload=row.payload,

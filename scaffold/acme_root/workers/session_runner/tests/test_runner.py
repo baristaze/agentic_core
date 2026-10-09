@@ -21,6 +21,7 @@ from acme.integrations.model_providers.calls import ModelReply
 from acme.integrations.model_providers.content import TextBlock, ToolUseBlock
 from acme.integrations.model_providers.registry import scripted_model_providers
 from acme.integrations.model_providers.types import ProviderName, StopReason, Usage
+from acme.om.agent_sessions.impl.manager import wake_row
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
 from acme.om.agents import LoopManagerInterface
 from acme.om.agents.types.kind import NO_WORKSPACE, AgentKind, DoneRule, TreeLimits
@@ -40,7 +41,7 @@ from acme.om.exceptions import NotFound, UnknownAgentKind
 from acme.om.steps.rules import message_step
 from acme.om.steps.types.content import Attachment, Children, DocumentBlock
 from acme.om.steps.types.content import TextBlock as KeptText
-from acme.om.steps.types.header import LoopOutcome, ToolResponseHeader
+from acme.om.steps.types.header import LoopOutcome, Park, ParkReason, ToolResponseHeader
 from acme.om.steps.types.step import StepType
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.tenancy.rules import ROLE_PERMISSIONS
@@ -52,12 +53,15 @@ from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
 from acme.om.work.types.handler import WorkParked
 from acme.om.work.types.work_item import (
     WORK_ENQUEUE_PERMISSIONS,
+    WORK_LANES,
     WorkItem,
     WorkKind,
     WorkStatus,
 )
 from acme.workers.maintenance.container import WorkerContainer
 from acme.workers.maintenance.main import build_loop
+from acme.workers.maintenance.main import loop_options as maintenance_options
+from acme.workers.maintenance.settings import MaintenanceSettings
 from acme.workers.session_runner import container as runner_container
 from acme.workers.session_runner import main as runner_main
 from acme.workers.session_runner.container import RunnerContainer
@@ -226,7 +230,56 @@ def test_every_kind_is_claimed_by_one_worker_and_asked_for_as_widely_as_it_runs(
             assert not missing, f"{role.value} asks for LOOP without {missing}"
 
 
-def test_the_runner_sweeps_recovery_alone_on_knobs_of_its_own() -> None:
+async def test_a_tenants_running_loop_leaves_its_wake_to_the_capped_maintenance_lane(
+    tmp_path: Path,
+) -> None:
+    """A loop runs on a lane of its own, so the maintenance worker's cap on a
+    tenant's share of its lane counts none of the tenant's running loops:
+    with its loop held by a runner, the tenant's wake is still claimed."""
+    storage, infra = StorageMemoryImpl(), InfraLocalImpl(tmp_path)
+    api = RunnerContainer.over(
+        settings(),
+        storage,
+        infra,
+        IntegrationsOverImpl(IdentityProviderAbsentImpl(), scripted_model_providers()),
+        agent_kinds=ABSENT,
+        tool_catalog=TOOLS,
+    )
+    rctx = RequestContext(request_id=new_id(), app=APP)
+    owner, _ = await api.managers.tenancy.bootstrap(rctx, "Ajax", "ajax", "ann@example.test", "Ann")
+    session = await api.managers.agents.start_session(
+        owner, Start(id=new_id(), kind="assistant", title="the dropped object")
+    )
+    said = message_step(new_id(), utcnow(), session.id, owner, "Why does it drop the object?")
+    await api.managers.agent_sessions.receive(owner, session.id, [said])
+    runner = loop_options(settings())
+    work = api.managers.work
+
+    running = await work.claim(rctx, runner.lane, [WorkKind.LOOP], runner.worker_id, runner.lease)
+
+    assert running is not None and running[1].target_id == session.id, "a runner holds the loop"
+    park = Park(reason=ParkReason.PROVIDER, unlock="anthropic", retry_at=utcnow())
+    await work.enqueue_relayed(owner.org_id, wake_row(owner, session, park))
+    capped = maintenance_options(
+        MaintenanceSettings.model_validate(
+            {"_env_file": None, "environment": "test", "worker_tenant_cap": 1}
+        )
+    )
+    kinds = build_loop(WorkerContainer.for_tests(storage, infra)).kinds
+
+    woken = await work.claim(
+        rctx, capped.lane, list(kinds), capped.worker_id, capped.lease, capped.tenant_cap
+    )
+
+    assert woken is not None and woken[1].kind is WorkKind.WAKE_SESSION, "not passed over"
+
+
+def test_the_runner_sweeps_recovery_alone_on_knobs_of_its_own(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The lane is a knob too, for a layer that lands its loops on a lane of
+    its own and registers it."""
+    monkeypatch.setitem(WORK_LANES, WorkKind.LOOP, "loops")
     options = loop_options(settings(runner_lease_seconds=7, runner_lane="loops"))
     assert options.recovery_only, "the runner purges nothing and judges no tenant purged"
     assert (options.lease, options.lane, options.worker_id) == (
@@ -234,6 +287,28 @@ def test_the_runner_sweeps_recovery_alone_on_knobs_of_its_own() -> None:
         "loops",
         "runner-test",
     )
+
+
+@pytest.mark.parametrize(
+    ("overrides", "argv"),
+    [({"runner_lane": "default"}, []), ({}, ["--lane", "default"])],
+    ids=["setting", "flag"],
+)
+def test_a_runner_on_a_lane_the_relay_lands_no_loop_on_refuses_to_start(
+    monkeypatch: pytest.MonkeyPatch, overrides: dict[str, object], argv: list[str]
+) -> None:
+    """An `.env` written before the loops had a lane of their own holds
+    `default`. A runner there would claim nothing while every session waits,
+    so it refuses to start, before anything opens, and names both lanes."""
+    opened: list[object] = []
+    monkeypatch.setattr(runner_main, "SessionRunnerSettings", lambda: settings(**overrides))
+    monkeypatch.setattr(runner_main, "boot", lambda _: None)
+    monkeypatch.setattr(RunnerContainer, "build", lambda *a, **_: opened.append(a))
+
+    with pytest.raises(ValueError, match=r"lane 'default' .* lane 'loop'$"):
+        runner_main.main(["serve", *argv])
+
+    assert not opened, "nothing opens"
 
 
 def test_every_knob_of_the_runner_is_in_the_example_env() -> None:
