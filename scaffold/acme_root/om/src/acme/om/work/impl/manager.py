@@ -27,7 +27,6 @@ from acme.om.work.rules import attempts_after_hand_back, is_exhausted, retry_del
 from acme.om.work.storage import InsertOutcome, WorkStorageInterface
 from acme.om.work.types.work_item import (
     WORK_ENQUEUE_PERMISSIONS,
-    WORK_LANES,
     WORK_PAYLOADS,
     WORK_ROW_PREFIX,
     ScheduledPayload,
@@ -35,6 +34,7 @@ from acme.om.work.types.work_item import (
     WorkItem,
     WorkKind,
     WorkStatus,
+    relayed_lane,
 )
 
 log = logging.getLogger(__name__)
@@ -166,7 +166,7 @@ class WorkManagerImpl(WorkManagerInterface):
                 kind=WorkKind(kind),
                 target_id=row.target_id,
                 idempotency_key=relayed_key(WorkKind(kind), row, now),
-                lane=WORK_LANES.get(WorkKind(kind), "default"),
+                lane=relayed_lane(WorkKind(kind)),
                 request_id=row.request_id,  # the request that made the write
                 traceparent=row.traceparent,  # its trace context, for the run's link
                 payload=row.payload,

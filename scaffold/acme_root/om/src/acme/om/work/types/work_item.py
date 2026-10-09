@@ -44,6 +44,12 @@ WORK_LANES: dict[WorkKind, str] = {WorkKind.LOOP: LOOP_LANE}
 """The lane the relay lands a kind on when it is not the default one."""
 
 
+def relayed_lane(kind: WorkKind) -> str:
+    """The lane the relay lands a kind on: its own in `WORK_LANES`, else the
+    default one."""
+    return WORK_LANES.get(kind, "default")
+
+
 def work_row_kind(kind: WorkKind) -> str:
     """The outbox row kind that asks for work of this kind."""
     return WORK_ROW_PREFIX + kind.value

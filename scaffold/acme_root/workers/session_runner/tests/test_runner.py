@@ -53,6 +53,7 @@ from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
 from acme.om.work.types.handler import WorkParked
 from acme.om.work.types.work_item import (
     WORK_ENQUEUE_PERMISSIONS,
+    WORK_LANES,
     WorkItem,
     WorkKind,
     WorkStatus,
@@ -273,7 +274,12 @@ async def test_a_tenants_running_loop_leaves_its_wake_to_the_capped_maintenance_
     assert woken is not None and woken[1].kind is WorkKind.WAKE_SESSION, "not passed over"
 
 
-def test_the_runner_sweeps_recovery_alone_on_knobs_of_its_own() -> None:
+def test_the_runner_sweeps_recovery_alone_on_knobs_of_its_own(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The lane is a knob too, for a layer that lands its loops on a lane of
+    its own and registers it."""
+    monkeypatch.setitem(WORK_LANES, WorkKind.LOOP, "loops")
     options = loop_options(settings(runner_lease_seconds=7, runner_lane="loops"))
     assert options.recovery_only, "the runner purges nothing and judges no tenant purged"
     assert (options.lease, options.lane, options.worker_id) == (
@@ -281,6 +287,28 @@ def test_the_runner_sweeps_recovery_alone_on_knobs_of_its_own() -> None:
         "loops",
         "runner-test",
     )
+
+
+@pytest.mark.parametrize(
+    ("overrides", "argv"),
+    [({"runner_lane": "default"}, []), ({}, ["--lane", "default"])],
+    ids=["setting", "flag"],
+)
+def test_a_runner_on_a_lane_the_relay_lands_no_loop_on_refuses_to_start(
+    monkeypatch: pytest.MonkeyPatch, overrides: dict[str, object], argv: list[str]
+) -> None:
+    """An `.env` written before the loops had a lane of their own holds
+    `default`. A runner there would claim nothing while every session waits,
+    so it refuses to start, before anything opens, and names both lanes."""
+    opened: list[object] = []
+    monkeypatch.setattr(runner_main, "SessionRunnerSettings", lambda: settings(**overrides))
+    monkeypatch.setattr(runner_main, "boot", lambda _: None)
+    monkeypatch.setattr(RunnerContainer, "build", lambda *a, **_: opened.append(a))
+
+    with pytest.raises(ValueError, match=r"lane 'default' .* lane 'loop'$"):
+        runner_main.main(["serve", *argv])
+
+    assert not opened, "nothing opens"
 
 
 def test_every_knob_of_the_runner_is_in_the_example_env() -> None:

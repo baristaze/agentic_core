@@ -27,7 +27,7 @@ from acme.infra.trust import install_trust_store
 from acme.om.agents.types.kind import AgentKind
 from acme.om.tools.attachments import AttachmentReaderInterface
 from acme.om.tools.tool import ToolInterface
-from acme.om.work.types.work_item import WorkKind
+from acme.om.work.types.work_item import WorkKind, relayed_lane
 from acme.workers.maintenance.health import Probe, WorkerHttpServer
 from acme.workers.maintenance.loop import LoopOptions, WorkerLoop
 from acme.workers.session_runner.container import RunnerContainer
@@ -37,10 +37,25 @@ from acme.workers.session_runner.settings import SessionRunnerSettings
 log = logging.getLogger(__name__)
 
 
+def claimed_lane(settings: SessionRunnerSettings, lane: str | None = None) -> str:
+    """The lane the runner claims from: `--lane`, else `ACME_RUNNER_LANE`. A
+    lane the relay lands no `LOOP` item on is refused, naming both, since a
+    runner there claims nothing while every session waits. A layer that
+    lands its loops on a lane of its own registers it in `WORK_LANES`."""
+    claimed = lane or settings.runner_lane
+    relayed = relayed_lane(WorkKind.LOOP)
+    if claimed != relayed:
+        raise ValueError(
+            f"the runner claims from lane {claimed!r} (--lane or ACME_RUNNER_LANE), "
+            + f"and the relay lands every LOOP item on lane {relayed!r}"
+        )
+    return claimed
+
+
 def loop_options(settings: SessionRunnerSettings, lane: str | None = None) -> LoopOptions:
     return LoopOptions(
         worker_id=settings.runner_id,
-        lane=lane or settings.runner_lane,
+        lane=claimed_lane(settings, lane),
         capacity=settings.runner_capacity,
         lease=timedelta(seconds=settings.runner_lease_seconds),
         heartbeat_interval=timedelta(seconds=settings.runner_heartbeat_seconds),
@@ -91,6 +106,7 @@ async def serve(
 ) -> int:
     settings = SessionRunnerSettings()
     boot(settings)
+    lane = claimed_lane(settings, lane)  # refused before anything opens
     container = RunnerContainer.build(
         settings,
         agent_kinds=agent_kinds,
