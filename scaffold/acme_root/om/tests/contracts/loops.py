@@ -517,7 +517,7 @@ async def outage_parks_at_once_and_resumes_at_the_retry_time(loop: Loop) -> None
     assert len(loop.anthropic.calls) == 3, "parked at once: no call, no retry"
     assert [s for s in await loop.history(second) if s.type is StepType.MODEL_REQUEST] == []
 
-    loop.clock.now = parked.park.retry_at
+    loop.clock.now = mark.retry_at
     await loop.managers.agent_sessions.wake_session(loop.owner, second, parked.park)
     loop.anthropic.add(reply(said("The average is 3.")))
     resumed = await loop.loops.run(loop.owner, second)
