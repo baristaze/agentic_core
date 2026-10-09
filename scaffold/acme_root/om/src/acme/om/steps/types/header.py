@@ -77,12 +77,15 @@ PERSON_ONLY = frozenset({ParkReason.PERSON, ParkReason.HANDOVER, ParkReason.PAUS
 
 class JobPark(Platform):
     """The job a loop parks on: its key, the id of the call's request; the
-    tool's own name for the work; and the budget hold it started under,
-    when it spends. Ids and a name, never what the work said."""
+    tool's own name for the work; the budget hold it started under, when it
+    spends; and the request in line whose grant starts it, when its tool
+    asked in line, kept past the grant so the tool's cancel ends its lease.
+    Ids and a name, never what the work said."""
 
     key: UUID
     handle: Stored = Field(min_length=1, max_length=MAX_NAME)
     hold_id: UUID | None = None
+    request_id: UUID | None = None
 
 
 class LinePark(Platform):

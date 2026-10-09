@@ -1091,7 +1091,9 @@ class LoopManagerImpl(LoopManagerInterface):
                 await self._gate.settle_job(run.ctx, hold, None, started=True)
             await self._answer(run, request, started)
             return _Settled()
-        job = JobPark(key=started.key, handle=started.handle, hold_id=hold)
+        job = JobPark(
+            key=started.key, handle=started.handle, hold_id=hold, request_id=started.request_id
+        )
         park = Park(
             reason=ParkReason.JOB, unlock=str(started.key), retry_at=started.deadline, job=job
         )
@@ -1189,18 +1191,19 @@ class LoopManagerImpl(LoopManagerInterface):
         run.jobs.pop(job.key, None)
 
     async def _cancel_job(self, run: _Run, started: rules.StartedJob) -> None:
-        """Ends the work. A tool that fails to end it is logged and the loop
-        goes on: the work was started to end by its deadline, which bounds
-        it whatever happens here."""
+        """Ends the work. A job whose tool asked in line names its request,
+        in line or granted, so the tool's cancel ends its ask, or its lease.
+        A tool that fails to end it is logged and the loop goes on: the work
+        was started to end by its deadline, which bounds it whatever happens
+        here."""
         header = started.request.header
         assert isinstance(header, ToolRequestHeader)
-        line = started.park.line
         handle = JobHandle(
             tool=header.tool,
             key=started.job.key,
             handle=started.job.handle,
             deadline=started.park.retry_at or self._clock(),
-            request_id=None if line is None else line.request_id,
+            request_id=started.job.request_id,
         )
         try:
             await self._tools.cancel_job(run.ctx, run.registry, handle)

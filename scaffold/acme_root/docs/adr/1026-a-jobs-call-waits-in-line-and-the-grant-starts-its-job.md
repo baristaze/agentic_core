@@ -38,7 +38,9 @@ granted parks on the job, with no model call and no notice. The job's
 completion answers the call as any job's does. A request that left its
 line without a lease answers the call with its reason: no job started,
 so its hold is released. Past the job's deadline in line, the job is
-cancelled and the call says it never started.
+cancelled and the call says it never started. The job's park keeps the
+request past the grant, beside the job's key, handle, and hold (ADR
+1013), so every cancel of the job names it, in line or granted.
 
 **A loop that stops leaves its lines before it cancels its jobs.** A
 cancel, or any other end, with a job in line leaves every line first, so

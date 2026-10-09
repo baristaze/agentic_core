@@ -5,15 +5,18 @@ the job; the grant starts the job in its own commit, the park moves to
 the job's, and the job's result answers the call, with no model call and
 no notice between the ask and the answer; a free resource's grant starts
 the job at once; a grant between the read and the park still reaches the
-session; and a session cancelled while its job waits in line leaves the
-line, so no job starts."""
+session; a session cancelled while its job waits in line leaves the
+line, so no job starts; and once the grant started the job, a session
+cancelled or a job stopped at its deadline hands the tool's cancel the
+request, which ends the lease."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import UUID
 
 import pytest
 from contracts.loops import ALLOWED, Loop, call, loop_over, reply, said
+from unit.test_loop_jobs import cancel
 from unit.test_loop_lines import an_ask, notices, unlocked
 
 from acme.om.agent_sessions.types.agent_session import SessionStatus
@@ -25,7 +28,7 @@ from acme.om.base import Platform, new_id, utcnow
 from acme.om.context import TenantContext
 from acme.om.leases import LeasesManagerInterface
 from acme.om.leases.impl.kinds import NoopResourceKindImpl
-from acme.om.leases.types.lease import JobClaim, Lease
+from acme.om.leases.types.lease import JobClaim, Lease, LeaseStatus
 from acme.om.leases.types.request import EndReason, LeaseRequest, RequestStatus
 from acme.om.leases.types.resource import Resource, ResourceKind
 from acme.om.outbox.types.row import OutboxRow, outbox_row
@@ -54,7 +57,8 @@ class Docking(ToolInput):
 class Dock(JobToolInterface):
     """A product's job tool whose work runs on a leased resource: its run
     asks in line, as its session's waiter, and names the request, whose
-    grant starts the work. It keeps each cancel."""
+    grant starts the work. It keeps each cancel, and its cancel ends the
+    lease the request was granted, or the request still in line."""
 
     def __init__(self) -> None:
         self._spec = ToolSpec(
@@ -94,6 +98,14 @@ class Dock(JobToolInterface):
 
     async def cancel(self, ctx: TenantContext, job: JobHandle) -> None:
         self.cancelled.append(job)
+        assert self.leases is not None
+        if job.request_id is None:
+            return
+        standing = await self.leases.get_request(ctx, job.request_id)
+        if standing.lease is None:
+            await self.leases.cancel(ctx, job.request_id)
+        else:
+            await self.leases.release(ctx, standing.lease.id)
 
 
 DOCKER = AgentKind(
@@ -156,10 +168,12 @@ async def docking(
     return loop, dock, resource, holding
 
 
-async def asked(loop: Loop) -> tuple[UUID, Step, Park]:
-    """A session whose model called the dock: its run parks, with the call's
-    request and the park."""
+async def asked(loop: Loop, *, deadline: datetime | None = None) -> tuple[UUID, Step, Park]:
+    """A session whose model called the dock, by the tree's `deadline` when
+    one is given: its run parks, with the call's request and the park."""
     session_id = await loop.start("docker")
+    if deadline is not None:
+        await loop.managers.agents.set_deadline(loop.owner, session_id, deadline)
     await loop.say(session_id, "Run the job.")
     loop.anthropic.add(reply(call("dock")))
     run = await loop.loops.run(loop.owner, session_id)
@@ -178,6 +192,25 @@ async def the_job(loop: Loop, lease: Lease) -> WorkItem | None:
     _, item = claimed
     assert item.idempotency_key == lease.job_key
     return item
+
+
+async def running(
+    loop: Loop, *, deadline: datetime | None = None
+) -> tuple[UUID, Step, Park, Lease]:
+    """A session whose dock's job the free resource's grant started at once,
+    and whose worker runs it: the loop parks on the job, which keeps its
+    request, and the lease has started."""
+    session_id, request, park = await asked(loop, deadline=deadline)
+    assert park.reason is ParkReason.JOB and park.job is not None
+    assert park.job.request_id == request.id, "the job's park keeps its request past the grant"
+    lease = (await loop.managers.leases.get_request(loop.owner, request.id)).lease
+    assert lease is not None
+    job = await the_job(loop, lease)
+    assert job is not None and job.claim_token is not None
+    claim = JobClaim(token=lease.token, claim_token=job.claim_token)
+    started = await loop.managers.leases.start(loop.owner, lease.id, claim)
+    assert started.started_at is not None
+    return session_id, request, park, started
 
 
 def said_in(answer: Step) -> str:
@@ -343,4 +376,40 @@ async def test_a_session_cancelled_while_its_job_waits_in_line_leaves_it_and_no_
     queued = await work.claim_next("default", [WorkKind.NOOP], "dock", timedelta(minutes=5))
     assert queued is None, "no job starts"
     assert await notices(loop) == []
+    assert len(loop.anthropic.calls) == 1
+
+
+async def test_a_session_cancelled_while_its_granted_job_runs_hands_its_cancel_the_request(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loop, dock, _, _ = await docking(tmp_path, monkeypatch, held=False)
+    session_id, request, _, lease = await running(loop)
+
+    await loop.managers.steps.append_inputs(loop.owner, session_id, [cancel(loop, session_id)])
+    run = await loop.loops.run(loop.owner, session_id)
+
+    assert run.outcome is LoopOutcome.CANCELLED
+    assert [(job.key, job.request_id) for job in dock.cancelled] == [(request.id, request.id)]
+    ended = await loop.managers.leases.get_lease(loop.owner, lease.id)
+    assert ended.status is LeaseStatus.RELEASED, "the tool's cancel ends the lease"
+
+
+async def test_a_granted_job_stopped_at_its_deadline_hands_its_cancel_the_request(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loop, dock, _, _ = await docking(tmp_path, monkeypatch, held=False)
+    deadline = loop.clock.now + timedelta(minutes=2)  # inside the lease's five-minute term
+    session_id, request, park, lease = await running(loop, deadline=deadline)
+    assert park.retry_at == deadline
+
+    loop.clock.now = deadline
+    await loop.managers.agent_sessions.wake_session(loop.owner, session_id, park)
+    await loop.loops.run(loop.owner, session_id)
+
+    (answer,) = [s for s in await loop.history(session_id) if s.responds_to == request.id]
+    assert isinstance(answer.header, ToolResponseHeader)
+    assert answer.header.failure is ToolFailure.TIMEOUT
+    assert [(job.key, job.request_id) for job in dock.cancelled] == [(request.id, request.id)]
+    ended = await loop.managers.leases.get_lease(loop.owner, lease.id)
+    assert ended.status is LeaseStatus.RELEASED, "the tool's cancel ends the lease"
     assert len(loop.anthropic.calls) == 1
