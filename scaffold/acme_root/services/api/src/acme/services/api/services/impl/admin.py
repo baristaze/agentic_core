@@ -23,6 +23,8 @@ from acme.services.api.types.admin import (
     OperatorWorkItemView,
     PlatformSizeView,
     SessionUsageView,
+    SetTenantCapRequest,
+    TenantCapView,
     TotpConfirmedView,
 )
 from acme.services.api.types.common import clamp_limit
@@ -162,6 +164,22 @@ class AdminServiceImpl(AdminServiceInterface):
             admin, org_id, session_id, after, clamp_limit(limit)
         )
         return usage_view(usage)
+
+    async def set_tenant_cap(
+        self, admin: OperatorContext, org_id: UUID, lane: str, body: SetTenantCapRequest
+    ) -> TenantCapView:
+        cap = await self._work.set_tenant_cap(admin, org_id, lane, body.cap)
+        return TenantCapView.model_validate(cap)
+
+    async def get_tenant_cap(
+        self, admin: OperatorContext, org_id: UUID, lane: str
+    ) -> TenantCapView:
+        return TenantCapView.model_validate(await self._work.read_tenant_cap(admin, org_id, lane))
+
+    async def clear_tenant_cap(
+        self, admin: OperatorContext, org_id: UUID, lane: str
+    ) -> TenantCapView:
+        return TenantCapView.model_validate(await self._work.clear_tenant_cap(admin, org_id, lane))
 
 
 def token_view(token: Session) -> OperatorTokenView:
