@@ -46,19 +46,25 @@ class Gate(Platform):
 
 class JobStarted(Platform):
     """The output of a job tool's run: the tool's own name for the work, a
-    name the loop's park keeps."""
+    name the loop's park keeps. A tool whose work needs a leased resource
+    asks in line first, as its session's waiter, and names the request:
+    the grant starts the work, in its own commit, and the loop parks in
+    line until it does. Its ask waits no longer than the job's deadline."""
 
     handle: str = Field(min_length=1, max_length=MAX_NAME)
+    request_id: UUID | None = None  # the request in line whose grant starts the work
 
 
 class JobHandle(Platform):
     """Work a `job` tool started, under the key of its request: the loop
-    parks on it, and its completion arrives as an event."""
+    parks on it, and its completion arrives as an event. Work that waits
+    for a grant names its request, and the loop parks in line first."""
 
     tool: str
     key: UUID  # the id of the tool request
     handle: str = Field(min_length=1, max_length=MAX_NAME)  # the tool's own name for the work
     deadline: datetime  # never later than the tree's
+    request_id: UUID | None = None  # the request in line whose grant starts the work
 
 
 class JobNotStarted(Platform):

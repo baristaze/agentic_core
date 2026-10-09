@@ -440,7 +440,11 @@ class ToolsManagerImpl(ToolsManagerInterface):
             detail = f"{tool.spec.name} answered {type(started).__name__}, not JobStarted"
             return self._answer(request, detail, ToolFailure.PERMANENT)
         return JobHandle(
-            tool=tool.spec.name, key=request.id, handle=started.handle, deadline=deadline
+            tool=tool.spec.name,
+            key=request.id,
+            handle=started.handle,
+            deadline=deadline,
+            request_id=started.request_id,
         )
 
     async def cancel_job(self, ctx: TenantContext, registry: ToolRegistry, job: JobHandle) -> None:

@@ -100,12 +100,21 @@ principal who can pay, a principal who holds the calls."""
 JOB_DEADLINE = "the job did not complete by its deadline, and was cancelled"
 """What a job's call answers when its deadline passes with no completion."""
 
+JOB_UNSTARTED = "the job did not start by its deadline: no grant came, and it was cancelled"
+"""What a job's call answers when its deadline passes while it waits in
+line for the grant that starts it."""
+
+JOB_GONE = "the job did not start: its request in line is gone"
+"""What a job's call answers when the request whose grant would start it
+is past its retention."""
+
 
 @dataclass(frozen=True)
 class StartedJob:
     """A job a loop parked on whose call no response answers yet: the
-    call's request, the park that names the job, and the first completion
-    that names it by its key and handle, when one arrived."""
+    call's request, the last park that names the job (in line until the
+    grant starts it, on the job from then), and the first completion that
+    names it by its key and handle, when one arrived."""
 
     request: Step
     park: Park
@@ -134,7 +143,7 @@ def started_jobs(steps: Sequence[Step], loop_id: UUID) -> dict[UUID, StartedJob]
             answered.add(step.responds_to)
         elif isinstance(header, ParkedHeader) and step.loop_id == loop_id:
             if header.park.job is not None:
-                parks.setdefault(header.park.job.key, header.park)
+                parks[header.park.job.key] = header.park
         else:
             ended = completes(step)
             if ended is not None:

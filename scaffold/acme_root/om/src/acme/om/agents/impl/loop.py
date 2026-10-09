@@ -4,7 +4,7 @@ import itertools
 import logging
 import random
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -1095,6 +1095,10 @@ class LoopManagerImpl(LoopManagerInterface):
         park = Park(
             reason=ParkReason.JOB, unlock=str(started.key), retry_at=started.deadline, job=job
         )
+        if started.request_id is not None:
+            # Its tool asked in line: the grant starts the work.
+            waiting = rules.StartedJob(request, park, None)
+            return await self._wait_for_start(run, waiting, started.request_id)
         return _Settled(park=park)
 
     async def _settle_job(self, run: _Run, started: rules.StartedJob) -> _Settled:
@@ -1105,6 +1109,8 @@ class LoopManagerImpl(LoopManagerInterface):
         if started.completion is not None:
             await self._close_job(run, started, None)
             return _Settled()
+        if started.park.line is not None:
+            return await self._wait_for_start(run, started, started.park.line.request_id)
         retry_at = started.park.retry_at
         assert retry_at is not None  # a job park tries again at its deadline
         if self._clock() >= retry_at:
@@ -1112,15 +1118,59 @@ class LoopManagerImpl(LoopManagerInterface):
             return _Settled()
         return _Settled(park=started.park)
 
+    async def _wait_for_start(
+        self, run: _Run, started: rules.StartedJob, request_id: UUID
+    ) -> _Settled:
+        """A job whose tool asked in line: the grant starts it, in its own
+        commit. Granted, the loop's park moves to the job's. Still waiting,
+        the loop parks in line, naming the job, its place, and its estimate,
+        with no model call until the grant or the request's end; past the
+        job's deadline, it is cancelled. Out of line without a lease, no job
+        started: the call is answered so, and its hold released."""
+        job, deadline = started.job, started.park.retry_at
+        assert deadline is not None  # a job's park tries again at its deadline
+        standing = await self._standing(run, request_id)
+        if standing is not None and standing.lease is not None:
+            on_job = Park(reason=ParkReason.JOB, unlock=str(job.key), retry_at=deadline, job=job)
+            return await self._settle_job(run, replace(started, park=on_job))
+        if standing is not None and standing.request.status is RequestStatus.WAITING:
+            if self._clock() >= deadline:
+                stopped = (rules.JOB_UNSTARTED, ToolFailure.TIMEOUT)
+                await self._close_job(run, started, stopped, ran=False)
+                return _Settled()
+            return _Settled(park=lines.job_line_park(standing, job, deadline))
+        if job.hold_id is not None:
+            await self._gate.settle_job(run.ctx, job.hold_id, None, started=False)
+        if standing is None:
+            text, failure = rules.JOB_GONE, ToolFailure.PERMANENT
+        else:
+            text, failure = lines.unstarted(standing.request)
+        await self._answer(run, started.request, self._stopped(started.request, text, failure))
+        run.jobs.pop(job.key, None)
+        return _Settled()
+
+    async def _standing(self, run: _Run, request_id: UUID) -> Standing | None:
+        """Where a request stands, or None once it is past its retention."""
+        try:
+            return await self._leases.get_request(run.ctx, request_id)
+        except NotFound:
+            return None
+
     async def _close_job(
-        self, run: _Run, started: rules.StartedJob, stopped: tuple[str, ToolFailure] | None
+        self,
+        run: _Run,
+        started: rules.StartedJob,
+        stopped: tuple[str, ToolFailure] | None,
+        *,
+        ran: bool = True,
     ) -> None:
         """Answers a started job's call. With no reason to stop, from what its
         completion says, its hold settled at the cost it reported; with one,
         the work is cancelled first, its hold counted whole, and the call
-        answered with the reason and its class. The hold settles before the
-        answer is written, so a run lost between them settles it again, and
-        the first settlement counts."""
+        answered with the reason and its class. A job its grant never started
+        (`ran` False) ran nothing, so its hold is released. The hold settles
+        before the answer is written, so a run lost between them settles it
+        again, and the first settlement counts."""
         job, request, completion = started.job, started.request, started.completion
         if stopped is None:
             assert completion is not None
@@ -1134,7 +1184,7 @@ class LoopManagerImpl(LoopManagerInterface):
             answer = self._stopped(request, *stopped)
             cost = None
         if job.hold_id is not None:
-            await self._gate.settle_job(run.ctx, job.hold_id, cost, started=True)
+            await self._gate.settle_job(run.ctx, job.hold_id, cost, started=ran)
         await self._answer(run, request, answer)
         run.jobs.pop(job.key, None)
 
@@ -1144,11 +1194,13 @@ class LoopManagerImpl(LoopManagerInterface):
         it whatever happens here."""
         header = started.request.header
         assert isinstance(header, ToolRequestHeader)
+        line = started.park.line
         handle = JobHandle(
             tool=header.tool,
             key=started.job.key,
             handle=started.job.handle,
             deadline=started.park.retry_at or self._clock(),
+            request_id=None if line is None else line.request_id,
         )
         try:
             await self._tools.cancel_job(run.ctx, run.registry, handle)
@@ -1160,10 +1212,18 @@ class LoopManagerImpl(LoopManagerInterface):
     async def _stop_jobs(self, run: _Run, jobs: Sequence[rules.StartedJob], why: str) -> None:
         """Every job the loop still waits on, as the loop stops: one that
         completed is answered from its completion; any other is cancelled
-        and answered with `why`, so no job outlives its loop."""
+        and answered with `why`, so no job outlives its loop. With a job in
+        line, the session leaves every line first, so no grant starts a job
+        for a loop that stops, and a job still in line then never started."""
+        if any(started.park.line is not None for started in jobs):
+            await self._leases.leave(run.ctx, WaiterKind.SESSION, run.session_id)
         for started in jobs:
             stopped = None if started.completion is not None else (why, ToolFailure.INTERRUPTED)
-            await self._close_job(run, started, stopped)
+            ran = True
+            if stopped is not None and started.park.line is not None:
+                standing = await self._standing(run, started.park.line.request_id)
+                ran = standing is not None and standing.lease is not None
+            await self._close_job(run, started, stopped, ran=ran)
 
     async def _submit(self, run: _Run, request: Step, use: ToolUseBlock) -> _Settled:
         """A result submitted through the kind's result tool: refused without
@@ -1311,6 +1371,13 @@ class LoopManagerImpl(LoopManagerInterface):
 
     async def _park(self, run: _Run, park: Park) -> LoopRun:
         await self._sessions.park(run.ctx, run.session_id, run.epoch, run.loop_id, park)
+        if park.line is not None and park.job is not None:
+            # A job's call in line: a grant, or the request's end, that came
+            # after the run read the request and before the park found no
+            # park to clear, so the run reads it again and clears its own.
+            standing = await self._standing(run, park.line.request_id)
+            if standing is None or standing.request.status is not RequestStatus.WAITING:
+                await self._sessions.wake_session(run.ctx, run.session_id, park)
         parent_id = run.session.parent_id
         if parent_id is not None and notes_parent(park):
             await self._report(run, park=park)

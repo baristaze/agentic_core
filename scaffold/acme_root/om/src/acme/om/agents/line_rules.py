@@ -10,7 +10,12 @@ without a lease, and the lease's end each reach the model as the engine's
 notice, written by a run before its next model call, in the loop that
 asked or a later one. Each notice's id is derived from the call's answer
 and what it tells, so the history says what the model was told, after a
-lost run as well (ADR 1024)."""
+lost run as well (ADR 1024).
+
+A job's tool may ask in line too, for the resource its work runs on. Its
+call stays open: the loop parks in line at once, the grant starts the job
+in its own commit, and the park moves to the job's, so the job's result
+answers the call with no notice and no model call between (ADR 1026)."""
 
 import json
 from collections.abc import Collection, Sequence
@@ -34,9 +39,11 @@ from acme.om.leases.types.request import (
 from acme.om.steps.types.content import TextBlock
 from acme.om.steps.types.header import (
     InputHeader,
+    JobPark,
     LinePark,
     Park,
     ParkReason,
+    ToolFailure,
     ToolRequestHeader,
     ToolResponseHeader,
 )
@@ -207,15 +214,49 @@ def line_park(waiting: Sequence[Standing]) -> Park:
         waiting,
         key=lambda standing: (standing.place is None, standing.place or 0),
     )
-    request = first.request
-    line = LinePark(
+    return Park(reason=ParkReason.RESOURCE, unlock=LINE_UNLOCK, line=_line(first))
+
+
+def job_line_park(standing: Standing, job: JobPark, deadline: datetime) -> Park:
+    """The park of a job's call whose grant starts the job: in line, with
+    its place and estimate, and the job it waits to start. The grant, or the
+    request's end, clears it, and the job's deadline bounds it."""
+    return Park(
+        reason=ParkReason.RESOURCE,
+        unlock=LINE_UNLOCK,
+        retry_at=deadline,
+        job=job,
+        line=_line(standing),
+    )
+
+
+def _line(standing: Standing) -> LinePark:
+    request = standing.request
+    return LinePark(
         request_id=request.id,
         kind=request.kind.value,
         resource_id=request.resource_id,
-        place=first.place,
-        estimate_seconds=first.estimate_seconds,
+        place=standing.place,
+        estimate_seconds=standing.estimate_seconds,
     )
-    return Park(reason=ParkReason.RESOURCE, unlock=LINE_UNLOCK, line=line)
+
+
+UNSTARTED = "The job did not start: its request {request} left its line without a lease: {why}."
+FAILS: dict[EndReason | None, ToolFailure] = {
+    None: ToolFailure.TIMEOUT,  # it waited past its wait
+    EndReason.ASKED: ToolFailure.INTERRUPTED,
+    EndReason.WAITER_GONE: ToolFailure.INTERRUPTED,
+    EndReason.REFUSED: ToolFailure.DENIED,
+    EndReason.RETIRED: ToolFailure.PERMANENT,
+}
+
+
+def unstarted(request: LeaseRequest) -> tuple[str, ToolFailure]:
+    """What a job's call answers when its request left the line without a
+    lease, so no grant started the job, and the class of that failure."""
+    reason = request.end_reason
+    why = EXPIRED if reason is None else WHY[reason]
+    return UNSTARTED.format(request=request.id, why=why), FAILS[reason]
 
 
 def unheard(steps: Sequence[Step], response: Step) -> bool:
