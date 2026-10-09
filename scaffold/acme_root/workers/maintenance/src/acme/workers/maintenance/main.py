@@ -41,7 +41,11 @@ from acme.workers.maintenance.orchestrations import (
     OrchestrationHandlerImpl,
     WakeParkedHandlerImpl,
 )
-from acme.workers.maintenance.sessions import WakeSessionHandlerImpl, WakeSessionsHandlerImpl
+from acme.workers.maintenance.sessions import (
+    LeaseNoticeHandlerImpl,
+    WakeSessionHandlerImpl,
+    WakeSessionsHandlerImpl,
+)
 from acme.workers.maintenance.settings import MaintenanceSettings
 
 log = logging.getLogger(__name__)
@@ -149,6 +153,7 @@ def build_loop(container: WorkerContainer, lane: str | None = None) -> WorkerLoo
             ),
             WorkKind.WAKE_SESSION: WakeSessionHandlerImpl(managers.agent_sessions),
             WorkKind.WAKE_SESSIONS: WakeSessionsHandlerImpl(managers.agent_sessions),
+            WorkKind.LEASE_NOTICE: LeaseNoticeHandlerImpl(managers.agent_sessions),
         },
         topics=container.infra.get_topics(),
         liveness=container.infra.get_cache(CacheScope.WORKER_LIVENESS),

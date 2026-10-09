@@ -10,13 +10,15 @@ kinds of thing [Acme is made of](../../../../README.md).
   status (queued, claimed, done, failed), when it becomes available,
   who claimed it and until when, its attempts, and its last error.
 - **Kind**: the job's shape, with a fixed payload and the permission a
-  person needs to ask for it. The core has eight: `NOOP`, a step of an
+  person needs to ask for it. The core has nine: `NOOP`, a step of an
   `ORCHESTRATION`, `WAKE_PARKED` for the records a cleared reason
   frees, `DELETE_ACCOUNT` and `DELETE_ORG` for the identity provider's
   side of a deletion, `WAKE_SESSION` and `WAKE_SESSIONS` for the
-  agent sessions a park's time or a raised budget frees, and `LOOP` for
-  a session's loop, which the session runner runs. A kind whose
-  payload names a time waits until then.
+  agent sessions a park's time or a raised budget frees,
+  `LEASE_NOTICE` for a session in line whose request was answered or
+  whose lease was revoked, and `LOOP` for a session's loop, which the
+  session runner runs. A kind whose payload names a time waits until
+  then.
 - **Lane**: a routing name. A worker serves one lane.
 - **Handler**: the code that does one kind. It is idempotent, because
   an item may run twice.

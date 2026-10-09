@@ -1957,6 +1957,27 @@ export interface components {
             term_seconds: number;
         };
         /**
+         * LineParkView
+         * @description The line a loop waits in: the request, what it asked for (a kind,
+         *     and the resource when it named one), its place (1 is next in some line
+         *     it stands in), and the estimate of its wait.
+         */
+        LineParkView: {
+            /** Estimate Seconds */
+            estimate_seconds: number | null;
+            /** Kind */
+            kind: string;
+            /** Place */
+            place: number | null;
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /** Resource Id */
+            resource_id: string | null;
+        };
+        /**
          * LineView
          * @description A resource and the requests in its line, first first.
          */
@@ -2283,9 +2304,11 @@ export interface components {
         /**
          * ParkView
          * @description Why a parked loop waits, what clears it, and when it tries again by
-         *     itself; a park only a person clears has no time.
+         *     itself; a park only a person clears has no time, and neither has a park
+         *     in line, which names where it stands.
          */
         ParkView: {
+            line?: components["schemas"]["LineParkView"] | null;
             reason: components["schemas"]["ParkReason"];
             /** Retry At */
             retry_at: string | null;
@@ -2932,12 +2955,12 @@ export interface components {
          *     each with a `WaiterInterface`.
          * @enum {string}
          */
-        WaiterKind: "orchestration";
+        WaiterKind: "orchestration" | "session";
         /**
          * WorkKind
          * @enum {string}
          */
-        WorkKind: "NOOP" | "ORCHESTRATION" | "WAKE_PARKED" | "DELETE_ACCOUNT" | "DELETE_ORG" | "WAKE_SESSION" | "WAKE_SESSIONS" | "LOOP";
+        WorkKind: "NOOP" | "ORCHESTRATION" | "WAKE_PARKED" | "DELETE_ACCOUNT" | "DELETE_ORG" | "WAKE_SESSION" | "WAKE_SESSIONS" | "LOOP" | "LEASE_NOTICE";
         /**
          * WorkStatus
          * @enum {string}

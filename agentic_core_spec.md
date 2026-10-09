@@ -1329,7 +1329,7 @@ memory-only session's runtime, a resource lease's hold time).
 | `person` | A question, an approval, a passed deadline, the step guard, a principal to reassign, a lost workspace | An answer, a decision, an extension | No |
 | `provider` | An outage, a rate limit, a billing or credential error, a missing key | The provider recovers; a key or account is fixed | At the retry time, for outages and rate limits |
 | `budget` | The gate refused | A raise, or the window resets | At the reset |
-| `resource` | Waiting in line for a scarce resource, or for a workspace | A grant | On the grant; for a workspace, at the retry time |
+| `resource` | Waiting in line for a scarce resource ([Leases on a Resource][g-leases]), or for a workspace | A grant, or the request's end without one | On the grant or the end; for a workspace, at the retry time |
 | `job` | A long-running tool job is working | The job's completion | On completion |
 | `children` | Waiting for sub-agents' reports | A report; the tree's deadline ends the wait | On the report; past the deadline it parks on `person` |
 | `handover` | A person holds the environment | They give it back | No |
@@ -1342,8 +1342,25 @@ park on the workspace comes before its run has settled a lost run's
 calls, so it says so, and the run that resumes it settles them by their
 effect.
 When the unlock happens, a `resumed` step starts a new run. Raising a
-budget is the instruction to continue. Treating "cannot continue right
-now" as "this did not work" throws away a long conversation and its
+budget is the instruction to continue.
+
+A session waits in line as a waiter of the guideline's leases. A tool's
+ask joins the line under the call's key and answers at once with its
+place and an estimate. The loop parks only when the model ends its turn
+while an ask still waits, and the park names the request, its place,
+and the estimate. Until the grant or the request's end, no model call is
+made: a run woken in between reads its asks and parks again. It also
+reads them once it has parked, so an answer that came between the read
+and the park still wakes it. The grant reaches the model as the
+engine's notice before its next call, with its lease and token, while
+the lease is active. The request's end without a lease, or the lease's
+end (released, expired, or revoked), is told once in its stead, in a
+later loop too, since a lease outlives the loop that took it. A loop
+that ends leaves every line, so no ended session holds a place. A turn
+that ends past the tree's deadline parks on the deadline, never in line.
+A loop that parks on the deadline leaves every line and gives back each
+lease its asks hold, so no resource sits idle under a session out of
+time. Treating "cannot continue right now" as "this did not work" throws away a long conversation and its
 evidence.
 
 *Example:* in its first week the session parks five times, for an
@@ -1683,6 +1700,7 @@ evidence, trust across a customer's wall, and money.
 
 [g]: https://github.com/baristaze/swe_guidelines/blob/v0.54.0/architecture.md
 [g-read]: https://github.com/baristaze/swe_guidelines/blob/v0.54.0/architecture.md#how-to-read-this
+[g-leases]: https://github.com/baristaze/swe_guidelines/blob/v0.54.0/architecture.md#leases-on-a-resource
 [g-interfaces]: https://github.com/baristaze/swe_guidelines/blob/v0.54.0/architecture.md#interfaces
 [g-impls]: https://github.com/baristaze/swe_guidelines/blob/v0.54.0/architecture.md#multiple-impls-per-interface
 [g-decoration]: https://github.com/baristaze/swe_guidelines/blob/v0.54.0/architecture.md#composition-by-decoration

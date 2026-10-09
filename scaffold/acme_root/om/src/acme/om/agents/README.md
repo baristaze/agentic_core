@@ -157,6 +157,18 @@ of](../../../../README.md).
   deadline ends the wait too: a child that parks on it wakes its waiting
   parent, which parks on it as well. A wait a report woke is no repeat,
   so the error streak never counts it (ADR 1019).
+- **A wait in line holds until its answer.** A tool that answers
+  `InLine` asks for a leased resource with the session as its waiter,
+  and answers at once with its place. When the agent's turn ends while
+  an ask waits, the loop parks on `resource`, naming the request, its
+  place, and its estimate, and calls no model until a grant or the
+  request's end clears the park. The run reads its asks once more after
+  it parks, so an answer that came just before is never missed. The
+  grant reaches the model as the engine's notice before its next call
+  while its lease is active; the request's end, or the lease's end, is
+  told once in its stead, in a later loop too. A loop that ends, or that
+  parks on the tree's deadline, leaves every line, and one that parks on
+  the deadline gives back each lease its asks hold (ADR 1024).
 - **A nudge is a step.** When a delivery agent's turn calls no tool, the
   engine's notice is written before the next request, so no request
   holds two of the model's turns in a row. A reply cut by its output
@@ -187,6 +199,8 @@ inbox. The session runner calls the loop's one operation with
 the session and the context its claim built: once each time the session
 turns pending, and again when a run's time is up. Nothing else drives a
 loop. A job's report comes in through the loop too, from whatever the
-product connects to the system the job runs on.
+product connects to the system the job runs on. A session waits in a
+line of the [leases](../leases/README.md) as a waiter the root
+registers, and a grant reaches it through the work queue.
 Each session is an [agent session](../agent_sessions/README.md); what it
 may do and who pays is [attribution](../attribution/README.md)'s.

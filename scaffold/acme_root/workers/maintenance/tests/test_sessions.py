@@ -1,6 +1,8 @@
 """Parked agent sessions in the worker: a park whose retry time comes is
 woken from the queue by itself, a raised budget wakes the sessions parked on
-a budget, and a wake that finds its session moved on does nothing."""
+a budget, a grant wakes the session parked in line for it and no session
+parked for anything else, and a wake that finds its session moved on does
+nothing."""
 
 from datetime import timedelta
 from pathlib import Path
@@ -9,20 +11,29 @@ from uuid import UUID
 from worker_support import build_container, request, sign_in
 
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
+from acme.om.agents.line_rules import in_line
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
 from acme.om.budgets.types.amount import Amount
 from acme.om.budgets.types.budget import Budget, BudgetScopeKind, WindowKind
 from acme.om.context import TenantContext
+from acme.om.leases.types.request import LeaseRequest
+from acme.om.leases.types.resource import Resource, ResourceKind
 from acme.om.steps.types.content import Content, TextBlock
-from acme.om.steps.types.header import InputHeader, ModelRequestHeader, Park, ParkReason
+from acme.om.steps.types.header import (
+    InputHeader,
+    LinePark,
+    ModelRequestHeader,
+    Park,
+    ParkReason,
+)
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.work.types.work_item import WorkItem, WorkKind
 from acme.workers.maintenance.container import WorkerContainer
 from acme.workers.maintenance.main import build_loop
 
 LEASE = timedelta(seconds=30)
-KINDS = [WorkKind.WAKE_SESSION, WorkKind.WAKE_SESSIONS]
+KINDS = [WorkKind.WAKE_SESSION, WorkKind.WAKE_SESSIONS, WorkKind.LEASE_NOTICE]
 
 
 async def drain(container: WorkerContainer) -> list[WorkItem]:
@@ -149,6 +160,63 @@ async def test_a_raised_budget_wakes_the_sessions_parked_on_a_budget(tmp_path: P
     assert [(item.kind, item.target_id) for item in ran] == [(WorkKind.WAKE_SESSIONS, ctx.org_id)]
     assert await status_of(container, ctx, on_budget.id) is SessionStatus.PENDING
     assert await status_of(container, ctx, on_person.id) is SessionStatus.PARKED
+
+
+def an_ask(ctx: TenantContext, resource_id: UUID) -> LeaseRequest:
+    now = utcnow()
+    return LeaseRequest(
+        id=new_id(),
+        created_at=now,
+        updated_at=now,
+        created_by=ctx.user_id,
+        updated_by=ctx.user_id,
+        idempotency_key=new_id(),
+        kind=ResourceKind.NOOP,
+        resource_id=resource_id,
+    )
+
+
+async def test_a_grant_wakes_the_session_parked_in_line_and_no_other(tmp_path: Path) -> None:
+    container = build_container(tmp_path)
+    ctx = await sign_in(container)
+    leases = container.managers.leases
+    line = Park(
+        reason=ParkReason.RESOURCE,
+        unlock="grant",
+        line=LinePark(request_id=new_id(), kind=ResourceKind.NOOP.value, place=1),
+    )
+    in_the_line = await parked(container, ctx, line)
+    on_a_person = await parked(container, ctx, Park(reason=ParkReason.PERSON, unlock="approval"))
+    now = utcnow()
+    resource = await leases.register(
+        ctx,
+        Resource(
+            id=new_id(),
+            created_at=now,
+            updated_at=now,
+            created_by=ctx.user_id,
+            updated_by=ctx.user_id,
+            kind=ResourceKind.NOOP,
+            ref_id=new_id(),
+        ),
+    )
+    held = await leases.ask(ctx, an_ask(ctx, resource.id))
+    first, second = [
+        await leases.ask(ctx, in_line(an_ask(ctx, resource.id), session.id, new_id()))
+        for session in (in_the_line, on_a_person)
+    ]
+    assert (first.place, second.place) == (1, 2)
+    assert held.lease is not None
+    await leases.release(ctx, held.lease.id)
+    granted = (await leases.get_request(ctx, first.request.id)).lease
+    assert granted is not None
+    await leases.release(ctx, granted.id)
+    ran = await drain(container)
+    assert sorted((item.kind, str(item.target_id)) for item in ran) == sorted(
+        (WorkKind.LEASE_NOTICE, str(session.id)) for session in (in_the_line, on_a_person)
+    )
+    assert await status_of(container, ctx, in_the_line.id) is SessionStatus.PENDING
+    assert await status_of(container, ctx, on_a_person.id) is SessionStatus.PARKED
 
 
 async def test_a_wake_for_a_session_that_moved_on_does_nothing(tmp_path: Path) -> None:

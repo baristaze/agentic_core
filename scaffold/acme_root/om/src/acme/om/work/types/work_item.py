@@ -25,6 +25,7 @@ class WorkKind(StrEnum):
     WAKE_SESSION = "WAKE_SESSION"  # a parked session's retry time has come
     WAKE_SESSIONS = "WAKE_SESSIONS"  # the reason an org's sessions parked for is gone
     LOOP = "LOOP"  # a session's loop, for the session runner to run
+    LEASE_NOTICE = "LEASE_NOTICE"  # a session's lease request answered, or its lease revoked
 
 
 WORK_ROW_PREFIX = "work."
@@ -143,6 +144,16 @@ class LoopPayload(Platform):
     writes nothing."""
 
 
+class LeaseNoticePayload(Platform):
+    """A lease request a session waits on was answered, by a grant or by its
+    end without a lease, or the lease it was granted was revoked. The item's
+    target is the session: one parked in line is unlocked, and its next run
+    reads the request and tells the model. Any other session is left as it
+    is: a running loop reads its requests before its next model call."""
+
+    request_id: UUID
+
+
 class DeleteAccountPayload(Platform):
     """What is left of an account once its own rows are gone: the person's
     name at the identity provider, when they signed in through it, since the
@@ -172,6 +183,7 @@ WORK_PAYLOADS: dict[WorkKind, type[Platform]] = {
     WorkKind.WAKE_SESSION: WakeSessionPayload,
     WorkKind.WAKE_SESSIONS: WakeSessionsPayload,
     WorkKind.LOOP: LoopPayload,
+    WorkKind.LEASE_NOTICE: LeaseNoticePayload,
 }
 """The payload shape of every kind; enqueue validates the item's payload against it."""
 
@@ -195,6 +207,9 @@ WORK_ENQUEUE_PERMISSIONS: dict[WorkKind, Permission] = {
     # the run appends steps and projects the status, which WRITE covers, and
     # each tool call asks its principal's own permissions again.
     WorkKind.LOOP: Permission.WRITE,
+    # A grant, a request's end, or a revocation asks for it, relayed from its
+    # own commit; the handler unlocks a park, which WRITE covers.
+    WorkKind.LEASE_NOTICE: Permission.WRITE,
 }
 """The permission that asks for each kind. The person who asks authorizes
 the whole run once, so the permission has to be as wide as the run: every

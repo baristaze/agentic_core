@@ -23,13 +23,27 @@ MAX_MESSAGE = 100_000
 """The most characters one message carries."""
 
 
+class LineParkView(View):
+    """The line a loop waits in: the request, what it asked for (a kind,
+    and the resource when it named one), its place (1 is next in some line
+    it stands in), and the estimate of its wait."""
+
+    request_id: UUID
+    kind: str
+    resource_id: UUID | None
+    place: int | None
+    estimate_seconds: float | None
+
+
 class ParkView(View):
     """Why a parked loop waits, what clears it, and when it tries again by
-    itself; a park only a person clears has no time."""
+    itself; a park only a person clears has no time, and neither has a park
+    in line, which names where it stands."""
 
     reason: ParkReason
     unlock: str
     retry_at: datetime | None
+    line: LineParkView | None = None
 
 
 class AgentSessionView(View):

@@ -434,6 +434,7 @@ def loop_over(
         options,
         clock,
         sleep,
+        leases=managers.leases,
         jitter=jitter,
     )
     owner = owner or context(Role.OWNER, make_org())

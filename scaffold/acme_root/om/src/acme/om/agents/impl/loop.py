@@ -24,14 +24,17 @@ from acme.om.agent_sessions.limits import Limit, Trip, tally_loop, tripped
 from acme.om.agent_sessions.rules import QUESTION, unlock_step
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
 from acme.om.agents import AgentsManagerInterface
+from acme.om.agents import line_rules as lines
 from acme.om.agents import loop_rules as rules
 from acme.om.agents.loop import LoopManagerInterface
 from acme.om.agents.rules import CHILDREN_PARK, after_turn, ends_parents_wait, notes_parent
 from acme.om.agents.sink import StreamSinkInterface
 from acme.om.agents.types.kind import AgentKind, AgentKindCatalog
+from acme.om.agents.types.line import InLine
 from acme.om.agents.types.result import Result, Turn
 from acme.om.agents.types.run import LoopRun, RunEnd
 from acme.om.attribution import AttributionManagerInterface
+from acme.om.attribution.types.authority import CallReach
 from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
 from acme.om.base import Platform, new_id, thaw_mapping, utcnow
 from acme.om.budgets.rules import budget_park, elapsed_ms
@@ -42,6 +45,7 @@ from acme.om.exceptions import (
     CompactionFailed,
     ContextOverflow,
     GateParked,
+    LeaseEnded,
     NoCredential,
     NoSpender,
     NotAuthorized,
@@ -55,6 +59,9 @@ from acme.om.exceptions import (
     UnresolvedRole,
     ValidationFailed,
 )
+from acme.om.leases import LeasesManagerInterface
+from acme.om.leases.types.lease import LeaseStatus
+from acme.om.leases.types.request import RequestStatus, Standing, WaiterKind
 from acme.om.models.credentials import CallClient, CallCredentialsInterface
 from acme.om.models.manager import ModelsManagerInterface
 from acme.om.models.types.fill import MAIN, SUMMARIZER, Eligibility, Fill
@@ -182,6 +189,14 @@ class _Settled:
     park: Park | None = None  # the loop cannot go on with it
 
 
+@dataclass
+class _Heard:
+    """What a loop's asks in line came to once the run read them."""
+
+    waiting: list[Standing]  # the asks that still wait, each with its place
+    told: bool = False  # it wrote a notice the next request reads
+
+
 class LoopManagerImpl(LoopManagerInterface):
     def __init__(
         self,
@@ -202,12 +217,15 @@ class LoopManagerImpl(LoopManagerInterface):
         clock: Callable[[], datetime] = utcnow,
         sleep: Sleep = asyncio.sleep,
         *,
+        leases: LeasesManagerInterface,
         domain_classes: Sequence[str] = (),
         jitter: Callable[[], float] = random.random,
     ) -> None:
         """`credentials` answers the client each call runs on and the
-        credential it carries: the platform's key, or a tenant's."""
+        credential it carries: the platform's key, or a tenant's. `leases`
+        answers where each request a tool asked in line stands."""
         self._jitter = jitter
+        self._leases = leases
         self._steps = steps
         self._sessions = sessions
         self._agents = agents
@@ -359,6 +377,7 @@ class LoopManagerImpl(LoopManagerInterface):
             if rules.pause_waits(history, loop):
                 return await self._park(run, Park(reason=ParkReason.PAUSE, unlock="resume"))
             response = rules.latest_response(history, run.loop_id)
+            heard: _Heard | None = None
             if response is not None:
                 calls = rules.open_calls(history, response)
                 if calls:
@@ -383,7 +402,28 @@ class LoopManagerImpl(LoopManagerInterface):
                     # the tree's deadline no report can come, since every
                     # child parks on it too: the loop parks on it below.
                     return await self._wait_on_children(run, history, response)
-                if not response.as_tool_uses() and not rules.judged(history, response):
+                if rules.ended_turn(response):
+                    # The model's turn ended: what its asks in line came to
+                    # is told first. While one still waits, the loop waits in
+                    # line, with no model call until a grant or an end,
+                    # unless something came that the model has not read: then
+                    # it reads it, and the turn is not judged. Past the
+                    # tree's deadline it waits in no line: it parks on the
+                    # deadline below, and leaves every line there.
+                    heard = await self._hear(run, history)
+                    if heard.told:
+                        history = await self._history(run.ctx, run.session_id, history)
+                    if (
+                        heard.waiting
+                        and not lines.unheard(history, response)
+                        and not await self._past_deadline(run)
+                    ):
+                        return await self._wait_in_line(run, history, heard.waiting)
+                if (
+                    not response.as_tool_uses()
+                    and not rules.judged(history, response)
+                    and not (heard is not None and heard.waiting)
+                ):
                     stopped = await self._judge(run, history, response)
                     if stopped is not None:
                         return stopped
@@ -399,12 +439,24 @@ class LoopManagerImpl(LoopManagerInterface):
                 if trip.outcome is not None:
                     return await self._end(run, trip.outcome)
                 if trip.park is not None:
+                    if trip.limit is Limit.DEADLINE:
+                        # Out of time, the session waits on no resource and
+                        # holds none: it leaves every line, so no grant holds
+                        # one for a session that cannot use it, and gives
+                        # back each lease its asks hold.
+                        await self._leases.leave(run.ctx, WaiterKind.SESSION, run.session_id)
+                        await self._give_back(run, history)
                     return await self._park(run, trip.park)
                 return self._result(run, RunEnd.YIELDED)
             repeated = rules.repeated_failure(history, run.loop_id, self._options.repeats_noticed)
             if repeated is not None:
                 # Written before the next request, which reads it.
                 await self._notice(run, repeated)
+                history = await self._history(run.ctx, run.session_id, history)
+            if heard is None and (await self._hear(run, history)).told:
+                # A grant, a request's end, or a lease's end that came while
+                # the session ran, or since an earlier loop of it, is told
+                # before the next request, which reads it.
                 history = await self._history(run.ctx, run.session_id, history)
             stopped = await self._model_turn(run, history)
             if stopped is not None:
@@ -1231,6 +1283,10 @@ class LoopManagerImpl(LoopManagerInterface):
             # Before the loop is closed: a run lost in between leaves it open,
             # and the run that ends it again repeats the report, written once.
             await self._report(run, outcome=outcome)
+        # A loop that ends waits on nothing: its session leaves every line
+        # before the loop is closed, and a run that ends it again leaves
+        # again, finding nothing.
+        await self._leases.leave(run.ctx, WaiterKind.SESSION, run.session_id)
         step = rules.ended_step(new_id(), self._clock(), run.session_id, run.loop_id, outcome)
         await self._steps.append_steps(run.ctx, run.session_id, run.epoch, [step])
         await self._sessions.project_status(run.ctx, run.session_id)
@@ -1264,6 +1320,103 @@ class LoopManagerImpl(LoopManagerInterface):
         if passed or not rules.children_wait(history, response):
             await self._sessions.wake_session(run.ctx, run.session_id, CHILDREN_PARK)
         return parked
+
+    # The line.
+
+    async def _hear(self, run: _Run, history: Sequence[Step]) -> _Heard:
+        """Reads where each ask of the session stands, and tells the model, as
+        the engine's notice, each answer it has not been told: a grant while
+        its lease lives, an end without a lease, the lease's end. A session
+        that asked nothing in line reads nothing."""
+        standings = await self._standings(run, history)
+        told = {step.id for step in history}
+        owed = [
+            notice for ask, standing in standings for notice in lines.untold(standing, ask, told)
+        ]
+        if owed:
+            principal = await self._attribution.call_principal(run.ctx, run.session_id)
+            now = self._clock()
+            notices = [
+                rules.notice_step(step_id, now, run.session_id, run.loop_id, principal, text)
+                for step_id, text in owed
+            ]
+            await self._steps.append_steps(run.ctx, run.session_id, run.epoch, notices)
+        waiting = [
+            standing
+            for _, standing in standings
+            if standing.request.status is RequestStatus.WAITING
+        ]
+        return _Heard(waiting=waiting, told=bool(owed))
+
+    async def _standings(
+        self, run: _Run, history: Sequence[Step]
+    ) -> list[tuple[lines.Ask, Standing]]:
+        """Where each ask of the session stands, across its loops, but one
+        whose final answer the model was told already: nothing more comes of
+        it, so the reads stop growing once each end is told."""
+        tools = [
+            tool.spec.name
+            for tool in run.registry.tools()
+            if issubclass(tool.spec.output_model, InLine)
+        ]
+        if not tools:
+            return []
+        told = {step.id for step in history}
+        standings: list[tuple[lines.Ask, Standing]] = []
+        for ask in lines.asks(history, tools):
+            if lines.done(ask, told):
+                continue
+            try:
+                standing = await self._leases.get_request(run.ctx, ask.request_id)
+            except NotFound:
+                continue  # past its retention: nothing more comes of it
+            standings.append((ask, standing))
+        return standings
+
+    async def _wait_in_line(
+        self, run: _Run, history: Sequence[Step], waiting: Sequence[Standing]
+    ) -> LoopRun:
+        """Parks in line. An answer that landed after the asks were read and
+        before the park found no park to clear, so the run reads the asks
+        again once it has parked and clears the park itself; one that lands
+        after the park clears it as it lands."""
+        park = lines.line_park(waiting)
+        parked = await self._park(run, park)
+        history = await self._history(run.ctx, run.session_id, history)
+        told = {step.id for step in history}
+        for ask, standing in await self._standings(run, history):
+            if lines.untold(standing, ask, told):
+                await self._sessions.wake_session(run.ctx, run.session_id, park)
+                break
+        return parked
+
+    async def _give_back(self, run: _Run, history: Sequence[Step]) -> None:
+        """Releases each live lease the session's asks hold, as its holder: the
+        principal the session's calls run under, asked of attribution as a
+        call's is. Each lease's end, and each request's end without a lease,
+        is told before the park, once. A principal that no longer holds the
+        session's calls, or is not a lease's holder, releases nothing: that
+        lease runs to its term."""
+        held = [
+            standing.lease
+            for _, standing in await self._standings(run, history)
+            if standing.lease is not None and standing.lease.status is LeaseStatus.ACTIVE
+        ]
+        if held:
+            reach = CallReach(outward=False, holds_private=False)
+            try:
+                authority = await self._attribution.authorize_call(run.ctx, run.session_id, reach)
+            except (NotAuthorized, PrincipalLapsed) as refused:
+                log.warning(
+                    "session %s keeps its leases to their term: %s", run.session_id, refused
+                )
+            else:
+                for lease in held:
+                    try:
+                        await self._leases.release(authority.context, lease.id)
+                    except (NotAuthorized, LeaseEnded) as refused:
+                        log.warning("lease %s runs to its term: %s", lease.id, refused)
+        await self._hear(run, history)
 
     async def _past_deadline(self, run: _Run) -> bool:
         """Whether the tree's deadline has passed. A person may have moved it
