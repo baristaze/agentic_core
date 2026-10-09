@@ -12,7 +12,7 @@ from acme.infra.flags.memory import FlagsMemoryImpl
 from acme.infra.keys import KeyServiceInterface
 from acme.infra.keys.memory import KeyServiceMemoryImpl
 from acme.infra.outages import OutageSignalInterface
-from acme.infra.outages.shared import OutageSignalCacheImpl
+from acme.infra.outages.null import OutageSignalNullImpl
 from acme.infra.queues import QueuesInterface
 from acme.infra.queues.memory import QueueMemoryImpl
 from acme.infra.root import InfraInterface
@@ -33,12 +33,13 @@ class InfraLocalImpl(InfraInterface):
         self._caches: dict[CacheScope, CacheInterface] = {
             scope: CacheMemoryImpl(scope) for scope in CacheScope
         }
+        # One process: its breakers hold what its calls learn.
+        self._outages = OutageSignalNullImpl()
         self._buckets = BucketsLocalImpl(root / "buckets")
         self._topics = TopicsMemoryImpl()
         self._queues = QueueMemoryImpl()
         self._secrets = SecretsLocalImpl(root / "secrets.env")
         self._keys = KeyServiceMemoryImpl()
-        self._outages = OutageSignalCacheImpl(self._caches[CacheScope.OUTAGE])
         self._workspaces = WorkspaceTwinImpl()
         self._broker = BrokerTwinImpl()
         self._transport = TransportTwinImpl(self._secrets, self._broker)
@@ -62,9 +63,6 @@ class InfraLocalImpl(InfraInterface):
     def get_keys(self) -> KeyServiceInterface:
         return self._keys
 
-    def get_outages(self) -> OutageSignalInterface:
-        return self._outages
-
     def get_workspaces(self) -> WorkspaceProviderInterface:
         return self._workspaces
 
@@ -77,15 +75,18 @@ class InfraLocalImpl(InfraInterface):
     def get_flags(self) -> FlagsInterface:
         return self._flags
 
+    def get_outages(self) -> OutageSignalInterface:
+        return self._outages
+
     def describe(self) -> list[str]:
         return [
             *(cache.describe() for cache in self._caches.values()),
+            self._outages.describe(),
             self._topics.describe(),
             self._buckets.describe(),
             self._queues.describe(),
             self._secrets.describe(),
             self._keys.describe(),
-            self._outages.describe(),
             self._workspaces.describe(),
             self._transport.describe(),
             self._broker.describe(),
@@ -94,6 +95,7 @@ class InfraLocalImpl(InfraInterface):
 
     async def start(self) -> None:
         for capability in (
+            self._outages,
             self._topics,
             self._buckets,
             self._queues,
@@ -102,14 +104,12 @@ class InfraLocalImpl(InfraInterface):
             self._flags,
         ):
             await capability.start()
-        await self._outages.start()
         for runtime in (self._broker, self._workspaces, self._transport):
             await runtime.start()
 
     async def close(self) -> None:
         for runtime in (self._transport, self._workspaces, self._broker):
             await runtime.close()
-        await self._outages.close()
         for cache in self._caches.values():
             await cache.close()
         for capability in (
@@ -119,5 +119,6 @@ class InfraLocalImpl(InfraInterface):
             self._queues,
             self._buckets,
             self._topics,
+            self._outages,
         ):
             await capability.close()

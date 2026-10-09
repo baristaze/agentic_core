@@ -69,7 +69,7 @@ def members_context(tenancy: TenancyManagerInterface) -> PrincipalContext:
     async def live(rctx: RequestContext, org_id: UUID, principal: Principal) -> TenantContext:
         if principal.kind is not PrincipalKind.PERSON:
             raise NotAuthorized(f"no {principal.kind.value} principal is granted in the tenant")
-        return await tenancy.member_context(rctx, org_id, principal.id, principal.key_id)
+        return await tenancy.delegated_context(rctx, org_id, principal.id, principal.key_id)
 
     return live
 

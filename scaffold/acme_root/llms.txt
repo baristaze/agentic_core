@@ -28,7 +28,7 @@ served to it. Exposure is by listing, never by folder.
 - [Models](om/src/acme/om/models/README.md): model roles, fills, fill sets and their switches, the resolver, and prices
 - [Windows](om/src/acme/om/windows/README.md): what a model reads: the request rendered from the history, the window sized for its model, the pinned zone, compaction into summaries, and artifacts
 - [Tools](om/src/acme/om/tools/README.md): the tool contract, the registry, policy by class and target, approvals bound to one call, failures, recovery by effect, jobs
-- [Infrastructure](infra/README.md): cache, buckets, topics, queues, secrets, keys, flags, the outage signal, observability, workspaces and the transport; what each promises and which twin runs where
+- [Infrastructure](infra/README.md): cache, buckets, topics, queues, secrets, keys, flags, outages, observability, workspaces and the transport; what each promises and which twin runs where
 - [Integrations](integrations/README.md): the identity provider, its twin, the absent provider, and the webhook check; the model providers, their adapters, and the scripted twin
 - [The API process](services/api/README.md): the routes by area, the gateway's guarantees, the subcommands
 - [The maintenance worker](workers/maintenance/README.md): the work queue's loop, the provider deliveries, and the sweep

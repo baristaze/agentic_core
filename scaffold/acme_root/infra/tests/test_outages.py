@@ -1,169 +1,142 @@
-"""The outage signal contract: what every impl of `OutageSignalInterface` that
-signals holds, over the memory cache and over Valkey through the configured
-root, behind its breaker. A report is known until its retry time and not at
-it; a later report extends it and an earlier one never shortens it; a
-success clears it; and the pair is the key, so another provider or another
-credential knows nothing of it. Every case passes its own `now`, so no case
-reads the wall clock. Then the null, which never signals."""
+"""The outage signal: the shared impl over a cache, which every process on
+that cache reads, and the null impl of one process, which never marks."""
 
-from collections.abc import AsyncIterator
-from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from datetime import timedelta
+from uuid import UUID
 
 import pytest
 
-from acme.infra.base import SYSTEM_SCOPE, QuietNull, new_id
-from acme.infra.cache import CacheInterface, CacheScope
-from acme.infra.impl.configured import InfraConfiguredImpl
-from acme.infra.impl.local import InfraLocalImpl
-from acme.infra.impl.settings import InfraSettings
-from acme.infra.outages import Outage, OutageSignalInterface
+from acme.infra.base import SYSTEM_SCOPE, new_id, utcnow
+from acme.infra.cache import CacheScope
+from acme.infra.cache.memory import CacheMemoryImpl
+from acme.infra.outages import Outage
+from acme.infra.outages.cache import OutageSignalCacheImpl, outage_key
 from acme.infra.outages.null import OutageSignalNullImpl
-from acme.infra.outages.shared import outage_key
-
-AT = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
 
 
-def outage(provider: str, credential: str, *, seconds: int, kind: str = "overloaded") -> Outage:
+def outage(
+    provider: str = "identity",
+    credential: str = "identity_api_key",
+    *,
+    seconds: float = 60,
+    org_id: UUID = SYSTEM_SCOPE,
+) -> Outage:
     return Outage(
+        org_id=org_id,
         provider=provider,
         credential=credential,
-        kind=kind,
-        retry_at=AT + timedelta(seconds=seconds),
+        retry_at=utcnow() + timedelta(seconds=seconds),
     )
 
 
-def pair() -> tuple[str, str]:
-    """A provider and a credential no other case names, so a store that
-    outlives a case (Valkey) never answers one case with another's."""
-    return f"provider-{new_id().hex}", f"credential-{new_id().hex}"
+def shared() -> tuple[OutageSignalCacheImpl, CacheMemoryImpl]:
+    cache = CacheMemoryImpl(CacheScope.OUTAGE)
+    return OutageSignalCacheImpl(cache), cache
 
 
-class OutageSignalContract:
-    @pytest.fixture
-    def signal(self) -> OutageSignalInterface:
-        raise NotImplementedError("the concrete test class provides the signal")
-
-    @pytest.fixture
-    def cache(self) -> CacheInterface:
-        raise NotImplementedError("the concrete test class provides the cache under it")
-
-    async def test_a_report_is_known_until_its_retry_time_and_not_at_it(
-        self, signal: OutageSignalInterface
-    ) -> None:
-        provider, credential = pair()
-        reported = outage(provider, credential, seconds=60)
-        await signal.report(reported, AT)
-        assert await signal.current(provider, credential, AT) == reported
-        assert await signal.current(provider, credential, AT + timedelta(seconds=59)) == reported
-        assert await signal.current(provider, credential, AT + timedelta(seconds=60)) is None
-        assert await signal.current(provider, credential, AT + timedelta(seconds=61)) is None
-
-    async def test_a_later_report_extends_and_an_earlier_one_never_shortens(
-        self, signal: OutageSignalInterface
-    ) -> None:
-        provider, credential = pair()
-        await signal.report(outage(provider, credential, seconds=30), AT)
-        longer = outage(provider, credential, seconds=90, kind="rate_limited")
-        await signal.report(longer, AT + timedelta(seconds=1))
-        assert await signal.current(provider, credential, AT + timedelta(seconds=2)) == longer
-        await signal.report(outage(provider, credential, seconds=45), AT + timedelta(seconds=3))
-        assert await signal.current(provider, credential, AT + timedelta(seconds=60)) == longer
-
-    async def test_a_report_already_past_records_nothing(
-        self, signal: OutageSignalInterface
-    ) -> None:
-        provider, credential = pair()
-        await signal.report(outage(provider, credential, seconds=0), AT)
-        await signal.report(outage(provider, credential, seconds=-5), AT)
-        assert await signal.current(provider, credential, AT - timedelta(seconds=10)) is None
-
-    async def test_a_success_clears_what_was_known(self, signal: OutageSignalInterface) -> None:
-        provider, credential = pair()
-        await signal.report(outage(provider, credential, seconds=60), AT)
-        await signal.clear(provider, credential)
-        assert await signal.current(provider, credential, AT) is None
-        await signal.clear(provider, credential)  # clearing nothing is nothing
-
-    async def test_the_provider_and_the_credential_together_are_the_key(
-        self, signal: OutageSignalInterface
-    ) -> None:
-        provider, credential = pair()
-        other_provider, other_credential = pair()
-        await signal.report(outage(provider, credential, seconds=60), AT)
-        assert await signal.current(provider, other_credential, AT) is None
-        assert await signal.current(other_provider, credential, AT) is None
-        # A name that holds the separator reaches no other pair's entry.
-        await signal.report(outage("a:b", "c", seconds=60), AT)
-        assert await signal.current("a", "b:c", AT) is None
-        await signal.clear(provider, other_credential)
-        assert await signal.current(provider, credential, AT) is not None
-        await signal.clear("a:b", "c")
-
-    async def test_a_value_no_report_wrote_says_nothing_is_known(
-        self, signal: OutageSignalInterface, cache: CacheInterface
-    ) -> None:
-        provider, credential = pair()
-        key = outage_key(provider, credential)
-        await cache.put(SYSTEM_SCOPE, key, b"not an outage", timedelta(seconds=60))
-        assert await signal.current(provider, credential, AT) is None
-        await cache.invalidate(SYSTEM_SCOPE, key)
+async def test_a_mark_is_read_by_every_signal_on_the_same_cache() -> None:
+    """Two signals over one cache stand for two processes over one Valkey."""
+    first, cache = shared()
+    second = OutageSignalCacheImpl(cache)
+    marked = outage()
+    await first.mark(marked)
+    assert await second.current(SYSTEM_SCOPE, "identity", "identity_api_key") == marked
 
 
-class TestOutageSignalMemory(OutageSignalContract):
-    @pytest.fixture
-    def infra(self, tmp_path: Path) -> InfraLocalImpl:
-        return InfraLocalImpl(tmp_path)
-
-    @pytest.fixture
-    def signal(self, infra: InfraLocalImpl) -> OutageSignalInterface:
-        return infra.get_outages()
-
-    @pytest.fixture
-    def cache(self, infra: InfraLocalImpl) -> CacheInterface:
-        return infra.get_cache(CacheScope.OUTAGE)
+async def test_a_success_clears_the_mark() -> None:
+    signal, _ = shared()
+    await signal.mark(outage())
+    await signal.clear(SYSTEM_SCOPE, "identity", "identity_api_key")
+    assert await signal.current(SYSTEM_SCOPE, "identity", "identity_api_key") is None
 
 
-@pytest.mark.integration
-class TestOutageSignalValkey(OutageSignalContract):
-    @pytest.fixture
-    async def infra(self) -> AsyncIterator[InfraConfiguredImpl]:
-        settings = InfraSettings.model_validate(
-            {
-                "environment": "local",
-                "cache_backend": "valkey",
-                "valkey_url": InfraSettings().valkey_url,
-            }
-        )
-        root = InfraConfiguredImpl(settings)
-        await root.start()
-        try:
-            yield root
-        finally:
-            await root.close()
-
-    @pytest.fixture
-    def signal(self, infra: InfraConfiguredImpl) -> OutageSignalInterface:
-        assert "valkey" in infra.get_outages().describe()
-        return infra.get_outages()
-
-    @pytest.fixture
-    def cache(self, infra: InfraConfiguredImpl) -> CacheInterface:
-        return infra.get_cache(CacheScope.OUTAGE)
+async def test_a_mark_is_keyed_by_provider_and_credential() -> None:
+    """One org's credential failing is no outage of another's, nor of the
+    platform's, nor of another provider's."""
+    signal, _ = shared()
+    org = new_id()
+    await signal.mark(outage(org_id=org))
+    assert await signal.current(org, "identity", "identity_api_key") is not None
+    assert await signal.current(SYSTEM_SCOPE, "identity", "identity_api_key") is None
+    assert await signal.current(new_id(), "identity", "identity_api_key") is None
+    assert await signal.current(org, "identity", "other_key") is None
+    assert await signal.current(org, "mail", "identity_api_key") is None
 
 
-async def test_the_null_signal_is_quiet_and_never_signals() -> None:
+async def test_the_later_retry_time_is_kept() -> None:
+    signal, _ = shared()
+    later = outage(seconds=120)
+    await signal.mark(later)
+    await signal.mark(outage(seconds=30))
+    assert await signal.current(SYSTEM_SCOPE, "identity", "identity_api_key") == later
+    latest = outage(seconds=300)
+    await signal.mark(latest)
+    assert await signal.current(SYSTEM_SCOPE, "identity", "identity_api_key") == latest
+
+
+async def test_a_retry_time_that_has_passed_marks_nothing() -> None:
+    signal, _ = shared()
+    await signal.mark(outage(seconds=-1))
+    assert await signal.current(SYSTEM_SCOPE, "identity", "identity_api_key") is None
+
+
+async def test_a_mark_past_its_retry_time_is_no_mark() -> None:
+    """The entry's lifetime ends at the retry time; a value read past it, as a
+    slow clock between processes may leave, is no mark either."""
+    signal, cache = shared()
+    stale = outage(seconds=-5)
+    key = outage_key("identity", "identity_api_key")
+    await cache.put(SYSTEM_SCOPE, key, stale.model_dump_json().encode(), timedelta(minutes=5))
+    assert await signal.current(SYSTEM_SCOPE, "identity", "identity_api_key") is None
+
+
+@pytest.mark.parametrize("value", [b"not json", b'{"provider": "identity"}'])
+async def test_a_value_no_mark_wrote_is_no_mark(value: bytes) -> None:
+    signal, cache = shared()
+    key = outage_key("identity", "identity_api_key")
+    await cache.put(SYSTEM_SCOPE, key, value, timedelta(minutes=5))
+    assert await signal.current(SYSTEM_SCOPE, "identity", "identity_api_key") is None
+
+
+async def test_a_mark_under_another_pairs_key_is_no_mark() -> None:
+    signal, cache = shared()
+    other = outage("identity", "other_key")
+    key = outage_key("identity", "identity_api_key")
+    await cache.put(SYSTEM_SCOPE, key, other.model_dump_json().encode(), timedelta(minutes=5))
+    assert await signal.current(SYSTEM_SCOPE, "identity", "identity_api_key") is None
+
+
+def test_no_credential_reaches_another_pairs_key() -> None:
+    assert outage_key("a:b", "c") != outage_key("a", "b:c")
+    assert outage_key("identity", "a/b") == "outage:identity:a%2Fb"
+
+
+async def test_a_cache_that_cannot_answer_is_no_mark() -> None:
+    """It fails open: what the cache answers for a backend it cannot reach,
+    a miss, is a pair with no mark, and the caller calls."""
+
+    class Unreachable(CacheMemoryImpl):
+        async def get(self, org_id: UUID, key: str) -> bytes | None:
+            return None
+
+        async def put(self, org_id: UUID, key: str, value: bytes, ttl: timedelta) -> None:
+            return None
+
+    signal = OutageSignalCacheImpl(Unreachable(CacheScope.OUTAGE))
+    await signal.mark(outage())
+    assert await signal.current(SYSTEM_SCOPE, "identity", "identity_api_key") is None
+
+
+async def test_the_null_signal_never_marks() -> None:
     signal = OutageSignalNullImpl()
-    assert isinstance(signal, QuietNull)
-    await signal.report(outage("anthropic", "platform", seconds=60), AT)
-    assert await signal.current("anthropic", "platform", AT) is None
-    await signal.clear("anthropic", "platform")
+    await signal.mark(outage())
+    assert await signal.current(SYSTEM_SCOPE, "identity", "identity_api_key") is None
+    await signal.clear(SYSTEM_SCOPE, "identity", "identity_api_key")
     assert signal.describe() == "outages=none"
+    await signal.start()
+    await signal.close()
 
 
-def test_a_root_shares_its_signal_on_the_cache_it_built(tmp_path: Path) -> None:
-    """The signal follows the cache backend, so a deployed process, which
-    refuses a memory cache, shares its signal on Valkey."""
-    memory = InfraLocalImpl(tmp_path)
-    assert memory.get_outages() is memory.get_outages()
-    assert memory.get_outages().describe() == "outages=shared(cache[outage]=memory)"
+def test_the_shared_signal_names_its_cache() -> None:
+    signal, _ = shared()
+    assert signal.describe() == "outages=shared(cache[outage]=memory)"

@@ -86,4 +86,4 @@ answer on the request, and asks for the authority of each tool call
 before it runs and writes the principal on the call. The tool policy
 reads the rule of two from the same answer. The adopter supplies the
 question asked of the org, one operation of its tenancy manager; with
-none, the root asks the tenancy manager's own, `member_context`.
+none, the root asks the tenancy manager's own, `delegated_context`.

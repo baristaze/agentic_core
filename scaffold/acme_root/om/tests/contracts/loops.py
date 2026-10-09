@@ -10,8 +10,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import UUID
 
+from acme.infra.cache import CacheScope
 from acme.infra.impl.local import InfraLocalImpl
 from acme.infra.outages import OutageSignalInterface
+from acme.infra.outages.cache import OutageSignalCacheImpl
 from acme.integrations.identity.absent import IdentityProviderAbsentImpl
 from acme.integrations.impl.configured import IntegrationsOverImpl
 from acme.integrations.model_providers.calls import ModelReply
@@ -307,6 +309,7 @@ class Loop:
     owner: TenantContext
     tools: dict[str, Lookup]
     jobs: dict[str, Build]
+    outages: OutageSignalInterface
 
     async def start(self, kind: str = "assistant") -> UUID:
         session = await self.managers.agents.start_session(
@@ -395,6 +398,9 @@ def loop_over(
         agent_sessions_options=sessions,
     )
     clock = Clock()
+    # The sessions of one case share one signal, as a fleet's do on Valkey:
+    # the local root's is the null one.
+    signal = outages or OutageSignalCacheImpl(infra.get_cache(CacheScope.OUTAGE))
 
     async def sleep(seconds: float) -> None:
         clock.now += timedelta(seconds=seconds)
@@ -427,7 +433,7 @@ def loop_over(
             if models_layer is None
             else models_layer.credentials(providers)
         ),
-        outages or infra.get_outages(),
+        signal,
         sink,
         engine_tools(managers.steps, managers.agent_sessions, reader, lambda: managers.agents)
         + every,
@@ -439,7 +445,18 @@ def loop_over(
     )
     owner = owner or context(Role.OWNER, make_org())
     return Loop(
-        infra, storage, managers, loops, anthropic, openai, sink, clock, owner, catalog, jobs
+        infra,
+        storage,
+        managers,
+        loops,
+        anthropic,
+        openai,
+        sink,
+        clock,
+        owner,
+        catalog,
+        jobs,
+        signal,
     )
 
 

@@ -16,8 +16,6 @@ from acme.infra.exceptions import InfraException
 from acme.infra.impl.local import InfraLocalImpl
 from acme.infra.keys import KeyServiceInterface
 from acme.infra.keys.null import KeyServiceNullImpl
-from acme.infra.outages import OutageSignalInterface
-from acme.infra.outages.null import OutageSignalNullImpl
 from acme.infra.transports import (
     CommandSpec,
     CredentialBrokerInterface,
@@ -174,12 +172,10 @@ async def test_a_loud_null_refuses_with_a_typed_error_and_is_never_quiet(
 
 async def test_the_quiet_nulls_do_nothing_and_say_so() -> None:
     gate = BudgetGateNullImpl()
-    signal = OutageSignalNullImpl()
     sink = StreamSinkNullImpl()
     verdicts = ResultGateNullImpl()
     for interface, null in (
         (BudgetGateInterface, gate),
-        (OutageSignalInterface, signal),
         (StreamSinkInterface, sink),
         (ResultGateInterface, verdicts),
     ):
@@ -189,7 +185,6 @@ async def test_the_quiet_nulls_do_nothing_and_say_so() -> None:
     )
     hold = await gate.authorize(CTX, request)
     assert isinstance(hold, Hold) and hold.lines == (), "a hold on no line bounds nothing"
-    assert await signal.current("anthropic", "platform", utcnow()) is None
     sink.emit(TextPart(session_id=uuid4(), step_id=uuid4(), n=0, index=0, text="lost"))
     verdict = await verdicts.check(CTX, uuid4(), Result(claim=Claim.SUCCEEDED, evidence=(uuid4(),)))
     assert verdict.accepted and not verdict.verified, "accepted, and marked unverified"

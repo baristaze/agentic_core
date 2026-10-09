@@ -1,23 +1,20 @@
-"""The outage signal of a process that keeps none: it never signals. One
-process needs no signal, since its own sessions learn of an outage from the
-provider's errors; what is lost is the head start a shared one gives."""
+"""The outage signal of one process: it never marks. The process's own
+breaker holds what its calls learned; what a shared signal adds is the news
+for every other process, and one process has none to tell."""
 
-from datetime import datetime
+from uuid import UUID
 
-from acme.infra.base import QuietNull
 from acme.infra.outages import Outage, OutageSignalInterface
 
 
-class OutageSignalNullImpl(OutageSignalInterface, QuietNull):
-    """Quiet: a report records nothing, and nothing is ever known."""
-
-    async def report(self, outage: Outage, now: datetime) -> None:
+class OutageSignalNullImpl(OutageSignalInterface):
+    async def mark(self, outage: Outage) -> None:
         return None
 
-    async def current(self, provider: str, credential: str, now: datetime) -> Outage | None:
+    async def current(self, org_id: UUID, provider: str, credential: str) -> Outage | None:
         return None
 
-    async def clear(self, provider: str, credential: str) -> None:
+    async def clear(self, org_id: UUID, provider: str, credential: str) -> None:
         return None
 
     def describe(self) -> str:
