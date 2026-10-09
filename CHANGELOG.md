@@ -5,52 +5,55 @@ included, stay on its GitHub release. Releases are tagged
 `vMAJOR.MINOR.PATCH`; see `CONTRIBUTING.md` for what bumps which
 number.
 
-## 0.13.0 (2026-10-09)
+## 0.14.0 (2026-10-09)
 
-The engine's base moves to the guideline at v0.57.0, with v0.56.0 in
-it, which bring a kind's own lane in the relay, a tenant's own cap on a
-lane, and a lease kept by the worker of the job its grant starts. The
-relay is the guideline's, and the loop's lane is one line in its
-registry. A job tool asks in line for the resource its work runs on,
-and the grant starts its job. Minor: nothing is reversed.
+The engine's base moves to the guideline at v0.59.0, with v0.58.0 in
+it. They bring a read cache keyed by the tenant's generation, a notice
+the channel hands over once, a purge's tenant context and a member's
+admission, and an investigator's skill for an integration gone silent.
+A resource's owner updates it, a tenant reads its leases back as a
+history, a kind may refuse an ask, and a line answers its places from
+one replay. The engine's `core` migrations move above the guideline's
+new one. Minor: nothing is reversed.
 
 ### Added
 
-- From the guideline's v0.56.0, in the scaffold: a kind's own lane,
-  named in `WORK_LANES` and read by `relayed_lane`, on which the relay
-  lands each item of the kind; a tenant's own cap on a lane,
-  `TenantCap`, which an operator sets at
-  `/v1/admin/orgs/{org_id}/work/lanes/{lane}/cap` and the claim holds in
-  place of the lane's (migration `queue` `202609280003`); ADRs 0092 and
-  0093 (#83).
-- From the guideline's v0.57.0, in the scaffold: a grant that starts a
-  job, whose worker starts, renews, and ends the lease under a
-  `JobClaim`; a job's window to start in; `WorkManagerInterface.holds`;
-  a renewal that names its length; labels as free text; a term of up to
-  seven days (migration `core` `202609280002`); ADR 0094 (#83).
-- A job tool's run may ask in line for the resource its work runs on,
-  and name the request in `JobStarted`. The loop parks on `resource` at
-  once, with its place, until the job's deadline. The grant starts the
-  job in its own commit and moves the park to the job's, with no notice
-  and no model call between, and the job's result answers the call. A
-  request that ends without a lease answers the call, and no job
-  starts. A loop that stops leaves its lines before it cancels its
-  jobs, and every cancel of a job that asked in line names its request.
-  The spec's Parking and Long-Running Jobs and TOL-09 state it, and ADR
-  1026 records it (#84).
+- From the guideline's v0.58.0, in the scaffold: `ReadCache`, a read
+  cache keyed by the tenant's generation (ADR 0095); a notice the
+  portal's channel hands over once, as its cursor passes it (ADR 0096);
+  `TenancyManagerInterface.sweep_context`, the tenant context a purge
+  across tenants acts in, and the org's gate that `add_member_to` asks
+  before a new member is written (ADR 0097); and
+  `ops-integration-silent`, an optional investigator's skill that says
+  where an integration's inbound deliveries stop (#86).
+- From the guideline's v0.59.0, in the scaffold: an owner's update of a
+  resource, `update_statement` with a `ResourceUpdate`, after which its
+  line is offered it again; a lease history, newest first and a
+  tenant's own, at `GET /v1/leases` and in the Python client's
+  `lease_history` (migration `core` `202610091856`); and
+  `AskCheckInterface`, a kind's check that refuses an ask before
+  anything of it lands. ADR 0098 records them (#87).
 
 ### Changed
 
-- The relay and its lane registry are the guideline's. The engine drops
-  its own `WORK_LANES`, `relayed_lane`, and edit of `enqueue_relayed`,
-  and registers `LOOP`'s lane, `loop`, as one line in the guideline's
-  `WORK_LANES`. The session runner's lane reads `relayed_lane` (#83).
-- The engine's first `core` migration, `202610020100`, revises the
-  scaffold's new head, `202609280002`, so the role keeps one head
-  (#83).
-- The spec's links and the lenses' README cite the guideline at v0.57.0
-  (#83).
+- From the guideline's v0.58.0 and v0.59.0, in the scaffold: a write
+  bumps the tenant's generation once its transaction commits, never
+  before; a deleted tenant keeps its service context until a pass marks
+  it purged; a grant lands only while the request still fits the
+  resource as its row stands under the anchor's lock (`grant_fits`);
+  and a line answers each place and estimate (`Place`) from one replay
+  (#86, #87).
+- The engine's eight `core` migrations move above the guideline's new
+  `202610091856`, as `202610091857` to `202610091904` in order, their
+  SQL unchanged. The first revises `202610091856`, so the role keeps
+  one head, `202610091904`, and a layer on the engine re-points its
+  first `core` migration to it (#87).
+- The spec's links and the lenses' README cite the guideline at v0.59.0
+  (#86, #87).
 
-### Removed
+### Fixed
 
-- `LOOP_LANE`: the loop's lane is `relayed_lane(WorkKind.LOOP)` (#83).
+- From the guideline's v0.59.0, in the scaffold: the import-direction
+  test lists `acme.infra.cache.read` with the infra interfaces, so a
+  manager that takes a `ReadCache` through its constructor passes a
+  copy's unit gate (#87).
