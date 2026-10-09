@@ -38,6 +38,7 @@ READERS = [
     "ops-cloud-deployment-create",
     "ops-cloud-deployment-nuke",
     "ops-infra-as-code",
+    "ops-integration-silent",
     "ops-investigate",
     "ops-root-cause",
     "ops-simulate-traffic",
@@ -72,6 +73,7 @@ SOURCED = re.compile(
 INVESTIGATORS = [
     *(name for name in TOKEN_HOLDERS if name not in SPEND_READERS),
     "ops-infra-as-code",
+    "ops-integration-silent",
     "audit-deploy-time",
     "audit-retention",
 ]
@@ -691,6 +693,13 @@ COUNT_BOUNDS = {
         "A session follows at most 2 hops of Next.",
         "never more than 10 polls of a query",
     ],
+    "ops-integration-silent": [
+        "Poll `get-query-results` at most 10 times for one query, each poll after `sleep 5`",
+        'as "not read: the query did not finish in 10 polls"',
+        "Step 3's query is polled the same way.",
+        "A run follows at most 2 hops of Next",
+        "never more than 10 polls of a query",
+    ],
     "stress-test-run": ["A session follows at most 2 hops of Next."],
     "ops-loop-spend": ["Read at most 5 pages, 1,000 records.", "never more than 5 pages"],
     "ops-session-spend": [
@@ -715,7 +724,7 @@ COUNT_BOUNDS = {
 # The skills whose report's Next a person runs: no session follows it.
 PERSONS_NEXT = ["ops-cloud-deployment-create", "stress-test-create-or-update", "docs-compact"]
 # The skills that wait between two reads with `sleep`.
-SLEEPERS = ["ops-investigate", "ops-root-cause", "ops-watch"]
+SLEEPERS = ["ops-integration-silent", "ops-investigate", "ops-root-cause", "ops-watch"]
 
 
 @pytest.mark.parametrize(
@@ -1016,7 +1025,7 @@ def test_the_fold_reads_the_commit_staging_deployed_as_the_release_does() -> Non
 # carry, the exporter's own `OTelLib` among them, and its Terraform test holds
 # them there. So a skill's schema is one of the dashboard's.
 DASHBOARD = ROOT / "deployment" / "terraform" / "modules" / "dashboard"
-METRIC_READERS = ["ops-investigate", "ops-watch"]
+METRIC_READERS = ["ops-integration-silent", "ops-investigate", "ops-watch"]
 SEARCH_SCHEMA = re.compile(r"SEARCH\(\W*?(\{[^}]*\})")
 
 
