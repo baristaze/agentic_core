@@ -41,6 +41,7 @@ AGENT_SESSION_PURGE_BATCH = 100
 """Sessions one purge across tenants takes up. Each costs a claim, a batch of
 its history, and its row, three statements apiece, so the batch is smaller
 than the rows'."""
+
 LEASE_SWEEP_BATCH = LeasesOptions().sweep_batch
 """Leases and requests one org's lease sweep ends; a sweep that ends as many
 or more may have left some due."""
