@@ -167,7 +167,8 @@ of](../../../../README.md).
   grant reaches the model as the engine's notice before its next call
   while its lease is active; the request's end, or the lease's end, is
   told once in its stead, in a later loop too. A loop that ends, or that
-  parks on the tree's deadline, leaves every line (ADR 1024).
+  parks on the tree's deadline, leaves every line, and one that parks on
+  the deadline gives back each lease its asks hold (ADR 1024).
 - **A nudge is a step.** When a delivery agent's turn calls no tool, the
   engine's notice is written before the next request, so no request
   holds two of the model's turns in a row. A reply cut by its output

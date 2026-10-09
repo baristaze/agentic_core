@@ -1357,8 +1357,10 @@ the lease is active. The request's end without a lease, or the lease's
 end (released, expired, or revoked), is told once in its stead, in a
 later loop too, since a lease outlives the loop that took it. A loop
 that ends leaves every line, so no ended session holds a place. A turn
-that ends past the tree's deadline parks on the deadline, never in line,
-and leaves every line too. Treating "cannot continue right now" as "this did not work" throws away a long conversation and its
+that ends past the tree's deadline parks on the deadline, never in line.
+A loop that parks on the deadline leaves every line and gives back each
+lease its asks hold, so no resource sits idle under a session out of
+time. Treating "cannot continue right now" as "this did not work" throws away a long conversation and its
 evidence.
 
 *Example:* in its first week the session parks five times, for an

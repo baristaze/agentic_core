@@ -68,10 +68,14 @@ of the session as a waiter, before its `loop_ended` step, so a cancel,
 an error, or an answer never leaves a place held. An archive or a delete
 needs an idle session, whose loop has ended already.
 
-**Past the deadline, no line.** A turn that ends past the tree's
-deadline parks on the deadline, as a wait on children does, never in
-line. A loop that parks on the deadline leaves every line, so no grant
-holds a resource for a session out of time.
+**Past the deadline, no line and no lease.** A turn that ends past the
+tree's deadline parks on the deadline, as a wait on children does, never
+in line. A loop that parks on the deadline leaves every line, so no
+grant holds a resource for a session out of time. It also releases each
+lease its asks hold, as their holder: the principal the session's calls
+run under, asked of attribution as a call's is. The model is told each
+end once. A principal that no longer holds the session's calls releases
+nothing, and its lease runs to its term.
 
 ## Consequences
 
@@ -84,6 +88,6 @@ holds a resource for a session out of time.
   call, across its loops, until each request's or lease's end is told.
 - A revocation after the loop that took the lease has ended reaches the
   model in the next loop's first call.
-- A session out of time holds no place in a line.
+- A session out of time holds no place in a line, and no lease.
 - The API's park view names the line: the request, its place, and its
   estimate.
