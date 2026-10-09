@@ -7,19 +7,21 @@ A session waits in line as a waiter of the leases namespace. Its tool asks
 and answers at once with its place; the loop parks only when the turn ends
 with nothing else to do. A grant, a request's end without a lease, and a
 revocation each reach the model as the engine's notice, written by a run
-before its next model call. Each notice's id is its request's and its
-answer's, so the history says what the model was told, after a lost run as
-well (ADR 1024)."""
+before its next model call. Each notice's id is derived from the call's
+answer and what it tells, so the history says what the model was told,
+after a lost run as well (ADR 1024)."""
 
 import json
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
-from uuid import UUID, uuid5
+from uuid import UUID
 
 from pydantic import ValidationError
 
 from acme.om.agents.types.line import InLine
+from acme.om.base import derived_id
 from acme.om.leases.types.lease import LeaseStatus
 from acme.om.leases.types.request import (
     EndReason,
@@ -75,11 +77,14 @@ WHY: dict[EndReason, str] = {
 
 @dataclass(frozen=True)
 class Ask:
-    """An ask a loop made: its request, and whether the call's answer
-    carried the lease, which then needs no notice."""
+    """An ask a loop made: its request, whether the call's answer carried
+    the lease, which then needs no notice, and that answer's step, from
+    which each notice of the ask takes its id."""
 
     request_id: UUID
     granted: bool
+    answer_id: UUID
+    answered_at: datetime
 
 
 def in_line(request: LeaseRequest, session_id: UUID, key: UUID) -> LeaseRequest:
@@ -115,7 +120,8 @@ def asks(steps: Sequence[Step], loop_id: UUID, tools: Collection[str]) -> list[A
             continue
         answer = _answer(step)
         if answer is not None:
-            found.append(Ask(answer.request_id, answer.lease_id is not None))
+            granted = answer.lease_id is not None
+            found.append(Ask(answer.request_id, granted, step.id, step.created_at))
     return found
 
 
@@ -138,9 +144,10 @@ def _answer(response: Step) -> InLine | None:
         return None
 
 
-def notice_id(request_id: UUID, answer: Answer) -> UUID:
-    """The id of the one notice that tells an ask's answer."""
-    return uuid5(request_id, answer.value)
+def notice_id(ask: Ask, answer: Answer) -> UUID:
+    """The id of the one notice that tells an ask's answer, derived from the
+    step of the call's answer."""
+    return derived_id(ask.answer_id, ask.answered_at, f"lease_notice:{answer.value}")
 
 
 def untold(standing: Standing, ask: Ask, told: Collection[UUID]) -> list[tuple[UUID, str]]:
@@ -151,7 +158,7 @@ def untold(standing: Standing, ask: Ask, told: Collection[UUID]) -> list[tuple[U
     owed: list[tuple[UUID, str]] = []
 
     def tell(answer: Answer, text: str) -> None:
-        step_id = notice_id(request.id, answer)
+        step_id = notice_id(ask, answer)
         if step_id not in told:
             owed.append((step_id, text))
 

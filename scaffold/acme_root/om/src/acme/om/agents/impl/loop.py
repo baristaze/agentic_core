@@ -1347,7 +1347,7 @@ class LoopManagerImpl(LoopManagerInterface):
         standings: list[tuple[lines.Ask, Standing]] = []
         for ask in lines.asks(history, run.loop_id, tools):
             final = (lines.Answer.ENDED, lines.Answer.REVOKED)
-            if any(lines.notice_id(ask.request_id, answer) in told for answer in final):
+            if any(lines.notice_id(ask, answer) in told for answer in final):
                 continue
             try:
                 standing = await self._leases.get_request(run.ctx, ask.request_id)

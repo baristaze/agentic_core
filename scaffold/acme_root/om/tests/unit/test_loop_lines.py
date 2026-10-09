@@ -321,6 +321,10 @@ def a_standing(status: RequestStatus, lease: LeaseStatus | None = None) -> Stand
     )
 
 
+def an_ask_of(request_id: UUID, granted: bool) -> lines.Ask:
+    return lines.Ask(request_id, granted, new_id(), utcnow())
+
+
 def test_an_ask_is_the_calls_and_its_session_waits_on_it() -> None:
     session_id, key = new_id(), new_id()
     ask = lines.in_line(an_ask(new_id()), session_id, key)
@@ -330,22 +334,23 @@ def test_an_ask_is_the_calls_and_its_session_waits_on_it() -> None:
 
 def test_each_answer_is_told_once_and_a_grant_the_call_answered_with_never() -> None:
     waiting = a_standing(RequestStatus.WAITING)
-    assert lines.untold(waiting, lines.Ask(waiting.request.id, False), ()) == []
+    assert lines.untold(waiting, an_ask_of(waiting.request.id, False), ()) == []
 
     granted = a_standing(RequestStatus.GRANTED, LeaseStatus.ACTIVE)
-    ask = lines.Ask(granted.request.id, False)
+    ask = an_ask_of(granted.request.id, False)
     ((step_id, text),) = lines.untold(granted, ask, ())
-    assert step_id == lines.notice_id(granted.request.id, lines.Answer.GRANTED)
+    assert step_id == lines.notice_id(ask, lines.Answer.GRANTED)
     assert "token 7" in text
     assert lines.untold(granted, ask, {step_id}) == []
-    assert lines.untold(granted, lines.Ask(granted.request.id, True), ()) == []
+    assert lines.untold(granted, an_ask_of(granted.request.id, True), ()) == []
 
     revoked = a_standing(RequestStatus.GRANTED, LeaseStatus.REVOKED)
-    told = [i for i, _ in lines.untold(revoked, lines.Ask(revoked.request.id, True), ())]
-    assert told == [lines.notice_id(revoked.request.id, lines.Answer.REVOKED)]
+    ask = an_ask_of(revoked.request.id, True)
+    told = [i for i, _ in lines.untold(revoked, ask, ())]
+    assert told == [lines.notice_id(ask, lines.Answer.REVOKED)]
 
     ended = a_standing(RequestStatus.CANCELLED)
-    ((_, why),) = lines.untold(ended, lines.Ask(ended.request.id, False), ())
+    ((_, why),) = lines.untold(ended, an_ask_of(ended.request.id, False), ())
     assert "the resource it named was retired" in why
-    ((_, why),) = lines.untold(a_standing(RequestStatus.EXPIRED), lines.Ask(new_id(), False), ())
+    ((_, why),) = lines.untold(a_standing(RequestStatus.EXPIRED), an_ask_of(new_id(), False), ())
     assert "it waited past its wait" in why

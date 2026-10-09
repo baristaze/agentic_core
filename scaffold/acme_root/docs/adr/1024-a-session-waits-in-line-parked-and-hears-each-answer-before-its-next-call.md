@@ -48,10 +48,11 @@ handler unlocks a session parked in line and leaves any other as it is.
 Before each model call, a run that asked in line reads its asks and
 tells the model each answer it has not been told, as the engine's
 notice: the grant with its lease and token, the end with its reason, the
-revocation. Each notice's id is derived from its request and its answer,
-so the history says what was told, after a lost run as well. A grant the
-call answered with needs no notice. The engine writes the notice under
-the run's epoch, so it instructs and never arrives through the inbox.
+revocation. Each notice's id is derived from the call's answer and what
+the notice tells, so the history says what was told, after a lost run as
+well. A grant the call answered with needs no notice. The engine writes
+the notice under the run's epoch, so it instructs and never arrives
+through the inbox.
 
 **The run reads again after it parks.** Once its park lands, the run
 reads its asks again, and clears its own park when one has an answer
