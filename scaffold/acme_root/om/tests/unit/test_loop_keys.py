@@ -12,6 +12,7 @@ from uuid import UUID
 import pytest
 from contracts.loops import Clock, Loop, loop_over, reply, said
 
+from acme.infra.base import SYSTEM_SCOPE
 from acme.integrations.model_providers import ModelProvidersInterface
 from acme.integrations.model_providers.calls import ModelCall
 from acme.integrations.model_providers.scripted import ScriptedFailure
@@ -155,6 +156,5 @@ async def test_a_key_its_provider_refuses_is_marked_refused_and_no_outage_is_rep
     assert gate.credentials == [KEY], "the gate held the call knowing its key"
     assert keys.refusals == refused
     assert len(loop.anthropic.calls) == 1, "parked at once: no retry on the same key"
-    outages = loop.infra.get_outages()
-    for credential in (KEY, PLATFORM_CREDENTIAL):
-        assert await outages.current("anthropic", credential, loop.clock()) is None, credential
+    for holder, credential in ((loop.owner.org_id, KEY), (SYSTEM_SCOPE, PLATFORM_CREDENTIAL)):
+        assert await loop.outages.current(holder, "anthropic", credential) is None, credential

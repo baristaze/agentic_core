@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from contracts.loops import loop_over, outage_parks_at_once_and_resumes_at_the_retry_time
 
-from acme.infra.base import new_id
+from acme.infra.base import SYSTEM_SCOPE, new_id
 from acme.infra.impl.configured import InfraConfiguredImpl
 from acme.infra.impl.settings import InfraSettings
 from acme.om.agents.impl.loop import LoopOptions
@@ -48,4 +48,4 @@ async def test_a_known_outage_on_the_shared_signal_parks_at_once_and_resumes_at_
             loop_over(tmp_path, outages=signal, options=options)
         )
     finally:
-        await signal.clear("anthropic", credential)
+        await signal.clear(SYSTEM_SCOPE, "anthropic", credential)

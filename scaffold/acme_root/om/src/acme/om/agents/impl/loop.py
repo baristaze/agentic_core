@@ -11,6 +11,7 @@ from uuid import UUID
 
 from pydantic import Field, ValidationError
 
+from acme.infra.base import SYSTEM_SCOPE
 from acme.infra.exceptions import InfraException
 from acme.infra.outages import Outage, OutageSignalInterface
 from acme.infra.transports import OutputSink
@@ -487,8 +488,10 @@ class LoopManagerImpl(LoopManagerInterface):
             return await self._refused(run, refused)
         # A provider known to be failing for this credential parks the loop
         # at once, before anything is rendered, held, or spent.
-        outage = await self._outages.current(fill.provider.value, used.credential, self._clock())
-        if outage is not None:
+        outage = await self._outages.current(
+            self._holder(ctx, used.credential), fill.provider.value, used.credential
+        )
+        if outage is not None and outage.retry_at > self._clock():
             return await self._park(run, provider_park(fill, outage.retry_at))
         prompts = rules.kind_prompts(run.kind, run.registry)
         # The agent's current plan, read off the whole history, so a summary
@@ -668,6 +671,11 @@ class LoopManagerImpl(LoopManagerInterface):
             run.sink_failed = True
             log.warning("session %s: the stream sink failed", run.session_id, exc_info=True)
 
+    def _holder(self, ctx: TenantContext, credential: str) -> UUID:
+        """The org that holds the credential, as the outage signal keys it:
+        the system scope for the platform's own key, the tenant for its own."""
+        return SYSTEM_SCOPE if credential == self._options.credential else ctx.org_id
+
     async def _failed(
         self,
         run: _Run,
@@ -700,12 +708,12 @@ class LoopManagerImpl(LoopManagerInterface):
             retry_at = now + max(wait, self._options.outage_wait)
             if credential is not None:
                 outage = Outage(
+                    org_id=self._holder(run.ctx, credential),
                     provider=fill.provider.value,
                     credential=credential,
-                    kind=failed.kind.value,
                     retry_at=retry_at,
                 )
-                await self._outages.report(outage, now)
+                await self._outages.mark(outage)
             if main and await self._fall_back(run, fill):
                 return None
             return await self._park(run, provider_park(fill, retry_at))
