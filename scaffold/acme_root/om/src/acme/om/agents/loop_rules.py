@@ -23,6 +23,7 @@ from acme.integrations.model_providers.calls import (
     ToolUseDelta,
 )
 from acme.integrations.model_providers.calls import StreamPart as ProviderPart
+from acme.integrations.model_providers.types import StopReason
 from acme.om.agent_sessions.rules import held_private
 from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.agents.types.kind import AgentKind
@@ -315,6 +316,14 @@ def report_of(
         answer=answer,
         cancelled_by_parent=by_parent,
     )
+
+
+def ended_turn(response: Step) -> bool:
+    """Whether the model ended its turn in `response`: it called no tool,
+    and its provider did not pause it."""
+    header = response.header
+    paused = isinstance(header, ModelResponseHeader) and header.stop_reason is StopReason.PAUSE
+    return not response.as_tool_uses() and not paused
 
 
 def judged(steps: Sequence[Step], response: Step) -> bool:

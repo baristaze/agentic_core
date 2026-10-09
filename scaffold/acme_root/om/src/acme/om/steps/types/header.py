@@ -85,11 +85,26 @@ class JobPark(Platform):
     hold_id: UUID | None = None
 
 
+class LinePark(Platform):
+    """The line a loop waits in for a leased resource: the request it waits
+    on, what it asked for (a kind, and the resource when it named one), and
+    where it stood when the loop parked, its place (1 is next in some line it
+    stands in) and the estimate of its wait. Ids, a kind, and numbers, never
+    what the work said."""
+
+    request_id: UUID
+    kind: Stored = Field(min_length=1, max_length=MAX_NAME)
+    resource_id: UUID | None = None
+    place: int | None = Field(default=None, ge=1)
+    estimate_seconds: float | None = Field(default=None, ge=0)
+
+
 class Park(Platform):
     """What a parked loop waits on: its reason, what clears it, and when it
     tries again by itself. No retry time means only a person can unblock it,
-    so a park only a person clears carries none. A park on a started job
-    names it, and tries again at the job's deadline."""
+    so a park only a person clears carries none, except a park in line,
+    which the grant or its request's end without one clears. A park on a
+    started job names it, and tries again at the job's deadline."""
 
     reason: ParkReason
     unlock: Stored = Field(min_length=1, max_length=MAX_NAME)
@@ -101,6 +116,7 @@ class Park(Platform):
     call open at it may have started: the run that resumes it settles each
     by its effect."""
     job: JobPark | None = None
+    line: LinePark | None = None
 
     @model_validator(mode="after")
     def _a_person_sets_no_clock(self) -> Self:
@@ -108,6 +124,10 @@ class Park(Platform):
             raise ValueError(f"a {self.reason.value} park is cleared by a person, never by a time")
         if self.job is not None and (self.reason is not ParkReason.JOB or self.retry_at is None):
             raise ValueError("only a job park names a job, and it tries again at its deadline")
+        if self.line is not None and (
+            self.reason is not ParkReason.RESOURCE or self.retry_at is not None
+        ):
+            raise ValueError("only a resource park names a line, and a grant clears it, not a time")
         return self
 
 

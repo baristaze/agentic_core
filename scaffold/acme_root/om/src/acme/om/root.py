@@ -18,6 +18,7 @@ from acme.om.agent_sessions.impl.manager import AgentSessionsManagerImpl, AgentS
 from acme.om.agents import AgentsManagerInterface, ResultGateInterface
 from acme.om.agents.impl.gate import ResultGateNullImpl
 from acme.om.agents.impl.loop import LoopManagerImpl, LoopOptions
+from acme.om.agents.impl.waiter import SessionWaiterImpl
 from acme.om.agents.impl.manager import AgentsManagerImpl, AgentsOptions
 from acme.om.agents.impl.sink import StreamSinkNullImpl
 from acme.om.agents.loop import LoopManagerInterface
@@ -368,7 +369,12 @@ def build_managers(
         outbox,
         leases_options or LeasesOptions(),
         kinds={ResourceKind.NOOP: NoopResourceKindImpl()},
-        waiters={WaiterKind.ORCHESTRATION: OrchestrationWaiterImpl(orchestrations)},
+        # A session waits in line too: its sessions manager is built below,
+        # so that edge is bound at call time.
+        waiters={
+            WaiterKind.ORCHESTRATION: OrchestrationWaiterImpl(orchestrations),
+            WaiterKind.SESSION: SessionWaiterImpl(lambda: managers.agent_sessions),
+        },
     )
     # The history first: a session's status is read off its steps. What a
     # step says reaches it through the sealing layer, by the session's policy.
@@ -565,6 +571,7 @@ def build_managers(
             stream_sink or StreamSinkNullImpl(),
             catalog,
             loop_options or LoopOptions(),
+            leases=leases,
             domain_classes=domain_classes,
         ),
     )
