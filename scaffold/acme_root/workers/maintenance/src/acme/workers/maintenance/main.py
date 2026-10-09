@@ -103,6 +103,7 @@ def build_loop(container: WorkerContainer, lane: str | None = None) -> WorkerLoo
             "events": managers.events.purge_tenant,
             "orchestrations": managers.orchestrations.purge_tenant,
             "leases": managers.leases.purge_tenant,
+            "work": managers.work.purge_tenant,
             "agent_trees": managers.agents.purge_tenant,
             "session_authorities": managers.attribution.purge_tenant,
             "models": managers.models.purge_tenant,

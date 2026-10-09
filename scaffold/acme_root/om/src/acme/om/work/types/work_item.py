@@ -35,21 +35,6 @@ change, in the same statement, and the relay enqueues the item it names: the
 queue is a database role of its own, so no statement reaches both."""
 
 
-LOOP_LANE = "loop"
-"""The lane a session's loop runs on, its own: the session runner claims
-from it, and a cap on the maintenance worker's lane counts none of a
-tenant's running loops."""
-
-WORK_LANES: dict[WorkKind, str] = {WorkKind.LOOP: LOOP_LANE}
-"""The lane the relay lands a kind on when it is not the default one."""
-
-
-def relayed_lane(kind: WorkKind) -> str:
-    """The lane the relay lands a kind on: its own in `WORK_LANES`, else the
-    default one."""
-    return WORK_LANES.get(kind, "default")
-
-
 def work_row_kind(kind: WorkKind) -> str:
     """The outbox row kind that asks for work of this kind."""
     return WORK_ROW_PREFIX + kind.value
@@ -234,3 +219,21 @@ WORK_ENQUEUE_PERMISSIONS: dict[WorkKind, Permission] = {
 the whole run once, so the permission has to be as wide as the run: every
 role that holds it holds every permission the kind's handler calls with,
 which the worker's tests hold each handler to."""
+
+WORK_LANES: dict[WorkKind, str] = {
+    # A session's loop runs for minutes on the session runner's own lane, so
+    # a cap on the maintenance worker's lane counts none of a tenant's loops.
+    WorkKind.LOOP: "loop",
+}
+"""The lane of each kind that runs on a lane of its own, such as a long-held
+kind kept off the lane of short items and that lane's tenant cap. A kind it
+does not name runs on the default lane. A layer above adds its own kinds
+here and leaves the relay as it is."""
+
+
+def relayed_lane(kind: WorkKind) -> str:
+    """The lane the relay lands an item of this kind on: its own in
+    `WORK_LANES`, else the default one. A worker of the kind's own reads its
+    lane here too, so the two cannot disagree; a replica of a worker that
+    serves many kinds is deployed on the lane this returns."""
+    return WORK_LANES.get(kind, "default")

@@ -19,6 +19,8 @@ from acme.services.api.types.admin import (
     OperatorWorkItemView,
     PlatformSizeView,
     SessionUsageView,
+    SetTenantCapRequest,
+    TenantCapView,
     TotpConfirmedView,
 )
 from acme.services.api.types.events import OperatorEventView
@@ -104,3 +106,18 @@ class AdminServiceInterface(ABC):
         """A page of one session's usage records and its rollups; `cursor` is
         the previous page's `next_cursor`."""
         ...
+
+    @abstractmethod
+    async def set_tenant_cap(
+        self, admin: OperatorContext, org_id: UUID, lane: str, body: SetTenantCapRequest
+    ) -> TenantCapView: ...
+
+    @abstractmethod
+    async def get_tenant_cap(
+        self, admin: OperatorContext, org_id: UUID, lane: str
+    ) -> TenantCapView: ...
+
+    @abstractmethod
+    async def clear_tenant_cap(
+        self, admin: OperatorContext, org_id: UUID, lane: str
+    ) -> TenantCapView: ...

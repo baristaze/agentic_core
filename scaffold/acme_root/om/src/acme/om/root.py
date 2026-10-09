@@ -375,6 +375,7 @@ def build_managers(
             WaiterKind.ORCHESTRATION: OrchestrationWaiterImpl(orchestrations),
             WaiterKind.SESSION: SessionWaiterImpl(lambda: managers.agent_sessions),
         },
+        work=work,
     )
     # The history first: a session's status is read off its steps. What a
     # step says reaches it through the sealing layer, by the session's policy.

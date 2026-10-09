@@ -38,6 +38,8 @@ from acme.services.api.types.admin import (
     OperatorWorkItemView,
     PlatformSizeView,
     SessionUsageView,
+    SetTenantCapRequest,
+    TenantCapView,
     TotpConfirmedView,
 )
 from acme.services.api.types.common import LIMIT_DEFAULT
@@ -222,3 +224,37 @@ async def get_session_usage(
     content. `404 not_found` for an unknown org, and for a session the org
     holds no record of, which is how another tenant's session reads."""
     return await service.get_session_usage(admin, org_id, session_id, cursor, limit)
+
+
+# A cap is set whole by a PUT, so a retry after a lost answer sets the same
+# cap again and the route takes no Idempotency-Key.
+@router.put("/orgs/{org_id}/work/lanes/{lane}/cap", response_model=TenantCapView)
+async def set_tenant_cap(
+    admin: OperatorCtx,
+    service: AdminService,
+    org_id: UUID,
+    lane: str,
+    body: SetTenantCapRequest,
+) -> TenantCapView:
+    """Sets the org's own cap on the lane: the most items it holds claimed
+    there at once, in place of the lane's cap, from the next claim on."""
+    return await service.set_tenant_cap(admin, org_id, lane, body)
+
+
+@router.get("/orgs/{org_id}/work/lanes/{lane}/cap", response_model=TenantCapView)
+async def get_tenant_cap(
+    admin: OperatorCtx, service: AdminService, org_id: UUID, lane: str
+) -> TenantCapView:
+    """The org's own cap on the lane; `404` when it has none, and the lane's
+    cap holds for it."""
+    return await service.get_tenant_cap(admin, org_id, lane)
+
+
+@router.delete("/orgs/{org_id}/work/lanes/{lane}/cap", response_model=TenantCapView)
+async def clear_tenant_cap(
+    admin: OperatorCtx, service: AdminService, org_id: UUID, lane: str
+) -> TenantCapView:
+    """Removes the org's own cap on the lane and answers the cap it removed;
+    the lane's cap holds for it from the next claim on. `404` when it has
+    none."""
+    return await service.clear_tenant_cap(admin, org_id, lane)
