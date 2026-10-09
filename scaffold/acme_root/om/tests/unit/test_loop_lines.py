@@ -421,7 +421,8 @@ async def test_a_session_granted_past_the_deadline_parks_on_it_and_gives_the_lea
     resumed = await loop.loops.run(loop.owner, session_id)
     assert resumed.outcome is LoopOutcome.SUCCEEDED
     sent = str(loop.anthropic.calls[2].model_dump())
-    assert sent.count(f"The lease {lease.id} granted to your request {request_id} was released") == 1
+    released = f"The lease {lease.id} granted to your request {request_id} was released"
+    assert sent.count(released) == 1
 
 
 def a_standing(status: RequestStatus, lease: LeaseStatus | None = None) -> Standing:

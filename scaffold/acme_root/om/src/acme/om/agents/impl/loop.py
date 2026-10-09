@@ -1407,7 +1407,9 @@ class LoopManagerImpl(LoopManagerInterface):
             try:
                 authority = await self._attribution.authorize_call(run.ctx, run.session_id, reach)
             except (NotAuthorized, PrincipalLapsed) as refused:
-                log.warning("session %s keeps its leases to their term: %s", run.session_id, refused)
+                log.warning(
+                    "session %s keeps its leases to their term: %s", run.session_id, refused
+                )
             else:
                 for lease in held:
                     try:
