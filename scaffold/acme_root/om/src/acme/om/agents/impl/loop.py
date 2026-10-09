@@ -34,6 +34,7 @@ from acme.om.agents.types.line import InLine
 from acme.om.agents.types.result import Result, Turn
 from acme.om.agents.types.run import LoopRun, RunEnd
 from acme.om.attribution import AttributionManagerInterface
+from acme.om.attribution.types.authority import CallReach
 from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
 from acme.om.base import Platform, new_id, thaw_mapping, utcnow
 from acme.om.budgets.rules import budget_park, elapsed_ms
@@ -44,6 +45,7 @@ from acme.om.exceptions import (
     CompactionFailed,
     ContextOverflow,
     GateParked,
+    LeaseEnded,
     NoCredential,
     NoSpender,
     NotAuthorized,
@@ -58,6 +60,7 @@ from acme.om.exceptions import (
     ValidationFailed,
 )
 from acme.om.leases import LeasesManagerInterface
+from acme.om.leases.types.lease import LeaseStatus
 from acme.om.leases.types.request import RequestStatus, Standing, WaiterKind
 from acme.om.models.credentials import CallClient, CallCredentialsInterface
 from acme.om.models.manager import ModelsManagerInterface
@@ -437,10 +440,12 @@ class LoopManagerImpl(LoopManagerInterface):
                     return await self._end(run, trip.outcome)
                 if trip.park is not None:
                     if trip.limit is Limit.DEADLINE:
-                        # Out of time, the session waits on no resource: it
-                        # leaves every line, so no grant holds one for a
-                        # session that cannot use it.
+                        # Out of time, the session waits on no resource and
+                        # holds none: it leaves every line, so no grant holds
+                        # one for a session that cannot use it, and gives
+                        # back each lease its asks hold.
                         await self._leases.leave(run.ctx, WaiterKind.SESSION, run.session_id)
+                        await self._give_back(run, history)
                     return await self._park(run, trip.park)
                 return self._result(run, RunEnd.YIELDED)
             repeated = rules.repeated_failure(history, run.loop_id, self._options.repeats_noticed)
@@ -1384,6 +1389,32 @@ class LoopManagerImpl(LoopManagerInterface):
                 await self._sessions.wake_session(run.ctx, run.session_id, park)
                 break
         return parked
+
+    async def _give_back(self, run: _Run, history: Sequence[Step]) -> None:
+        """Releases each live lease the session's asks hold, as its holder: the
+        principal the session's calls run under, asked of attribution as a
+        call's is. Each lease's end, and each request's end without a lease,
+        is told before the park, once. A principal that no longer holds the
+        session's calls, or is not a lease's holder, releases nothing: that
+        lease runs to its term."""
+        held = [
+            standing.lease
+            for _, standing in await self._standings(run, history)
+            if standing.lease is not None and standing.lease.status is LeaseStatus.ACTIVE
+        ]
+        if held:
+            reach = CallReach(outward=False, holds_private=False)
+            try:
+                authority = await self._attribution.authorize_call(run.ctx, run.session_id, reach)
+            except (NotAuthorized, PrincipalLapsed) as refused:
+                log.warning("session %s keeps its leases to their term: %s", run.session_id, refused)
+            else:
+                for lease in held:
+                    try:
+                        await self._leases.release(authority.context, lease.id)
+                    except (NotAuthorized, LeaseEnded) as refused:
+                        log.warning("lease %s runs to its term: %s", lease.id, refused)
+        await self._hear(run, history)
 
     async def _past_deadline(self, run: _Run) -> bool:
         """Whether the tree's deadline has passed. A person may have moved it

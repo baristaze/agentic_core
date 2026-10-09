@@ -7,9 +7,10 @@ the ask was read and before the park wakes it all the same; a session
 cancelled in line leaves it, and the next request is granted; a lease
 revoked after its loop ended is told in the next loop, and one that ended
 before its session resumed is told as ended, never as granted; a turn
-that ends past the tree's deadline parks on it and holds no line; and
-what an ask's standing owes the model is told once, a grant its call
-answered with never."""
+that ends past the tree's deadline parks on it and holds no line;
+a session granted past it parks on it and gives the lease back, told
+once; and what an ask's standing owes the model is told once, a grant
+its call answered with never."""
 
 from datetime import timedelta
 from pathlib import Path
@@ -384,6 +385,43 @@ async def test_a_turn_that_ends_past_the_deadline_parks_on_it_and_holds_no_line(
     (request,) = [s for s in await loop.history(session_id) if s.type is StepType.TOOL_REQUEST]
     left = (await loop.managers.leases.get_request(loop.owner, request.id)).request
     assert (left.status, left.end_reason) == (RequestStatus.CANCELLED, EndReason.WAITER_GONE)
+
+
+async def test_a_session_granted_past_the_deadline_parks_on_it_and_gives_the_lease_back(
+    tmp_path: Path,
+) -> None:
+    loop, resource, held = await held_resource(tmp_path)
+    session_id = await loop.start("reserver")
+    deadline = loop.clock.now + timedelta(minutes=2)
+    await loop.managers.agents.set_deadline(loop.owner, session_id, deadline)
+    await loop.say(session_id, "Take the resource.")
+    loop.anthropic.add(reply(call("reserve")), reply(said("I am in line for it, and I wait.")))
+    parked = await loop.loops.run(loop.owner, session_id)
+    assert parked.park is not None and parked.park.line is not None, "in line before the deadline"
+    request_id = parked.park.line.request_id
+
+    # The deadline passes while it waits, and the grant lands after it.
+    loop.clock.now = deadline + timedelta(seconds=1)
+    await loop.managers.leases.release(loop.owner, held.id)
+    await notices(loop)
+    await unlocked(loop, loop.owner, session_id)
+    run = await loop.loops.run(loop.owner, session_id)
+
+    assert run.end is RunEnd.PARKED and run.park is not None
+    assert (run.park.reason, run.park.unlock) == (ParkReason.PERSON, "deadline")
+    assert len(loop.anthropic.calls) == 2, "no model call out of time"
+    lease = (await loop.managers.leases.get_request(loop.owner, request_id)).lease
+    assert lease is not None and lease.status is LeaseStatus.RELEASED, "no lease held"
+    taken = await loop.managers.leases.ask(loop.owner, an_ask(resource.id))
+    assert taken.lease is not None, "the resource went on to the next ask"
+
+    # A person moves the deadline: the model reads the lease's end, once.
+    await loop.managers.agents.set_deadline(loop.owner, session_id, deadline + timedelta(hours=1))
+    loop.anthropic.add(reply(said("It was given back before I used it.")))
+    resumed = await loop.loops.run(loop.owner, session_id)
+    assert resumed.outcome is LoopOutcome.SUCCEEDED
+    sent = str(loop.anthropic.calls[2].model_dump())
+    assert sent.count(f"The lease {lease.id} granted to your request {request_id} was released") == 1
 
 
 def a_standing(status: RequestStatus, lease: LeaseStatus | None = None) -> Standing:
