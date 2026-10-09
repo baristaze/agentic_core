@@ -63,7 +63,10 @@ thing [Acme is made of](../../../../README.md).
   the budgets before it starts, and a job that would pass one never
   starts. A job with no report by its deadline is stopped and answered
   as out of time, and so is one whose agent is stopped or whose loop
-  ends any other way (ADR 1013).
+  ends any other way (ADR 1013). A job whose work runs on a scarce
+  resource waits in line for it first, and the grant starts it; the
+  agent's loop waits in line, then on the job, with no model call
+  between (ADR 1026).
 - **Ask the person.** The agent asks its person a question, or stops
   and says what it needs. Its loop waits, holding nothing, and the
   person's next message is the answer it goes on with.

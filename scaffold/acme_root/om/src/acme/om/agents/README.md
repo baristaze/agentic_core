@@ -173,6 +173,14 @@ of](../../../../README.md).
   told once in its stead, in a later loop too. A loop that ends, or that
   parks on the tree's deadline, leaves every line, and one that parks on
   the deadline gives back each lease its asks hold (ADR 1024).
+- **A job in line starts at its grant.** A job tool whose work runs on a
+  leased resource asks in line and names the request in its
+  `JobStarted`. Its call parks in line at once, naming the job, until
+  the job's deadline. The grant starts the job in its own commit, and
+  the park moves to the job's, so the job's report answers the call with
+  no notice and no model call between. A request that ends without a
+  lease answers the call, and its hold is released; a loop that stops
+  leaves its lines before it cancels its jobs (ADR 1026).
 - **A nudge is a step.** When a delivery agent's turn calls no tool, the
   engine's notice is written before the next request, so no request
   holds two of the model's turns in a row. A reply cut by its output

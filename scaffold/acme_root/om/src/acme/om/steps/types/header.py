@@ -77,12 +77,15 @@ PERSON_ONLY = frozenset({ParkReason.PERSON, ParkReason.HANDOVER, ParkReason.PAUS
 
 class JobPark(Platform):
     """The job a loop parks on: its key, the id of the call's request; the
-    tool's own name for the work; and the budget hold it started under,
-    when it spends. Ids and a name, never what the work said."""
+    tool's own name for the work; the budget hold it started under, when it
+    spends; and the request in line whose grant starts it, when its tool
+    asked in line, kept past the grant so the tool's cancel ends its lease.
+    Ids and a name, never what the work said."""
 
     key: UUID
     handle: Stored = Field(min_length=1, max_length=MAX_NAME)
     hold_id: UUID | None = None
+    request_id: UUID | None = None
 
 
 class LinePark(Platform):
@@ -104,7 +107,9 @@ class Park(Platform):
     tries again by itself. No retry time means only a person can unblock it,
     so a park only a person clears carries none, except a park in line,
     which the grant or its request's end without one clears. A park on a
-    started job names it, and tries again at the job's deadline."""
+    started job names it, and tries again at the job's deadline. A park in
+    line for the job its grant starts names both, and tries again at the
+    job's deadline too."""
 
     reason: ParkReason
     unlock: Stored = Field(min_length=1, max_length=MAX_NAME)
@@ -122,12 +127,20 @@ class Park(Platform):
     def _a_person_sets_no_clock(self) -> Self:
         if self.retry_at is not None and self.reason in PERSON_ONLY:
             raise ValueError(f"a {self.reason.value} park is cleared by a person, never by a time")
-        if self.job is not None and (self.reason is not ParkReason.JOB or self.retry_at is None):
-            raise ValueError("only a job park names a job, and it tries again at its deadline")
+        waits_for = ParkReason.JOB if self.line is None else ParkReason.RESOURCE
+        if self.job is not None and (self.reason is not waits_for or self.retry_at is None):
+            raise ValueError(
+                "only a job park names a job, or a park in line for the job its grant "
+                + "starts, and it tries again at the job's deadline"
+            )
         if self.line is not None and (
-            self.reason is not ParkReason.RESOURCE or self.retry_at is not None
+            self.reason is not ParkReason.RESOURCE
+            or (self.retry_at is not None and self.job is None)
         ):
-            raise ValueError("only a resource park names a line, and a grant clears it, not a time")
+            raise ValueError(
+                "only a resource park names a line, and a grant clears it, not a time, "
+                + "but for the deadline of the job the grant starts"
+            )
         return self
 
 

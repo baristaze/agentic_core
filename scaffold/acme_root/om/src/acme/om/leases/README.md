@@ -95,6 +95,9 @@ grant wakes it, or its request's end without a lease does. An agent
 session waits too: its tool asks in line, and its loop parks on
 `resource` when its turn ends while the ask waits
 ([ADR 1024](../../../../../docs/adr/1024-a-session-waits-in-line-parked-and-hears-each-answer-before-its-next-call.md)).
+A job's tool asks the same way, and the grant starts its job: its loop
+parks in line at once, then on the job
+([ADR 1026](../../../../../docs/adr/1026-a-jobs-call-waits-in-line-and-the-grant-starts-its-job.md)).
 Per-lease facts of a product's own live in its own
 table, keyed by the lease's id
 ([ADR 0086](../../../../../docs/adr/0086-a-scarce-resource-is-leased-under-a-fencing-token.md)).

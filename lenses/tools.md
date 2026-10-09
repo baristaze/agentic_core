@@ -235,18 +235,22 @@ and returns a handle, and the loop parks on the job, releasing its
 runtime. The job's completion arrives as an event that wakes the
 session, and the tool response is written from it. A job carries its own
 deadline, never later than the tree's, and cancelling the loop cancels
-the job.
+the job. A job whose work runs on a scarce resource waits in line for
+it first, and the grant starts the job.
 
-**Source.** Tools, Long-Running Jobs.
+**Source.** Tools, Long-Running Jobs; Parking.
 
 **Look for.** How a job is started, awaited, and completed; how its
 completion is checked against the job the loop waits on before it wakes
 anything; its deadline against the tree's; what cancelling the loop does
-to it.
+to it; how a job in line moves to its job's park once the grant starts
+it.
 
 **Violation.** A runtime held open while a job works; a job with no
 deadline (the hold it under-covers is BND-03), or one past the tree's; a
-job left running after its loop is cancelled. (A second job started on
+job left running after its loop is cancelled; a model call, or a
+notice, between the grant of a job in line and its start; a grant that
+starts a job for a loop that stopped. (A second job started on
 recovery is STP-11, and a spending job that skips the gate is BND-02.)
 
 **Severity.** medium
