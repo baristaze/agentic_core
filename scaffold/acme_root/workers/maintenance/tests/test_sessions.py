@@ -17,9 +17,9 @@ from acme.om.base import new_id, utcnow
 from acme.om.budgets.types.amount import Amount
 from acme.om.budgets.types.budget import Budget, BudgetScopeKind, WindowKind
 from acme.om.context import TenantContext
-from acme.om.steps.types.content import Content, TextBlock
 from acme.om.leases.types.request import LeaseRequest
 from acme.om.leases.types.resource import Resource, ResourceKind
+from acme.om.steps.types.content import Content, TextBlock
 from acme.om.steps.types.header import (
     InputHeader,
     LinePark,

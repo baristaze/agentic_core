@@ -18,9 +18,9 @@ from acme.om.agent_sessions.impl.manager import AgentSessionsManagerImpl, AgentS
 from acme.om.agents import AgentsManagerInterface, ResultGateInterface
 from acme.om.agents.impl.gate import ResultGateNullImpl
 from acme.om.agents.impl.loop import LoopManagerImpl, LoopOptions
-from acme.om.agents.impl.waiter import SessionWaiterImpl
 from acme.om.agents.impl.manager import AgentsManagerImpl, AgentsOptions
 from acme.om.agents.impl.sink import StreamSinkNullImpl
+from acme.om.agents.impl.waiter import SessionWaiterImpl
 from acme.om.agents.loop import LoopManagerInterface
 from acme.om.agents.sink import StreamSinkInterface
 from acme.om.agents.types.kind import AgentKind, AgentKindCatalog

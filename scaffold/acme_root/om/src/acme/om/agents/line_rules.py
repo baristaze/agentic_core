@@ -9,7 +9,7 @@ with nothing else to do. A grant, a request's end without a lease, and a
 revocation each reach the model as the engine's notice, written by a run
 before its next model call. Each notice's id is its request's and its
 answer's, so the history says what the model was told, after a lost run as
-well."""
+well (ADR 1024)."""
 
 import json
 from collections.abc import Collection, Sequence
@@ -158,9 +158,15 @@ def untold(standing: Standing, ask: Ask, told: Collection[UUID]) -> list[tuple[U
     lease = standing.lease
     if request.status is RequestStatus.GRANTED and lease is not None:
         if not ask.granted:
-            tell(Answer.GRANTED, GRANTED.format(request=request.id, lease=lease.id, token=lease.token))
+            tell(
+                Answer.GRANTED,
+                GRANTED.format(request=request.id, lease=lease.id, token=lease.token),
+            )
         if lease.status is LeaseStatus.REVOKED:
-            tell(Answer.REVOKED, REVOKED.format(request=request.id, lease=lease.id, token=lease.token))
+            tell(
+                Answer.REVOKED,
+                REVOKED.format(request=request.id, lease=lease.id, token=lease.token),
+            )
     elif request.status in (RequestStatus.CANCELLED, RequestStatus.EXPIRED):
         reason = request.end_reason
         why = EXPIRED if reason is None else WHY[reason]

@@ -272,17 +272,23 @@ only a person can clear.
 beyond what it declares, such as a memory-only session's runtime. When
 the unlock happens, a resumed step starts a new run, by itself where the
 reason unlocks without a person. Raising a budget is the instruction to
-continue. A woken loop is not trusted: its gates run again.
+continue. A woken loop is not trusted: its gates run again. A loop in
+line for a resource makes no model call until the grant or the
+request's end, reads its asks again once it has parked, and leaves
+every line when it ends.
 
 **Source.** Parking.
 
 **Look for.** What a parked loop keeps; the wake path of each reason;
-the checks a resumed run makes.
+the checks a resumed run makes; what a loop in line does between its
+ask and its grant, and when it ends.
 
 **Violation.** A parked loop that keeps its runtime or its lease without
 declaring it; a park that waits for someone to restart it after its
-unlock happened; a resumed run that skips its gates. (A model call it
-makes without the budget gate is BND-02.)
+unlock happened; a resumed run that skips its gates. A loop in line that
+calls the model or polls before its grant; a grant that lands before
+the park and never wakes it; a loop that ends still standing in a line.
+(A model call it makes without the budget gate is BND-02.)
 
 **Severity.** medium
 

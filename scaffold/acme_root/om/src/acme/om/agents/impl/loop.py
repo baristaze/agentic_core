@@ -39,8 +39,6 @@ from acme.om.base import Platform, new_id, thaw_mapping, utcnow
 from acme.om.budgets.rules import budget_park, elapsed_ms
 from acme.om.budgets.types.usage import CallLabels, CallSite
 from acme.om.context import Permission, TenantContext
-from acme.om.leases import LeasesManagerInterface
-from acme.om.leases.types.request import RequestStatus, Standing, WaiterKind
 from acme.om.exceptions import (
     BudgetRefused,
     CompactionFailed,
@@ -59,6 +57,8 @@ from acme.om.exceptions import (
     UnresolvedRole,
     ValidationFailed,
 )
+from acme.om.leases import LeasesManagerInterface
+from acme.om.leases.types.request import RequestStatus, Standing, WaiterKind
 from acme.om.models.credentials import CallClient, CallCredentialsInterface
 from acme.om.models.manager import ModelsManagerInterface
 from acme.om.models.types.fill import MAIN, SUMMARIZER, Eligibility, Fill
@@ -1314,9 +1314,7 @@ class LoopManagerImpl(LoopManagerInterface):
         standings = await self._standings(run, history)
         told = {step.id for step in history}
         owed = [
-            notice
-            for ask, standing in standings
-            for notice in lines.untold(standing, ask, told)
+            notice for ask, standing in standings for notice in lines.untold(standing, ask, told)
         ]
         if owed:
             principal = await self._attribution.call_principal(run.ctx, run.session_id)

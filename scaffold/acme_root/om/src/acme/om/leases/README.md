@@ -77,6 +77,10 @@ the root. Its owner writes the resource with its own row through
 through `retire_statement`. A thing that waits adds a `WaiterKind`
 with a `WaiterInterface` impl. An orchestration waits as the core's
 waiter: its step asks with `park`, and parks on `resource` until the
-grant wakes it, or its request's end without a lease does. Per-lease facts of a product's own live in its own
+grant wakes it, or its request's end without a lease does. An agent
+session waits too: its tool asks in line, and its loop parks on
+`resource` when its turn ends while the ask waits
+([ADR 1024](../../../../../docs/adr/1024-a-session-waits-in-line-parked-and-hears-each-answer-before-its-next-call.md)).
+Per-lease facts of a product's own live in its own
 table, keyed by the lease's id
 ([ADR 0086](../../../../../docs/adr/0086-a-scarce-resource-is-leased-under-a-fencing-token.md)).
