@@ -76,7 +76,7 @@ key, resolution and fallback stay among the providers the tenant holds
 keys for, and a session whose fill needs a key the tenant lacks parks
 on the provider until one is saved: nothing starts silently on the
 platform's key. A key the provider does not take at all is offered to no
-call again, and no outage is reported for the provider. Under
+call again, and no outage is marked for the provider. Under
 zero data retention, only fills eligible for it may be resolved or
 fallen back to, enforced like a tenant's own key.
 
@@ -183,31 +183,37 @@ loop; a provider error handed to the model as a tool failure.
 
 **Check.** review
 
-## MOD-07 The engine owns retries, and an outage signal parks at once
+## MOD-07 The engine owns retries, and a session parks on an outage at once
 
 **Principle.** Retries follow the guideline's direction of calls, never
 sooner than the provider's retry-after. A provider SDK keeps its own
 retries minimal, because the engine owns the policy and cannot see what
 an SDK swallows. The guideline's breaker guards a call that spends its
-timeout. A provider that fails fast is guarded by the outage signal, an
-interface keyed by provider and credential, which parks a session at
-once while the provider is known to be failing. One process needs none,
-and its null object never signals; a fleet shares one.
+timeout, and its outage signal (CON-24) a provider that fails fast. The
+loop is the signal's caller, keyed by the call's key: a tenant's own
+under its org, the platform's under the system scope. It reads the mark
+before a model call, marks it when its retries are spent, and clears it
+when a call answers. A session that reads a mark parks on the provider
+at once, with no call until the mark's retry time.
 
 **Source.** Models, Provider Errors.
 
 **Look for.** The SDK client's retry settings; the engine's retry delay
-against the retry-after; where the outage signal is read and how it is
-keyed.
+against the retry-after; where the loop reads, marks, and clears the
+outage signal, and the org and the credential it names; what a session
+that reads a mark does before its next call.
 
 **Violation.** An SDK left at its default retries; a retry sooner than
-the retry-after; an outage signal keyed by provider alone, or one each
-process of a fleet keeps for itself.
+the retry-after; an outage signal of the engine's own beside the
+guideline's; a tenant's key marked under the system scope, or the
+platform's under a tenant; a session that reads a mark and calls anyway,
+or ends instead of parking; a call that answers and leaves the mark.
 
 **Severity.** medium
 
 **Shape.**
 `scaffold/acme_root/integrations/src/acme/integrations/model_providers`
+and `scaffold/acme_root/om/src/acme/om/agents/impl/loop.py`
 
 **Check.** review
 

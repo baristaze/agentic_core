@@ -133,12 +133,16 @@ of](../../../../README.md).
 - **Each call runs on the key it resolves.** The key is asked for before
   every call, and a call whose key cannot be had parks on its provider
   until one is saved. A key the provider refuses is that key's alone: it
-  is offered to no call again, and no outage is reported.
+  is offered to no call again, and no outage is marked.
 - **A provider error is handled by its kind.** One worth retrying is
   retried in the process, after a wait that grows and is partly random,
-  never sooner than the provider asks. Then the provider is known to be
-  failing for that key: every session parks on it until its retry time,
-  and this one falls back to its next declared fallback when it has one.
+  never sooner than the provider asks. Then the loop marks the provider
+  failing for that key on the outage signal
+  ([ADR 0088](../../../../../docs/adr/0088-a-providers-outage-is-a-shared-signal.md)):
+  every session that reads the mark parks on the provider, with no call,
+  until its retry time, and this one falls back to its next declared
+  fallback when it has one. A call that answers clears the mark
+  (ADR 1025).
 - **A stopped loop never restarts itself.** A loop that ended in an
   error, or that a principal cancelled, starts no new loop on an input
   it left undelivered.

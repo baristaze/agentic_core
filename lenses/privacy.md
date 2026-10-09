@@ -223,9 +223,9 @@ null object or a null ledger, so every model call spends unchecked.
 
 **Principle.** A conformance kit holds the contract cases every impl of
 an engine interface must pass: step storage, the key service, the
-ledger, the outage signal, the transport, the workspace provider, and a
-provider adapter. An adopter imports it. A fake clock and a
-deterministic id source make recovery, deadlines, and parking testable.
+ledger, the transport, the workspace provider, and a provider adapter.
+An adopter imports it. A fake clock and a deterministic id source make
+recovery, deadlines, and parking testable.
 
 **Source.** Testing and Conformance.
 
