@@ -4,9 +4,11 @@ the turn ends while it waits, the loop parks on `resource` naming its
 place, and makes no model call until the grant, which reaches the model as
 the engine's notice with the lease and its token; a grant that lands after
 the ask was read and before the park wakes it all the same; a session
-cancelled in line leaves it, and the next request is granted; and what an
-ask's standing owes the model is told once, a grant its call answered with
-never."""
+cancelled in line leaves it, and the next request is granted; a lease
+revoked after its loop ended is told in the next loop, and one that ended
+before its session resumed is told as ended, never as granted; and what
+an ask's standing owes the model is told once, a grant its call answered
+with never."""
 
 from datetime import timedelta
 from pathlib import Path
@@ -294,6 +296,61 @@ async def test_a_session_cancelled_in_line_leaves_it_and_the_next_request_is_gra
     assert len(loop.anthropic.calls) == 2
 
 
+async def test_a_lease_revoked_after_its_loop_ended_is_told_in_the_next_loops_first_call(
+    tmp_path: Path,
+) -> None:
+    loop, _, held = await held_resource(tmp_path)
+    session_id, request, _ = await parked_in_line(loop)
+    await loop.managers.leases.release(loop.owner, held.id)
+    await unlocked(loop, loop.owner, session_id)
+    loop.anthropic.add(reply(said("I hold it now.")))
+    first = await loop.loops.run(loop.owner, session_id)
+    assert first.outcome is LoopOutcome.SUCCEEDED
+    lease = (await loop.managers.leases.get_request(loop.owner, request.id)).lease
+    assert lease is not None
+
+    # The loop that took the lease has ended; a manager takes it back.
+    await loop.managers.leases.revoke(loop.owner, lease.id)
+    await loop.say(session_id, "Go on with the work.")
+    loop.anthropic.add(reply(said("I no longer hold it.")), reply(said("Still not mine.")))
+    second = await loop.loops.run(loop.owner, session_id)
+
+    assert second.outcome is LoopOutcome.SUCCEEDED
+    told = f"The lease {lease.id} granted to your request {request.id} was revoked"
+    assert told in str(loop.anthropic.calls[3].model_dump()), "the next loop's first call"
+    await loop.say(session_id, "And now?")
+    await loop.loops.run(loop.owner, session_id)
+    history = await loop.history(session_id)
+    notices_told = [s for s in history if s.actor is Actor.ENGINE and told in str(s.content)]
+    assert len(notices_told) == 1, "told once"
+
+
+async def test_a_lease_that_ended_before_its_session_resumed_is_told_ended_never_granted(
+    tmp_path: Path,
+) -> None:
+    loop, _, held = await held_resource(tmp_path)
+    session_id, request, _ = await parked_in_line(loop)
+    await loop.managers.leases.release(loop.owner, held.id)
+    lease = (await loop.managers.leases.get_request(loop.owner, request.id)).lease
+    assert lease is not None
+
+    # Before the session resumes, the lease runs past its expiry and the
+    # skew margin, and the sweep's write ends it.
+    later = lease.expires_at + timedelta(minutes=5)
+    expired = await loop.storage.get_lease_storage().end_lease(
+        loop.owner.org_id, lease.id, LeaseStatus.EXPIRED, later, loop.owner.user_id, 60.0, (), later
+    )
+    assert expired is not None and expired.status is LeaseStatus.EXPIRED
+    await unlocked(loop, loop.owner, session_id)
+    loop.anthropic.add(reply(said("It ran out before I used it.")))
+    run = await loop.loops.run(loop.owner, session_id)
+
+    assert run.outcome is LoopOutcome.SUCCEEDED
+    sent = str(loop.anthropic.calls[2].model_dump())
+    assert f"The lease {lease.id} granted to your request {request.id} ran past its expiry" in sent
+    assert "Go on with the work" not in sent, "never told to go on under a dead token"
+
+
 def a_standing(status: RequestStatus, lease: LeaseStatus | None = None) -> Standing:
     request = lines.in_line(an_ask(new_id()), new_id(), new_id())
     granted = None
@@ -348,6 +405,18 @@ def test_each_answer_is_told_once_and_a_grant_the_call_answered_with_never() -> 
     ask = an_ask_of(revoked.request.id, True)
     told = [i for i, _ in lines.untold(revoked, ask, ())]
     assert told == [lines.notice_id(ask, lines.Answer.REVOKED)]
+    assert lines.done(ask, told) and not lines.done(ask, ())
+
+    # A lease that ended before its grant was told is told as ended alone.
+    for status, answer in (
+        (LeaseStatus.EXPIRED, lines.Answer.EXPIRED),
+        (LeaseStatus.RELEASED, lines.Answer.RELEASED),
+    ):
+        ended = a_standing(RequestStatus.GRANTED, status)
+        ask = an_ask_of(ended.request.id, False)
+        ((step_id, text),) = lines.untold(ended, ask, ())
+        assert step_id == lines.notice_id(ask, answer)
+        assert "token 7 is refused" in text and "Go on" not in text
 
     ended = a_standing(RequestStatus.CANCELLED)
     ((_, why),) = lines.untold(ended, an_ask_of(ended.request.id, False), ())

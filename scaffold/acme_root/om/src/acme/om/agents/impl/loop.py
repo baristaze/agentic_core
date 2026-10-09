@@ -438,8 +438,9 @@ class LoopManagerImpl(LoopManagerInterface):
                 await self._notice(run, repeated)
                 history = await self._history(run.ctx, run.session_id, history)
             if heard is None and (await self._hear(run, history)).told:
-                # A grant, an end, or a revocation that came while the loop
-                # ran is told before the next request, which reads it.
+                # A grant, a request's end, or a lease's end that came while
+                # the session ran, or since an earlier loop of it, is told
+                # before the next request, which reads it.
                 history = await self._history(run.ctx, run.session_id, history)
             stopped = await self._model_turn(run, history)
             if stopped is not None:
@@ -1307,10 +1308,10 @@ class LoopManagerImpl(LoopManagerInterface):
     # The line.
 
     async def _hear(self, run: _Run, history: Sequence[Step]) -> _Heard:
-        """Reads where each ask of the loop stands, and tells the model, as
-        the engine's notice, each answer it has not been told: a grant, an
-        end without a lease, a revocation. A loop that asked nothing in line
-        reads nothing."""
+        """Reads where each ask of the session stands, and tells the model, as
+        the engine's notice, each answer it has not been told: a grant while
+        its lease lives, an end without a lease, the lease's end. A session
+        that asked nothing in line reads nothing."""
         standings = await self._standings(run, history)
         told = {step.id for step in history}
         owed = [
@@ -1334,8 +1335,9 @@ class LoopManagerImpl(LoopManagerInterface):
     async def _standings(
         self, run: _Run, history: Sequence[Step]
     ) -> list[tuple[lines.Ask, Standing]]:
-        """Where each ask of the loop stands, but one whose end or revocation
-        the model was told already: nothing more comes of it."""
+        """Where each ask of the session stands, across its loops, but one
+        whose final answer the model was told already: nothing more comes of
+        it, so the reads stop growing once each end is told."""
         tools = [
             tool.spec.name
             for tool in run.registry.tools()
@@ -1345,9 +1347,8 @@ class LoopManagerImpl(LoopManagerInterface):
             return []
         told = {step.id for step in history}
         standings: list[tuple[lines.Ask, Standing]] = []
-        for ask in lines.asks(history, run.loop_id, tools):
-            final = (lines.Answer.ENDED, lines.Answer.REVOKED)
-            if any(lines.notice_id(ask, answer) in told for answer in final):
+        for ask in lines.asks(history, tools):
+            if lines.done(ask, told):
                 continue
             try:
                 standing = await self._leases.get_request(run.ctx, ask.request_id)
