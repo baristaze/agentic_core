@@ -25,6 +25,7 @@ from acme.om.work.types.work_item import WorkKind
 from acme.workers.maintenance.accounts import DeleteAccountHandlerImpl, DeleteOrgHandlerImpl
 from acme.workers.maintenance.container import (
     AGENT_SESSION_PURGE_BATCH,
+    LEASE_SWEEP_BATCH,
     MEDIA_PURGE_BATCH,
     WorkerContainer,
 )
@@ -85,6 +86,7 @@ def build_loop(container: WorkerContainer, lane: str | None = None) -> WorkerLoo
             "tenancy": managers.tenancy.purge_tenant,
             "events": managers.events.purge_tenant,
             "orchestrations": managers.orchestrations.purge_tenant,
+            "leases": managers.leases.purge_tenant,
             "agent_trees": managers.agents.purge_tenant,
             "session_authorities": managers.attribution.purge_tenant,
             "models": managers.models.purge_tenant,
@@ -112,14 +114,21 @@ def build_loop(container: WorkerContainer, lane: str | None = None) -> WorkerLoo
             # The trim: each tenant's floor moves with its events.
             "events": unstaged(managers.events.purge_across_tenants),
             "orchestrations": unstaged(managers.orchestrations.purge_across_tenants),
+            "leases": unstaged(managers.leases.purge_across_tenants),
+            # Not a purge: the leases past their expiry and the skew margin
+            # end, the requests past their wait expire, and each free
+            # resource is offered to its line, in every org with one due.
+            "lease_sweep": managers.leases.sweep,
             # A session marked deleted past its retention: claimed, then its
             # history, then its row.
             "agent_sessions": unstaged(managers.agent_sessions.purge_across_tenants),
         },
         # The media and session purges' batches are their own: a whole one
-        # says there may be more.
+        # says there may be more. So is the lease sweep's: the leases and
+        # requests one org's pass ends.
         across_batches={
             "media": MEDIA_PURGE_BATCH,
+            "lease_sweep": LEASE_SWEEP_BATCH,
             "agent_sessions": AGENT_SESSION_PURGE_BATCH,
         },
         # The platform's size, counted across tenants once an interval and

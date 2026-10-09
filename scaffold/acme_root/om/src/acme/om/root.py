@@ -45,6 +45,11 @@ from acme.om.events.impl.manager import EventsManagerImpl, EventsOptions
 from acme.om.exceptions import UnsafeConfiguration
 from acme.om.idempotency import IdempotencyManagerInterface
 from acme.om.idempotency.impl.manager import IdempotencyManagerImpl, IdempotencyOptions
+from acme.om.leases import LeasesManagerInterface
+from acme.om.leases.impl.kinds import NoopResourceKindImpl, OrchestrationWaiterImpl
+from acme.om.leases.impl.manager import LeasesManagerImpl, LeasesOptions
+from acme.om.leases.types.request import WaiterKind
+from acme.om.leases.types.resource import ResourceKind
 from acme.om.media import MediaManagerInterface
 from acme.om.media.impl.manager import MediaManagerImpl, MediaOptions
 from acme.om.models.impl.credentials import CallCredentialsPlatformImpl
@@ -115,6 +120,7 @@ class Managers:
     events: EventsManagerInterface
     outbox: OutboxRelayInterface
     orchestrations: OrchestrationsManagerInterface
+    leases: LeasesManagerInterface
     steps: StepsManagerInterface
     agent_sessions: AgentSessionsManagerInterface
     privacy: PrivacyManagerInterface
@@ -238,6 +244,7 @@ def build_managers(
     events_options: EventsOptions | None = None,
     work_options: WorkOptions | None = None,
     orchestrations_options: OrchestrationsOptions | None = None,
+    leases_options: LeasesOptions | None = None,
     steps_options: StepsOptions | None = None,
     agent_sessions_options: AgentSessionsOptions | None = None,
     budgets_options: BudgetsOptions | None = None,
@@ -352,6 +359,16 @@ def build_managers(
         tenancy,
         outbox,
         orchestrations_options or OrchestrationsOptions(),
+    )
+    # A product registers its resource kinds and its waiter kinds here, each
+    # with its hooks, as a work kind's handler is registered in the worker.
+    leases = LeasesManagerImpl(
+        storage.get_lease_storage(),
+        tenancy,
+        outbox,
+        leases_options or LeasesOptions(),
+        kinds={ResourceKind.NOOP: NoopResourceKindImpl()},
+        waiters={WaiterKind.ORCHESTRATION: OrchestrationWaiterImpl(orchestrations)},
     )
     # The history first: a session's status is read off its steps. What a
     # step says reaches it through the sealing layer, by the session's policy.
@@ -515,6 +532,7 @@ def build_managers(
         events=events,
         outbox=outbox,
         orchestrations=orchestrations,
+        leases=leases,
         steps=steps,
         agent_sessions=agent_sessions,
         privacy=privacy,
