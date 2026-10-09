@@ -14,7 +14,7 @@ from pydantic_settings import SettingsConfigDict
 from acme.infra.impl.settings import InfraSettings
 from acme.integrations.settings import IntegrationsSettings
 from acme.om.storage.settings import StorageSettings
-from acme.om.work.types.work_item import LOOP_LANE
+from acme.om.work.types.work_item import WorkKind, relayed_lane
 
 
 def default_runner_id() -> str:
@@ -31,9 +31,9 @@ class SessionRunnerSettings(StorageSettings, InfraSettings, IntegrationsSettings
     metrics_host: str = "127.0.0.1"
     runner_metrics_port: int = 9465
     runner_id: str = Field(default_factory=default_runner_id)
-    # The loops' own lane, where the relay lands them, so a cap on the
-    # maintenance worker's lane counts none of a tenant's running loops.
-    runner_lane: str = LOOP_LANE
+    # The loops' own lane, where the relay lands them (`WORK_LANES`), so a
+    # cap on the maintenance worker's lane counts none of a tenant's loops.
+    runner_lane: str = relayed_lane(WorkKind.LOOP)
     # Each is a count or a duration the claim loop divides or waits on, so
     # zero is a broken setting, refused at start, as the maintenance
     # worker's are. A loop runs for minutes, so a runner holds few at once;

@@ -258,6 +258,7 @@ async def test_a_tenants_running_loop_leaves_its_wake_to_the_capped_maintenance_
     running = await work.claim(rctx, runner.lane, [WorkKind.LOOP], runner.worker_id, runner.lease)
 
     assert running is not None and running[1].target_id == session.id, "a runner holds the loop"
+    assert running[1].lane == "loop", "the relay lands a loop on the loop's own lane"
     park = Park(reason=ParkReason.PROVIDER, unlock="anthropic", retry_at=utcnow())
     await work.enqueue_relayed(owner.org_id, wake_row(owner, session, park))
     capped = maintenance_options(
