@@ -90,14 +90,16 @@ app, and `main.py` is the `acme-api` command: `serve`, `migrate`,
 - **Events.** The org's diary after a sequence number. (`/v1/events`)
 - **Leases.** Ask for a resource, by its id or by a selector, under an
   idempotency key; read where the request stands, its place and its
-  estimate, or its lease; cancel it; read a resource's line; renew a
-  lease, for a length it names or its term again, and release it, as
-  its holder. The worker that runs a lease's job acts through the
-  manager, not a route. A manager reorders a request and
-  revokes a lease. (`/v1/leases/requests`,
+  estimate, or its lease; cancel it; read a resource's line, with each
+  place and estimate, and the history of leases, newest first, a page
+  at a time; renew a lease, for a length it names or its term again,
+  and release it, as its holder. The worker that runs a lease's job
+  acts through the manager, not a route. A manager reorders a request
+  and revokes a lease. (`/v1/leases/requests`,
   `/v1/leases/requests/{request_id}`, `.../cancel`, `.../reorder`,
-  `/v1/leases/resources/{resource_id}/line`, `/v1/leases/{lease_id}`,
-  `.../renew`, `.../release`, `.../revoke`, ADRs 0086 and 0094)
+  `/v1/leases/resources/{resource_id}/line`, `/v1/leases`,
+  `/v1/leases/{lease_id}`, `.../renew`, `.../release`, `.../revoke`,
+  ADRs 0086, 0094, and 0098)
 - **Agent sessions.** Start a session on an agent kind the product runs,
   under an Idempotency-Key; read it; send it a message or a control
   (pause, resume, cancel, an interrupt of the call it names, compact,
