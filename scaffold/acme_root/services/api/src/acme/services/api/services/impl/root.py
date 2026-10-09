@@ -11,6 +11,7 @@ from acme.services.api.services import (
     AgentSessionsServiceInterface,
     EventsServiceInterface,
     FlagsServiceInterface,
+    LeasesServiceInterface,
     MediaServiceInterface,
     RealtimeServiceInterface,
     ServicesInterface,
@@ -21,6 +22,7 @@ from acme.services.api.services.impl.admin import AdminServiceImpl
 from acme.services.api.services.impl.agent_sessions import AgentSessionsServiceImpl
 from acme.services.api.services.impl.events import EventsServiceImpl
 from acme.services.api.services.impl.flags import FlagsServiceImpl
+from acme.services.api.services.impl.leases import LeasesServiceImpl
 from acme.services.api.services.impl.media import MediaServiceImpl
 from acme.services.api.services.impl.realtime import RealtimeServiceImpl
 from acme.services.api.services.impl.tenancy import TenancyServiceImpl
@@ -37,6 +39,7 @@ class ServicesImpl(ServicesInterface):
         flags: FlagsServiceInterface,
         realtime: RealtimeServiceInterface,
         webhooks: WebhooksServiceInterface,
+        leases: LeasesServiceInterface,
         agent_sessions: AgentSessionsServiceInterface,
     ) -> None:
         self._tenancy = tenancy
@@ -46,6 +49,7 @@ class ServicesImpl(ServicesInterface):
         self._flags = flags
         self._realtime = realtime
         self._webhooks = webhooks
+        self._leases = leases
         self._agent_sessions = agent_sessions
 
     def get_tenancy_service(self) -> TenancyServiceInterface:
@@ -68,6 +72,9 @@ class ServicesImpl(ServicesInterface):
 
     def get_webhooks_service(self) -> WebhooksServiceInterface:
         return self._webhooks
+
+    def get_lease_service(self) -> LeasesServiceInterface:
+        return self._leases
 
     def get_agent_sessions_service(self) -> AgentSessionsServiceInterface:
         return self._agent_sessions
@@ -93,6 +100,7 @@ def build_services(
             managers.tenancy, managers.events, infra.get_topics(), head_max_age
         ),
         webhooks=WebhooksServiceImpl(integrations.get_identity_provider(), infra.get_queues()),
+        leases=LeasesServiceImpl(managers.leases),
         agent_sessions=AgentSessionsServiceImpl(
             managers.agent_sessions, managers.agents, managers.steps, managers.tools
         ),

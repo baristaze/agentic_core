@@ -29,6 +29,7 @@ IMPL_INTERFACES: dict[str, str] = {
     "IdempotencyStoragePostgresImpl": "IdempotencyStorageInterface",
     "MediaStoragePostgresImpl": "MediaStorageInterface",
     "OrchestrationsStoragePostgresImpl": "OrchestrationsStorageInterface",
+    "LeasesStoragePostgresImpl": "LeasesStorageInterface",
     "StepStoragePostgresImpl": "StepStorageInterface",
     "AgentSessionStoragePostgresImpl": "AgentSessionStorageInterface",
     "AgentStoragePostgresImpl": "AgentStorageInterface",

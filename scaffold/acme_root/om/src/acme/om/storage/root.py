@@ -8,6 +8,7 @@ from acme.om.attribution.storage import AttributionStorageInterface
 from acme.om.budgets.storage import BudgetStorageInterface, LedgerStorageInterface
 from acme.om.events.storage import EventStorageInterface
 from acme.om.idempotency.storage import IdempotencyStorageInterface
+from acme.om.leases.storage import LeasesStorageInterface
 from acme.om.media.storage import MediaStorageInterface
 from acme.om.models.storage import FillSetStorageInterface
 from acme.om.orchestrations.storage import OrchestrationsStorageInterface
@@ -41,6 +42,9 @@ class StorageInterface(ABC):
 
     @abstractmethod
     def get_orchestrations_storage(self) -> OrchestrationsStorageInterface: ...
+
+    @abstractmethod
+    def get_lease_storage(self) -> LeasesStorageInterface: ...
 
     @abstractmethod
     def get_step_storage(self) -> StepStorageInterface: ...

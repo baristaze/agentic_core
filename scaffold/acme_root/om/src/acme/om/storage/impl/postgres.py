@@ -25,6 +25,8 @@ from acme.om.events.storage import EventStorageInterface
 from acme.om.events.storage.impl.postgres import EventStoragePostgresImpl
 from acme.om.idempotency.storage import IdempotencyStorageInterface
 from acme.om.idempotency.storage.impl.postgres import IdempotencyStoragePostgresImpl
+from acme.om.leases.storage import LeasesStorageInterface
+from acme.om.leases.storage.impl.postgres import LeasesStoragePostgresImpl
 from acme.om.media.storage import MediaStorageInterface
 from acme.om.media.storage.impl.postgres import MediaStoragePostgresImpl
 from acme.om.models.storage import FillSetStorageInterface
@@ -180,6 +182,7 @@ class StoragePostgresImpl(StorageInterface):
         self._events = EventStoragePostgresImpl(sessions)
         self._outbox = OutboxStoragePostgresImpl(sessions)
         self._orchestrations = OrchestrationsStoragePostgresImpl(sessions)
+        self._leases = LeasesStoragePostgresImpl(sessions)
         self._steps = StepStoragePostgresImpl(sessions)
         self._agent_sessions = AgentSessionStoragePostgresImpl(sessions)
         self._agents = AgentStoragePostgresImpl(sessions)
@@ -211,6 +214,9 @@ class StoragePostgresImpl(StorageInterface):
 
     def get_orchestrations_storage(self) -> OrchestrationsStorageInterface:
         return self._orchestrations
+
+    def get_lease_storage(self) -> LeasesStorageInterface:
+        return self._leases
 
     def get_step_storage(self) -> StepStorageInterface:
         return self._steps

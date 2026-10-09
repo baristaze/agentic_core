@@ -18,6 +18,7 @@ from acme.om.attribution.impl.manager import AttributionOptions
 from acme.om.budgets.impl.manager import BudgetsOptions
 from acme.om.events.impl.manager import EventsOptions
 from acme.om.idempotency.impl.manager import IdempotencyOptions
+from acme.om.leases.impl.manager import LeasesOptions
 from acme.om.media.impl.manager import MediaOptions
 from acme.om.models.impl.manager import ModelsOptions
 from acme.om.orchestrations.impl.manager import OrchestrationsOptions
@@ -40,6 +41,9 @@ AGENT_SESSION_PURGE_BATCH = 100
 """Sessions one purge across tenants takes up. Each costs a claim, a batch of
 its history, and its row, three statements apiece, so the batch is smaller
 than the rows'."""
+LEASE_SWEEP_BATCH = LeasesOptions().sweep_batch
+"""Leases and requests one org's lease sweep ends; a sweep that ends as many
+or more may have left some due."""
 
 
 def events_options(settings: MaintenanceSettings) -> EventsOptions:
@@ -85,6 +89,7 @@ def worker_managers(
             retention=timedelta(days=settings.work_retention_days), purge_batch=batch
         ),
         orchestrations_options=OrchestrationsOptions(purge_batch=batch),
+        leases_options=LeasesOptions(purge_batch=batch),
         steps_options=StepsOptions(purge_batch=batch),
         agent_sessions_options=AgentSessionsOptions(
             purge_batch=batch,

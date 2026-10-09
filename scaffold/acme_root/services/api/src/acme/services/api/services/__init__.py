@@ -8,6 +8,7 @@ from acme.services.api.services.admin import AdminServiceInterface
 from acme.services.api.services.agent_sessions import AgentSessionsServiceInterface
 from acme.services.api.services.events import EventsServiceInterface
 from acme.services.api.services.flags import FlagsServiceInterface
+from acme.services.api.services.leases import LeasesServiceInterface
 from acme.services.api.services.media import MediaServiceInterface
 from acme.services.api.services.realtime import RealtimeServiceInterface
 from acme.services.api.services.tenancy import TenancyServiceInterface
@@ -18,6 +19,7 @@ __all__ = [
     "AgentSessionsServiceInterface",
     "EventsServiceInterface",
     "FlagsServiceInterface",
+    "LeasesServiceInterface",
     "MediaServiceInterface",
     "RealtimeServiceInterface",
     "ServicesInterface",
@@ -41,6 +43,9 @@ class ServicesInterface(ABC):
 
     @abstractmethod
     def get_flags_service(self) -> FlagsServiceInterface: ...
+
+    @abstractmethod
+    def get_lease_service(self) -> LeasesServiceInterface: ...
 
     @abstractmethod
     def get_realtime_service(self) -> RealtimeServiceInterface: ...

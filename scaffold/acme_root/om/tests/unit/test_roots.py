@@ -15,6 +15,8 @@ from acme.om.events import EventsManagerInterface
 from acme.om.events.storage import EventStorageInterface
 from acme.om.idempotency import IdempotencyManagerInterface
 from acme.om.idempotency.storage import IdempotencyStorageInterface
+from acme.om.leases import LeasesManagerInterface
+from acme.om.leases.storage import LeasesStorageInterface
 from acme.om.media import MediaManagerInterface
 from acme.om.media.storage import MediaStorageInterface
 from acme.om.models.manager import ModelsManagerInterface
@@ -58,6 +60,7 @@ async def test_memory_root_serves_every_storage() -> None:
     assert isinstance(root.get_event_storage(), EventStorageInterface)
     assert isinstance(root.get_outbox_storage(), OutboxStorageInterface)
     assert isinstance(root.get_orchestrations_storage(), OrchestrationsStorageInterface)
+    assert isinstance(root.get_lease_storage(), LeasesStorageInterface)
     assert isinstance(root.get_step_storage(), StepStorageInterface)
     assert isinstance(root.get_agent_session_storage(), AgentSessionStorageInterface)
     assert isinstance(root.get_agent_storage(), AgentStorageInterface)
@@ -143,6 +146,7 @@ def test_business_root_has_a_field_per_manager(tmp_path: Path) -> None:
     assert isinstance(managers.events, EventsManagerInterface)
     assert isinstance(managers.outbox, OutboxRelayInterface)
     assert isinstance(managers.orchestrations, OrchestrationsManagerInterface)
+    assert isinstance(managers.leases, LeasesManagerInterface)
     assert isinstance(managers.steps, StepsManagerInterface)
     assert isinstance(managers.agent_sessions, AgentSessionsManagerInterface)
     assert isinstance(managers.attribution, AttributionManagerInterface)
