@@ -24,7 +24,8 @@ from acme.infra.keys import KeyServiceInterface
 from acme.infra.keys.kms import KeyServiceKmsImpl
 from acme.infra.keys.memory import KeyServiceMemoryImpl, root_key
 from acme.infra.outages import OutageSignalInterface
-from acme.infra.outages.shared import OutageSignalCacheImpl
+from acme.infra.outages.cache import OutageSignalCacheImpl
+from acme.infra.outages.null import OutageSignalNullImpl
 from acme.infra.queues import QueuesInterface
 from acme.infra.queues.memory import QueueMemoryImpl
 from acme.infra.queues.sqs import QueueSqsImpl
@@ -125,12 +126,16 @@ class InfraConfiguredImpl(InfraInterface):
         self._caches: dict[CacheScope, CacheInterface] = {
             scope: self._build_cache(scope) for scope in CacheScope
         }
-        # The outage signal follows the cache: one process's own over the
-        # memory cache, which a deployed process refuses, and the fleet's
-        # over Valkey, behind the same breaker.
-        self._outages: OutageSignalInterface = OutageSignalCacheImpl(
-            self._caches[CacheScope.OUTAGE]
-        )
+        # The outage signal follows the cache: shared where the cache is, so
+        # every process on it learns of an outage at once. A process whose
+        # cache is its own has no one to tell, and its breakers hold what its
+        # calls learn.
+        if settings.cache_backend == "valkey":
+            self._outages: OutageSignalInterface = OutageSignalCacheImpl(
+                self._caches[CacheScope.OUTAGE]
+            )
+        else:
+            self._outages = OutageSignalNullImpl()
 
         if settings.buckets_backend == "s3":
             self._buckets: BucketsInterface = BucketsS3Impl(
@@ -267,9 +272,6 @@ class InfraConfiguredImpl(InfraInterface):
     def get_keys(self) -> KeyServiceInterface:
         return self._keys
 
-    def get_outages(self) -> OutageSignalInterface:
-        return self._outages
-
     def get_workspaces(self) -> WorkspaceProviderInterface:
         return self._workspaces
 
@@ -282,15 +284,18 @@ class InfraConfiguredImpl(InfraInterface):
     def get_flags(self) -> FlagsInterface:
         return self._flags
 
+    def get_outages(self) -> OutageSignalInterface:
+        return self._outages
+
     def describe(self) -> list[str]:
         return [
             *(cache.describe() for cache in self._caches.values()),
+            self._outages.describe(),
             self._topics.describe(),
             self._buckets.describe(),
             self._queues.describe(),
             self._secrets.describe(),
             self._keys.describe(),
-            self._outages.describe(),
             self._workspaces.describe(),
             self._transport.describe(),
             self._broker.describe(),
@@ -301,6 +306,7 @@ class InfraConfiguredImpl(InfraInterface):
         if self._valkey is not None:
             await self._valkey.start()
         for capability in (
+            self._outages,
             self._topics,
             self._buckets,
             self._queues,
@@ -309,7 +315,6 @@ class InfraConfiguredImpl(InfraInterface):
             self._flags,
         ):
             await capability.start()
-        await self._outages.start()
         for runtime in (self._broker, self._workspaces, self._transport):
             await runtime.start()
 
@@ -318,7 +323,6 @@ class InfraConfiguredImpl(InfraInterface):
         last, once nothing holds it."""
         for runtime in (self._transport, self._workspaces, self._broker):
             await runtime.close()
-        await self._outages.close()
         for cache in self._caches.values():
             await cache.close()
         for capability in (
@@ -328,6 +332,7 @@ class InfraConfiguredImpl(InfraInterface):
             self._queues,
             self._buckets,
             self._topics,
+            self._outages,
         ):
             await capability.close()
         if self._valkey is not None:

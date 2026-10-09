@@ -37,7 +37,7 @@ stop (`PrincipalLapsed`) until a person takes the session over.
 
 **The transition is the adopter's.** It is one operation of the
 adopter's tenancy manager, handed to the root. A root handed none wires
-the tenancy manager's own, `member_context`: a person's role as their
+the tenancy manager's own, `delegated_context`: a person's role as their
 membership holds it at the call. It answers for no service principal,
 since the tenancy manager grants none, and for nobody who has left.
 

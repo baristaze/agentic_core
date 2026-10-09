@@ -1,7 +1,7 @@
 # Infrastructure
 
 The capabilities the platform asks for and never implements itself:
-cache, buckets, topics, queues, secrets, keys, flags, the outage signal,
+cache, buckets, topics, queues, secrets, keys, flags, outages,
 observability, and where an agent's tools run: workspaces and the
 transport. Each is an
 interface with a twin that runs on a laptop and an implementation that
@@ -18,8 +18,8 @@ infra imports nothing from the object model.
 | Queues | Work whose producer is outside the platform: `webhooks`, what a provider sends; at least once, so the consumer is idempotent | In-process, or ElasticMQ | SQS, with a dead-letter queue |
 | Secrets | Get, has, put, and delete by name; the object model holds a name, never a value | The settings, from `.env` and the environment | Secrets Manager |
 | Keys | Make, unwrap, and re-wrap a data key bound to its tenant, its key, and its version; keeps no copy | In-process, derived from a root key | KMS, under the account's key |
-| Outage signal | A provider known to be failing for one credential, until its retry time; keyed by provider and credential; fails open | On the in-process cache, or on Valkey | On Valkey, shared by the fleet |
 | Flags | Every declared flag's value for an org and a person in it, one call; a user's rule over its org's, over the provider's default, over the code's; a provider that fails reads the code's | A rules file, read on every evaluation | LaunchDarkly through OpenFeature, in process, or none |
+| Outages | A provider marked failing for one credential (the org that holds it and the secret's name) until a retry time; read before a call, cleared by a success; fails open | None in one process, or on Valkey | On Valkey, shared by every process |
 | Observability | Structured logs, Prometheus metrics, OpenTelemetry traces, error reports | Prometheus, Grafana, Jaeger, GlitchTip | CloudWatch, X-Ray, a Sentry-compatible backend |
 | Workspaces | Prepare, release, and purge the place an agent works, to an isolation spec (a mode, an egress policy, limits); a spec the provider cannot meet is refused, never weakened | A directory on this host, one whose commands run as an account of the host ([ADR 1021](../docs/adr/1021-a-host-directory-runs-its-commands-as-an-account-of-its-own-one-workspace-at-a-time.md)), a container on the local Docker, or the twin | A container per workspace, or none; a directory on the host, as an account or not, is refused at boot |
 | Transport | Run a command in a workspace, streamed, and read a file from an offset, write, and list its files; a command is over when its own process exits, what it left holding its output ended after a short drain ([ADR 1023](../docs/adr/1023-a-command-is-over-when-its-own-process-exits-and-a-file-is-read-from-an-offset.md)), and its whole process tree ends at its deadline; a secret is brokered, or injected into the one process and redacted from all it prints ([ADR 1003](../docs/adr/1003-a-secret-that-cannot-be-brokered-is-injected-into-one-process.md)); how each command ended is recorded beside the workspaces, its output sealed under its session's key by the seal the command comes with | This process, as itself or as an account, `docker exec`, or the twin | `docker exec` |
@@ -27,23 +27,6 @@ infra imports nothing from the object model.
 The environment name decides what a process may use: `local` and `test`
 may use the in-process and compose backends, and every other
 environment refuses them at boot.
-
-## The outage signal
-
-A provider that fails fast costs a session its retries before it parks.
-The outage signal spares the others: the first session to learn of an
-outage reports it, with its retry time, and every session that would call
-the same provider on the same credential parks at once until then. The
-key is the provider and the credential together, so one tenant's broken
-key is no outage of the platform's own.
-
-The signal lives on the shared cache, in a scope of its own. In one
-process it is the in-process cache, and a fleet shares it on Valkey; it
-follows the cache backend, so a deployed process, which refuses the
-in-process cache, always shares it. Its null never signals: one process
-needs none, since its sessions learn of an outage from the provider's
-own errors. A cache that cannot be reached is a miss, so the signal
-fails open, and those errors still park.
 
 ## What every capability holds to
 

@@ -1,16 +1,25 @@
-"""The outage signal: what the engine knows of a provider that is failing for
-one credential, so a session parks at once instead of spending its retries
-on a provider that fails fast. It is keyed by provider and credential, never
-by provider alone: one tenant's revoked key is no outage of the platform's.
+"""The outage signal: what every process knows of a provider that is failing
+for one credential, so that a process reads it before it calls and does not
+pay for the outage on its own. It sits beside the breaker. A breaker cuts a
+dependency off for the process that holds it; the signal tells every other
+process at once.
 
-One process needs none, and its null object never signals. A fleet shares
-one, on the shared cache, so the first session that learns of an outage
-parks every other session that would call the same provider on the same
-credential. A signal that cannot reach its store answers that nothing is
-known: it fails open, and the provider's own errors still park."""
+A mark is keyed by the provider and the credential the call is made with:
+the org that holds it (`SYSTEM_SCOPE` for the platform's own) and the
+secret's name, never its value. One org's revoked key is no outage of
+another's, nor of the platform's. A caller marks the pair when its calls
+fail together, with the time to try again, and clears it when a call
+succeeds.
+
+One process needs no signal: its own breaker already holds what it learned,
+so the null impl never marks. Processes that share a provider share one
+signal, on the shared cache, and it fails open as the cache does: a cache
+that cannot answer is a pair with no mark, and the provider's own errors
+still stop the caller."""
 
 from abc import ABC, abstractmethod
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import Field
 
@@ -20,34 +29,31 @@ MAX_NAME = 200
 
 
 class Outage(InfraModel):
-    """A provider known to be failing for one credential until `retry_at`.
-    `credential` names the key, never holds it: `platform` for the
-    platform's own, or a tenant key's id. `kind` is the error kind that
-    showed it, such as `overloaded`."""
+    """A provider known to be failing for one credential until `retry_at`."""
 
+    org_id: UUID  # whose credential: SYSTEM_SCOPE for the platform's own
     provider: str = Field(min_length=1, max_length=MAX_NAME)
-    credential: str = Field(min_length=1, max_length=MAX_NAME)
-    kind: str = Field(min_length=1, max_length=MAX_NAME)
+    credential: str = Field(min_length=1, max_length=MAX_NAME)  # the secret's name
     retry_at: datetime
 
 
 class OutageSignalInterface(ABC):
     @abstractmethod
-    async def report(self, outage: Outage, now: datetime) -> None:
+    async def mark(self, outage: Outage) -> None:
         """Records that the provider is failing for the credential until
-        `outage.retry_at`. A report whose retry time is earlier than the one
-        held leaves the held one; one at or before `now` records nothing."""
+        `outage.retry_at`. A mark that ends earlier than the one held leaves
+        the held one; one whose retry time has passed records nothing."""
         ...
 
     @abstractmethod
-    async def current(self, provider: str, credential: str, now: datetime) -> Outage | None:
-        """The outage known for the pair at `now`, or None: none was
-        reported, its retry time has come, or the store cannot be reached."""
+    async def current(self, org_id: UUID, provider: str, credential: str) -> Outage | None:
+        """The mark on the pair, read before a call: None when there is none,
+        its retry time has come, or the store cannot answer."""
         ...
 
     @abstractmethod
-    async def clear(self, provider: str, credential: str) -> None:
-        """A call that succeeded ends what was known of the pair."""
+    async def clear(self, org_id: UUID, provider: str, credential: str) -> None:
+        """A call that succeeded ends the mark on the pair."""
         ...
 
     @abstractmethod

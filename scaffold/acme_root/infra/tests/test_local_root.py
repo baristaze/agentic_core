@@ -22,6 +22,7 @@ async def test_every_capability_works_over_the_local_root(tmp_path: Path) -> Non
     await infra.get_secrets().put(org, "s", "v")
     assert await infra.get_secrets().get(org, "s") == "v"
     assert infra.get_topics().describe() == "topics=memory"
+    assert infra.get_outages().describe() == "outages=none"
     spec = IsolationSpec(mode=IsolationMode.TWIN, egress=EgressPolicy(mode=EgressMode.NONE))
     workspace = await infra.get_workspaces().prepare(org, new_id(), spec)
     await infra.get_transport().write_file(workspace, "a.txt", b"hi", epoch=1)
