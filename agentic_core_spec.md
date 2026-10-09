@@ -801,7 +801,9 @@ session, and the tool response is written from it. A job carries its own
 deadline, never later than the tree's, and cancelling the loop cancels
 the job. A job that spends money (compute, a leased machine) passes the
 budget gate before it starts ([One Gate, Before the
-Call](#one-gate-before-the-call)).
+Call](#one-gate-before-the-call)). A job whose work runs on a scarce
+resource waits in line for it first, and the grant starts the job
+([Parking](#parking)).
 
 ### Failures the Model Reads
 
@@ -1334,7 +1336,7 @@ memory-only session's runtime, a resource lease's hold time).
 | `person` | A question, an approval, a passed deadline, the step guard, a principal to reassign, a lost workspace | An answer, a decision, an extension | No |
 | `provider` | An outage, a rate limit, a billing or credential error, a missing key | The provider recovers; a key or account is fixed | At the retry time, for outages and rate limits |
 | `budget` | The gate refused | A raise, or the window resets | At the reset |
-| `resource` | Waiting in line for a scarce resource ([Leases on a Resource][g-leases]), or for a workspace | A grant, or the request's end without one | On the grant or the end; for a workspace, at the retry time |
+| `resource` | Waiting in line for a scarce resource ([Leases on a Resource][g-leases]), or for a workspace | A grant, or the request's end without one | On the grant or the end; for a workspace, at the retry time; for a job in line, at its deadline |
 | `job` | A long-running tool job is working | The job's completion | On completion |
 | `children` | Waiting for sub-agents' reports | A report; the tree's deadline ends the wait | On the report; past the deadline it parks on `person` |
 | `handover` | A person holds the environment | They give it back | No |
@@ -1367,6 +1369,15 @@ A loop that parks on the deadline leaves every line and gives back each
 lease its asks hold, so no resource sits idle under a session out of
 time. Treating "cannot continue right now" as "this did not work" throws away a long conversation and its
 evidence.
+
+A job's tool may ask in line too, for the resource its work runs on.
+Its call stays open, and the loop parks in line at once, naming the
+job, until the job's deadline. The grant starts the job in its own
+commit, and the park moves to the job's, so the job's result answers
+the call with no notice and no model call between. A request that ends
+without a lease answers the call, and no job starts. A loop that stops
+leaves its lines before it cancels its jobs, so no grant starts a job
+for a loop that is gone.
 
 *Example:* in its first week the session parks five times, for an
 approval, a provider, a budget, a busy staging database, and a question, and
