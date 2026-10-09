@@ -1502,6 +1502,63 @@
         "title": "LeaseView",
         "type": "object"
       },
+      "LineParkView": {
+        "description": "The line a loop waits in: the request, what it asked for (a kind,\nand the resource when it named one), its place (1 is next in some line\nit stands in), and the estimate of its wait.",
+        "properties": {
+          "estimate_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimate Seconds"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "place": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "resource_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id"
+          }
+        },
+        "required": [
+          "request_id",
+          "kind",
+          "resource_id",
+          "place",
+          "estimate_seconds"
+        ],
+        "title": "LineParkView",
+        "type": "object"
+      },
       "LineView": {
         "description": "A resource and the requests in its line, first first.",
         "properties": {
@@ -2144,8 +2201,18 @@
         "type": "string"
       },
       "ParkView": {
-        "description": "Why a parked loop waits, what clears it, and when it tries again by\nitself; a park only a person clears has no time.",
+        "description": "Why a parked loop waits, what clears it, and when it tries again by\nitself; a park only a person clears has no time, and neither has a park\nin line, which names where it stands.",
         "properties": {
+          "line": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LineParkView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "reason": {
             "$ref": "#/components/schemas/ParkReason"
           },
@@ -3502,7 +3569,8 @@
       "WaiterKind": {
         "description": "What waits on a request, so a grant wakes it. A product adds its own,\neach with a `WaiterInterface`.",
         "enum": [
-          "orchestration"
+          "orchestration",
+          "session"
         ],
         "title": "WaiterKind",
         "type": "string"
@@ -3516,7 +3584,8 @@
           "DELETE_ORG",
           "WAKE_SESSION",
           "WAKE_SESSIONS",
-          "LOOP"
+          "LOOP",
+          "LEASE_NOTICE"
         ],
         "title": "WorkKind",
         "type": "string"

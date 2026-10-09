@@ -338,6 +338,19 @@ class LeaseView(BaseModel):
     term_seconds: Annotated[int, Field(title='Term Seconds')]
 
 
+class LineParkView(BaseModel):
+    """
+    The line a loop waits in: the request, what it asked for (a kind,
+    and the resource when it named one), its place (1 is next in some line
+    it stands in), and the estimate of its wait.
+    """
+    estimate_seconds: Annotated[float | None, Field(title='Estimate Seconds')]
+    kind: Annotated[str, Field(title='Kind')]
+    place: Annotated[int | None, Field(title='Place')]
+    request_id: Annotated[UUID, Field(title='Request Id')]
+    resource_id: Annotated[UUID | None, Field(title='Resource Id')]
+
+
 class LogoutRequest(BaseModel):
     """
     Where the identity provider sends the browser once it has ended its own
@@ -486,8 +499,10 @@ class ParkReason(StrEnum):
 class ParkView(BaseModel):
     """
     Why a parked loop waits, what clears it, and when it tries again by
-    itself; a park only a person clears has no time.
+    itself; a park only a person clears has no time, and neither has a park
+    in line, which names where it stands.
     """
+    line: LineParkView | None = None
     reason: ParkReason
     retry_at: Annotated[AwareDatetime | None, Field(title='Retry At')]
     unlock: Annotated[str, Field(title='Unlock')]
@@ -931,6 +946,7 @@ class WaiterKind(StrEnum):
     each with a `WaiterInterface`.
     """
     orchestration = 'orchestration'
+    session = 'session'
 
 
 class WorkKind(StrEnum):
@@ -942,6 +958,7 @@ class WorkKind(StrEnum):
     WAKE_SESSION = 'WAKE_SESSION'
     WAKE_SESSIONS = 'WAKE_SESSIONS'
     LOOP = 'LOOP'
+    LEASE_NOTICE = 'LEASE_NOTICE'
 
 
 class WorkStatus(StrEnum):
