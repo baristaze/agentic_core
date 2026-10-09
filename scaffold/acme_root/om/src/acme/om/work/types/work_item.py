@@ -35,6 +35,15 @@ change, in the same statement, and the relay enqueues the item it names: the
 queue is a database role of its own, so no statement reaches both."""
 
 
+LOOP_LANE = "loop"
+"""The lane a session's loop runs on, its own: the session runner claims
+from it, and a cap on the maintenance worker's lane counts none of a
+tenant's running loops."""
+
+WORK_LANES: dict[WorkKind, str] = {WorkKind.LOOP: LOOP_LANE}
+"""The lane the relay lands a kind on when it is not the default one."""
+
+
 def work_row_kind(kind: WorkKind) -> str:
     """The outbox row kind that asks for work of this kind."""
     return WORK_ROW_PREFIX + kind.value

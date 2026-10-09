@@ -21,8 +21,10 @@ model away from the history.
 ## Decision
 
 **The loop runs in the session runner, a worker role of its own.** It
-claims one kind, `LOOP`, and calls the loop's one operation under the
-claim's context. It holds no purge login, and the maintenance worker
+claims one kind, `LOOP`, on a lane of its own, and calls the loop's one
+operation under the claim's context. A loop holds its claim for minutes,
+so the maintenance worker's lane, and its cap on a tenant's share, counts
+none of them. It holds no purge login, and the maintenance worker
 holds no model key and runs no tool.
 
 **The write that turns a session pending asks for its run.** The
