@@ -6,9 +6,10 @@ the engine's notice with the lease and its token; a grant that lands after
 the ask was read and before the park wakes it all the same; a session
 cancelled in line leaves it, and the next request is granted; a lease
 revoked after its loop ended is told in the next loop, and one that ended
-before its session resumed is told as ended, never as granted; and what
-an ask's standing owes the model is told once, a grant its call answered
-with never."""
+before its session resumed is told as ended, never as granted; a turn
+that ends past the tree's deadline parks on it and holds no line; and
+what an ask's standing owes the model is told once, a grant its call
+answered with never."""
 
 from datetime import timedelta
 from pathlib import Path
@@ -17,6 +18,7 @@ from uuid import UUID
 import pytest
 from contracts.loops import ALLOWED, Loop, call, loop_over, reply, said
 
+from acme.integrations.model_providers.calls import ModelCall
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
 from acme.om.agents import line_rules as lines
 from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
@@ -349,6 +351,39 @@ async def test_a_lease_that_ended_before_its_session_resumed_is_told_ended_never
     sent = str(loop.anthropic.calls[2].model_dump())
     assert f"The lease {lease.id} granted to your request {request.id} ran past its expiry" in sent
     assert "Go on with the work" not in sent, "never told to go on under a dead token"
+
+
+async def test_a_turn_that_ends_past_the_deadline_parks_on_it_and_holds_no_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loop, resource, _ = await held_resource(tmp_path)
+    session_id = await loop.start("reserver")
+    deadline = loop.clock.now + timedelta(minutes=2)
+    await loop.managers.agents.set_deadline(loop.owner, session_id, deadline)
+    await loop.say(session_id, "Take the resource.")
+    loop.anthropic.add(reply(call("reserve")), reply(said("I am in line for it, and I wait.")))
+    stream = loop.anthropic.stream
+
+    async def late(model_call: ModelCall):
+        if len(loop.anthropic.calls) == 1:
+            loop.clock.now = deadline + timedelta(seconds=1)  # the turn ends past it
+        async for part in stream(model_call):
+            yield part
+
+    monkeypatch.setattr(loop.anthropic, "stream", late)
+    run = await loop.loops.run(loop.owner, session_id)
+
+    assert run.end is RunEnd.PARKED and run.park is not None
+    assert (run.park.reason, run.park.unlock, run.park.line) == (
+        ParkReason.PERSON,
+        "deadline",
+        None,
+    )
+    line = await loop.managers.leases.line(loop.owner, resource.id)
+    assert line.requests == (), "no line held"
+    (request,) = [s for s in await loop.history(session_id) if s.type is StepType.TOOL_REQUEST]
+    left = (await loop.managers.leases.get_request(loop.owner, request.id)).request
+    assert (left.status, left.end_reason) == (RequestStatus.CANCELLED, EndReason.WAITER_GONE)
 
 
 def a_standing(status: RequestStatus, lease: LeaseStatus | None = None) -> Standing:

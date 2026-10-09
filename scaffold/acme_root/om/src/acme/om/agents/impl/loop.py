@@ -404,11 +404,17 @@ class LoopManagerImpl(LoopManagerInterface):
                     # is told first. While one still waits, the loop waits in
                     # line, with no model call until a grant or an end,
                     # unless something came that the model has not read: then
-                    # it reads it, and the turn is not judged.
+                    # it reads it, and the turn is not judged. Past the
+                    # tree's deadline it waits in no line: it parks on the
+                    # deadline below, and leaves every line there.
                     heard = await self._hear(run, history)
                     if heard.told:
                         history = await self._history(run.ctx, run.session_id, history)
-                    if heard.waiting and not lines.unheard(history, response):
+                    if (
+                        heard.waiting
+                        and not lines.unheard(history, response)
+                        and not await self._past_deadline(run)
+                    ):
                         return await self._wait_in_line(run, history, heard.waiting)
                 if (
                     not response.as_tool_uses()
@@ -430,6 +436,11 @@ class LoopManagerImpl(LoopManagerInterface):
                 if trip.outcome is not None:
                     return await self._end(run, trip.outcome)
                 if trip.park is not None:
+                    if trip.limit is Limit.DEADLINE:
+                        # Out of time, the session waits on no resource: it
+                        # leaves every line, so no grant holds one for a
+                        # session that cannot use it.
+                        await self._leases.leave(run.ctx, WaiterKind.SESSION, run.session_id)
                     return await self._park(run, trip.park)
                 return self._result(run, RunEnd.YIELDED)
             repeated = rules.repeated_failure(history, run.loop_id, self._options.repeats_noticed)
