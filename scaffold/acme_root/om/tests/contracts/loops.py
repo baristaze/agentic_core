@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import UUID
 
+from acme.infra.base import SYSTEM_SCOPE
 from acme.infra.cache import CacheScope
 from acme.infra.impl.local import InfraLocalImpl
 from acme.infra.outages import OutageSignalInterface
@@ -310,6 +311,7 @@ class Loop:
     tools: dict[str, Lookup]
     jobs: dict[str, Build]
     outages: OutageSignalInterface
+    credential: str  # the name of the platform's own key, as the signal keys it
 
     async def start(self, kind: str = "assistant") -> UUID:
         session = await self.managers.agents.start_session(
@@ -457,6 +459,7 @@ def loop_over(
         catalog,
         jobs,
         signal,
+        options.credential,
     )
 
 
@@ -486,8 +489,11 @@ def said(text: str) -> TextBlock:
 
 
 async def outage_parks_at_once_and_resumes_at_the_retry_time(loop: Loop) -> None:
-    """Shared with the suite over Valkey: one session learns the provider is
-    failing; a second parks before it calls, and wakes at the retry time."""
+    """Shared with the suite over Valkey: two sessions on one credential, the
+    platform's. One learns the provider is failing and marks the pair under
+    the system scope; the other parks before it calls, until the mark's retry
+    time, and its call that answers then clears the mark."""
+    pair = (SYSTEM_SCOPE, "anthropic", loop.credential)
     learner = await loop.start()
     await loop.say(learner, "What is the total?")
     overloaded = ScriptedFailure(kind=ErrorKind.OVERLOADED, retry_after=2)
@@ -498,6 +504,8 @@ async def outage_parks_at_once_and_resumes_at_the_retry_time(loop: Loop) -> None
 
     assert learned.outcome is LoopOutcome.SUCCEEDED, "it fell back to its declared fallback"
     assert len(loop.anthropic.calls) == 3, "two retries in process, then the outage"
+    mark = await loop.outages.current(*pair)
+    assert mark is not None, "the spent retries marked the pair"
 
     second = await loop.start()
     await loop.say(second, "And the average?")
@@ -505,7 +513,7 @@ async def outage_parks_at_once_and_resumes_at_the_retry_time(loop: Loop) -> None
 
     assert parked.end is RunEnd.PARKED and parked.park is not None
     assert parked.park.reason is ParkReason.PROVIDER and parked.park.unlock == "anthropic"
-    assert parked.park.retry_at is not None and parked.park.retry_at > loop.clock()
+    assert parked.park.retry_at == mark.retry_at, "it waits out the mark, no less"
     assert len(loop.anthropic.calls) == 3, "parked at once: no call, no retry"
     assert [s for s in await loop.history(second) if s.type is StepType.MODEL_REQUEST] == []
 
@@ -515,5 +523,7 @@ async def outage_parks_at_once_and_resumes_at_the_retry_time(loop: Loop) -> None
     resumed = await loop.loops.run(loop.owner, second)
 
     assert resumed.outcome is LoopOutcome.SUCCEEDED
+    assert len(loop.anthropic.calls) == 4, "one call, at the retry time"
+    assert await loop.outages.current(*pair) is None, "the call that answered cleared the mark"
     types = [step.type for step in await loop.history(second)]
     assert types.count(StepType.RESUMED) == 1 and len(loop.anthropic.calls) == 4
