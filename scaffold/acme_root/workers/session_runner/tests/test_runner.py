@@ -245,9 +245,7 @@ async def test_a_tenants_running_loop_leaves_its_wake_to_the_capped_maintenance_
         tool_catalog=TOOLS,
     )
     rctx = RequestContext(request_id=new_id(), app=APP)
-    owner, _ = await api.managers.tenancy.bootstrap(
-        rctx, "Ajax", "ajax", "ann@example.test", "Ann"
-    )
+    owner, _ = await api.managers.tenancy.bootstrap(rctx, "Ajax", "ajax", "ann@example.test", "Ann")
     session = await api.managers.agents.start_session(
         owner, Start(id=new_id(), kind="assistant", title="the dropped object")
     )
