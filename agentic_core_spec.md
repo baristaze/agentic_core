@@ -765,8 +765,8 @@ An approval is a person's decision, never the model's.
   rest of the loop or until a deadline, never for a destructive class or
   one the ceilings mark as never granted whole.
 - A policy may bind an approval to a target chosen later, such as any
-  one of a set of equal resources, for one input and one procedure, and
-  keep it while the session waits for that target.
+  one of a set of equal resources, for the same tool and input, the
+  target aside, and keep it while the session waits for that target.
 - An approver holds the approve permission for that class in the
   tenant. A policy may require someone other than the requester, or two
   people.
@@ -1322,7 +1322,7 @@ loop is not trusted: its gates run again, as the scaffold's
 [ADR 0039][g-adr-0039] holds. The engine adds what a loop needs: the
 reasons, the one action that clears each, and a park that holds no
 runtime and no work lease while it waits, beyond what is declared (a
-memory-only session's runtime, a host lease's hold time).
+memory-only session's runtime, a resource lease's hold time).
 
 | Reason | Examples | Unlock | Unlocks without a person |
 |---|---|---|---|
