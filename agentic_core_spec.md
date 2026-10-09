@@ -1351,11 +1351,14 @@ while an ask still waits, and the park names the request, its place,
 and the estimate. Until the grant or the request's end, no model call is
 made: a run woken in between reads its asks and parks again. It also
 reads them once it has parked, so an answer that came between the read
-and the park still wakes it. A grant, an end without a lease, and a
-revocation each reach the model as the engine's notice before its next
-call, the grant with its lease and token. A loop that ends leaves every
-line, so no ended session holds a place. Treating "cannot continue right
-now" as "this did not work" throws away a long conversation and its
+and the park still wakes it. The grant reaches the model as the
+engine's notice before its next call, with its lease and token, while
+the lease is active. The request's end without a lease, or the lease's
+end (released, expired, or revoked), is told once in its stead, in a
+later loop too, since a lease outlives the loop that took it. A loop
+that ends leaves every line, so no ended session holds a place. A turn
+that ends past the tree's deadline parks on the deadline, never in line,
+and leaves every line too. Treating "cannot continue right now" as "this did not work" throws away a long conversation and its
 evidence.
 
 *Example:* in its first week the session parks five times, for an

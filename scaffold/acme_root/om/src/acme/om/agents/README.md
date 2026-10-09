@@ -163,10 +163,11 @@ of](../../../../README.md).
   an ask waits, the loop parks on `resource`, naming the request, its
   place, and its estimate, and calls no model until a grant or the
   request's end clears the park. The run reads its asks once more after
-  it parks, so an answer that came just before is never missed. Each
-  grant, end, and revocation reaches the model as the engine's notice
-  before its next call, and a loop that ends leaves every line
-  (ADR 1024).
+  it parks, so an answer that came just before is never missed. The
+  grant reaches the model as the engine's notice before its next call
+  while its lease is active; the request's end, or the lease's end, is
+  told once in its stead, in a later loop too. A loop that ends, or that
+  parks on the tree's deadline, leaves every line (ADR 1024).
 - **A nudge is a step.** When a delivery agent's turn calls no tool, the
   engine's notice is written before the next request, so no request
   holds two of the model's turns in a row. A reply cut by its output

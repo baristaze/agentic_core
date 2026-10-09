@@ -45,14 +45,18 @@ the loop never ends with a request in line.
 
 **The handler only unlocks; the run reads and tells.** The `LEASE_NOTICE`
 handler unlocks a session parked in line and leaves any other as it is.
-Before each model call, a run that asked in line reads its asks and
-tells the model each answer it has not been told, as the engine's
-notice: the grant with its lease and token, the end with its reason, the
-revocation. Each notice's id is derived from the call's answer and what
+Before each model call, a run reads the session's asks, across its
+loops, and tells the model each answer it has not been told, as the
+engine's notice: the grant with its lease and token, while the lease is
+active; the request's end with its reason; the lease's end, released,
+expired, or revoked. A lease outlives the loop that took it, so its end
+is told in a later loop too. Once a lease has ended, its end is told in
+place of the grant, so the model never acts under a dead token. Each
+notice's id is derived from the call's answer and what
 the notice tells, so the history says what was told, after a lost run as
 well. A grant the call answered with needs no notice. The engine writes
 the notice under the run's epoch, so it instructs and never arrives
-through the inbox.
+through the inbox. An ask whose end was told is read no more.
 
 **The run reads again after it parks.** Once its park lands, the run
 reads its asks again, and clears its own park when one has an answer
@@ -64,6 +68,11 @@ of the session as a waiter, before its `loop_ended` step, so a cancel,
 an error, or an answer never leaves a place held. An archive or a delete
 needs an idle session, whose loop has ended already.
 
+**Past the deadline, no line.** A turn that ends past the tree's
+deadline parks on the deadline, as a wait on children does, never in
+line. A loop that parks on the deadline leaves every line, so no grant
+holds a resource for a session out of time.
+
 ## Consequences
 
 - A session in line costs no model call between its park and its
@@ -71,7 +80,10 @@ needs an idle session, whose loop has ended already.
 - A grant that lands while the run is parking still wakes it.
 - A session cancelled in line leaves it, and the next request is
   granted.
-- A loop that asked in line reads its asks once before each model call,
-  until each one's end or revocation is told.
+- A session that asked in line reads its asks once before each model
+  call, across its loops, until each request's or lease's end is told.
+- A revocation after the loop that took the lease has ended reaches the
+  model in the next loop's first call.
+- A session out of time holds no place in a line.
 - The API's park view names the line: the request, its place, and its
   estimate.
