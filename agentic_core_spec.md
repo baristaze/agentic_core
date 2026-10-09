@@ -731,7 +731,7 @@ before the registry serves it.
 | `configuration` | Changing project or platform configuration |
 | `credentials` | Creating, rotating, or binding secret references |
 | `destructive` | Irreversible changes outside the workspace: deleting a branch, a force push, a purge |
-| *domain classes* | Added by a product, such as acting on physical hardware |
+| *domain classes* | Added by an adopter, such as acting on equipment outside the workspace |
 
 ### Policy
 
@@ -743,7 +743,8 @@ attributes of what the call targets (an environment's kind, a branch's
 protection), never on what the model says about the call. It is layered:
 the agent kind's defaults, narrowed or loosened by the tenant, never past
 the platform's ceilings. Most development work runs unattended; what is
-destructive, outward-facing, physical, or expensive waits for a person.
+destructive, outward-facing, or expensive, or in a class the ceilings
+mark as never unattended, waits for a person.
 
 Preflight runs before the policy asks anyone. Every call that is not
 `read_only` is audited, by its request step, before it runs.
@@ -761,11 +762,11 @@ An approval is a person's decision, never the model's.
 - By default an approval is **bound to the exact call**: the tool and a
   hash of its input. A changed input is a new call.
 - A policy may let an approver grant a class of calls instead, for the
-  rest of the loop or until a deadline, never for a destructive or
-  physical class.
+  rest of the loop or until a deadline, never for a destructive class or
+  one the ceilings mark as never granted whole.
 - A policy may bind an approval to a target chosen later, such as any
-  host of one pool, for one candidate and one procedure, and keep it
-  while the session waits for that target.
+  one of a set of equal resources, for the same tool and input, the
+  target aside, and keep it while the session waits for that target.
 - An approver holds the approve permission for that class in the
   tenant. A policy may require someone other than the requester, or two
   people.
@@ -1321,7 +1322,7 @@ loop is not trusted: its gates run again, as the scaffold's
 [ADR 0039][g-adr-0039] holds. The engine adds what a loop needs: the
 reasons, the one action that clears each, and a park that holds no
 runtime and no work lease while it waits, beyond what is declared (a
-memory-only session's runtime, a host lease's hold time).
+memory-only session's runtime, a resource lease's hold time).
 
 | Reason | Examples | Unlock | Unlocks without a person |
 |---|---|---|---|

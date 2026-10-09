@@ -152,7 +152,8 @@ require approval, or deny. It keys on the tool, its class, its effect,
 and the attributes of what the call targets, never on what the model
 says about the call. It is layered: the agent kind's defaults, narrowed
 or loosened by the tenant, never past the platform's ceilings. What is
-destructive, outward-facing, physical, or expensive waits for a person.
+destructive, outward-facing, or expensive, or in a class the ceilings
+mark as never unattended, waits for a person.
 Preflight runs before the policy asks anyone.
 
 **Source.** Tools, Policy.
@@ -179,10 +180,11 @@ Requiring one parks the loop, and other allowed calls from the same
 response proceed. By default it binds to the exact call, the tool and a
 hash of its input, so a changed input is a new call. A policy may grant
 a class for the rest of the loop or until a deadline, never a
-destructive or physical class, or bind an approval to a target chosen
-later. The approver holds the approve permission for that class in the
-tenant, and a policy may require someone other than the requester, or
-two people. An approval expires. The decision is a control step.
+destructive class or one the ceilings mark as never granted whole, or
+bind an approval to a target chosen later. The approver holds the
+approve permission for that class in the tenant, and a policy may
+require someone other than the requester, or two people. An approval
+expires. The decision is a control step.
 
 **Source.** Tools, Approvals.
 
@@ -192,8 +194,8 @@ permission check.
 
 **Violation.** An approval the model or the agent's own step can give;
 an approval matched by tool name alone, so a changed input runs on it; a
-class grant for a destructive or physical class; an approval that never
-expires.
+class grant for a destructive class, or for one the ceilings mark as
+never granted whole; an approval that never expires.
 
 **Severity.** high
 
