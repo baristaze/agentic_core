@@ -561,7 +561,8 @@ model error. The policy is injected; this is its default:
   provider reported for the last call plus an estimate for the steps
   since, leaving room for the next response and its tool results.
 - **Elide.** Older bulky tool results render as stubs with a handle to
-  the full result.
+  the full result, which the read tool reads ([Large Results and
+  Retrieval](#large-results-and-retrieval)).
 - **Summarize.** The summarizer model role, usually a smaller model,
   folds the window and the previous summary into a new `summary` step
   that references the range it replaces. The latest exchanges stay
@@ -579,9 +580,12 @@ A compaction is a model call and passes the budget gate like any other.
 ### Large Results and Retrieval
 
 A tool result above a size bound is stored as an artifact. The step
-holds a preview, its head and tail, and a handle, and a read tool pages
-through the rest. Agents retrieve just in time (search the history, read
-an artifact, query a record) rather than preload. A sub-agent is the
+holds a preview, its head and tail, and a handle. The engine's read
+tool, `read_artifact`, pages through the rest by that handle, and reads
+back a result that compaction elided by the handle its stub names. The
+notice beside a preview and the stub both name it. It reads the calling
+session's own results alone. Agents retrieve just in time (search the
+history, read an artifact, query a record) rather than preload. A sub-agent is the
 other context tool: it explores in a clean context and returns a report
 ([Sub-Agents](#sub-agents)).
 

@@ -148,7 +148,7 @@ class ArtifactRef(Platform):
     """The handle of a text kept whole as an artifact, outside the step: a
     tool result, or a child's report to its parent. It holds the artifact's
     id and how many characters it holds. The step keeps the text's head and
-    tail; a read tool pages through the rest by the id."""
+    tail; `read_artifact` pages through the rest by the id."""
 
     id: UUID
     characters: int = Field(gt=0)

@@ -54,6 +54,9 @@ reads, sized for the model that reads it.
   runtime that holds the session, and nowhere else; its step is bounded
   all the same, and revoking its key erases it there too.
 - **Read an artifact**, a page at a time, opened with the session's key.
+  The agent reads one through `read_artifact`, by the handle the notice
+  beside its head and tail names, and a result elided once read by the
+  handle its stub names. It reads its own session's results alone.
 - **Erase.** Revoking the session's key leaves the artifact's record and
   turns its text to noise; a read of it is refused.
 - **Purge.** An artifact goes with its session's history, its object
