@@ -9,6 +9,12 @@ never hands back a weaker place in its stead. A released workspace keeps its
 files and loses its instance: the next prepare under the same id finds the
 files again. A purged one keeps nothing.
 
+A workspace is a cache. A provider that can also snapshots one: everything
+its commands could write, as one archive its own `prepare` starts a
+workspace from. A spec that asks for a workspace that can be kept so
+(`Durability.SNAPSHOT`) is refused by a provider that cannot, before
+anything is made, and is never met by a cache in its stead.
+
 What a workspace is rebuilt from may be gone for good, such as the branch a
 checkout tracks. A layer that prepares one then raises `WorkspaceLost`, and
 the loop parks, loudly, for a person."""
@@ -25,12 +31,14 @@ from acme.infra.base import InfraModel
 from acme.infra.exceptions import InfraException, InfraValidationFailed
 
 __all__ = [
+    "Durability",
     "EgressMode",
     "EgressPolicy",
     "IsolationMode",
     "IsolationRefused",
     "IsolationSpec",
     "ResourceLimits",
+    "SnapshotRefused",
     "Workspace",
     "WorkspaceLost",
     "WorkspaceProviderInterface",
@@ -64,6 +72,11 @@ class EgressPolicy(InfraModel):
         return self
 
 
+class Durability(StrEnum):
+    CACHE = "cache"  # its files outlive a release, and may be lost
+    SNAPSHOT = "snapshot"  # a snapshot can keep it whole: what a provider that cannot refuses
+
+
 class ResourceLimits(InfraModel):
     """What a workspace may use of its host. None asks for no limit."""
 
@@ -79,6 +92,7 @@ class IsolationSpec(InfraModel):
     mode: IsolationMode
     egress: EgressPolicy
     limits: ResourceLimits = ResourceLimits()
+    durability: Durability = Durability.CACHE
 
 
 class Workspace(InfraModel):
@@ -112,6 +126,14 @@ class IsolationRefused(InfraValidationFailed):
         self.clears = clears
 
 
+class SnapshotRefused(InfraValidationFailed):
+    """A provider cannot snapshot a workspace: its mode cannot be kept whole,
+    or the workspace holds no instance to take one from. Refused before
+    anything runs, and never answered with less than the whole."""
+
+    code = "snapshot_refused"
+
+
 class WorkspaceLost(InfraException):
     """What a workspace is rebuilt from is gone, or cannot be brought in, and
     nothing says how, such as a branch deleted under it or one that moved
@@ -128,26 +150,54 @@ def refusal(
     mode: IsolationMode,
     egress: Collection[EgressMode],
     limits: Collection[str],
+    unkept: str | None = None,
 ) -> str | None:
     """Why a provider of `mode`, which enforces the egress modes and the
-    limits named, cannot meet `spec`; None when it meets every part."""
+    limits named, cannot meet `spec`; None when it meets every part.
+    `unkept` says why the provider cannot snapshot a workspace, and is None
+    when it can."""
     if spec.mode is not mode:
         return f"a {mode.value} provider cannot prepare a {spec.mode.value} workspace"
     if spec.egress.mode not in egress:
         return f"a {mode.value} workspace cannot hold egress to {spec.egress.mode.value}"
     if unmet := sorted(spec.limits.asked() - set(limits)):
         return f"a {mode.value} workspace cannot enforce {', '.join(unmet)}"
+    if spec.durability is Durability.SNAPSHOT and unkept is not None:
+        return f"a {mode.value} workspace cannot be snapshotted: {unkept}"
     return None
 
 
 class WorkspaceProviderInterface(ABC):
     @abstractmethod
-    async def prepare(self, org_id: UUID, workspace_id: UUID, spec: IsolationSpec) -> Workspace:
+    async def prepare(
+        self,
+        org_id: UUID,
+        workspace_id: UUID,
+        spec: IsolationSpec,
+        snapshot: bytes | None = None,
+    ) -> Workspace:
         """The workspace under `workspace_id`, prepared to `spec`: made, or
         found again with its files after a release. `IsolationRefused`, with
         nothing created, when this provider cannot meet every part of the
         spec or cannot reach what it would prepare it on; it `clears` only
-        when a workspace may come for the spec later."""
+        when a workspace may come for the spec later.
+
+        With `snapshot`, an archive this provider's `snapshot` made, the
+        workspace starts from it: what it held before is replaced whole. A
+        provider that cannot snapshot refuses it with `IsolationRefused`;
+        one that cannot bring it in, such as an archive of another
+        provider's or one whose base is gone, raises `WorkspaceLost`. A
+        restore that fails part way leaves no workspace behind, never a
+        half-restored one."""
+        ...
+
+    @abstractmethod
+    async def snapshot(self, workspace: Workspace) -> bytes:
+        """Everything the workspace's commands could write, as one archive
+        `prepare` starts a workspace from, taken while nothing runs in it.
+        The workspace keeps its instance. `SnapshotRefused`, before anything
+        runs, when this provider cannot snapshot or the workspace holds no
+        instance."""
         ...
 
     @abstractmethod

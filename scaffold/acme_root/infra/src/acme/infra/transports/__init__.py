@@ -285,6 +285,14 @@ class CredentialBrokerInterface(ABC):
         ...
 
     @abstractmethod
+    async def detach_all(self, workspace: Workspace) -> None:
+        """Takes back everything attached in the workspace, whatever command
+        it was attached for, one whose run was lost before it took it back
+        included: what a workspace holds when it is snapshotted is never a
+        credential."""
+        ...
+
+    @abstractmethod
     def describe(self) -> str: ...
 
     @abstractmethod
