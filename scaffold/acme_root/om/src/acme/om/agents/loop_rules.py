@@ -82,6 +82,20 @@ HANDED_BACK = (
 )
 """The engine's notice when a person gives the environment back."""
 
+REWOUND = (
+    "Your workspace was restored from a snapshot it was in before. What changed "
+    "in it since that snapshot is gone: check the state of what you need again."
+)
+"""The engine's notice when a workspace starts from an earlier snapshot of its
+own session."""
+
+FORKED = (
+    "Your workspace starts as a copy of your parent's, as its latest snapshot "
+    "held it. What you write there never reaches your parent's workspace."
+)
+"""The engine's notice when a child's workspace starts from its parent's
+snapshot."""
+
 REPEATED = (
     "The call {tool} failed {count} times in a row with the same input, and "
     "the same call will fail the same way again. Read its last error, then "
@@ -649,6 +663,42 @@ def changed_step(step_id: UUID, at: datetime, session_id: UUID, loop_id: UUID) -
         origin=Origin.ENGINE,
         header=MarkHeader(),
         content=Content(blocks=(TextBlock(text=HANDED_BACK),)),
+    )
+
+
+def pending_restore(steps: Sequence[Step]) -> Step | None:
+    """The restore the workspace's next prepare starts from: the latest
+    `restore` control, unless a notice after it says it was done. A later
+    restore takes the place of an earlier one that was never done."""
+    done: set[UUID] = set()
+    for step in reversed(steps):
+        if step.type is StepType.ENVIRONMENT_CHANGED:
+            done.update(step.refs)
+        header = step.header
+        if isinstance(header, ControlHeader) and header.command is ControlCommand.RESTORE:
+            return None if step.id in done else step
+    return None
+
+
+def restored_step(
+    step_id: UUID, at: datetime, session_id: UUID, loop_id: UUID, restore: Step
+) -> Step:
+    """The notice that the workspace started from the snapshot `restore`
+    names: the record that the restore was done, which references it."""
+    header = restore.header
+    assert isinstance(header, ControlHeader) and header.snapshot is not None
+    forked = header.snapshot.workspace_id != session_id
+    return Step(
+        id=step_id,
+        created_at=at,
+        session_id=session_id,
+        loop_id=loop_id,
+        type=StepType.ENVIRONMENT_CHANGED,
+        actor=Actor.ENGINE,
+        origin=Origin.ENGINE,
+        refs=(restore.id,),
+        header=MarkHeader(),
+        content=Content(blocks=(TextBlock(text=FORKED if forked else REWOUND),)),
     )
 
 

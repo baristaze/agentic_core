@@ -40,12 +40,14 @@ class Spawn(Platform):
     """A child of the session that asks. `id` is taken from the spawning
     tool call's request, so a retry finds the child it made. `objective`
     holds what the child starts from: the objective, the constraints that
-    bind it, its bounds, and the shape of a good report."""
+    bind it, its bounds, and the shape of a good report. With `fork`, its
+    workspace starts from a copy of its parent's latest snapshot."""
 
     id: UUID
     kind: str = Field(min_length=1, max_length=MAX_KIND)
     title: str = Field(min_length=1, max_length=MAX_TITLE)
     objective: str = Field(min_length=1, max_length=MAX_OBJECTIVE)
+    fork: bool = False
 
 
 class Handoff(Platform):

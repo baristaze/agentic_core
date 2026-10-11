@@ -28,7 +28,7 @@ the command ends; the result names each secret it used, never a value."""
 
 import re
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -40,6 +40,7 @@ from pydantic import Field, model_validator
 
 from acme.infra.base import InfraModel
 from acme.infra.exceptions import InfraException, InfraValidationFailed
+from acme.infra.transports.redaction import Redactor
 from acme.infra.workspaces import IsolationMode, Workspace
 
 __all__ = [
@@ -300,3 +301,13 @@ class CredentialBrokerInterface(ABC):
 
     @abstractmethod
     async def close(self) -> None: ...
+
+
+def secret_held(data: bytes, secrets: Mapping[str, str]) -> str | None:
+    """The name of a secret, of `secrets` by name, whose value `data` holds in
+    any form redaction matches; None when it holds none. What a workspace's
+    snapshot is scanned for before anything of it is kept."""
+    text = data.decode("utf-8", errors="surrogateescape")
+    for _, _, name in Redactor(secrets).matches(text):
+        return name
+    return None

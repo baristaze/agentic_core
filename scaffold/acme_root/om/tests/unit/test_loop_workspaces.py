@@ -53,7 +53,9 @@ async def test_a_refusal_that_cannot_clear_ends_the_loop_errored_and_wakes_its_w
     (child,) = await sub_agents.children_of(loop, root)
     calls = len(loop.anthropic.calls)
 
-    async def refused(ctx: TenantContext, session_id: UUID, spec: IsolationSpec) -> Workspace:
+    async def refused(
+        ctx: TenantContext, session_id: UUID, spec: IsolationSpec, **_: object
+    ) -> Workspace:
         return await provider.prepare(ctx.org_id, session_id, CONTAINER)
 
     monkeypatch.setattr(loop.managers.tools, "prepare_workspace", refused)

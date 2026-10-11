@@ -33,3 +33,33 @@ class RecordSealInterface(ABC):
         seal of this platform made for this command is refused, never read as
         anything."""
         ...
+
+
+class SnapshotSealInterface(ABC):
+    """The seal a workspace's snapshot takes before it reaches the object
+    store. What a workspace holds is content, like the steps its commands
+    answered, so its snapshot is sealed under its session's key: a reader
+    of the store sees noise, revoking the key erases it, and the step that
+    names it stays."""
+
+    @abstractmethod
+    async def seal(
+        self, ctx: TenantContext, session_id: UUID, digest: str, data: bytes
+    ) -> bytes | None:
+        """`data` sealed under the current version of the session's key,
+        bound to the tenant, the session, the snapshot's hash `digest`, and
+        the version, so a blob copied to another session or another hash
+        opens nothing. None when the session keeps no content at rest: no
+        snapshot of it is kept. `KeyRevoked` when its key is revoked."""
+        ...
+
+    @abstractmethod
+    async def open(
+        self, ctx: TenantContext, session_id: UUID, digest: str, sealed: bytes
+    ) -> bytes | None:
+        """The plain bytes of a blob `seal` made for this hash of this
+        session; None when the version it names is destroyed, and the
+        snapshot with it. A blob no seal of this platform made for it, one
+        whose bytes were altered included, is refused (`ValueError`), never
+        read as anything."""
+        ...

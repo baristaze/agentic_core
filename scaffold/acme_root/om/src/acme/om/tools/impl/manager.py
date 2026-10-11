@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -8,10 +8,18 @@ from uuid import UUID
 from pydantic import Field, ValidationError
 
 from acme.infra.exceptions import InfraException
-from acme.infra.transports import OutputSink, RecordSeal, SecretUse, TransportInterface
+from acme.infra.transports import (
+    CredentialBrokerInterface,
+    OutputSink,
+    RecordSeal,
+    SecretUse,
+    TransportInterface,
+)
 from acme.infra.workspaces import (
     IsolationMode,
+    IsolationRefused,
     IsolationSpec,
+    SnapshotRefused,
     Workspace,
     WorkspaceProviderInterface,
 )
@@ -44,9 +52,11 @@ from acme.om.steps.types.header import (
     DecidedCall,
     ToolFailure,
     ToolRequestHeader,
+    WorkspaceSnapshot,
 )
 from acme.om.steps.types.step import Step, StepType
 from acme.om.tenancy import TenancyManagerInterface
+from acme.om.tools.impl.snapshots import SnapshotStore
 from acme.om.tools.manager import KeyedHash, ToolsManagerInterface
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.rules import (
@@ -64,9 +74,11 @@ from acme.om.tools.rules import (
     engine_retries,
     infra_failure,
     job_deadline,
+    named_snapshot,
     reaches_outward,
     recovered_text,
     response,
+    snapshotted_step,
     strictest,
     verdict,
     with_reach,
@@ -125,8 +137,12 @@ class ToolsManagerImpl(ToolsManagerInterface):
         keyed_hash: KeyedHash,
         record_seal: RecordSealInterface,
         attribution: AttributionManagerInterface,
+        broker: CredentialBrokerInterface,
+        snapshots: SnapshotStore,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
+        self._broker = broker
+        self._snapshots = snapshots
         self._keyed_hash = keyed_hash
         self._record_seal = record_seal
         self._sleep = sleep
@@ -193,17 +209,75 @@ class ToolsManagerImpl(ToolsManagerInterface):
     # The workspace.
 
     async def prepare_workspace(
-        self, ctx: TenantContext, session_id: UUID, spec: IsolationSpec
+        self,
+        ctx: TenantContext,
+        session_id: UUID,
+        spec: IsolationSpec,
+        restore: WorkspaceSnapshot | None = None,
     ) -> Workspace:
         ctx.require(Permission.WRITE)
         if spec.mode is IsolationMode.NONE:
+            if restore is not None:
+                raise IsolationRefused(
+                    f"agent session {session_id} has no workspace to start from a snapshot"
+                )
             return Workspace.absent(ctx.org_id, session_id)
-        return await self._workspaces.prepare(ctx.org_id, session_id, spec)
+        # Its bytes are trusted by their hash before the provider sees them:
+        # a snapshot that does not match starts nothing.
+        archive = None if restore is None else await self._snapshots.load(ctx, session_id, restore)
+        return await self._workspaces.prepare(ctx.org_id, session_id, spec, snapshot=archive)
 
     async def release_workspace(self, ctx: TenantContext, workspace: Workspace) -> None:
         ctx.require(Permission.WRITE)
         if workspace.spec.mode is not IsolationMode.NONE:
             await self._workspaces.release(workspace)
+
+    async def snapshot_workspace(
+        self,
+        ctx: TenantContext,
+        session_id: UUID,
+        workspace: Workspace,
+        *,
+        epoch: int,
+        loop_id: UUID,
+    ) -> Step:
+        ctx.require(Permission.WRITE)
+        if workspace.spec.mode is IsolationMode.NONE:
+            raise SnapshotRefused(f"agent session {session_id} has no workspace to snapshot")
+        # No credential is in what is kept: the broker takes back all it
+        # attached there, one a lost run never took back included, and a
+        # secret's value a command wrote there refuses the snapshot.
+        await self._broker.detach_all(workspace)
+        archive = await self._workspaces.snapshot(workspace)
+        await self._snapshots.scan(ctx, archive)
+        kept = await self._snapshots.keep(ctx, session_id, new_id(), workspace.id, archive)
+        step = snapshotted_step(new_id(), self._clock(), session_id, loop_id, kept)
+        (stored,) = await self._steps.append_steps(ctx, session_id, epoch, [step])
+        return stored
+
+    async def fork_snapshot(
+        self, ctx: TenantContext, parent_id: UUID, child_id: UUID, snapshot_id: UUID
+    ) -> WorkspaceSnapshot:
+        ctx.require(Permission.WRITE)
+        latest: WorkspaceSnapshot | None = None
+        async for step in self._history(ctx, parent_id):
+            latest = named_snapshot(step) or latest
+        if latest is None:
+            raise ValidationFailed(
+                f"agent session {parent_id} holds no snapshot for a child to start from"
+            )
+        archive = await self._snapshots.load(ctx, parent_id, latest)
+        return await self._snapshots.keep(ctx, child_id, snapshot_id, latest.workspace_id, archive)
+
+    async def find_snapshot(
+        self, ctx: TenantContext, session_id: UUID, snapshot_id: UUID
+    ) -> WorkspaceSnapshot:
+        ctx.require(Permission.READ)
+        async for step in self._history(ctx, session_id):
+            named = named_snapshot(step)
+            if named is not None and named.id == snapshot_id:
+                return named
+        raise NotFound(f"agent session {session_id} names no snapshot {snapshot_id}")
 
     # A call.
 
@@ -505,9 +579,11 @@ class ToolsManagerImpl(ToolsManagerInterface):
 
     async def purge_workspace(self, org_id: UUID, session_id: UUID) -> None:
         # A session's workspace is prepared under the session's id. Its files
-        # go first: what still runs there ends with them.
+        # go first: what still runs there ends with them. Its snapshots are
+        # content too, and go with them.
         await self._workspaces.purge(org_id, session_id)
         await self._transport.purge_records(session_id)
+        await self._snapshots.purge(org_id, session_id)
 
     async def purge_tenant(self, ctx: TenantContext) -> int:
         ctx.require(Permission.WRITE)
@@ -529,6 +605,17 @@ class ToolsManagerImpl(ToolsManagerInterface):
             created_by=ctx.user_id,
             updated_by=ctx.user_id,
         )
+
+    async def _history(self, ctx: TenantContext, session_id: UUID) -> AsyncIterator[Step]:
+        """The session's whole history, in `seq` order, a page at a time."""
+        after = 0
+        while True:
+            page = await self._steps.get_steps(ctx, session_id, after, self._options.history_page)
+            for step in page.items:
+                yield step
+            if not page.has_more or not page.items:
+                return
+            after = page.items[-1].seq
 
     async def _after(self, ctx: TenantContext, request: Step) -> list[Step]:
         """The session's history after the request, every page of it."""

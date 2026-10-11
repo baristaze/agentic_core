@@ -74,12 +74,24 @@ class StepUsageView(View):
     thinking: int
 
 
+class SnapshotView(View):
+    """A workspace's snapshot a step names: its id, which a restore names,
+    the hash of its bytes keyed by its session, its size in bytes, and the
+    workspace it was taken from."""
+
+    id: UUID
+    hash: str
+    size: int
+    workspace_id: UUID
+
+
 class StepView(View):
     """One step of a session's history, in its order. `text` is what it
     says: a message's words, a model's answer, a tool's result. The rest is
     its header's, by type: the tools a model response called, why it
     stopped, and what it used; a tool call's tool and the class of its
-    failure; a control's command; a park; a loop's outcome."""
+    failure; a control's command; a park; a loop's outcome; the snapshot a
+    `snapshotted` step names, or a restore starts from."""
 
     id: UUID
     seq: int
@@ -99,6 +111,7 @@ class StepView(View):
     command: ControlCommand | None
     park: ParkView | None
     outcome: LoopOutcome | None
+    snapshot: SnapshotView | None
 
 
 class StepPageView(View):
@@ -133,19 +146,27 @@ class SessionControl(StrEnum):
     INTERRUPT = "interrupt"
     COMPACT = "compact"
     UNLOCK = "unlock"
+    RESTORE = "restore"
 
 
 class ControlRequest(RequestBody):
     """A control. An interrupt names the seq of the tool request it stops,
-    and no other control names one."""
+    and a restore the id of a snapshot the session's history names, which
+    its workspace's next prepare starts from; no other control names
+    either."""
 
     command: SessionControl
     request_seq: int | None = Field(default=None, ge=1)
+    snapshot_id: UUID | None = None
 
     @model_validator(mode="after")
     def _an_interrupt_names_its_call(self) -> Self:
         if (self.command is SessionControl.INTERRUPT) != (self.request_seq is not None):
             raise ValueError("an interrupt names the call it stops, and no other control names one")
+        if (self.command is SessionControl.RESTORE) != (self.snapshot_id is not None):
+            raise ValueError(
+                "a restore names the snapshot it starts from, and no other control names one"
+            )
         return self
 
 

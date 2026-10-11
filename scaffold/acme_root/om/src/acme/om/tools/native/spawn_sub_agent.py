@@ -14,6 +14,7 @@ from uuid import UUID
 
 from pydantic import Field
 
+from acme.infra.workspaces import WorkspaceLost
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agents.manager import AgentsManagerInterface
 from acme.om.agents.types.request import MAX_OBJECTIVE, MAX_TITLE, Spawn
@@ -42,7 +43,8 @@ DESCRIPTION = (
     "from your task's budget and shares its deadline. `kind` is the kind of "
     "agent to start, your own when you leave it out. Its report arrives as a "
     "message when it ends or needs a person; call wait_for_sub_agents to wait "
-    "for it."
+    "for it. Set `fork` to start it in a copy of your workspace as your latest "
+    "snapshot holds it; what it writes there never reaches yours."
 )
 
 
@@ -50,6 +52,7 @@ class SpawnSubAgentInput(ToolInput):
     title: str = Field(min_length=1, max_length=MAX_TITLE)
     objective: str = Field(min_length=1, max_length=MAX_OBJECTIVE)
     kind: str | None = Field(default=None, min_length=1, max_length=MAX_KIND)
+    fork: bool = False
 
 
 class Spawned(Platform):
@@ -110,7 +113,11 @@ class SpawnSubAgentToolImpl(ToolInterface):
         if kind is None:
             kind = (await self._sessions.get_session(ctx, runtime.session_id)).kind
         asked = Spawn(
-            id=runtime.key, kind=kind, title=call_input.title, objective=call_input.objective
+            id=runtime.key,
+            kind=kind,
+            title=call_input.title,
+            objective=call_input.objective,
+            fork=call_input.fork,
         )
         try:
             child = await self._agents().spawn(ctx, runtime.session_id, asked)
@@ -118,4 +125,8 @@ class SpawnSubAgentToolImpl(ToolInterface):
             raise ToolFailed(ToolFailure.DENIED, refused.message) from refused
         except (TreeBoundReached, UnknownAgentKind, ValidationFailed) as refused:
             raise ToolFailed(ToolFailure.PERMANENT, refused.message) from refused
+        except WorkspaceLost as lost:
+            # The snapshot it would fork is gone or altered: no child starts
+            # from anything else in its stead.
+            raise ToolFailed(ToolFailure.PERMANENT, lost.message) from lost
         return Spawned(session_id=child.id, title=child.title, kind=child.kind)

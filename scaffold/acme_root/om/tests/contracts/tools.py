@@ -4,6 +4,7 @@ transport a case picks, its inputs hashed and its records sealed under each
 session's key, and a tool call put in a session's history the way the loop
 puts one there."""
 
+import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -11,11 +12,19 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from acme.infra.buckets import BucketsInterface
+from acme.infra.buckets.local import BucketsLocalImpl
 from acme.infra.keys.memory import KeyServiceMemoryImpl
 from acme.infra.secrets import SecretsInterface
 from acme.infra.secrets.local import SecretsLocalImpl
 from acme.infra.topics.memory import TopicsMemoryImpl
-from acme.infra.transports import CommandSpec, SecretUse, SecretVia, TransportInterface
+from acme.infra.transports import (
+    CommandSpec,
+    CredentialBrokerInterface,
+    SecretUse,
+    SecretVia,
+    TransportInterface,
+)
 from acme.infra.transports.broker import BrokerTwinImpl
 from acme.infra.transports.twin import TransportTwinImpl, TwinHandler, TwinReply
 from acme.infra.workspaces import (
@@ -37,6 +46,7 @@ from acme.om.exceptions import ToolFailed
 from acme.om.outbox.impl.relay import OutboxRelayImpl
 from acme.om.privacy.impl.keys import SessionKeysImpl
 from acme.om.privacy.impl.records import RecordSealKeysImpl
+from acme.om.privacy.impl.snapshots import SnapshotSealKeysImpl
 from acme.om.steps import StepsManagerInterface
 from acme.om.steps.impl.manager import StepsManagerImpl, StepsOptions, no_registry
 from acme.om.steps.types.content import Content, TextBlock, ToolUseBlock
@@ -45,6 +55,7 @@ from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.tenancy.rules import permissions_of
 from acme.om.tools.impl.manager import ToolsManagerImpl, ToolsOptions
+from acme.om.tools.impl.snapshots import SnapshotStore
 from acme.om.tools.manager import ToolsManagerInterface
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.rules import tool_request
@@ -254,6 +265,11 @@ def tools_over(
     transport: TransportInterface,
     workspaces: WorkspaceProviderInterface | None = None,
     options: ToolsOptions | None = None,
+    *,
+    broker: CredentialBrokerInterface | None = None,
+    buckets: BucketsInterface | None = None,
+    secrets: SecretsInterface | None = None,
+    secret_names: frozenset[str] = frozenset(),
 ) -> Tools:
     storage = StorageMemoryImpl()
     members = Members()  # pyright: ignore[reportAbstractUsage] (a partial double)
@@ -268,6 +284,7 @@ def tools_over(
     attribution = Answering()  # pyright: ignore[reportAbstractUsage] (a partial double)
     waits: list[float] = []
     keys = SessionKeysImpl(storage.get_privacy_storage(), KeyServiceMemoryImpl())
+    hashes = PromptHashMemoryImpl()
 
     async def sleep(seconds: float) -> None:
         # The manager's waits move the case's clock; none is slept.
@@ -284,9 +301,18 @@ def tools_over(
         transport,
         options or ToolsOptions(),
         clock,
-        keyed_hash=PromptHashMemoryImpl().keyed_hash,
+        keyed_hash=hashes.keyed_hash,
         record_seal=RecordSealKeysImpl(keys, storage.get_privacy_storage()),
         attribution=attribution,
+        broker=broker or BrokerTwinImpl(),
+        snapshots=SnapshotStore(
+            buckets or BucketsLocalImpl(Path(tempfile.mkdtemp(prefix="snapshots-"))),
+            SnapshotSealKeysImpl(keys, storage.get_privacy_storage()),
+            hashes.keyed_hash,
+            secrets or SecretsLocalImpl(Path(tempfile.mkdtemp(prefix="secrets-")) / "secrets.env"),
+            secret_names,
+            (options or ToolsOptions()).purge_batch,
+        ),
         sleep=sleep,
     )
     return Tools(manager, steps, events, storage, clock, attribution, waits)

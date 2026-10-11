@@ -3,6 +3,7 @@ from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
 from uuid import UUID
 
+from acme.infra.workspaces import IsolationMode
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.limits import deadline_park
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
@@ -37,6 +38,7 @@ from acme.om.steps.types.content import Content, TextBlock
 from acme.om.steps.types.header import ControlCommand, ControlHeader, InputHeader
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.tenancy import TenancyManagerInterface
+from acme.om.tools import ToolsManagerInterface
 from acme.om.tools.rules import instruct_refusal
 from acme.om.windows import WindowsManagerInterface
 
@@ -67,7 +69,9 @@ class AgentsManagerImpl(AgentsManagerInterface):
         windows: WindowsManagerInterface,
         tool_classes: Mapping[str, str],
         secret_tools: frozenset[str],
+        tools: ToolsManagerInterface,
     ) -> None:
+        self._tools = tools
         self._budgets = budgets
         self._windows = windows
         self._tool_classes = tool_classes
@@ -118,6 +122,8 @@ class AgentsManagerImpl(AgentsManagerInterface):
             if kind.share is None:
                 # With no cap of its own, one child could spend all its tree has left.
                 raise ValidationFailed(f"agent kind {kind.name} names no share to spawn it under")
+            if spawn.fork and kind.isolation.mode is IsolationMode.NONE:
+                raise ValidationFailed(f"agent kind {kind.name} has no workspace to fork into")
             # Its objective instructs it: whoever spawns it may make every
             # call it will offer, asked before anything is made.
             self._may_instruct(ctx, [tool for tool in kind.tools if tool in parent.tools])
@@ -152,9 +158,29 @@ class AgentsManagerImpl(AgentsManagerInterface):
             waking=True,
             untrusted=child.untrusted,
         )
+        arrivals = [objective]
+        if spawn.fork:
+            # Its workspace starts from a copy of its parent's latest snapshot,
+            # its own, so what it writes never reaches its parent's: the
+            # restore comes before the objective that wakes it. A retry makes
+            # the same step, which the inbox answers as stored.
+            snapshot_id = derived_id(child.id, child.created_at, "fork-snapshot")
+            copy = await self._tools.fork_snapshot(ctx, parent_id, child.id, snapshot_id)
+            restore_id = derived_id(child.id, child.created_at, "fork")
+            restore = Step(
+                id=restore_id,
+                created_at=self._clock(),
+                session_id=child.id,
+                loop_id=restore_id,
+                type=StepType.CONTROL,
+                actor=Actor.ENGINE,
+                origin=Origin.PARENT,
+                header=ControlHeader(command=ControlCommand.RESTORE, snapshot=copy),
+            )
+            arrivals = [restore, objective]
         # Through the inbox: the projection that turns the child pending
         # asks for its loop's run.
-        _, child = await self._sessions.receive(ctx, child.id, [objective])
+        _, child = await self._sessions.receive(ctx, child.id, arrivals)
         return child
 
     async def tree_of(self, ctx: TenantContext, session_id: UUID) -> AgentTree:

@@ -72,6 +72,7 @@ from acme.om.steps.types.content import Content, TextBlock, ToolUseBlock
 from acme.om.steps.types.header import (
     AcceptedResult,
     ControlCommand,
+    ControlHeader,
     InputHeader,
     JobPark,
     LoopOutcome,
@@ -82,6 +83,7 @@ from acme.om.steps.types.header import (
     ToolFailure,
     ToolRequestHeader,
     ToolResponseHeader,
+    WorkspaceSnapshot,
 )
 from acme.om.steps.types.step import Actor, Step, StepType
 from acme.om.steps.types.stream import StreamPart, ToolOutputPart
@@ -314,10 +316,14 @@ class LoopManagerImpl(LoopManagerInterface):
         except (UnresolvedRole, UnpricedModel) as refused:
             log.warning("session %s resolves no fill: %s", session_id, refused.message)
             return await self._end(run, LoopOutcome.ERRORED)
+        restore = rules.pending_restore(history)
         try:
             # Before the first model call: a workspace weaker than the spec
             # is never made, and nothing is spent on a loop that cannot run.
-            run.workspace = await self._tools.prepare_workspace(ctx, session_id, kind.isolation)
+            # A restore the history asks for starts it from its snapshot.
+            run.workspace = await self._tools.prepare_workspace(
+                ctx, session_id, kind.isolation, restore=restored_from(restore)
+            )
         except InfraException as refused:
             if isinstance(refused, IsolationRefused) and refused.clears:
                 # No host can give it the workspace yet: no weaker one, and
@@ -345,6 +351,12 @@ class LoopManagerImpl(LoopManagerInterface):
             park = Park(reason=ParkReason.PERSON, unlock=WORKSPACE_UNLOCK, unsettled=not resumed)
             return await self._park(run, park)
         try:
+            if restore is not None:
+                # The record that it was done, and the model's notice: it is
+                # delivered with the next model request. A run lost before
+                # it is written restores again, to the same snapshot.
+                done = rules.restored_step(new_id(), self._clock(), session_id, loop_id, restore)
+                await self._steps.append_steps(ctx, session_id, epoch, [done])
             return await self._drive(run, history)
         except StaleWriter:
             # The claim is another run's, or a person's who took the
@@ -1678,6 +1690,15 @@ class LoopManagerImpl(LoopManagerInterface):
     async def _since(self, run: _Run, seq: int) -> list[Step]:
         page = await self._steps.get_steps(run.ctx, run.session_id, seq, self._options.page)
         return list(page.items)
+
+
+def restored_from(restore: Step | None) -> WorkspaceSnapshot | None:
+    """The snapshot a pending restore names."""
+    if restore is None:
+        return None
+    header = restore.header
+    assert isinstance(header, ControlHeader)
+    return header.snapshot
 
 
 def provider_park(fill: Fill, retry_at: datetime) -> Park:

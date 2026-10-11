@@ -458,12 +458,22 @@ def control(
         int | None,
         typer.Option("--call", help="The seq of the tool request an interrupt stops."),
     ] = None,
+    snapshot: Annotated[
+        UUID | None,
+        typer.Option("--snapshot", help="The id of the snapshot a restore starts from."),
+    ] = None,
     as_json: Json = False,
     api: Api = None,
 ) -> None:
     """Send a control out of band: pause, resume, cancel, interrupt, compact,
-    or unlock. An interrupt names the call it stops."""
-    sent = run(lambda client: client.send_control(session_id, command, request_seq=call), api)
+    unlock, or restore. An interrupt names the call it stops, and a restore
+    the snapshot the session's workspace starts from next."""
+    sent = run(
+        lambda client: client.send_control(
+            session_id, command, request_seq=call, snapshot_id=snapshot
+        ),
+        api,
+    )
     typer.echo(sent.model_dump_json(indent=2) if as_json else step_line(sent))
 
 

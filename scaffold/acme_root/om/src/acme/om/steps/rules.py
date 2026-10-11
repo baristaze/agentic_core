@@ -9,7 +9,12 @@ from uuid import UUID
 from acme.om.attribution.rules import principal_of
 from acme.om.context import AppType, CredentialKind, TenantContext
 from acme.om.steps.types.content import Content, TextBlock
-from acme.om.steps.types.header import ControlCommand, ControlHeader, InputHeader
+from acme.om.steps.types.header import (
+    ControlCommand,
+    ControlHeader,
+    InputHeader,
+    WorkspaceSnapshot,
+)
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 
 
@@ -83,12 +88,15 @@ def control_step(
     ctx: TenantContext,
     command: ControlCommand,
     call: UUID | None = None,
+    snapshot: WorkspaceSnapshot | None = None,
 ) -> Step:
     """A principal's control, out of band, through the surface `ctx` arrived
     on. An interrupt names the request of the one call it stops, `call`, and
-    no other control names one. A decision on a tool call is the tools
-    manager's to write, bound to its call, and is refused here, as a
-    control that names a call it cannot is (`ValueError`)."""
+    no other control names one; a restore names the snapshot of the
+    session's that its workspace's next prepare starts from, and no other
+    control names one. A decision on a tool call is the tools manager's to
+    write, bound to its call, and is refused here, as a control that names a
+    call it cannot is (`ValueError`)."""
     if command in DECIDED:
         raise ValueError(f"a {command.value} decides one tool call; the tools manager writes it")
     if (command is ControlCommand.INTERRUPT) != (call is not None):
@@ -102,7 +110,7 @@ def control_step(
         actor=actor_of(ctx.credential_kind),
         origin=origin_of(ctx.app.type),
         refs=() if call is None else (call,),
-        header=ControlHeader(command=command),
+        header=ControlHeader(command=command, snapshot=snapshot),
     )
 
 

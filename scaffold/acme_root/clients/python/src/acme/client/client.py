@@ -780,13 +780,17 @@ class ApiClient:
         command: SessionControl,
         *,
         request_seq: int | None = None,
+        snapshot_id: UUID | None = None,
         idempotency_key: str | None = None,
     ) -> StepView:
         """A control out of band; an interrupt names, by `request_seq`, the
-        tool request it stops."""
+        tool request it stops, and a restore, by `snapshot_id`, the snapshot
+        of the session's that its workspace starts from next."""
         body: dict[str, Any] = {"command": command.value}
         if request_seq is not None:
             body["request_seq"] = request_seq
+        if snapshot_id is not None:
+            body["snapshot_id"] = str(snapshot_id)
         sent = await self.request(
             "POST",
             f"/v1/agent-sessions/{session_id}/controls",
