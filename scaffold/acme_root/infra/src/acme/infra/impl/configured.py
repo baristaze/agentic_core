@@ -206,6 +206,7 @@ class InfraConfiguredImpl(InfraInterface):
         # No credential broker runs here, so a brokered secret is refused
         # rather than injected.
         self._broker: CredentialBrokerInterface = BrokerNullImpl()
+        self._machines = self._build_machines(settings)
         self._workspaces, self._transport = self._build_runtime(settings)
         self._flags = self._build_flags()
 
@@ -239,7 +240,7 @@ class InfraConfiguredImpl(InfraInterface):
             )
         if settings.workspace_backend == "vm":
             timeout = timedelta(seconds=settings.machine_timeout_seconds)
-            machines = self._build_machines(settings)
+            machines = self._machines
             return (
                 WorkspaceVmImpl(machines, settings.machine_image, settings.machine_prefix, timeout),
                 TransportVmImpl(records, self._secrets, broker, machines, timeout),
@@ -302,6 +303,9 @@ class InfraConfiguredImpl(InfraInterface):
     def get_workspaces(self) -> WorkspaceProviderInterface:
         return self._workspaces
 
+    def get_machines(self) -> MachinesInterface:
+        return self._machines
+
     def get_transport(self) -> TransportInterface:
         return self._transport
 
@@ -323,6 +327,7 @@ class InfraConfiguredImpl(InfraInterface):
             self._queues.describe(),
             self._secrets.describe(),
             self._keys.describe(),
+            self._machines.describe(),
             self._workspaces.describe(),
             self._transport.describe(),
             self._broker.describe(),
@@ -342,13 +347,13 @@ class InfraConfiguredImpl(InfraInterface):
             self._flags,
         ):
             await capability.start()
-        for runtime in (self._broker, self._workspaces, self._transport):
+        for runtime in (self._broker, self._machines, self._workspaces, self._transport):
             await runtime.start()
 
     async def close(self) -> None:
         """Reverse order of start; the caches first and the shared client
         last, once nothing holds it."""
-        for runtime in (self._transport, self._workspaces, self._broker):
+        for runtime in (self._transport, self._workspaces, self._machines, self._broker):
             await runtime.close()
         for cache in self._caches.values():
             await cache.close()

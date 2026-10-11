@@ -55,6 +55,7 @@ def local_settings(tmp_path: Path, **overrides: object) -> InfraSettings:
         ("keys_backend", "memory"),
         ("workspace_backend", "host"),
         ("workspace_backend", "account"),
+        ("machines_backend", "lima"),
         ("flags_backend", "memory"),
     ],
 )
@@ -88,6 +89,7 @@ async def test_local_environment_builds_local_impls(tmp_path: Path) -> None:
         "queues=memory",
         f"secrets=local({tmp_path / 'secrets.env'})",
         "keys=memory(random root)",
+        "machines=none",
         "workspaces=none",
         "transport=none",
         "broker=none",
@@ -107,6 +109,7 @@ def test_cloud_backends_are_constructed_without_connecting(tmp_path: Path) -> No
         "queues=sqs(us-east-1)",
         "secrets=aws(us-east-1)",
         "keys=kms(us-east-1)",
+        "machines=none",
         "workspaces=none",
         "transport=none",
         "broker=none",
@@ -257,6 +260,7 @@ def test_the_keys_root_comes_from_settings_and_refuses_another_shape(tmp_path: P
             ["workspaces=account(acme-agent, {root})", "transport=local(acme-agent)"],
         ),
         ("container", ["workspaces=container(python:3.14-slim)", "transport=container"]),
+        ("vm", ["workspaces=vm(template:_images/ubuntu-lts)", "transport=vm"]),
     ],
 )
 def test_a_workspace_backend_builds_its_provider_and_its_transport_together(

@@ -2,7 +2,7 @@ import asyncio
 import os
 import shutil
 import stat
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from uuid import UUID
 
@@ -67,6 +67,12 @@ class WorkspaceHostImpl(WorkspaceProviderInterface):
         directory = self._directory(org_id, workspace_id)
         await end_stragglers(directory)
         await asyncio.to_thread(remove_directory, directory)
+
+    async def held(self, snapshot: bytes) -> AsyncIterator[bytes]:
+        yield snapshot  # it makes no snapshot, so none names bytes kept elsewhere
+
+    async def keep(self, snapshot: bytes, org_id: UUID, workspace_id: UUID) -> bytes:
+        return snapshot
 
     def describe(self) -> str:
         return f"workspaces=host({self._root})"

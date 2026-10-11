@@ -1,3 +1,4 @@
+from collections.abc import AsyncIterator
 from uuid import UUID
 
 from acme.infra.workspaces import (
@@ -69,6 +70,12 @@ class WorkspaceTwinImpl(WorkspaceProviderInterface):
         self.files.pop(workspace_id, None)
         self.bases.pop(workspace_id, None)
 
+    async def held(self, snapshot: bytes) -> AsyncIterator[bytes]:
+        yield snapshot  # its archive holds its bytes
+
+    async def keep(self, snapshot: bytes, org_id: UUID, workspace_id: UUID) -> bytes:
+        return snapshot
+
     def describe(self) -> str:
         return "workspaces=twin"
 
@@ -103,6 +110,12 @@ class WorkspaceNullImpl(WorkspaceProviderInterface):
 
     async def purge(self, org_id: UUID, workspace_id: UUID) -> None:
         return None
+
+    async def held(self, snapshot: bytes) -> AsyncIterator[bytes]:
+        yield snapshot  # its archive holds its bytes
+
+    async def keep(self, snapshot: bytes, org_id: UUID, workspace_id: UUID) -> bytes:
+        return snapshot
 
     def describe(self) -> str:
         return "workspaces=none"

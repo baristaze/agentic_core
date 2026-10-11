@@ -8,6 +8,7 @@ from acme.infra.buckets import BucketsInterface
 from acme.infra.cache import CacheInterface, CacheScope
 from acme.infra.flags import FlagsInterface
 from acme.infra.keys import KeyServiceInterface
+from acme.infra.machines import MachinesInterface
 from acme.infra.outages import OutageSignalInterface
 from acme.infra.queues import QueuesInterface
 from acme.infra.secrets import SecretsInterface
@@ -37,6 +38,11 @@ class InfraInterface(ABC):
 
     @abstractmethod
     def get_workspaces(self) -> WorkspaceProviderInterface: ...
+
+    @abstractmethod
+    def get_machines(self) -> MachinesInterface:
+        """The machines this root's VM workspaces run on."""
+        ...
 
     @abstractmethod
     def get_transport(self) -> TransportInterface:

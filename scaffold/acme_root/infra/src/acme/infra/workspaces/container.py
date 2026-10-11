@@ -3,6 +3,7 @@ import io
 import json
 import re
 import tarfile
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import IO
@@ -351,6 +352,12 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
             raise WorkspaceLost(f"{taken_on} is not on this host: {pulled.reason()}")
         if not (await docker("image", "inspect", kept.image, bound=self._timeout)).ok:
             raise WorkspaceLost(f"{kept.pull} pulled an image other than {taken_on}")
+
+    async def held(self, snapshot: bytes) -> AsyncIterator[bytes]:
+        yield snapshot  # its archive holds its bytes
+
+    async def keep(self, snapshot: bytes, org_id: UUID, workspace_id: UUID) -> bytes:
+        return snapshot
 
     def describe(self) -> str:
         return f"workspaces=container({self._image})"

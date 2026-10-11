@@ -18,8 +18,8 @@ builds again."""
 import hashlib
 import json
 from collections.abc import AsyncIterable, Awaitable, Callable
-from datetime import datetime, timedelta
-from uuid import UUID, uuid5
+from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from acme.infra.buckets import BlobNotFound, Buckets, BucketsInterface
 from acme.infra.cache import CacheInterface
@@ -34,7 +34,7 @@ from acme.infra.workspaces import (
     WorkspaceBase,
     WorkspaceProviderInterface,
 )
-from acme.om.base import new_id
+from acme.om.base import derived_id, new_id
 from acme.om.context import TenantContext
 
 BUCKET = Buckets.SNAPSHOTS
@@ -58,11 +58,17 @@ def base_key(spec: IsolationSpec) -> str:
     return PREFIX + digest
 
 
+KEPT_AT = datetime(1970, 1, 1, tzinfo=UTC)
+"""A base's workspace holds no time of its own: its id is its tenant's and
+its key's alone."""
+
+
 def base_workspace_id(org_id: UUID, key: str) -> UUID:
     """The workspace a provider keeps a base's snapshot under, when it keeps
     one outside the archive, such as a disk: the tenant's and the key's
-    alone, so the tenant's purge finds it again."""
-    return uuid5(org_id, key)
+    alone, so every build, the base's drop, and the tenant's purge find the
+    same one."""
+    return derived_id(org_id, KEPT_AT, key)
 
 
 async def _unkept(data: bytes) -> None:

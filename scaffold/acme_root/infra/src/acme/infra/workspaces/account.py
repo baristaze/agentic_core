@@ -37,7 +37,7 @@ import shutil
 import struct
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID
@@ -443,6 +443,12 @@ class WorkspaceAccountImpl(WorkspaceProviderInterface):
                 await asyncio.to_thread(remove_directory, job)
             finally:
                 self._give_back()
+
+    async def held(self, snapshot: bytes) -> AsyncIterator[bytes]:
+        yield snapshot  # it makes no snapshot, so none names bytes kept elsewhere
+
+    async def keep(self, snapshot: bytes, org_id: UUID, workspace_id: UUID) -> bytes:
+        return snapshot
 
     def describe(self) -> str:
         return f"workspaces=account({self._account}, {self._root})"

@@ -168,13 +168,13 @@ class WorkspaceVmImpl(WorkspaceProviderInterface):
                 await self._machines.destroy(found)
 
     def describe(self) -> str:
-        return f"workspaces=vm({self._image}, {self._machines.describe()})"
+        return f"workspaces=vm({self._image})"
 
     async def start(self) -> None:
-        await self._machines.start()
+        return None
 
     async def close(self) -> None:
-        await self._machines.close()
+        return None
 
     def _unkept(self) -> str | None:
         """Why a workspace here keeps no snapshot; None when it can."""

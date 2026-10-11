@@ -11,6 +11,8 @@ from acme.infra.flags import FlagsInterface
 from acme.infra.flags.memory import FlagsMemoryImpl
 from acme.infra.keys import KeyServiceInterface
 from acme.infra.keys.memory import KeyServiceMemoryImpl
+from acme.infra.machines import MachinesInterface
+from acme.infra.machines.twin import MachinesTwinImpl
 from acme.infra.outages import OutageSignalInterface
 from acme.infra.outages.null import OutageSignalNullImpl
 from acme.infra.queues import QueuesInterface
@@ -40,6 +42,7 @@ class InfraLocalImpl(InfraInterface):
         self._queues = QueueMemoryImpl()
         self._secrets = SecretsLocalImpl(root / "secrets.env")
         self._keys = KeyServiceMemoryImpl()
+        self._machines = MachinesTwinImpl(root / "machines")
         self._workspaces = WorkspaceTwinImpl()
         self._broker = BrokerTwinImpl()
         self._transport = TransportTwinImpl(self._secrets, self._broker)
@@ -66,6 +69,9 @@ class InfraLocalImpl(InfraInterface):
     def get_workspaces(self) -> WorkspaceProviderInterface:
         return self._workspaces
 
+    def get_machines(self) -> MachinesInterface:
+        return self._machines
+
     def get_transport(self) -> TransportInterface:
         return self._transport
 
@@ -87,6 +93,7 @@ class InfraLocalImpl(InfraInterface):
             self._queues.describe(),
             self._secrets.describe(),
             self._keys.describe(),
+            self._machines.describe(),
             self._workspaces.describe(),
             self._transport.describe(),
             self._broker.describe(),
@@ -104,11 +111,11 @@ class InfraLocalImpl(InfraInterface):
             self._flags,
         ):
             await capability.start()
-        for runtime in (self._broker, self._workspaces, self._transport):
+        for runtime in (self._broker, self._machines, self._workspaces, self._transport):
             await runtime.start()
 
     async def close(self) -> None:
-        for runtime in (self._transport, self._workspaces, self._broker):
+        for runtime in (self._transport, self._workspaces, self._machines, self._broker):
             await runtime.close()
         for cache in self._caches.values():
             await cache.close()

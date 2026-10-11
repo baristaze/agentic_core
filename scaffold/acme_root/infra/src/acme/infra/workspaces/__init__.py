@@ -250,13 +250,15 @@ class WorkspaceProviderInterface(ABC):
         instance."""
         ...
 
-    async def held(self, snapshot: bytes) -> AsyncIterator[bytes]:
+    @abstractmethod
+    def held(self, snapshot: bytes) -> AsyncIterator[bytes]:
         """What an archive this provider's `snapshot` made holds, in parts,
         for a scan for a secret's value: the archive itself, for a provider
         whose archive holds its bytes. One whose archive names bytes it
         keeps elsewhere, such as a disk, reads those."""
-        yield snapshot
+        ...
 
+    @abstractmethod
     async def keep(self, snapshot: bytes, org_id: UUID, workspace_id: UUID) -> bytes:
         """An archive this provider's `snapshot` made, kept as the workspace
         under `workspace_id`'s own, such as a fork's copy or a base: one
@@ -264,7 +266,7 @@ class WorkspaceProviderInterface(ABC):
         go with the purge of `workspace_id`. An archive that holds its bytes
         is its own copy. One that names bytes kept elsewhere copies them,
         and a copy kept already is answered again."""
-        return snapshot
+        ...
 
     @abstractmethod
     async def release(self, workspace: Workspace) -> None:
