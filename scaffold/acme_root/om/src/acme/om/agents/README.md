@@ -8,7 +8,8 @@ of](../../../../README.md).
 ## What it holds
 
 - **Agent kind**: a profile over the one loop every agent runs: the
-  tools it may call, when its work is done, the tool it reports a result
+  tools it may call, one by one or in toolsets, some of which wait until
+  the agent loads them, when its work is done, the tool it reports a result
   through, how its calls are allowed, how large a tree it may grow, and
   what one of its sessions may spend as a sub-agent.
   A product declares its kinds; each is versioned, and a session keeps

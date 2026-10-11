@@ -365,12 +365,31 @@ class LoopEndedHeader(Platform):
     outcome: LoopOutcome
 
 
+class ToolsetSwitch(Platform):
+    """What a `switched` step says of a load: the toolset, its version, and
+    the tools the load added to the session's registry, in the order they
+    render, after every tool the registry held before."""
+
+    name: Stored = Field(min_length=1, max_length=MAX_NAME)
+    version: int = Field(ge=1)
+    tools: tuple[Stored, ...] = Field(min_length=1)
+
+
 class SwitchedHeader(Platform):
     """A switch, explicit: the fill set's new version and both fills it
-    names. A switch is never silent, so no fill changes without one."""
+    names, or a toolset a load added to the session's registry, with the
+    tools it added. A switch is never silent, so no fill changes, and no
+    tool joins a request, without one."""
 
     kind: Literal["switched"] = "switched"
-    fills: FillSwitch
+    fills: FillSwitch | None = None
+    toolset: ToolsetSwitch | None = None
+
+    @model_validator(mode="after")
+    def _one_switch(self) -> Self:
+        if (self.fills is None) == (self.toolset is None):
+            raise ValueError("a switch names a fill switch or a toolset, and not both")
+        return self
 
 
 class SnapshotHeader(Platform):

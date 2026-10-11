@@ -65,7 +65,7 @@ class StepType(StrEnum):
     PARKED = "parked"
     RESUMED = "resumed"
     LOOP_ENDED = "loop_ended"
-    SWITCHED = "switched"  # a new fill set or kind version
+    SWITCHED = "switched"  # a new fill set or kind version, or a toolset loaded
     ENVIRONMENT_CHANGED = "environment_changed"  # the world under the model changed
     SNAPSHOTTED = "snapshotted"  # the session holds a snapshot of a workspace
 

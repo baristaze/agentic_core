@@ -55,6 +55,7 @@ from acme.om.exceptions import (
     PrincipalLapsed,
     SpenderUnknown,
     StaleWriter,
+    ToolFailed,
     Unavailable,
     UnpricedModel,
     UnresolvedRole,
@@ -79,13 +80,15 @@ from acme.om.steps.types.header import (
     ModelResponseHeader,
     Park,
     ParkReason,
+    SwitchedHeader,
     ToolFailure,
     ToolRequestHeader,
     ToolResponseHeader,
 )
-from acme.om.steps.types.step import Actor, Step, StepType
+from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.steps.types.stream import StreamPart, ToolOutputPart
 from acme.om.tools import ToolsManagerInterface
+from acme.om.tools.native.load_toolset import callable_tools, load, loads
 from acme.om.tools.native.write_plan import current_plan
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.rules import (
@@ -106,6 +109,7 @@ from acme.om.tools.types.call import (
 )
 from acme.om.tools.types.policy import PolicyLayer
 from acme.om.tools.types.tool import ToolMode
+from acme.om.tools.types.toolset import LOAD_TOOLSET
 from acme.om.windows import WindowsManagerInterface
 from acme.om.windows.gate import CallGateInterface
 from acme.om.windows.rules import request_step
@@ -121,6 +125,10 @@ WORKSPACE_UNLOCK = "workspace"
 PERMISSION = "permission"
 """The cause a park names for a credential error that is no refusal of the
 key: a permission, a region, or a model the key cannot reach."""
+NOT_OFFERED = "unknown"
+"""The class a call's request records when the registry held no tool of its
+name as the model made it. A tool a load in the same turn adds is never
+that call's, whatever the registry holds by the time it settles."""
 
 
 class LoopOptions(Platform):
@@ -286,10 +294,7 @@ class LoopManagerImpl(LoopManagerInterface):
                 session = await self._sessions.resume(ctx, session_id, epoch, loop_id)
                 resumed = loop.park.reason is not ParkReason.HANDOVER and not loop.park.unsettled
         kind = self._kinds.get(session.kind, session.kind_version)
-        registry = ToolRegistry(
-            (tool for tool in self._catalog if tool.spec.name in session.tools),
-            self._domain_classes,
-        )
+        registry = self._registry(session, kind, history)
         tree = await self._agents.tree_of(ctx, session_id)
         above = await self._policies_above(ctx, session)
         run = _Run(
@@ -539,7 +544,11 @@ class LoopManagerImpl(LoopManagerInterface):
         )
         if outage is not None and outage.retry_at > self._clock():
             return await self._park(run, provider_park(fill, outage.retry_at))
-        prompts = rules.kind_prompts(run.kind, run.registry)
+        # The tools this request offers: the history's loads included, so a
+        # load settled since the last request adds its tools here, and never
+        # to a call of the turn that made it.
+        run.registry = self._registry(run.session, run.kind, history)
+        prompts = rules.kind_prompts(run.kind, run.registry, loads(history))
         # The agent's current plan, read off the whole history, so a summary
         # that folded the call that wrote it still leaves it in view.
         kept = current_plan(history)
@@ -889,7 +898,7 @@ class LoopManagerImpl(LoopManagerInterface):
             return await self._cancelled(run)
         park: Park | None = None
         for use, request in lost:
-            tool = run.registry.get(use.name)
+            tool = self._offered(run, request)
             if park is not None and tool is not None and tool.spec.mode is ToolMode.JOB:
                 continue
             settled = await self._settle_call(run, history, use, request, fresh=False)
@@ -938,7 +947,19 @@ class LoopManagerImpl(LoopManagerInterface):
     ) -> _Settled:
         ctx = run.ctx
         assert run.workspace is not None
-        tool = run.registry.get(use.name)
+        tool = self._offered(run, request)
+        if tool is None and run.registry.get(use.name) is not None:
+            # A load in the call's own turn added its tool after the call was
+            # made, and a run that settles it after a lost one holds it now:
+            # it is refused as a tool its request did not offer.
+            text = (
+                f"there was no tool named {use.name!r} when this call was made; "
+                "a toolset's tools are callable from the request after its load"
+            )
+            await self._answer(
+                run, request, self._stopped(request, text, ToolFailure.INVALID_INPUT)
+            )
+            return _Settled()
         if tool is not None and tool.spec.mode is ToolMode.JOB:
             started = rules.started_jobs(history, run.loop_id).get(request.id)
             if started is not None:
@@ -976,6 +997,8 @@ class LoopManagerImpl(LoopManagerInterface):
             return _Settled(asked=True)
         if use.name == run.kind.result_tool:
             return await self._submit(run, request, use)
+        if use.name == LOAD_TOOLSET:
+            return await self._load(run, history, request, use)
         assert tool is not None  # the gate resolved it
         if tool.spec.mode is ToolMode.JOB:
             return await self._start_job(
@@ -1308,14 +1331,70 @@ class LoopManagerImpl(LoopManagerInterface):
         await self._answer(run, request, answer.model_copy(update={"header": verdicted}))
         return _Settled()
 
-    async def _answer(self, run: _Run, request: Step, answer: Step) -> None:
+    async def _load(
+        self, run: _Run, history: Sequence[Step], request: Step, use: ToolUseBlock
+    ) -> _Settled:
+        """A load of a toolset the kind defers: its answer, and the `switched`
+        step that names the tools it adds, in one append, so no tool joins
+        a request without its record. The run's registry takes them as it
+        renders its next request, never for a call of this turn. A toolset
+        the kind does not defer is the call's invalid input; one whose
+        tools the registry holds already answers so, and switches
+        nothing."""
+        history = await self._history(run.ctx, run.session_id, history)
+        try:
+            loaded = load(
+                run.kind.deferred,
+                run.session.tools,
+                run.kind.waiting,
+                loads(history),
+                thaw_mapping(use.input),
+            )
+        except ToolFailed as refused:
+            await self._answer(
+                run, request, self._stopped(request, refused.message, refused.failure)
+            )
+            return _Settled()
+        answer = response(
+            new_id(), self._clock(), request, loaded.text, limit=self._options.stopped_chars
+        )
+        if loaded.switch is None:
+            await self._answer(run, request, answer)
+            return _Settled()
+        switched = Step(
+            id=new_id(),
+            created_at=self._clock(),
+            session_id=run.session_id,
+            loop_id=run.loop_id,
+            type=StepType.SWITCHED,
+            actor=Actor.ENGINE,
+            origin=Origin.ENGINE,
+            refs=(request.id,),
+            header=SwitchedHeader(toolset=loaded.switch),
+        )
+        await self._answer(run, request, answer, switched)
+        return _Settled()
+
+    def _registry(
+        self, session: AgentSession, kind: AgentKind, history: Sequence[Step]
+    ) -> ToolRegistry:
+        """The run's registry: the tools of the catalog its session may call
+        that wait for no load, and those the history's loads added."""
+        names = callable_tools(session.tools, kind.waiting, loads(history))
+        return ToolRegistry(
+            (tool for tool in self._catalog if tool.spec.name in names), self._domain_classes
+        )
+
+    async def _answer(
+        self, run: _Run, request: Step, answer: Step, *after: Step
+    ) -> tuple[Step, ...]:
         """A call's response under the id this run gives it, kept whole as an
         artifact when it is too large for a step, and persisted before the
-        next model call. A run that lost its claim is refused here, whatever
-        it answered."""
+        next model call, with the steps `after` it in the same append. A
+        run that lost its claim is refused here, whatever it answered."""
         own = answer.model_copy(update={"id": response_id(request, run.epoch)})
         bounded = await self._windows.bound_tool_response(run.ctx, run.session_id, own)
-        await self._steps.append_steps(run.ctx, run.session_id, run.epoch, [bounded])
+        return await self._steps.append_steps(run.ctx, run.session_id, run.epoch, [bounded, *after])
 
     def _lost(self, request: Step) -> Step:
         text = "a run that made this call was lost before it answered; whether it ran is unknown"
@@ -1353,9 +1432,19 @@ class LoopManagerImpl(LoopManagerInterface):
 
     def _class_of(self, run: _Run, name: str) -> str:
         """A call's class, as its tool declares it. A name the registry does
-        not hold is refused by the gate before any class is read."""
+        not hold records `NOT_OFFERED`, and is refused before any class is
+        read."""
         tool = run.registry.get(name)
-        return tool.spec.authorization_class if tool is not None else "unknown"
+        return tool.spec.authorization_class if tool is not None else NOT_OFFERED
+
+    def _offered(self, run: _Run, request: Step) -> ToolInterface | None:
+        """The tool a call names, when its request was offered one: a call
+        recorded `NOT_OFFERED` has none, whatever the registry holds now."""
+        header = request.header
+        assert isinstance(header, ToolRequestHeader)
+        if header.authorization_class == NOT_OFFERED:
+            return None
+        return run.registry.get(header.tool)
 
     # How a run stops.
 
