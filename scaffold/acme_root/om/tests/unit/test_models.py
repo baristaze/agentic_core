@@ -215,21 +215,47 @@ async def test_an_ask_never_widens_what_a_fill_allows_and_the_fill_set_keeps_bot
     ctx = context(Role.MEMBER)
     session_id = new_id()
     asks = (
-        ModelAsk(role=MAIN, size=ModelSize.L, effort=Effort.MAX),
+        ModelAsk(role=MAIN, size=ModelSize.L, effort=Effort.NONE),
         ModelAsk(role=SUMMARIZER, size=ModelSize.S, effort=Effort.HIGH),
     )
     await managers.models.resolve_fill_set(ctx, session_id, [MAIN, SUMMARIZER], Eligibility(), asks)
     main, summarizer = (await managers.models.get_fill_set(ctx, session_id)).roles
     assert served(main) == [
-        ("anthropic/claude-sonnet-5-5", Effort.MAX),
+        ("anthropic/claude-sonnet-5-5", Effort.HIGH),
         ("openai/gpt-6.1-sol", Effort.HIGH),
-    ], "the fallback takes no max, and keeps its own"
+    ], "neither model takes none, and each keeps its own"
     assert served(summarizer) == [
         ("anthropic/claude-haiku-4-5", None),
         ("openai/gpt-6-luna", Effort.HIGH),
     ], "the haiku takes no effort, and keeps its own"
     assert (main.ask, summarizer.ask) == asks, "the fill set keeps the ask beside what it got"
-    assert Effort.MAX not in main.fallbacks[0].efforts
+    assert Effort.NONE not in main.fallbacks[0].efforts
+
+
+async def test_each_openai_fill_lists_exactly_the_efforts_its_model_takes() -> None:
+    low_to_max = (Effort.LOW, Effort.MEDIUM, Effort.HIGH, Effort.XHIGH, Effort.MAX)
+    takes = {
+        "gpt-6.1-sol": low_to_max,
+        "gpt-6-astra": low_to_max,
+        "gpt-6-luna": (Effort.NONE, *low_to_max),
+    }
+    openai = [
+        f
+        for entry in DEFAULT_SIZES
+        for f in (entry.fill, *entry.fallbacks)
+        if f.provider is ProviderName.OPENAI
+    ]
+    assert {f.model for f in openai} == set(takes)
+    for f in openai:
+        assert f.efforts == takes[f.model], f"{f.model} lists the levels its provider lists"
+    resolver = ModelResolverTableImpl(
+        ModelPricesFromPricingImpl(PricingTableImpl()), ResolverOptions()
+    )
+    ctx = context(Role.MEMBER)
+    for asked, fallback in ((Effort.NONE, Effort.HIGH), (Effort.MAX, Effort.MAX)):
+        ask = ModelAsk(role=MAIN, size=ModelSize.L, effort=asked)
+        (main,) = await resolver.resolve(ctx, [MAIN], Eligibility(), (ask,))
+        assert served(main)[1] == ("openai/gpt-6.1-sol", fallback), f"an ask at {asked}"
 
 
 # A session's fill set, and its switches.

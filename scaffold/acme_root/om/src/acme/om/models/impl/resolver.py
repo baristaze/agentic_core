@@ -70,9 +70,13 @@ own."""
 
 
 ANTHROPIC_EFFORTS = (Effort.LOW, Effort.MEDIUM, Effort.HIGH, Effort.XHIGH, Effort.MAX)
-OPENAI_EFFORTS = (Effort.NONE, Effort.LOW, Effort.MEDIUM, Effort.HIGH, Effort.XHIGH)
-"""The levels the sizes' models of each provider take. A model that takes
-none, such as `claude-haiku-4-5`, names none, and runs at its own."""
+SOL_EFFORTS = (Effort.LOW, Effort.MEDIUM, Effort.HIGH, Effort.XHIGH, Effort.MAX)
+ASTRA_EFFORTS = (Effort.LOW, Effort.MEDIUM, Effort.HIGH, Effort.XHIGH, Effort.MAX)
+LUNA_EFFORTS = (Effort.NONE, Effort.LOW, Effort.MEDIUM, Effort.HIGH, Effort.XHIGH, Effort.MAX)
+"""The levels each of the sizes' models takes, as its provider lists them
+for that model. They hold per model, not per provider: a provider refuses a
+level its model does not take. A model that takes none, such as
+`claude-haiku-4-5`, names none, and runs at its own."""
 
 
 DEFAULT_SIZES: tuple[SizeFill, ...] = (
@@ -89,7 +93,7 @@ DEFAULT_SIZES: tuple[SizeFill, ...] = (
                 provider=ProviderName.OPENAI,
                 model="gpt-6-luna",
                 effort=Effort.NONE,
-                efforts=OPENAI_EFFORTS,
+                efforts=LUNA_EFFORTS,
                 max_output_tokens=4_000,
                 context_window=1_050_000,
             ),
@@ -108,7 +112,7 @@ DEFAULT_SIZES: tuple[SizeFill, ...] = (
                 provider=ProviderName.OPENAI,
                 model="gpt-6-luna",
                 effort=Effort.LOW,
-                efforts=OPENAI_EFFORTS,
+                efforts=LUNA_EFFORTS,
                 max_output_tokens=8_000,
                 context_window=1_050_000,
             ),
@@ -129,7 +133,7 @@ DEFAULT_SIZES: tuple[SizeFill, ...] = (
                 provider=ProviderName.OPENAI,
                 model="gpt-6.1-sol",
                 effort=Effort.MEDIUM,
-                efforts=OPENAI_EFFORTS,
+                efforts=SOL_EFFORTS,
                 max_output_tokens=16_000,
                 context_window=1_050_000,
             ),
@@ -150,7 +154,7 @@ DEFAULT_SIZES: tuple[SizeFill, ...] = (
                 provider=ProviderName.OPENAI,
                 model="gpt-6.1-sol",
                 effort=Effort.HIGH,
-                efforts=OPENAI_EFFORTS,
+                efforts=SOL_EFFORTS,
                 max_output_tokens=32_000,
                 context_window=1_050_000,
             ),
@@ -171,7 +175,7 @@ DEFAULT_SIZES: tuple[SizeFill, ...] = (
                 provider=ProviderName.OPENAI,
                 model="gpt-6-astra",
                 effort=Effort.HIGH,
-                efforts=OPENAI_EFFORTS,
+                efforts=ASTRA_EFFORTS,
                 max_output_tokens=64_000,
                 context_window=1_050_000,
             ),
