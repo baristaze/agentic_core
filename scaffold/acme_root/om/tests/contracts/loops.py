@@ -440,7 +440,13 @@ def loop_over(
         ),
         signal,
         sink,
-        engine_tools(managers.steps, managers.agent_sessions, reader, lambda: managers.agents)
+        engine_tools(
+            managers.steps,
+            managers.agent_sessions,
+            reader,
+            managers.windows,
+            lambda: managers.agents,
+        )
         + every,
         options,
         clock,

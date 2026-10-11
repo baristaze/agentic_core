@@ -32,11 +32,12 @@ thing [Acme is made of](../../../../README.md).
   starts it and names it, and the agent waits for it without holding
   anything. It has a deadline of its own, never later than the whole
   task's. A job that costs money by the hour says how much, at most.
-- **The engine's own tools**: five a kind may name. Four act on nothing
+- **The engine's own tools**: six a kind may name. Five act on nothing
   outside the session: asking its person, writing its plan, reading part
-  of a file attached to the session, and waiting on its sub-agents. They
-  read and keep the session's own records, so their class is reading.
-  The fifth starts a sub-agent, and its class is `spawn`.
+  of a file attached to the session, reading a result the window keeps
+  whole outside a step, and waiting on its sub-agents. They read and keep
+  the session's own records, so their class is reading. The sixth starts
+  a sub-agent, and its class is `spawn`.
 
 ## What can happen
 

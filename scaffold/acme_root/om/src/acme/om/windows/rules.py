@@ -73,6 +73,10 @@ DATA_NOTICE = (
 """The engine's notice of what data is, the last system block of every
 request."""
 
+READ_ARTIFACT = "read_artifact"
+"""The engine's tool that reads a result kept whole outside the window, by
+the handle a notice or a stub names: the tool both name to the model."""
+
 PINNED_LEAD = (
     "The session's objective and its principals' standing instructions, "
     "quoted from their messages; an excerpt cites the message it came from."
@@ -584,7 +588,10 @@ class _Walk:
 def _stub(answer: Step, artifact: ArtifactRef | None) -> str:
     size = result_chars(answer) if artifact is None else artifact.characters
     kept = f"artifact {artifact.id}" if artifact is not None else f"step {answer.id} of the history"
-    return f"[A tool result of {size} characters, elided once read. It is kept whole as {kept}.]"
+    return (
+        f"[A tool result of {size} characters, elided once read. It is kept whole as {kept}; "
+        f"{READ_ARTIFACT} reads it by that handle.]"
+    )
 
 
 def _artifact_notice(
@@ -594,7 +601,7 @@ def _artifact_notice(
     return (
         f"[{artifact.characters - shown} characters between the head above and the tail "
         f"below are not shown. The whole {what} is artifact {artifact.id}, "
-        f"{artifact.characters} characters; a read tool pages through it.]"
+        f"{artifact.characters} characters; {READ_ARTIFACT} pages through it by that handle.]"
     )
 
 
@@ -1068,13 +1075,18 @@ def preview(
     """A result above the size bound as an artifact keeps it: the whole text,
     and the parts the step keeps, its head and its tail first, then what
     else it held. None when the result is within the bound."""
-    texts = [part.text for part in result.parts if isinstance(part, TextBlock)]
-    whole = "\n".join(texts)
+    whole = result_text(result)
     kept = clip(whole, policy)
     if kept is None:
         return None
     others = tuple(part for part in result.parts if not isinstance(part, TextBlock))
     return whole, (*kept, *others)
+
+
+def result_text(result: ToolResultBlock) -> str:
+    """A tool result's whole text, as an artifact keeps it and a read of it
+    answers: its text parts, a line apart."""
+    return "\n".join(part.text for part in result.parts if isinstance(part, TextBlock))
 
 
 def clip(whole: str, policy: CompactionPolicy) -> tuple[TextBlock, TextBlock] | None:
