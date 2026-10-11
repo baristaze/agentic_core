@@ -17,10 +17,9 @@ serves a model role: a provider, a model, an effort level and the levels
 its model takes, an output bound, the output shape expected, the context
 window, and the eligibility it carries, such as zero retention or a
 region. An injected resolver turns model roles into fills. The engine
-never picks a model, and an agent kind never names one. A kind may ask
-of a role a model size and an effort; the resolver serves the size, and
-a fill takes the ask's effort only when its model takes that level. The
-fill set keeps each ask beside the fill it got.
+never picks a model, and an agent kind never names one: it may ask of a
+role a model size and an effort, and a fill takes the effort only when
+its model takes it.
 
 **Source.** Models, Roles and Fills.
 
