@@ -3,8 +3,9 @@ stack's MinIO (ADR 1027). A snapshot is kept and named by a step, and a
 restore from it gives the workspace back; one whose stored bytes were
 altered is refused before any container starts. A credential the broker
 attached, and a secret's variable, are never in what a snapshot keeps. A
-child forked from its parent's snapshot sees the parent's files, and what
-it writes never reaches the parent's workspace. A loop's run snapshots its
+child forked in its parent's run sees what the run wrote before the spawn
+and nothing after, and what it writes never reaches the parent's workspace
+(ADR 1030). A loop's run snapshots its
 container at its end, so what it wrote outside the volume outlives the
 release, a park, and the loop; once released, the workspace snapshots
 nothing outside a run.
@@ -23,6 +24,7 @@ from uuid import UUID
 import aioboto3
 import pytest
 from contracts.loops import ALLOWED, ASSISTANT, DELIVERY, Loop, call, loop_over, reply, said
+from contracts.sub_agents import answers, failure_of, text_of
 from contracts.tools import Command
 
 from acme.infra.buckets import Buckets, BucketsInterface
@@ -53,12 +55,9 @@ from acme.infra.workspaces import (
 )
 from acme.infra.workspaces.container import WorkspaceContainerImpl, container_name
 from acme.om.agent_sessions.rules import QUESTION
-from acme.om.agents.loop_rules import pending_restore
-from acme.om.agents.types.request import Spawn
 from acme.om.base import new_id, utcnow
 from acme.om.steps.types.content import TextBlock
 from acme.om.steps.types.header import (
-    ControlHeader,
     LoopOutcome,
     SnapshotHeader,
     WorkspaceSnapshot,
@@ -89,6 +88,7 @@ BOXED = ASSISTANT.model_copy(
             rules=(
                 *ALLOWED.rules,
                 PolicyRule(authorization_class=ToolClass.EXECUTE, decision=Decision.ALLOW),
+                PolicyRule(authorization_class=ToolClass.SPAWN, decision=Decision.ALLOW),
             )
         ),
     }
@@ -329,39 +329,53 @@ async def test_a_snapshot_holds_no_credential_the_broker_attached_and_no_secrets
         await tools.purge_workspace(ctx.org_id, session_id)
 
 
-async def test_a_child_forked_from_its_parents_snapshot_sees_its_files_and_never_writes_back(
+async def test_a_child_forked_in_its_parents_run_sees_its_workspace_at_the_spawn(
     tmp_path: Path,
 ) -> None:
-    loop, _ = on_docker(tmp_path)
+    """A parent's first loop writes inside and outside its volume, forks, and
+    writes again. The child starts from the parent's container as it stood
+    at the spawn: it sees what came before, and nothing after. What the
+    child writes never reaches the parent: its next loop finds none of it."""
+    loop, infra = on_docker(tmp_path)
     tools, ctx = loop.managers.tools, loop.owner
+    await infra.get_secrets().put(ctx.org_id, TOKEN, f"tok-{tokens.token_hex(12)}")
     parent = await loop.start(BOXED.name)
-    child_id: UUID | None = None
-    parents = await tools.prepare_workspace(ctx, parent, BOXED_SPEC)
+    child: UUID | None = None
+    before = "echo before > /workspace/before.txt && echo before > /opt/before"
     try:
-        wrote = "echo parent > /workspace/parent.txt && echo parent > /opt/parent.txt"
-        await inside(parents, "sh", "-c", wrote)
-        await snapshot_of(loop, parent, parents)
-        asked = Spawn(
-            id=new_id(), kind=BOXED.name, title="a try", objective="Try it on a copy.", fork=True
+        await loop.say(parent, "Write it, fork a try, then go on.")
+        loop.anthropic.add(
+            reply(call("run_command", argv=["sh", "-c", before])),
+            reply(call(SPAWN_SUB_AGENT, title="a try", objective="Try it on a copy.", fork=True)),
+            reply(call("run_command", argv=["sh", "-c", "echo after > /workspace/after.txt"])),
+            reply(said("Forked.")),
         )
-        child = await loop.managers.agents.spawn(ctx, parent, asked)
-        child_id = child.id
-        # The child's loop prepares from the restore its history holds.
-        restore = pending_restore(await loop.history(child.id))
-        assert restore is not None and isinstance(restore.header, ControlHeader)
-        childs = await tools.prepare_workspace(
-            ctx, child.id, BOXED_SPEC, restore=restore.header.snapshot
-        )
+        assert (await loop.loops.run(ctx, parent)).outcome is LoopOutcome.SUCCEEDED
+        (answer,) = answers(await loop.history(parent), SPAWN_SUB_AGENT)
+        assert failure_of(answer) is None, text_of(answer)
+        child = answer.responds_to  # the child's id is the call's
+        assert child is not None
 
-        seen = await inside(childs, "cat", "/workspace/parent.txt", "/opt/parent.txt")
-        assert seen == (0, "parent\nparent\n"), "the child sees the parent's files"
-        await inside(childs, "sh", "-c", "echo child > /workspace/own.txt && echo c > /opt/own")
-        for path in ("/workspace/own.txt", "/opt/own"):
-            assert (await inside(parents, "test", "-e", path))[0] == 1, f"{path} stays the child's"
+        seen = "cat /workspace/before.txt /opt/before; test -e /workspace/after.txt || echo no"
+        own = "echo child > /workspace/own.txt && echo child > /opt/own"
+        loop.anthropic.add(
+            reply(call("run_command", argv=["sh", "-c", f"{seen}; {own}"])),
+            reply(said("Held.")),
+        )
+        assert (await loop.loops.run(ctx, child)).outcome is LoopOutcome.SUCCEEDED
+        assert printed(await loop.history(child)) == "before\nbefore\nno\n"
+
+        await loop.say(parent, "Look again.")
+        look = "test -e /workspace/own.txt || test -e /opt/own || echo clean; cat /workspace/after.txt"
+        loop.anthropic.add(
+            reply(call("run_command", argv=["sh", "-c", look])), reply(said("Clean."))
+        )
+        assert (await loop.loops.run(ctx, parent)).outcome is LoopOutcome.SUCCEEDED
+        assert printed(await loop.history(parent)) == "clean\nafter\n"
     finally:
         await tools.purge_workspace(ctx.org_id, parent)
-        if child_id is not None:
-            await tools.purge_workspace(ctx.org_id, child_id)
+        if child is not None:
+            await tools.purge_workspace(ctx.org_id, child)
 
 
 def printed(history: list[Step]) -> str:

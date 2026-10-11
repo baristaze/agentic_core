@@ -5,8 +5,9 @@ id is the call's own, the id of its request, so a call asked again after a
 lost run answers the child it made and starts no second one. A bound the
 spawn reaches is the call's failure, which the model reads and can act on:
 the tree's height or count, a kind with no share, a kind unknown or one
-whose calls its sender may not make. The tree's deadline bounds the call
-as it bounds every call of the tree."""
+whose calls its sender may not make. So is a fork whose workspace cannot be
+taken, with the reason. The tree's deadline bounds the call as it bounds
+every call of the tree."""
 
 from collections.abc import Callable
 from datetime import timedelta
@@ -15,7 +16,7 @@ from uuid import UUID
 from pydantic import Field
 
 from acme.infra.exceptions import InfraException
-from acme.infra.workspaces import WorkspaceLost
+from acme.infra.workspaces import SnapshotRefused
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agents.manager import AgentsManagerInterface
 from acme.om.agents.types.request import MAX_OBJECTIVE, MAX_TITLE, Spawn
@@ -44,8 +45,8 @@ DESCRIPTION = (
     "from your task's budget and shares its deadline. `kind` is the kind of "
     "agent to start, your own when you leave it out. Its report arrives as a "
     "message when it ends or needs a person; call wait_for_sub_agents to wait "
-    "for it. Set `fork` to start it in a copy of your workspace as your latest "
-    "snapshot holds it; what it writes there never reaches yours."
+    "for it. Set `fork` to start it in a copy of your workspace as it stands "
+    "now; what it writes there never reaches yours."
 )
 
 
@@ -84,7 +85,9 @@ class SpawnSubAgentToolImpl(ToolInterface):
             description=DESCRIPTION,
             input_model=SpawnSubAgentInput,
             output_model=Spawned,
-            timeout=timedelta(seconds=30),
+            # A fork takes the workspace whole first: a container is paused,
+            # exported, and stored before the child is made.
+            timeout=timedelta(minutes=10),
             authorization_class=ToolClass.SPAWN,
             # A repeat under the call's id answers the child it made.
             effect=Effect.IDEMPOTENT,
@@ -118,18 +121,19 @@ class SpawnSubAgentToolImpl(ToolInterface):
             kind=kind,
             title=call_input.title,
             objective=call_input.objective,
-            fork=call_input.fork,
         )
+        # A fork starts from the workspace as this call's run holds it now.
+        fork = runtime.snapshot if call_input.fork else None
         try:
-            child = await self._agents().spawn(ctx, runtime.session_id, asked)
+            child = await self._agents().spawn(ctx, runtime.session_id, asked, fork)
         except NotAuthorized as refused:
             raise ToolFailed(ToolFailure.DENIED, refused.message) from refused
         except (TreeBoundReached, UnknownAgentKind, ValidationFailed) as refused:
             raise ToolFailed(ToolFailure.PERMANENT, refused.message) from refused
-        except InfraException as lost:
-            # The snapshot it would fork is gone or altered: no child starts
+        except InfraException as refused:
+            # The workspace it would fork cannot be taken: no child starts
             # from anything else in its stead.
-            if lost.code != WorkspaceLost.code:
+            if refused.code != SnapshotRefused.code:
                 raise
-            raise ToolFailed(ToolFailure.PERMANENT, lost.message) from lost
+            raise ToolFailed(ToolFailure.PERMANENT, refused.message) from refused
         return Spawned(session_id=child.id, title=child.title, kind=child.kind)

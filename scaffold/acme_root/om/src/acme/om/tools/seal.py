@@ -43,6 +43,14 @@ class SnapshotSealInterface(ABC):
     names it stays."""
 
     @abstractmethod
+    async def keeps(self, ctx: TenantContext, session_id: UUID) -> bool:
+        """Whether the session keeps content at rest; `seal` answers None
+        for one that does not. Asked before a snapshot is taken, so what a
+        workspace holds never leaves a session that keeps no content at
+        rest, not even as a sub-agent's copy."""
+        ...
+
+    @abstractmethod
     async def seal(
         self, ctx: TenantContext, session_id: UUID, digest: str, data: bytes
     ) -> bytes | None:
