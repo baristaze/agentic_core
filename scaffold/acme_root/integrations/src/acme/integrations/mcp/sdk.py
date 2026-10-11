@@ -156,7 +156,12 @@ async def _exchange[T](
             async with AsyncExitStack() as stack:
                 transport = await _transport(stack, server, credential, answered)
                 client = await stack.enter_async_context(
-                    Client(transport, cache=None, message_handler=on_message)
+                    Client(
+                        transport,
+                        cache=None,
+                        message_handler=on_message,
+                        read_timeout_seconds=seconds,
+                    )
                 )
                 return await work(client)
     except TimeoutError:
