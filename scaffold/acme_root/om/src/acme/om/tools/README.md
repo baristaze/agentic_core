@@ -86,7 +86,9 @@ thing [Acme is made of](../../../../README.md).
 - **Snapshot a workspace.** A kind that asks for `snapshot` durability
   has its workspace kept whole at the end of each run, live: everything
   its commands wrote, sealed under the session's key and named by a step
-  in its history, and the next run starts from it. A credential is never
+  in its history, and the next run starts from it. A VM's disk stays
+  with its machines, in a store encrypted at rest, and the sealed archive
+  names it (ADR 1029). A credential is never
   in it, and a workspace that holds an injected secret's value keeps
   none. A released workspace, and a directory on a host, cannot be kept
   whole, so they refuse, before anything runs (ADR 1027).

@@ -416,14 +416,14 @@ environment with no
 
 **Principle.** A provider that can snapshots a workspace whole: all its
 commands could write. One that cannot refuses a snapshot, and a spec
-that asks for one, before anything runs. The run that holds a
-`snapshot` workspace snapshots it at its end, and lets the instance go
-only once a snapshot holds it. A snapshot is sealed under its session's
-key, stored under a hash keyed by the session, and named by a
-`snapshotted` step. A restore trusts its bytes only by that hash, and
-replaces the workspace whole; one that cannot load parks the loop once.
-The broker detaches its credentials first, and an injected secret's
-value refuses a snapshot. A fork is the child's own copy.
+asking for one, before anything runs. The run that holds a `snapshot`
+workspace snapshots it at its end, and lets the instance go only once a
+snapshot holds it. A snapshot, or the name of a VM's disk, is sealed
+under its session's key, stored under a session-keyed hash, and named
+by a `snapshotted` step. A restore trusts its bytes only by that
+hash, and replaces the workspace whole; one that cannot load parks the
+loop once. The broker detaches its credentials first; an injected
+secret's value refuses a snapshot. A fork is the child's own copy.
 
 **Source.** Workspace Snapshots.
 
@@ -431,7 +431,8 @@ value refuses a snapshot. A fork is the child's own copy.
 the loop takes one at a run's end and what the next run starts from;
 where the hash is held to the step's and the broker's credentials
 detached; what a restore that cannot load does after a person's unlock;
-the copy a fork makes, and what a purge removes.
+the copy a fork makes, and what a purge removes; for a VM, the digest its
+disk is held to, its store's encryption at rest, and what the scan reads.
 
 **Violation.** A snapshot of part of what the commands wrote, such as a
 host directory kept as if whole, or a released container's volume on a
@@ -440,7 +441,8 @@ from bytes whose hash was not checked, on an image named by a tag, or a
 half-restored workspace left to run; a lost restore tried again at each
 unlock; a credential or an injected secret's value in a kept snapshot; a
 fork that takes a slot or makes a child before it finds its snapshot, or
-a child whose writes reach its parent's workspace.
+a child whose writes reach its parent's workspace; a VM's disk the scan
+never reads, or one kept in a store not encrypted at rest.
 
 **Severity.** high
 
