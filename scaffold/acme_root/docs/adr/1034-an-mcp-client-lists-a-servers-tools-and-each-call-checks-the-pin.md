@@ -35,8 +35,14 @@ failure. The listing costs one request a call; the protocol's newest
 version asks a client to list a tool before it calls it anyway.
 
 **The credential.** A server names a tenant's secret, never a value.
-`McpServers` resolves it at the call, under the call's tenant, through
-the engine's secrets, and hands it to the client for the one exchange.
+Each of its tools declares that secret in its spec, as a tool that runs
+a command declares its own: injected into the variable a stdio server
+reads, or brokered to an HTTP server's host. So a kind that takes one
+holds credentials for the rule of two. `McpServers` has the call's
+runtime audit the secret's use by its name, which refuses a tool that
+does not declare it, then resolves it at the call, under the call's
+tenant, through the engine's secrets, and hands it to the client for
+the one exchange.
 Over HTTP it goes in a header, and only over https or to this host.
 Over stdio it goes in one variable of the server's environment, which
 holds only what the server's configuration names. Everything the server
@@ -82,8 +88,11 @@ of MCP calls' time at the median, read from the calls' spans.
 
 ## Consequences
 
-- `McpCall` takes the binding and the call's deadline. An adopter's own
+- `McpCall` takes the binding and the call's runtime, which carries its
+  key and its deadline and audits the credential. An adopter's own
   client moves to the new signature, or is replaced by `McpServers`.
+- A tool built over a server outside `McpServers` declares the server's
+  secret (`secret_use`), or its calls are refused.
 - Every call pays a connection and a listing, and a stdio server a
   process start.
 - A server's changed tool is refused at its next call, not at the next

@@ -5,7 +5,7 @@ its class and its effect are the adopter's, its definition is pinned by
 hash, and the server's own hints decide nothing. A job starts work that
 outlives the run, by a deadline never later than the tree's."""
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -244,7 +244,7 @@ def binding(**changes: Any) -> McpBinding:
 
 async def test_an_mcp_tool_takes_its_class_and_effect_from_the_binding_never_the_server() -> None:
     async def call(
-        ctx: TenantContext, bound: McpBinding, call_input: Any, key: UUID, deadline: datetime
+        ctx: TenantContext, bound: McpBinding, call_input: Any, runtime: ToolRuntime
     ) -> str:
         return "closed"
 
@@ -260,7 +260,7 @@ async def test_an_mcp_tool_takes_its_class_and_effect_from_the_binding_never_the
 
 async def test_a_changed_definition_is_not_served_until_its_pin_moves() -> None:
     async def call(
-        ctx: TenantContext, bound: McpBinding, call_input: Any, key: UUID, deadline: datetime
+        ctx: TenantContext, bound: McpBinding, call_input: Any, runtime: ToolRuntime
     ) -> str:
         raise AssertionError("not served")
 
@@ -285,9 +285,9 @@ async def test_an_mcp_call_goes_through_the_adopters_client_with_the_typed_input
     seen: list[Any] = []
 
     async def call(
-        ctx: TenantContext, bound: McpBinding, call_input: Any, key: UUID, deadline: datetime
+        ctx: TenantContext, bound: McpBinding, call_input: Any, runtime: ToolRuntime
     ) -> str:
-        seen.append((bound.server, bound.server_tool, call_input, key))
+        seen.append((bound.server, bound.server_tool, call_input, runtime.key))
         return "closed #7"
 
     registry = registry_of(McpToolImpl(DEFINITION, binding(), call))

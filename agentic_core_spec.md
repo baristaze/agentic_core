@@ -782,9 +782,13 @@ a connection of each call's own. The call lists the server's tools
 again, and a tool whose definition moved from its pin is refused, with
 the reason, before it runs. A server's credential is a tenant's secret,
 resolved for the call and redacted from everything the server sends
-back ([Secrets Never Enter a Step](#secrets-never-enter-a-step)). What
-the server answers is data, and a server that hangs or answers outside
-the protocol is refused within the tool's own time.
+back ([Secrets Never Enter a Step](#secrets-never-enter-a-step)). Each
+of the server's tools declares that secret by name, so a call's use of
+it is audited by the name, and a session that may call one holds
+credentials for the rule of two
+([Bound What a Convinced Model Can Do](#bound-what-a-convinced-model-can-do)).
+What the server answers is data, and a server that hangs or answers
+outside the protocol is refused within the tool's own time.
 
 A server over stdio is a program the adopter installs and names. The
 client starts it for the call, with an environment that holds what its

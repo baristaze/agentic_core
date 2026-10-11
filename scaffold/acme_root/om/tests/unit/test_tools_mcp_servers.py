@@ -8,8 +8,9 @@ by the hash a person reviewed. A call answers the server's result as data,
 quoted in the tool's output. A server whose tool changed is refused, with
 the reason, at the listing and at the call, until the pin moves. The
 server's credential reaches the server and no step, log line, or rendered
-definition. A server that hangs, or sends what is not JSON, is refused by
-the tool's deadline, never a crash."""
+definition; each of its tools declares it by name, and a call audits its
+use by that name. A server that hangs, or sends what is not JSON, is
+refused by the tool's deadline, never a crash."""
 
 import io
 import json
@@ -26,10 +27,12 @@ from pathlib import Path
 
 import httpx2
 import pytest
+from contracts.agent_session_storage import make_session
 from contracts.doubles import context
 from contracts.factories import make_org
 from contracts.tools import (
     TWIN_SPEC,
+    Tools,
     failure_of,
     put_call,
     registry_of,
@@ -42,15 +45,18 @@ from pydantic import SecretStr
 from acme.infra.base import utcnow
 from acme.infra.observability import configure_logging
 from acme.infra.secrets.local import SecretsLocalImpl
+from acme.infra.transports import SecretVia
 from acme.infra.transports.redaction import forms
 from acme.integrations.mcp import McpHttp, McpServer, McpServerFailed, McpStdio, sdk
 from acme.integrations.mcp.sdk import McpClientSdkImpl
+from acme.om.agents.loop_rules import holds_private
 from acme.om.agents.types.kind import AgentKind, DoneRule
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.context import Role, TenantContext
 from acme.om.exceptions import McpDefinitionChanged
 from acme.om.steps.types.header import ToolFailure
 from acme.om.steps.types.step import Step
+from acme.om.tools.impl.manager import SECRET_USED
 from acme.om.tools.mcp import McpServers, McpToolImpl, definition_of, toolset_of
 from acme.om.tools.rules import definition_hash
 from acme.om.tools.types.mcp import McpBinding, McpOutput, McpToolDefinition
@@ -215,6 +221,14 @@ async def review(at: Engine) -> dict[str, str]:
 async def call(tmp_path: Path, at: Engine, tool: McpToolImpl, call_input: dict[str, str]) -> Step:
     """One call through the tools manager, as the loop makes it, its
     response appended to the session's history."""
+    response, _ = await call_on(tmp_path, at, tool, call_input)
+    return response
+
+
+async def call_on(
+    tmp_path: Path, at: Engine, tool: McpToolImpl, call_input: dict[str, str]
+) -> tuple[Step, Tools]:
+    """`call`, with the tools manager it went through."""
     transport, _ = twin_transport(tmp_path)
     tools = tools_over(transport)
     workspace = await tools.manager.prepare_workspace(at.ctx, at.ctx.org_id, TWIN_SPEC)
@@ -233,7 +247,7 @@ async def call(tmp_path: Path, at: Engine, tool: McpToolImpl, call_input: dict[s
     await tools.steps.append_steps(at.ctx, found.session_id, found.epoch, [response])
     held = await tools.steps.get_steps(at.ctx, found.session_id, 0, 100)
     assert held.items[-1].id == response.id
-    return response
+    return response, tools
 
 
 def named(tools: tuple[McpToolImpl, ...], name: str) -> McpToolImpl:
@@ -294,7 +308,7 @@ async def test_a_changed_definition_is_refused_with_its_reason_until_its_pin_mov
         await changed.servers.tools(bindings(pins), org_id=changed.ctx.org_id)
     # At the call: a tool built before the server changed is refused before
     # it runs, and the model reads why.
-    stale = McpToolImpl(definitions["lookup"], pinned(pins, "lookup"), changed.servers.call)
+    stale = changed.servers.tool(definitions["lookup"], pinned(pins, "lookup"))
     response = await call(tmp_path, changed, stale, {"word": "cat"})
     assert failure_of(response) is ToolFailure.PERMANENT
     assert "not the reviewed" in response.model_dump_json()
@@ -379,6 +393,45 @@ async def test_the_credential_reaches_no_step_no_log_line_and_no_definition(
     assert not leaks(engine_log.getvalue())
 
 
+@pytest.mark.parametrize("transport", TRANSPORTS)
+async def test_each_tool_declares_its_servers_secret_and_a_call_audits_it_by_name(
+    tmp_path: Path, transport: str, http_servers: dict[str, str]
+) -> None:
+    at = await engine(tmp_path, server_of(transport, "", http_servers))
+    bound = bindings(await review(at))
+    tools = await at.servers.tools(bound, org_id=at.ctx.org_id)
+    via = SecretVia.INJECTED if transport == "stdio" else SecretVia.BROKERED
+    for tool in tools:
+        assert [(use.name, use.via) for use in tool.spec.secrets] == [(SECRET, via)]
+    # A kind that takes the toolset holds credentials, one of the rule of
+    # two's three, though it reads no private data.
+    kind = AgentKind(
+        name="reader",
+        version=1,
+        toolsets=(toolset_of(bound, name="words", version=1, summary="Look words up."),),
+        done_rule=DoneRule.ANSWER,
+        authority=AuthorityMode.STEADY,
+        private_data=False,
+    )
+    session = make_session().model_copy(update={"holds_private": False})
+    assert holds_private(session, kind, registry_of(*tools), ())
+    # A call audits the secret's use by its name, never its value.
+    response, through = await call_on(tmp_path, at, named(tools, "words_whoami"), {})
+    assert failure_of(response) is None
+    events = await through.events.get_events(at.ctx, 0, 100)
+    (audit,) = [event for event in events if event.kind == SECRET_USED]
+    assert audit.payload["secret"] == SECRET and audit.payload["via"] == via.value
+    assert audit.payload["tool"] == "words_whoami"
+    assert not any(leaks(event.model_dump_json()) for event in events)
+    # A tool built over the server that does not declare its secret is
+    # refused before the credential is resolved.
+    definition = (await listed(at))["whoami"]
+    undeclared = McpToolImpl(definition, pinned(await review(at), "whoami"), at.servers.call)
+    refused = await call(tmp_path / "undeclared", at, undeclared, {})
+    assert failure_of(refused) is ToolFailure.PERMANENT
+    assert "does not declare the secrets ['words_token']" in refused.model_dump_json()
+
+
 @pytest.mark.parametrize("json_logs", [False, True], ids=["text", "json"])
 async def test_a_notification_the_sdk_cannot_read_writes_no_line_to_the_log(
     tmp_path: Path, json_logs: bool, capsys: pytest.CaptureFixture[str]
@@ -454,7 +507,7 @@ async def test_a_server_that_sends_no_json_is_refused_never_a_crash(
     # A tool built before its server broke.
     definition = McpToolDefinition(name="lookup")
     pins = {"lookup": definition_hash(definition)}
-    tool = McpToolImpl(definition, pinned(pins, "lookup"), at.servers.call)
+    tool = at.servers.tool(definition, pinned(pins, "lookup"))
     started = time.monotonic()
     response = await call(tmp_path, at, tool, {"word": "cat"})
     assert failure_of(response) is ToolFailure.PERMANENT

@@ -10,22 +10,34 @@ the server's tools again on the call's own connection and refuses the tool
 when its definition moved since, so a server's changed tool never runs
 and never answers a model before someone reviews it and moves its pin.
 
-A server's credential is a tenant's secret, named by the server. It is
-resolved for one call, at the call, under the call's tenant, and handed to
-the client, which redacts it from everything the server sends back. What
+A server's credential is a tenant's secret, named by the server. Each of
+its tools declares it by name, as a command's tool declares its secrets, so
+a kind that takes one holds credentials for the rule of two. It is resolved
+for one call, at the call, under the call's tenant, after the call's
+runtime audits its use by name, and handed to the client, which redacts it
+from everything the server sends back. What
 the server answers is data: its text becomes the tool's output, which the
 response renders as any tool's output, quoted in the result block."""
 
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from datetime import datetime, timedelta
 from typing import Any
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from pydantic import SecretStr
 
 from acme.infra.base import utcnow
 from acme.infra.secrets import SecretsInterface
-from acme.integrations.mcp import McpClientInterface, McpListedTool, McpServer, McpToolRefused
+from acme.infra.transports import SecretUse, SecretVia
+from acme.integrations.mcp import (
+    McpClientInterface,
+    McpHttp,
+    McpListedTool,
+    McpServer,
+    McpStdio,
+    McpToolRefused,
+)
 from acme.om.base import Platform
 from acme.om.context import TenantContext
 from acme.om.exceptions import McpDefinitionChanged, ToolFailed, ValidationFailed
@@ -37,11 +49,12 @@ from acme.om.tools.types.policy import Target
 from acme.om.tools.types.tool import ToolInput, ToolMode, ToolSpec
 from acme.om.tools.types.toolset import Toolset
 
-McpCall = Callable[[TenantContext, McpBinding, Mapping[str, Any], UUID, datetime], Awaitable[str]]
-"""Calls a server's tool as its binding names it: its input, the call's
-idempotency key, which the client passes to the server so a repeat after a
-crash does once what the first did, and the deadline the call ends by.
-Answers the result as text, or raises `ToolFailed` with its class, or
+McpCall = Callable[[TenantContext, McpBinding, Mapping[str, Any], ToolRuntime], Awaitable[str]]
+"""Calls a server's tool as its binding names it, with its input, under the
+call's runtime: its idempotency key, which the client passes to the server
+so a repeat after a crash does once what the first did, its deadline, and
+the audit of the server's credential, a secret the tool declares. Answers
+the result as text, or raises `ToolFailed` with its class, or
 `McpDefinitionChanged` when the tool no longer matches its pin."""
 
 LIST_TIMEOUT = timedelta(seconds=30)
@@ -52,9 +65,17 @@ its caller sets no deadline."""
 class McpToolImpl(ToolInterface):
     """Built from what the server lists now and the binding: refused when
     the two disagree on the server's tool or its definition's hash. The
-    server's annotations play no part in the spec."""
+    server's annotations play no part in the spec. `secret` is the
+    server's credential, as the spec declares it: `secret_use`."""
 
-    def __init__(self, definition: McpToolDefinition, binding: McpBinding, call: McpCall) -> None:
+    def __init__(
+        self,
+        definition: McpToolDefinition,
+        binding: McpBinding,
+        call: McpCall,
+        *,
+        secret: SecretUse | None = None,
+    ) -> None:
         reason = unreviewed(binding, definition)
         if reason is not None:
             raise McpDefinitionChanged(reason)
@@ -70,6 +91,7 @@ class McpToolImpl(ToolInterface):
             effect=binding.effect,
             interruptible=binding.interruptible,
             mode=ToolMode.SYNC,
+            secrets=(secret,) if secret is not None else (),
         )
 
     @property
@@ -87,13 +109,7 @@ class McpToolImpl(ToolInterface):
     async def run(
         self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
     ) -> Platform:
-        text = await self._call(
-            ctx,
-            self._binding,
-            call_input.model_dump(mode="json"),
-            runtime.key,
-            runtime.deadline,
-        )
+        text = await self._call(ctx, self._binding, call_input.model_dump(mode="json"), runtime)
         return McpOutput(text=text)
 
 
@@ -153,24 +169,35 @@ class McpServers:
                 if reason is not None or definition is None:
                     refused.append(reason or binding.name)
                     continue
-                built.append(McpToolImpl(definition, binding, self.call))
+                built.append(self.tool(definition, binding))
         if refused:
             raise McpDefinitionChanged("; ".join(refused))
         return tuple(built)
+
+    def tool(self, definition: McpToolDefinition, binding: McpBinding) -> McpToolImpl:
+        """The tool of `binding` over its server's `definition`, its spec
+        declaring the server's secret. `McpDefinitionChanged` when the
+        definition is not the one its pin names."""
+        server = self._server(binding.server)
+        return McpToolImpl(definition, binding, self.call, secret=secret_use(server))
 
     async def call(
         self,
         ctx: TenantContext,
         binding: McpBinding,
         call_input: Mapping[str, Any],
-        key: UUID,
-        deadline: datetime,
+        runtime: ToolRuntime,
     ) -> str:
-        """One call, on a connection of its own: the server's credential
-        resolved for it under the call's tenant, the tool admitted only as
-        its pin names it, and its answer as text. The server's own word
-        that the tool failed is a `permanent` failure the model reads."""
+        """One call, on a connection of its own, by the runtime's deadline:
+        the server's credential audited by name through the runtime, which
+        refuses it to a tool that does not declare it, then resolved under
+        the call's tenant; the tool admitted only as its pin names it; and
+        its answer as text. The server's own word that the tool failed is a
+        `permanent` failure the model reads."""
         server = self._server(binding.server)
+        deadline = runtime.deadline
+        if server.secret is not None:
+            await runtime.use_secret(server.secret)
         credential = await self._credential(server, ctx.org_id, deadline)
 
         def refuse(listed: McpListedTool | None) -> str | None:
@@ -182,7 +209,7 @@ class McpServers:
                 credential,
                 binding.server_tool,
                 call_input,
-                key=key,
+                key=runtime.key,
                 refuse=refuse,
                 deadline=deadline,
             )
@@ -215,6 +242,21 @@ class McpServers:
         if org_id is None:
             raise ValidationFailed(f"{server.name} takes a tenant's credential: name the tenant")
         return SecretStr(await self._secrets.get(org_id, server.secret, deadline=deadline))
+
+
+def secret_use(server: McpServer) -> SecretUse | None:
+    """The secret a server's calls carry, as its tools declare it: injected
+    into the variable a stdio server reads it from, or brokered to an HTTP
+    server's host, which the engine attaches it for. None for a server that
+    names none."""
+    if server.secret is None:
+        return None
+    match server.transport:
+        case McpStdio(credential_env=env):
+            return SecretUse(name=server.secret, via=SecretVia.INJECTED, env=env)
+        case McpHttp(url=url):
+            host = urlsplit(url).hostname
+            return SecretUse(name=server.secret, via=SecretVia.BROKERED, destination=host)
 
 
 def definition_of(listed: McpListedTool) -> McpToolDefinition:

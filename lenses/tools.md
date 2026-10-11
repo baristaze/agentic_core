@@ -106,8 +106,10 @@ and a changed definition is reviewed before the registry serves it.
 Each call lists the server's tools again on its own connection and
 refuses a tool whose definition moved from its pin, with the reason,
 before it runs. The server's credential is resolved for the call and
-redacted from everything the server sends back, and a server that hangs
-or answers outside the protocol is refused within the tool's own time.
+redacted from everything the server sends back. Each of the server's
+tools declares it by name, so its use is audited and a session that may
+call one holds credentials for the rule of two. A server that hangs or
+answers outside the protocol is refused within the tool's own time.
 
 **Source.** Tools, Tools over MCP.
 
@@ -121,8 +123,8 @@ own log reaches a step or a log line; what bounds a call's connection.
 definition served with no pinned hash, or a changed one served before it
 is reviewed; a call that reaches a tool its server changed since the
 listing; a credential resolved before the call, or found in anything the
-client hands back; a connection a hung server holds past the tool's
-time.
+client hands back; a tool whose server names a secret and whose spec
+declares none; a connection a hung server holds past the tool's time.
 
 **Severity.** high
 

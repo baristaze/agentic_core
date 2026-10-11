@@ -155,6 +155,19 @@ class ToolRuntime:
             raise ToolFailed(ToolFailure.TIMEOUT, command_text(result, self._answer_chars))
         return result
 
+    async def use_secret(self, name: str) -> SecretUse:
+        """Records that the call uses a declared secret outside a command,
+        by name, before it is used: a server's credential, which the engine
+        sends with the call itself. A secret the tool does not declare is
+        refused, as a command's is."""
+        use = self._secrets.get(name)
+        if use is None:
+            raise ToolFailed(
+                ToolFailure.PERMANENT, f"the tool does not declare the secrets {[name]}"
+            )
+        await self._audit(use)
+        return use
+
     async def read_file(self, path: str, max_bytes: int, offset: int = 0) -> bytes:
         return await self._transport.read_file(self._workspace, path, max_bytes, offset)
 

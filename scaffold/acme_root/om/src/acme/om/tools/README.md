@@ -93,7 +93,8 @@ thing [Acme is made of](../../../../README.md).
   and its effect. Each call lists the server's tools again and refuses
   a tool that changed since, with the reason, until someone reviews it
   and moves the pin. The server's credential, the org's secret, is
-  fetched for the one call and kept out of everything the server sends
+  declared by each of its tools, audited by its name at each call,
+  fetched for the one call, and kept out of everything the server sends
   back, and the server's answer is data. A server that hangs, or answers
   outside the protocol, is refused within the tool's own time
   (ADR 1034).
