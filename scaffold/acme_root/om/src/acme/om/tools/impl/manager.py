@@ -241,8 +241,8 @@ class ToolsManagerImpl(ToolsManagerInterface):
             return await self._workspaces.prepare(
                 ctx.org_id, session_id, spec, snapshot=archive, base=base
             )
-        except WorkspaceLost as lost:
-            if base is None:
+        except InfraException as lost:
+            if base is None or lost.code != WorkspaceLost.code:
                 raise
             # A base this host cannot bring in, such as one built on an image
             # its name no longer gives, holds nothing of the session's: it is

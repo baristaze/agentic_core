@@ -163,7 +163,9 @@ class WorkspaceBases:
             await self._transport.purge_records(build_id)
         try:
             await self._scan(ctx, archive)
-        except SnapshotRefused as refused:
+        except InfraException as refused:
+            if refused.code != SnapshotRefused.code:
+                raise
             raise IsolationRefused(
                 f"the workspace base is not kept: {refused.message}"
             ) from refused
