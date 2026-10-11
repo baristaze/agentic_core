@@ -13,22 +13,26 @@ engine's half of zero data retention to `privacy`.
 
 **Principle.** A call site names a task, never a model. That task is a
 model role, `ModelRole` in code, never the guideline's `Role`. A fill
-serves a model role: a provider, a model, an effort level, an output
-bound, the output shape expected, the context window, and the
-eligibility it carries, such as zero retention or a region. An injected
-resolver turns model roles into fills. The engine never picks a model,
-and an agent kind names only model roles.
+serves a model role: a provider, a model, an effort level and the levels
+its model takes, an output bound, the output shape expected, the context
+window, and the eligibility it carries, such as zero retention or a
+region. An injected resolver turns model roles into fills. The engine
+never picks a model, and an agent kind never names one: it may ask of a
+role a model size and an effort, and a fill takes the effort only when
+its model takes it.
 
 **Source.** Models, Roles and Fills.
 
 **Look for.** Every model call site and what it passes; the model roles
-an agent kind names; where provider and model names appear outside the
+an agent kind names and what it asks of them; how the resolver turns an
+ask into a fill; where provider and model names appear outside the
 resolver and its fills.
 
 **Violation.** A call site or an agent kind that names a provider or a
 model; the engine choosing a model per call, such as the cheapest; a
-model role class named `Role`. (A call on a model the fill set does not
-hold is MOD-02.)
+model role class named `Role`; a fill run at an asked effort its model
+does not take; an ask the fill set does not keep. (A call on a model the
+fill set does not hold is MOD-02.)
 
 **Severity.** medium
 

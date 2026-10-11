@@ -17,6 +17,8 @@ from acme.om.models.types.fill import (
     Eligibility,
     Fill,
     FillSet,
+    ModelAsk,
+    ModelSize,
     RoleFill,
     SwitchReason,
 )
@@ -45,6 +47,14 @@ HAIKU = Fill(
     max_output_tokens=8_000,
     context_window=200_000,
 )
+LUNA = Fill(
+    provider=ProviderName.OPENAI,
+    model="gpt-6-luna",
+    effort=Effort.HIGH,
+    efforts=(Effort.LOW, Effort.HIGH),
+    max_output_tokens=8_000,
+    context_window=1_050_000,
+)
 
 
 def make_fill_set(session_id: UUID, version: int = 1, main: Fill = SONNET) -> FillSet:
@@ -56,7 +66,12 @@ def make_fill_set(session_id: UUID, version: int = 1, main: Fill = SONNET) -> Fi
         version=version,
         roles=(
             RoleFill(role=MAIN, fill=main, fallbacks=(SOL,)),
-            RoleFill(role=SUMMARIZER, fill=HAIKU),
+            RoleFill(
+                role=SUMMARIZER,
+                fill=HAIKU,
+                fallbacks=(LUNA,),
+                ask=ModelAsk(role=SUMMARIZER, size=ModelSize.S, effort=Effort.HIGH),
+            ),
         ),
         eligibility=Eligibility(region="eu") if not switch else Eligibility(),
         reason=SwitchReason.FALLBACK if switch else None,

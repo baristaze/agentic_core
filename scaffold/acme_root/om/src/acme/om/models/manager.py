@@ -20,6 +20,7 @@ from acme.om.models.types.fill import (
     Fill,
     FillSet,
     FillSwitch,
+    ModelAsk,
     ModelRole,
     SwitchReason,
 )
@@ -33,11 +34,13 @@ class ModelsManagerInterface(ABC):
         session_id: UUID,
         roles: Sequence[ModelRole],
         eligibility: Eligibility,
+        asks: Sequence[ModelAsk] = (),
     ) -> FillSet:
         """The session's fill set, resolved once: its first version, from the
-        resolver, when it has none; its latest when it has one, whatever
-        `roles` and `eligibility` say then. `UnresolvedRole` or
-        `UnpricedModel` from the resolver, with nothing written."""
+        resolver, given the kind's `asks`, when it has none; its latest when
+        it has one, whatever `roles`, `eligibility`, and `asks` say then.
+        `UnresolvedRole` or `UnpricedModel` from the resolver, with nothing
+        written."""
         ...
 
     @abstractmethod

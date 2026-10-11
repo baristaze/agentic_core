@@ -317,7 +317,9 @@ class LoopManagerImpl(LoopManagerInterface):
             log.warning("session %s has a session above it past its purge", session_id)
             return await self._end(run, LoopOutcome.ERRORED)
         try:
-            await self._models.resolve_fill_set(ctx, session_id, kind.roles, Eligibility())
+            await self._models.resolve_fill_set(
+                ctx, session_id, kind.roles, Eligibility(), kind.asks
+            )
         except (UnresolvedRole, UnpricedModel) as refused:
             log.warning("session %s resolves no fill: %s", session_id, refused.message)
             return await self._end(run, LoopOutcome.ERRORED)

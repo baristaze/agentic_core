@@ -154,6 +154,8 @@ def test_a_kind_that_names_no_tree_is_three_levels_deep_and_holds_ten() -> None:
         {"result_tool": None},
         {"result_tool": "deploy"},
         {"done_rule": DoneRule.ANSWER},
+        {"asks": ({"role": "title", "size": "s"},)},
+        {"asks": ({"role": "main", "size": "l"}, {"role": "main", "size": "xl"})},
     ],
 )
 def test_a_kind_that_contradicts_itself_is_refused(broken: dict[str, object]) -> None:
