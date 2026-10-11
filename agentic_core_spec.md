@@ -170,6 +170,7 @@ flowchart LR
 | Approval | A person's decision on one exact tool call | [Approvals](#approvals) |
 | Workspace, transport | Where tools run; the only way to run there | [The Runtime](#the-runtime) |
 | Snapshot | A workspace kept whole, sealed, named by a step, and trusted by its hash | [Workspace Snapshots](#workspace-snapshots) |
+| Base | An image and its setup, built once for a tenant and kept as a snapshot workspaces start from | [Workspace Snapshots](#workspace-snapshots) |
 | Stream part | A typed, live fragment of a step or artifact | [Streams](#streams) |
 | Inbox, control | Inputs waiting for the next model call; out-of-band commands | [Steering](#steering) |
 | Actor, principal, spender | Who produced a step; on whose authority it runs; who pays | [Who Is Who](#who-is-who) |
@@ -876,8 +877,9 @@ capabilities in the guideline's sense ([Infrastructure][g-infra]):
 - A **workspace provider** prepares, releases, and purges the place an
   agent works, to an **isolation spec**: a mode (a VM, a container, a
   directory on a host, the same directory with its commands run as an
-  account of the host, or a twin for tests), an egress policy, and
-  resource limits.
+  account of the host, or a twin for tests), an egress policy, resource
+  limits, and the base it starts from ([Workspace
+  Snapshots](#workspace-snapshots)).
 - An **execution transport** runs a command there, streamed, and reads,
   writes, and lists files there, wherever "there" is: this process, a
   container, or a machine across a network. Every tool that runs a
@@ -955,6 +957,20 @@ Platform](#next-the-platform)).
 - **Fork.** A sub-agent spawned with `fork` starts from a copy of its
   parent's latest snapshot, sealed under its own key. What it writes
   never reaches its parent's workspace.
+- **Bases.** A spec may name a **base**: an image, the commands that
+  set it up, and the egress the setup may use, such as a package
+  registry's. The setup runs once, in a workspace of its own, and the
+  base is kept as a snapshot of it. Every workspace on the base starts
+  from that snapshot and runs with its own egress, never the setup's.
+  A setup runs no model, is given no secret, and reads no session's
+  content, so its base is the tenant's, not a session's: kept under the
+  tenant alone, never sealed under a session's key, and gone with the
+  tenant's purge. It is keyed by a hash of its mode, its image, its
+  commands, and its egress, so a changed base is built again, never
+  served stale. Two prepares racing on one base build it once. A setup
+  command that fails keeps nothing, and names the command and how it
+  ended. A base with no setup is the image alone. A provider that
+  cannot snapshot refuses a base.
 - **Purge.** A snapshot is content. A session's purge removes its
   snapshots, and revoking its key erases them.
 
@@ -962,9 +978,14 @@ Platform](#next-the-platform)).
 seeded. The platform snapshots it at each release, and the review
 comment's loop a week later starts on the same database.
 
+*Example:* the checkout kind's base installs the test runner from the
+package registry once. Each checkout session starts on it with no
+network at all.
+
 > **Principle:** A workspace is a cache; a snapshot is kept state, named
 > by a step and trusted by its hash. It holds everything the workspace's
-> commands wrote, and never a credential.
+> commands wrote, and never a credential. A base is built once, and its
+> setup's egress never reaches a workspace.
 
 ## Streams
 
