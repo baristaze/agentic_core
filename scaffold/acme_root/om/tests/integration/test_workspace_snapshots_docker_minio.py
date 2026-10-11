@@ -366,7 +366,9 @@ async def test_a_child_forked_in_its_parents_run_sees_its_workspace_at_the_spawn
         assert printed(await loop.history(child)) == "before\nbefore\nno\n"
 
         await loop.say(parent, "Look again.")
-        look = "test -e /workspace/own.txt || test -e /opt/own || echo clean; cat /workspace/after.txt"
+        look = (
+            "test -e /workspace/own.txt || test -e /opt/own || echo clean; cat /workspace/after.txt"
+        )
         loop.anthropic.add(
             reply(call("run_command", argv=["sh", "-c", look])), reply(said("Clean."))
         )

@@ -1,6 +1,6 @@
 # ADR 1027: A workspace is snapshotted whole, and a restore, a rewind, or a fork starts from it
 
-**Status**: accepted (2026-10-10)
+**Status**: accepted (2026-10-10), amended by [ADR 1030](1030-a-fork-starts-from-its-parents-workspace-as-it-stands-at-the-spawn.md)
 
 ## Context
 

@@ -419,11 +419,11 @@ commands could write. One that cannot refuses a snapshot, and a spec
 that asks for one, before anything runs. The run that holds a
 `snapshot` workspace snapshots it at its end, and lets the instance go
 only once a snapshot holds it. A snapshot is sealed under its session's
-key, stored under a hash keyed by the session, and named by a
-`snapshotted` step. A restore trusts its bytes only by that hash, and
-replaces the workspace whole; one that cannot load parks the loop once.
-The broker detaches its credentials first, and an injected secret's
-value refuses a snapshot. A fork is the child's own copy.
+key, stored under a keyed hash, and named by a `snapshotted` step. A
+restore trusts its bytes only by that hash, and replaces the workspace
+whole; one that cannot load parks the loop once. The broker detaches its
+credentials first, and an injected secret's value refuses a snapshot. A
+fork copies its parent's workspace at the spawn.
 
 **Source.** Workspace Snapshots.
 
@@ -431,7 +431,8 @@ value refuses a snapshot. A fork is the child's own copy.
 the loop takes one at a run's end and what the next run starts from;
 where the hash is held to the step's and the broker's credentials
 detached; what a restore that cannot load does after a person's unlock;
-the copy a fork makes, and what a purge removes.
+where a fork takes its parent's workspace and the copy it makes, and
+what a purge removes.
 
 **Violation.** A snapshot of part of what the commands wrote, such as a
 host directory kept as if whole, or a released container's volume on a
@@ -439,8 +440,10 @@ fresh instance; an instance let go that no snapshot holds; a restore
 from bytes whose hash was not checked, on an image named by a tag, or a
 half-restored workspace left to run; a lost restore tried again at each
 unlock; a credential or an injected secret's value in a kept snapshot; a
-fork that takes a slot or makes a child before it finds its snapshot, or
-a child whose writes reach its parent's workspace.
+fork that starts from a snapshot older than its spawn, or takes a slot
+or makes a child before its snapshot is taken; a cache that keeps a
+fork's snapshot as its own; a copy of a session that keeps no content at
+rest; or a child whose writes reach its parent's workspace.
 
 **Severity.** high
 

@@ -325,7 +325,10 @@ FORKER = ASSISTANT.model_copy(
 
 
 CACHE_FORKER = FORKER.model_copy(
-    update={"name": "cache_forker", "isolation": KEPT.model_copy(update={"durability": Durability.CACHE})}
+    update={
+        "name": "cache_forker",
+        "isolation": KEPT.model_copy(update={"durability": Durability.CACHE}),
+    }
 )
 TOKEN = "SERVICE_TOKEN"
 
