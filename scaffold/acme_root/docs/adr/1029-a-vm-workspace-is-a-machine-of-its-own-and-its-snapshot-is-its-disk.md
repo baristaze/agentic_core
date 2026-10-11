@@ -42,10 +42,14 @@ guest. A deployed process refuses Lima at boot.
 
 **One machine per workspace.** The VM provider names a workspace's
 machine by its id, under a prefix the operator sets. Its folder is
-`/workspace`, where commands start and which is their home. A release
-stops the machine and keeps its disk; the next prepare starts it again.
-One found under other cpus or memory is stopped and started to the new
-spec, its disk kept. Before a machine starts, the provider refuses what
+`/workspace`, where commands start and which is their home. Its
+commands hold the guest whole, its root through Docker and `sudo`: the
+machine is the wall, so a base's setup holds nothing more than a
+session's commands do
+([ADR 1028](1028-a-workspace-base-is-built-once-for-its-tenant-and-kept-as-a-snapshot.md)).
+A release stops the machine and keeps its disk; the next prepare starts
+it again. One found under other cpus or memory is stopped and started to
+the new spec, its disk kept. Before a machine starts, the provider refuses what
 its machines cannot hold: an allowlist, a process limit, part of a cpu,
 an egress they cannot close, and a snapshot or a base with setup where
 their store is not encrypted at rest. Then it probes, and a host with no

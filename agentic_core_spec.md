@@ -994,7 +994,8 @@ platform's ([Next: The Platform](#next-the-platform)).
   snapshot and runs with its own egress, never the setup's. A setup runs
   the commands a person declared, so its workspace holds what a system's
   package manager needs, such as changing a file's owner, and nothing
-  privileged. Every workspace a session uses holds no such power. A
+  privileged. Every container a session uses holds no such power; a
+  VM's commands hold their guest whole, and the machine is the wall. A
   setup runs no model, is given no secret, and reads no session's
   content, so its base is the tenant's, not a session's: kept under the
   tenant alone, never sealed under a session's key, and gone with the

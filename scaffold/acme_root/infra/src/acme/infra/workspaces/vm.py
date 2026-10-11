@@ -66,7 +66,9 @@ class WorkspaceVmImpl(WorkspaceProviderInterface):
     egress always, and the limits they enforce: whole cpus and memory. An
     allowlist needs an egress proxy this provider does not run, so it is
     refused; so is every spec when the machines' probe finds no hypervisor.
-    There is no weaker place to fall back to.
+    There is no weaker place to fall back to. A machine's commands hold its
+    guest whole, its root through Docker and `sudo`: the machine is the
+    wall, so a base's build (`building`) holds nothing more than any other.
 
     A released workspace's machine is stopped, its disk kept. Its snapshot
     is its disk: the machine is stopped, so nothing writes, its disk is
@@ -96,6 +98,8 @@ class WorkspaceVmImpl(WorkspaceProviderInterface):
         spec: IsolationSpec,
         snapshot: bytes | None = None,
         base: bytes | None = None,
+        *,
+        building: bool = False,
     ) -> Workspace:
         why = self._refusal(spec)
         built = snapshot is None and spec.base is not None and bool(spec.base.setup)
