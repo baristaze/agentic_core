@@ -92,11 +92,11 @@ class WorkspaceVmImpl(WorkspaceProviderInterface):
     digest, and the tenant: a few hundred bytes, never the disk. A restore
     holds the disk to the digest before the machine it replaces goes, and
     starts a machine on a copy of it. A purge destroys the machine and
-    every snapshot kept under it; a fork's copy and a base are kept under
-    their own workspace (`keep`), so a purge of the one they came from
-    leaves them whole. The machines' store stands for the session key's
-    seal, so a workspace keeps no snapshot where it is not encrypted at
-    rest (ADR 1029)."""
+    every snapshot kept under it, and a revocation of the session's key
+    destroys those snapshots (`erase_snapshots`); a fork's copy and a base
+    are kept under their own workspace (`keep`), so neither reaches them.
+    The machines' store stands for the session key's seal, so a workspace
+    keeps no snapshot where it is not encrypted at rest (ADR 1029)."""
 
     def __init__(
         self, machines: MachinesInterface, image: str, prefix: str, timeout: timedelta
@@ -179,6 +179,12 @@ class WorkspaceVmImpl(WorkspaceProviderInterface):
 
     async def discard(self, snapshot: bytes) -> None:
         await self._machines.destroy(_opened(snapshot, self._prefix).name)
+
+    async def erase_snapshots(self, org_id: UUID, workspace_id: UUID) -> None:
+        # Every snapshot is named under its workspace's machine, a hyphen,
+        # and its tag; the machine itself stands under the name alone.
+        for found in await self._machines.names(f"{machine_name(self._prefix, workspace_id)}-"):
+            await self._machines.destroy(found)
 
     async def release(self, workspace: Workspace) -> None:
         await self._machines.stop(workspace.location)

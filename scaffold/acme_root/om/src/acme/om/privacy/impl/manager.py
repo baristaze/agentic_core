@@ -11,7 +11,7 @@ from acme.om.exceptions import PolicyFixed
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.types.row import OutboxRow, outbox_row
 from acme.om.privacy.keys import SessionKeysInterface
-from acme.om.privacy.manager import PrivacyManagerInterface
+from acme.om.privacy.manager import PrivacyManagerInterface, SessionRevoked
 from acme.om.privacy.storage import PrivacyStorageInterface
 from acme.om.privacy.types.session_privacy import SessionPrivacy, StoragePolicy
 from acme.om.steps import StepsManagerInterface
@@ -37,7 +37,10 @@ class PrivacyManagerImpl(PrivacyManagerInterface):
         relay: OutboxRelayInterface,
         options: PrivacyOptions,
         clock: Callable[[], datetime] = utcnow,
+        *,
+        revoked: SessionRevoked,
     ) -> None:
+        self._revoked = revoked
         self._storage = storage
         self._keys = keys
         self._steps = steps
@@ -99,6 +102,10 @@ class PrivacyManagerImpl(PrivacyManagerInterface):
         stored = await self._storage.revoke(ctx.org_id, record, rows)
         if stored.revoked_at == now and stored.revoked_by == ctx.user_id:
             await self._relay_all(ctx, rows)
+        # The key is gone, so nothing opens an archive again; what is kept
+        # outside the seal goes with it, at every call, so a call that
+        # failed here is finished by the next.
+        await self._revoked(ctx.org_id, session_id)
         return stored
 
     async def rotate_key(self, ctx: TenantContext, session_id: UUID) -> int:

@@ -375,6 +375,9 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
     async def discard(self, snapshot: bytes) -> None:
         return None
 
+    async def erase_snapshots(self, org_id: UUID, workspace_id: UUID) -> None:
+        return None
+
     def describe(self) -> str:
         return f"workspaces=container({self._image})"
 

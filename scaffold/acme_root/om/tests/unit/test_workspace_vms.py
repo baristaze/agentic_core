@@ -3,20 +3,23 @@ provider and its transport on the machines' twin (ADR 1029). A snapshot of a
 VM is its disk, kept by the machines: the archive the history names holds a
 name and a digest, and the scan for a secret's value reads the disk. A
 fork's copy is the child's own disk, and outlives its parent's purge; a
-cache parent keeps no disk of what the spawn took. A base's disk is kept
-under the tenant, outlives the build that made it, and goes with the
-tenant's purge."""
+cache parent keeps no disk of what the spawn took. A revocation of a
+session's key destroys the disks kept for its snapshots, and no other
+session's. A base's disk is kept under the tenant, outlives the build that
+made it, and goes with the tenant's purge."""
 
 from datetime import timedelta
 from pathlib import Path
 from uuid import UUID
 
 import pytest
+from contracts.agent_session_storage import make_session
 from contracts.doubles import context
 from contracts.factories import make_org
-from contracts.tools import Tools, tools_over
+from contracts.tools import Tools, stand_ins, tools_over
 
 from acme.infra.buckets.local import BucketsLocalImpl
+from acme.infra.impl.local import InfraLocalImpl
 from acme.infra.machines.twin import MachinesTwinImpl
 from acme.infra.secrets.local import SecretsLocalImpl
 from acme.infra.transports.broker import BrokerTwinImpl
@@ -30,12 +33,15 @@ from acme.infra.workspaces import (
     SnapshotRefused,
     Workspace,
     WorkspaceBase,
+    WorkspaceProviderInterface,
 )
 from acme.infra.workspaces.vm import WORKSPACE, WorkspaceVmImpl, machine_name
 from acme.om.base import new_id
 from acme.om.context import Role
+from acme.om.root import build_managers
 from acme.om.steps.types.header import SnapshotHeader, WorkspaceSnapshot
 from acme.om.steps.types.step import Step
+from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.tools.impl.bases import base_key, base_workspace_id
 from acme.om.tools.tool import TakenSnapshot
 
@@ -159,3 +165,58 @@ async def test_a_vm_base_outlives_its_build_and_goes_with_the_tenants_purge(
     vms.tools.members.expired = True
     assert await vms.tools.manager.purge_tenant(vms.ctx) == 1
     assert await vms.machines.names(kept_under) == []
+
+
+class VmInfra(InfraLocalImpl):
+    """The local infra root, its workspaces machines on its machines' twin."""
+
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        machines = self.get_machines()
+        assert isinstance(machines, MachinesTwinImpl)
+        self.machines = machines
+        self.vms = WorkspaceVmImpl(machines, "twin-image", PREFIX, timedelta(seconds=60))
+
+    def get_workspaces(self) -> WorkspaceProviderInterface:
+        return self.vms
+
+
+async def test_a_revoked_key_destroys_the_disks_kept_for_its_snapshots_and_no_other_sessions(
+    tmp_path: Path,
+) -> None:
+    """A VM's disks are kept outside the seal, so a revocation of the
+    session's key destroys every disk kept for its snapshots with it. The
+    workspace, a cache, stays, and so does a fork's copy, kept for the
+    child under its own key: the child still starts from it."""
+    infra = VmInfra(tmp_path)
+    managers = build_managers(StorageMemoryImpl(), infra, tool_catalog=stand_ins("read_log"))
+    ctx = context(Role.MEMBER)
+    parent, child = [
+        (await managers.agent_sessions.create_session(ctx, make_session())).id for _ in range(2)
+    ]
+    workspace = await managers.tools.prepare_workspace(ctx, parent, KEPT)
+    folder = infra.machines.machines[machine_name(PREFIX, parent)].folder / WORKSPACE
+    (folder / "state.txt").write_text("the parent's")
+    epoch = await managers.steps.begin_run(ctx, parent)
+    for _ in range(2):
+        await managers.tools.snapshot_workspace(
+            ctx, parent, workspace, epoch=epoch, loop_id=new_id()
+        )
+    taken = TakenSnapshot(workspace_id=parent, archive=await infra.vms.snapshot(workspace))
+    copy = await managers.tools.fork_snapshot(ctx, child, new_id(), taken)
+    kept_for = {
+        session: await infra.machines.names(f"{machine_name(PREFIX, session)}-")
+        for session in (parent, child)
+    }
+    assert (len(kept_for[parent]), len(kept_for[child])) == (2, 1)
+
+    await managers.privacy.revoke_key(ctx, parent)
+
+    assert await infra.machines.names(f"{machine_name(PREFIX, parent)}-") == []
+    assert await infra.machines.names(machine_name(PREFIX, parent)) == [
+        machine_name(PREFIX, parent)
+    ], "the workspace stays"
+    assert await infra.machines.names(f"{machine_name(PREFIX, child)}-") == kept_for[child]
+    await managers.tools.prepare_workspace(ctx, child, KEPT, restore=copy)
+    forked = infra.machines.machines[machine_name(PREFIX, child)].folder / WORKSPACE
+    assert (forked / "state.txt").read_text() == "the parent's"

@@ -9,11 +9,18 @@ revocation that erases its content and keeps its record, and the engine's
 half of a rotation of the tenant's wrapping key."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from uuid import UUID
 
 from acme.om.context import TenantContext
 from acme.om.privacy.types.session_privacy import SessionPrivacy, StoragePolicy
+
+SessionRevoked = Callable[[UUID, UUID], Awaitable[None]]
+"""What other namespaces keep of a session outside its seal, destroyed with
+its key's revocation: given its tenant and its id. The root binds it to the
+tools' erasure of what the session's snapshots keep outside their archives,
+such as a VM's disks."""
 
 
 class PrivacyManagerInterface(ABC):
@@ -37,9 +44,13 @@ class PrivacyManagerInterface(ABC):
     @abstractmethod
     async def revoke_key(self, ctx: TenantContext, session_id: UUID) -> SessionPrivacy:
         """Erases the session's content: every version of its key is
-        destroyed, and the session takes no content again. Its steps keep
-        their place, their type, and their shape, and read as absent. Once,
-        and announced; a revoked session is answered as it is."""
+        destroyed, and the session takes no content again. What its
+        snapshots keep outside the seal, such as a VM's disks, is destroyed
+        with it; a copy kept for another session, such as a fork's, stays.
+        Its steps keep their place, their type, and their shape, and read
+        as absent. Once, and announced; a revoked session is answered as it
+        is, and what is kept outside the seal is destroyed again, so a call
+        that failed part way is finished by the next."""
         ...
 
     @abstractmethod

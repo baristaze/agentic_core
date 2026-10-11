@@ -1010,8 +1010,9 @@ platform's ([Next: The Platform](#next-the-platform)).
   ended. A base with no setup is the image alone. A provider that cannot
   snapshot refuses a base.
 - **Purge.** A snapshot is content. A session's purge removes its
-  snapshots, a VM's disks included, and revoking its key erases every
-  archive, so nothing names a disk again.
+  snapshots, a VM's disks included. Revoking its key erases every
+  archive and destroys the disks kept for them with it; a fork's copy is
+  the child's, under the child's key, and stays.
 
 *Example:* the checkout session's workspace holds a test database it
 seeded. Its run snapshots it as the loop parks, and the review
@@ -1638,7 +1639,9 @@ audit, and tracing keep working on a session whose content is gone.
   content becomes noise and the shape stays: every step keeps its place,
   its type, and its cost. A record with holes in known places is still a
   record. This is the erasure of a session's content, in place of the
-  guideline's redaction of named fields.
+  guideline's redaction of named fields. What the session's snapshots
+  keep outside the seal, a VM's disks, is destroyed with the key; a
+  fork's copy is its child's content, and stays.
 - **Purge:** after the shape's own retention, its rows are removed. It is
   the guideline's one hard delete, never an on-demand one.
 

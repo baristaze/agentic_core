@@ -290,6 +290,16 @@ class WorkspaceProviderInterface(ABC):
         ...
 
     @abstractmethod
+    async def erase_snapshots(self, org_id: UUID, workspace_id: UUID) -> None:
+        """What the snapshots kept under the workspace `workspace_id` hold
+        outside their archives, such as disks, removed, and the workspace's
+        instance and files kept: what a revocation of the key that seals
+        those archives erases with them. A copy kept under another
+        workspace, such as a fork's or a base, stays. A provider whose
+        archives hold their bytes keeps nothing elsewhere."""
+        ...
+
+    @abstractmethod
     async def release(self, workspace: Workspace) -> None:
         """Lets the instance go and keeps the files. Releasing one that holds
         no instance does nothing."""

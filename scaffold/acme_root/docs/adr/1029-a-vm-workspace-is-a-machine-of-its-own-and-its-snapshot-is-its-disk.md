@@ -98,8 +98,12 @@ the cost this decision avoids. The machines' store stands for the seal.
 It is encrypted at rest: locally, the disk that holds Lima's instances,
 under FileVault or LUKS, which the operator declares
 (`machine_store_encrypted`); in a cloud, its disk snapshots under its
-keys. Revoking a session's key erases every archive, so no restore names
-a disk again, and the disk goes with the purge.
+keys. Revoking a session's key erases every archive, and the disks kept
+for its snapshots go with it: the revocation calls the tools'
+`erase_snapshots`, and the provider destroys every snapshot kept under
+the workspace's name and keeps the machine, a cache. A fork's copy is
+kept under the child's workspace and sealed under the child's key, so
+it stays.
 
 **Purge, forks, and bases.** A purge destroys a workspace's machine and
 every snapshot kept under its name. A copy that must outlive the

@@ -433,8 +433,8 @@ the loop takes one at a run's end and what the next run starts from;
 where the hash is held to the step's and the broker's credentials
 detached; what a restore that cannot load does after a person's unlock;
 where a fork takes its parent's workspace and the copy it makes, and
-what a purge removes; for a VM, the digest its disk is held to, its
-store's encryption at rest, and what the scan reads.
+what a purge and a key's revocation remove; for a VM, the digest its
+disk is held to, its store's encryption at rest, and what the scan reads.
 
 **Violation.** A snapshot of part of what the commands wrote, such as a
 host directory kept as if whole, or a released container's volume on a
@@ -446,7 +446,8 @@ fork that starts from a snapshot older than its spawn, or takes a slot
 or makes a child before its snapshot is taken; a cache that keeps a
 fork's snapshot as its own; a copy of a session that keeps no content at
 rest; a child whose writes reach its parent's workspace; or a VM's disk
-the scan never reads, or one kept in a store not encrypted at rest.
+the scan never reads, one kept in a store not encrypted at rest, or one
+a revocation of its session's key leaves.
 
 **Severity.** high
 
