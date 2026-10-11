@@ -262,6 +262,7 @@ class Tools:
     clock: Clock
     attribution: Answering
     waits: list[float]  # each wait of the manager's, in seconds
+    members: Members
 
 
 def tools_over(
@@ -334,7 +335,7 @@ def tools_over(
         bases=bases,
         sleep=sleep,
     )
-    return Tools(manager, steps, events, storage, clock, attribution, waits)
+    return Tools(manager, steps, events, storage, clock, attribution, waits, members)
 
 
 def twin_transport(
