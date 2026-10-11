@@ -35,7 +35,12 @@ from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.types.row import OutboxRow, versioned_row
 from acme.om.steps import StepsManagerInterface
 from acme.om.steps.types.content import Content, TextBlock
-from acme.om.steps.types.header import ControlCommand, ControlHeader, InputHeader
+from acme.om.steps.types.header import (
+    ControlCommand,
+    ControlHeader,
+    InputHeader,
+    WorkspaceSnapshot,
+)
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.tenancy import TenancyManagerInterface
 from acme.om.tools import ToolsManagerInterface
@@ -114,6 +119,7 @@ class AgentsManagerImpl(AgentsManagerInterface):
             raise ValidationFailed(f"agent session {spawn.id} is not a child of {parent_id}")
         if child is not None:
             self._may_instruct(ctx, child.tools)
+            source = await self._fork_source(ctx, parent_id, spawn)
         else:
             kind = self._kinds.latest(spawn.kind)
             if kind.result_tool is not None and kind.result_tool not in parent.tools:
@@ -131,6 +137,7 @@ class AgentsManagerImpl(AgentsManagerInterface):
             refusal = tree_refusal(tree, parent.depth + 1)
             if refusal is not None:
                 raise TreeBoundReached(refusal)
+            source = await self._fork_source(ctx, parent_id, spawn)
             # The slot is taken before the child is made: a crash between the
             # two leaves the count one high, never one low.
             if await self._storage.take_slot(ctx.org_id, tree.id) is None:
@@ -159,13 +166,13 @@ class AgentsManagerImpl(AgentsManagerInterface):
             untrusted=child.untrusted,
         )
         arrivals = [objective]
-        if spawn.fork:
+        if source is not None:
             # Its workspace starts from a copy of its parent's latest snapshot,
             # its own, so what it writes never reaches its parent's: the
             # restore comes before the objective that wakes it. A retry makes
             # the same step, which the inbox answers as stored.
             snapshot_id = derived_id(child.id, child.created_at, "fork-snapshot")
-            copy = await self._tools.fork_snapshot(ctx, parent_id, child.id, snapshot_id)
+            copy = await self._tools.fork_snapshot(ctx, parent_id, child.id, snapshot_id, source)
             restore_id = derived_id(child.id, child.created_at, "fork")
             restore = Step(
                 id=restore_id,
@@ -182,6 +189,21 @@ class AgentsManagerImpl(AgentsManagerInterface):
         # asks for its loop's run.
         _, child = await self._sessions.receive(ctx, child.id, arrivals)
         return child
+
+    async def _fork_source(
+        self, ctx: TenantContext, parent_id: UUID, spawn: Spawn
+    ) -> WorkspaceSnapshot | None:
+        """The parent's latest snapshot a fork starts from; None for a spawn
+        that is no fork. A fork whose parent holds none is refused before
+        anything of the tree is spent: no slot is taken and no child made."""
+        if not spawn.fork:
+            return None
+        source = await self._tools.latest_snapshot(ctx, parent_id)
+        if source is None:
+            raise ValidationFailed(
+                f"agent session {parent_id} holds no snapshot for a child to start from"
+            )
+        return source
 
     async def tree_of(self, ctx: TenantContext, session_id: UUID) -> AgentTree:
         ctx.require(Permission.READ)

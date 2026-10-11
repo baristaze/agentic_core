@@ -99,16 +99,30 @@ class ToolsManagerInterface(ABC):
         ...
 
     @abstractmethod
+    async def latest_snapshot(
+        self, ctx: TenantContext, session_id: UUID
+    ) -> WorkspaceSnapshot | None:
+        """The latest snapshot the session's history names, one it took or
+        one a restore started it from; None when it names none. What a fork
+        of it starts from."""
+        ...
+
+    @abstractmethod
     async def fork_snapshot(
-        self, ctx: TenantContext, parent_id: UUID, child_id: UUID, snapshot_id: UUID
+        self,
+        ctx: TenantContext,
+        parent_id: UUID,
+        child_id: UUID,
+        snapshot_id: UUID,
+        source: WorkspaceSnapshot,
     ) -> WorkspaceSnapshot:
-        """A copy, for the child, of the latest snapshot its parent's history
-        names: opened under the parent's key and held to its hash, sealed
-        again under the child's, and stored as the child's under `snapshot_id`,
-        so neither purge nor revocation of one reaches the other. It names
-        the parent's workspace as the one it came from. A copy made before
-        is made again the same. `ValidationFailed` when the parent holds no
-        snapshot; `WorkspaceLost` when its snapshot is gone or altered."""
+        """A copy, for the child, of `source`, its parent's latest snapshot
+        (`latest_snapshot`): opened under the parent's key and held to its
+        hash, sealed again under the child's, and stored as the child's under
+        `snapshot_id`, so neither purge nor revocation of one reaches the
+        other. It names the parent's workspace as the one it came from. A
+        copy made before is made again the same. `WorkspaceLost` when the
+        snapshot is gone or altered."""
         ...
 
     @abstractmethod

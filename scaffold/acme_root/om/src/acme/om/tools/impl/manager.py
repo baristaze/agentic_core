@@ -255,19 +255,26 @@ class ToolsManagerImpl(ToolsManagerInterface):
         (stored,) = await self._steps.append_steps(ctx, session_id, epoch, [step])
         return stored
 
+    async def latest_snapshot(
+        self, ctx: TenantContext, session_id: UUID
+    ) -> WorkspaceSnapshot | None:
+        ctx.require(Permission.READ)
+        latest: WorkspaceSnapshot | None = None
+        async for step in self._history(ctx, session_id):
+            latest = named_snapshot(step) or latest
+        return latest
+
     async def fork_snapshot(
-        self, ctx: TenantContext, parent_id: UUID, child_id: UUID, snapshot_id: UUID
+        self,
+        ctx: TenantContext,
+        parent_id: UUID,
+        child_id: UUID,
+        snapshot_id: UUID,
+        source: WorkspaceSnapshot,
     ) -> WorkspaceSnapshot:
         ctx.require(Permission.WRITE)
-        latest: WorkspaceSnapshot | None = None
-        async for step in self._history(ctx, parent_id):
-            latest = named_snapshot(step) or latest
-        if latest is None:
-            raise ValidationFailed(
-                f"agent session {parent_id} holds no snapshot for a child to start from"
-            )
-        archive = await self._snapshots.load(ctx, parent_id, latest)
-        return await self._snapshots.keep(ctx, child_id, snapshot_id, latest.workspace_id, archive)
+        archive = await self._snapshots.load(ctx, parent_id, source)
+        return await self._snapshots.keep(ctx, child_id, snapshot_id, source.workspace_id, archive)
 
     async def find_snapshot(
         self, ctx: TenantContext, session_id: UUID, snapshot_id: UUID
