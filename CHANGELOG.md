@@ -5,64 +5,61 @@ included, stay on its GitHub release. Releases are tagged
 `vMAJOR.MINOR.PATCH`; see `CONTRIBUTING.md` for what bumps which
 number.
 
-## 0.15.0 (2026-10-11)
+## 0.16.0 (2026-10-11)
 
-A workspace stays a cache, and may now be kept whole: a run snapshots a
-workspace whose durability is `snapshot` at its end, the next run
-starts from it, a principal rewinds to an earlier one, and a sub-agent
-forks from its parent's workspace as it stands at the spawn. A workspace
-may start from a base, an image and its setup built once per tenant. A
-VM per session runs on a machines interface, local on Lima, with Docker
-inside. An agent reads back a kept or elided result with
-`read_artifact`. Minor, with one reversal named: `Spawn.fork` is
-removed.
+A kind is built from toolsets, and loads a deferred one on demand
+without breaking the cache. A kind asks each model role it calls for a
+model size and an effort, never a model. A session carries standing
+text, a principal's instructions, whole in the cached system layer.
+An MCP client makes a server's tools a toolset, its pin checked at
+every call. Minor, with one reversal named: `McpCall` takes the call's
+runtime.
 
 ### Added
 
-- `read_artifact`, a native tool that pages through a result kept as an
-  artifact and reads back a result compaction elided, by the handle the
-  notice or the stub names; it reads only the calling session's
-  artifacts and steps (lens WIN-08) (#89).
-- Workspace Snapshots, an `optional` part of the engine: a workspace's
-  durability (`cache` or `snapshot`), a snapshot taken by the run that
-  holds the workspace at its end and named by a `snapshotted` step, a
-  restore of the latest one at the next run, a `restore` control that
-  rewinds, a snapshot sealed under the session's key and stored through
-  the buckets interface, refused when it holds an injected secret's
-  value, and removed by a purge. A container's snapshot holds its whole
-  filesystem and names its image by a pullable digest (ADR 1027, lens
-  TOL-15) (#90).
-- Workspace bases: a spec may name an image, setup commands, and the
-  setup's egress; the base is built once per tenant, kept as a
-  snapshot, and every workspace on it starts from it with its own
-  egress. A setup's container keeps the runtime's default capabilities
-  less raw sockets; a session's workspace drops every one (ADR 1028,
-  lens TOL-16) (#91).
-- A fork snapshots the parent's live workspace at the spawn, through the
-  spawning call's run, before a slot is taken or a child is made; a
-  parent whose workspace is a cache forks too (ADR 1030) (#92).
-- A VM workspace: `IsolationMode.VM` gets a provider over a new
-  machines interface (`acme.infra.machines`: an interface, a Lima
-  implementation, a twin, and a null), one machine per session with
-  Docker inside. A VM's snapshot is its disk, cloned copy-on-write and
-  held to a sha256; a key's revocation destroys the disks kept for the
-  session's snapshots. The Lima probe refuses before any machine starts
-  when there is no hypervisor or its socket path would not fit. Every
-  provider gains `held`, `keep`, and `discard` (ADR 1029) (#93).
+- Model sizes: a kind asks, of each model role it calls, a size
+  (`ModelSize`, XS to XL) and an effort (`ModelAsk`, the kind's
+  `asks`). The table resolver serves an asked role from a size table
+  (`DEFAULT_SIZES`) and any other role by its name. A fill lists the
+  efforts its model takes (`Fill.efforts`) and runs at an asked effort
+  only when it lists it, fallbacks included. The fill set keeps each
+  ask beside its fill (ADR 1032, lens MOD-01) (#95).
+- Toolsets: a named, versioned group of tools a kind names beside
+  single tools; `kind.tools` stays their union, so a kind built from
+  toolsets renders the bytes of its flat list. A deferred toolset waits
+  outside the registry as one line of `load_toolset`'s description; a
+  load is a `switched` step, and its tools render after the rest from
+  the next request on, so sessions of a kind version share one prefix
+  until a load (ADR 1031, lenses TOL-03, WIN-01, AGT-04, ECO-01) (#96).
+- Standing text: a principal's instructions pinned with a session
+  (`Start`, `Spawn`, `Handoff`, `switch_standing`) and held by a sealed
+  `switched` step. It renders whole after the kind's prompts as an
+  instruction, on every request, and is refused past 24,000 characters
+  when pinned. A cache breakpoint at the end of the kind's prompts
+  (`ModelCall.system_break`) keeps one cached entry for every session of
+  a kind version, whatever each pins (ADR 1033) (#97).
+- An MCP client (`integrations/mcp`, over the official SDK at
+  `mcp==2.3.0`): stdio and streamable HTTP, one connection per exchange,
+  ended by the tool's deadline. `McpServers.tools` builds each binding's
+  tool from the server's listing and refuses a moved definition; each
+  tool declares its server's secret, so its kind holds credentials.
+  `McpServers.call` audits the secret by its name, resolves the
+  credential, refuses a moved tool, and quotes the answer as data
+  (ADR 1034, the spec's Tools over MCP, lens TOL-04) (#98).
 
 ### Changed
 
-- A workspace provider's `prepare` takes `snapshot=`, `base=`, and the
-  keyword `building=`, and a provider snapshots, refuses a snapshot it
-  cannot take, and keeps or discards a disk; an adopter's own provider
-  and broker implement `snapshot` and `detach_all` (#90, #91, #93).
-- The large-result notice and the elided stub name `read_artifact`;
-  `engine_tools` takes the windows manager (#89).
-- The spawn tool's timeout is ten minutes, since a fork now takes a
-  snapshot (#92).
-
-### Removed
-
-- `Spawn.fork` and the tools manager's `latest_snapshot`: the agents
-  manager's spawn takes the runtime's snapshot instead. A reversal
-  (#92).
+- `ModelResolverInterface.resolve` and
+  `ModelsManagerInterface.resolve_fill_set` take `asks`, empty by
+  default; an adopter's resolver adds the parameter (#95).
+- A `switched` step's header's `fills` is optional: a load or a
+  standing switch carries none (#96, #97).
+- The inbox appends a standing switch; `trust_of` and `instructs` class
+  it as an instruction, so the inbox checks its sender (#97).
+- The Anthropic adapter marks `ModelCall.system_break`; the OpenAI
+  adapter names it among the markers it drops (#97).
+- `McpCall` takes the call's runtime: `(ctx, binding, input, runtime)`.
+  A reversal (#98).
+- `ToolRuntime.use_secret` audits a declared secret a tool uses outside
+  a command, and refuses one it does not declare; `configure_logging`
+  silences the SDK's loggers (`mcp`, `client`) (#98).
