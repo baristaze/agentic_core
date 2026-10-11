@@ -37,7 +37,9 @@ from acme.om.tools.types.toolset import LOAD_TOOLSET, Toolset
 from acme.om.windows.rules import render_main
 from acme.om.windows.types.policy import CompactionPolicy
 
-READS = Toolset(name="reads", version=1, summary="Look the records up.", tools=("lookup",))
+# `slow` sorts after the tools a load of `writes` adds, so a load that
+# sorted them in among the rest would move it.
+READS = Toolset(name="reads", version=1, summary="Look the records up.", tools=("lookup", "slow"))
 WRITES = Toolset(
     name="writes", version=1, summary="Write a note, and send it out.", tools=("send", "note")
 )
@@ -112,7 +114,7 @@ async def replayed(loop: Loop, kind: AgentKind, session_id: UUID) -> list[ModelC
 
 def test_a_kinds_toolsets_and_deferred_toolsets_join_its_tools_once_and_refold_alike() -> None:
     assert set(BUILT.tools) == set(FLAT.tools)
-    assert set(DEFERS.tools) == {"lookup", "note", "send", LOAD_TOOLSET}
+    assert set(DEFERS.tools) == {"lookup", "slow", "note", "send", LOAD_TOOLSET}
     assert DEFERS.waiting == frozenset({"note", "send"})
     again = AgentKind.model_validate(DEFERS.model_dump())
     assert again == DEFERS, "a folded kind folds to itself"
@@ -193,7 +195,7 @@ async def test_a_deferred_toolset_loads_as_a_recorded_switch_and_its_history_rep
     steps = await ran(loop, session_id)
 
     first, early, loaded, late = loop.anthropic.calls
-    assert names(first) == [LOAD_TOOLSET, "lookup"]
+    assert names(first) == [LOAD_TOOLSET, "lookup", "slow"]
     described = first.tools[0].description.splitlines()
     assert described[1:] == ["- writes: Write a note, and send it out."], "one line"
     responses = [step for step in steps if step.type is StepType.TOOL_RESPONSE]
@@ -249,7 +251,7 @@ async def test_a_sessions_tool_definitions_change_only_by_a_recorded_load(
     calls = loop.anthropic.calls
     assert len(calls) == 9
     assert changes(calls) == [
-        ([LOAD_TOOLSET, "lookup"], [LOAD_TOOLSET, "lookup", "note", "send"])
+        ([LOAD_TOOLSET, "lookup", "slow"], [LOAD_TOOLSET, "lookup", "slow", "note", "send"])
     ], "one change: the load"
     switches = [step for step in steps if step.type is StepType.SWITCHED]
     assert len(switches) == 1, "a refused load and a second one switch nothing"
