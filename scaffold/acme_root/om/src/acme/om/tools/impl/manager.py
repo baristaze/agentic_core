@@ -664,10 +664,11 @@ class ToolsManagerImpl(ToolsManagerInterface):
         await self._transport.purge_records(session_id)
         await self._snapshots.purge(org_id, session_id)
 
-    async def erase_snapshots(self, org_id: UUID, session_id: UUID) -> None:
+    async def erase_snapshots(self, ctx: TenantContext, session_id: UUID) -> None:
+        ctx.require(Permission.WRITE)
         # A session's workspace is prepared under the session's id, and its
         # snapshots are kept under it.
-        await self._workspaces.erase_snapshots(org_id, session_id)
+        await self._workspaces.erase_snapshots(ctx.org_id, session_id)
 
     async def purge_tenant(self, ctx: TenantContext) -> int:
         ctx.require(Permission.WRITE)

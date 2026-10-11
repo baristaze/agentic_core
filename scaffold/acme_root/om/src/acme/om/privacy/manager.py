@@ -16,11 +16,11 @@ from uuid import UUID
 from acme.om.context import TenantContext
 from acme.om.privacy.types.session_privacy import SessionPrivacy, StoragePolicy
 
-SessionRevoked = Callable[[UUID, UUID], Awaitable[None]]
+SessionRevoked = Callable[[TenantContext, UUID], Awaitable[None]]
 """What other namespaces keep of a session outside its seal, destroyed with
-its key's revocation: given its tenant and its id. The root binds it to the
-tools' erasure of what the session's snapshots keep outside their archives,
-such as a VM's disks."""
+its key's revocation: given the revoking context and the session's id. The
+root binds it to the tools' erasure of what the session's snapshots keep
+outside their archives, such as a VM's disks."""
 
 
 class PrivacyManagerInterface(ABC):

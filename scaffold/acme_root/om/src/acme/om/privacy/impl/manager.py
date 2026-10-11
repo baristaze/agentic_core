@@ -105,7 +105,7 @@ class PrivacyManagerImpl(PrivacyManagerInterface):
         # The key is gone, so nothing opens an archive again; what is kept
         # outside the seal goes with it, at every call, so a call that
         # failed here is finished by the next.
-        await self._revoked(ctx.org_id, session_id)
+        await self._revoked(ctx, session_id)
         return stored
 
     async def rotate_key(self, ctx: TenantContext, session_id: UUID) -> int:

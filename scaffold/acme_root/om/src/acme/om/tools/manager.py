@@ -279,13 +279,13 @@ class ToolsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def erase_snapshots(self, org_id: UUID, session_id: UUID) -> None:
-        """Platform-internal: what the session's snapshots keep outside
-        their sealed archives, such as a VM's disks, destroyed with the
-        revocation of its key, which leaves every archive noise. A copy kept
-        for another session, such as a fork's, is that session's and stays,
-        and so does the workspace itself, a cache. For no principal. A
-        process with no workspace provider keeps none of it."""
+    async def erase_snapshots(self, ctx: TenantContext, session_id: UUID) -> None:
+        """What the session's snapshots keep outside their sealed archives,
+        such as a VM's disks, destroyed with the revocation of its key,
+        which leaves every archive noise. A copy kept for another session,
+        such as a fork's, is that session's and stays, and so does the
+        workspace itself, a cache. A process with no workspace provider
+        keeps none of it."""
         ...
 
     @abstractmethod
