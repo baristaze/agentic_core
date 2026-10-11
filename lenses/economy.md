@@ -17,16 +17,14 @@ spends inside its limits, never whether a limit holds.
 
 **Principle.** The kind's prompts and its tool definitions, the two
 layers every request opens with, hold no value that differs per session,
-per person, or per tenant. Such a value renders after that stable
-prefix, in the places WIN-05 allows. The one value of a session the
-system layer holds is its standing text, after the kind's prompts and
-before the engine's notice of what data is. A cache breakpoint at the
-end of the kind's prompts keeps the tools and the prompts one cached
-prefix, which every session of a kind version shares, whatever text it
-pins, until a load of a deferred toolset adds its tools after the rest.
-Only the sessions that pin the same text share the whole system layer.
-The order of the layers, and that the same steps render the same bytes,
-are WIN-01's.
+per person, or per tenant. Such a value renders after them, where WIN-05
+allows: in the system layer, only the standing text, after the kind's
+prompts. A cache breakpoint at the end of the prompts keeps them and the
+tools one cached prefix, which every session of a kind version shares,
+whatever text it pins, until a load of a deferred toolset adds its tools
+after the rest. Only sessions that pin the same text share the whole
+system layer. The order of the layers, and that the same steps render
+the same bytes, are WIN-01's.
 
 **Source.** Economy, What a Request Carries (One prefix per kind
 version); Context, Rendering.
