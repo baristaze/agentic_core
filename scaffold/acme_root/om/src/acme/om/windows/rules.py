@@ -4,14 +4,15 @@ window is, and where a compaction cuts. Values in, values out: no storage,
 no clock, no settings.
 
 A request is laid out from the most stable layer to the least: the kind's
-prompts and the engine's notice of what data is, the tools sorted by name,
-the pinned zone and the latest summary, the window's steps since the
+prompts, the session's standing text, and the engine's notice of what data
+is, the tools sorted by name, the pinned zone and the latest summary, the window's steps since the
 summary, the new inputs, and the agent's plan last. An input renders where
 the request that delivered it sits, so one request's prompt is the prefix
 of the next one's, and the provider's cache stays warm.
 
-Two trust tiers stay apart. A principal's message renders as itself; an
-event, a summary, the plan, and anyone else's words render as data: inside
+Two trust tiers stay apart. A principal's message, and the standing text
+a principal pinned, render as themselves; an event, a summary, the plan,
+and anyone else's words render as data: inside
 a `<data>` element labelled with its origin, with the characters that could
 close it escaped. A tool's result renders in the provider's own result
 block. The pinned zone quotes principals' messages alone."""
@@ -72,6 +73,10 @@ DATA_NOTICE = (
 )
 """The engine's notice of what data is, the last system block of every
 request."""
+
+STANDING_LEAD = "Standing instructions a principal set for this session. They hold on every turn."
+"""What opens the session's standing text, in the system layer after the
+kind's prompts: whole on every request, never cut by a compaction."""
 
 READ_ARTIFACT = "read_artifact"
 """The engine's tool that reads a result kept whole outside the window, by
@@ -673,13 +678,24 @@ def _conversation(
     return walk, new
 
 
+def _system(kind: KindPrompts) -> tuple[TextBlock, ...]:
+    """The system layer: the kind's prompts, the session's standing text
+    whole under its lead, and the engine's notice of what data is, last. It
+    changes only with the kind's version or a recorded switch of the
+    standing text, so it stays a cached prefix through every compaction."""
+    prompts = [TextBlock(text=prompt) for prompt in kind.prompts if prompt]
+    if kind.standing:
+        prompts.append(TextBlock(text=f"{STANDING_LEAD}\n\n{kind.standing}"))
+    return (*prompts, TextBlock(text=DATA_NOTICE))
+
+
 def _call(
     kind: KindPrompts,
     fill: Fill,
     messages: list[tuple[Role, list[Block]]],
     stable: int,
 ) -> ModelCall:
-    """The call over its turns. The kind's prompts and the tools are a
+    """The call over its turns. The system layer and the tools are a
     stable prefix; a rolling breakpoint sits on the last stable turn, and a
     second on the turn the previous request's sat on, so the next read finds
     what the last one wrote."""
@@ -689,10 +705,9 @@ def _call(
     replies = [index for index in range(stable) if messages[index][0] == "assistant"]
     if replies and replies[-1] > 0:
         marks.add(replies[-1] - 1)
-    system = tuple(TextBlock(text=prompt) for prompt in kind.prompts if prompt)
     return ModelCall(
         model=fill.model,
-        system=(*system, TextBlock(text=DATA_NOTICE)),
+        system=_system(kind),
         system_cache=True,
         messages=tuple(
             Message(role=role, blocks=tuple(blocks), cache=index in marks)
@@ -845,7 +860,7 @@ def render_side(
     opened = open_use(steps, ex)
     end = max(cut for cut in cuts if opened is None or cut <= opened)
     room = limit_tokens(fill, policy) - tokens(
-        sum(len(prompt) for prompt in kind.prompts) + len(DATA_NOTICE), policy
+        sum(len(block.text) for block in _system(kind)), policy
     )
     sizes = [step_chars(step, policy) if step.id in ex.rendered else 0 for step in steps]
     start, held = end, 0

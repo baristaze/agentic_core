@@ -30,7 +30,7 @@ from acme.om.agents.types.kind import AgentKind
 from acme.om.agents.types.report import Report
 from acme.om.attribution.rules import principal_authored
 from acme.om.attribution.types.principal import Principal
-from acme.om.steps.rules import completes
+from acme.om.steps.rules import arrives, completes
 from acme.om.steps.types.content import Children, Content, TextBlock, ToolUseBlock
 from acme.om.steps.types.header import (
     ControlCommand,
@@ -49,7 +49,7 @@ from acme.om.steps.types.header import (
     ToolResponseHeader,
     ToolsetSwitch,
 )
-from acme.om.steps.types.step import Actor, Origin, Step, StepType
+from acme.om.steps.types.step import Actor, Origin, Step, StepType, switches_standing
 from acme.om.steps.types.stream import StreamPart, TextPart, ThinkingPart, ToolInputPart
 from acme.om.tools.native.ask_person import ASK_PERSON
 from acme.om.tools.native.load_toolset import description as load_toolset_description
@@ -225,15 +225,15 @@ class OpenLoop:
 
 def engine_written(step: Step) -> bool:
     """Whether a run wrote the step as part of its loop: everything but what
-    arrives through the inbox, an input or a control, and the engine's own
-    notices among the inputs. A snapshot's step is written whenever its
-    caller takes one, after a loop's end included, so it says nothing of
-    which loop is open or what a loop did."""
+    arrives through the inbox, an input, a control, or the standing text a
+    maker pins, and the engine's own notices among the inputs. A snapshot's
+    step is written whenever its caller takes one, after a loop's end
+    included, so it says nothing of which loop is open or what a loop did."""
     if step.type is StepType.SNAPSHOTTED:
         return False
     if step.type.is_input():
         return step.actor is Actor.ENGINE
-    return not step.type.is_control()
+    return not arrives(step)
 
 
 def open_loop(steps: Sequence[Step]) -> OpenLoop | None:
@@ -544,14 +544,28 @@ def holds_private(
     )
 
 
+def standing_text(steps: Sequence[Step], start: int) -> str:
+    """The standing text a loop renders: the latest its session pinned
+    before `start`, the seq of the input the loop began from, and none when
+    it pinned none. A switch recorded after that input waits for the next
+    loop, so a session's instructions never change under the work it is
+    doing, and a replay reads what its run read."""
+    pinned = [step for step in steps if step.seq < start and switches_standing(step)]
+    return pinned[-1].as_text() if pinned else ""
+
+
 def kind_prompts(
-    kind: AgentKind, registry: ToolRegistry, loaded: Sequence[ToolsetSwitch] = ()
+    kind: AgentKind,
+    registry: ToolRegistry,
+    loaded: Sequence[ToolsetSwitch] = (),
+    standing: str = "",
 ) -> KindPrompts:
     """The first two layers of every request the kind renders: its prompts,
-    and the tools its registry holds: those it held before any load, in the
-    registry's fixed order, then those each of the history's loads
-    (`loaded`) added, in the order the loads happened. `load_toolset`
-    describes the toolsets the kind defers, one line each."""
+    the session's `standing` text, and the tools its registry holds: those
+    it held before any load, in the registry's fixed order, then those each
+    of the history's loads (`loaded`) added, in the order the loads
+    happened. `load_toolset` describes the toolsets the kind defers, one
+    line each."""
     specs = {
         tool.name: ToolSpec(
             name=tool.name,
@@ -569,6 +583,7 @@ def kind_prompts(
         kind=kind.name,
         version=kind.version,
         prompts=kind.prompts,
+        standing=standing,
         tools=tuple(spec for name, spec in specs.items() if name not in added),
         loaded=tuple(specs[name] for name in added),
     )

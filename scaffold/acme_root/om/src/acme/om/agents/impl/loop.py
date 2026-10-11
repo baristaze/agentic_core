@@ -538,7 +538,9 @@ class LoopManagerImpl(LoopManagerInterface):
         )
         if outage is not None and outage.retry_at > self._clock():
             return await self._park(run, provider_park(fill, outage.retry_at))
-        prompts = rules.kind_prompts(run.kind, run.registry, loads(history))
+        prompts = rules.kind_prompts(
+            run.kind, run.registry, loads(history), rules.standing_text(history, run.start_seq)
+        )
         # The agent's current plan, read off the whole history, so a summary
         # that folded the call that wrote it still leaves it in view.
         kept = current_plan(history)

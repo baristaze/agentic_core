@@ -28,7 +28,7 @@ from acme.om.attribution.types.authority import (
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.context import CredentialKind, Role, TenantContext
 from acme.om.steps.types.header import ControlHeader, InputHeader, ModelRequestHeader
-from acme.om.steps.types.step import Actor, Origin, Step, StepType
+from acme.om.steps.types.step import Actor, Origin, Step, StepType, switches_standing
 
 PRINCIPAL_ACTORS = frozenset({Actor.PERSON, Actor.PROGRAM})
 """The actors that speak for a principal: a person, or a program a person or
@@ -48,18 +48,19 @@ def principal_authored(step: Step) -> bool:
 
 def trust_of(step: Step) -> Trust | None:
     """The tier of what a step tells a model. A principal's message, a
-    parent's message to its child, and the engine's notices (a nudge, and
-    the notice that the world changed) instruct; every other input, a
-    tool's output, and a summary are data. None for a step a model does not
-    read as content: its own requests and responses, a control, and the
-    other marks of a loop. Only a run writes the engine's message, under its
-    epoch: the inbox refuses one (`steps.rules.batch_refusal`)."""
+    parent's message to its child, the session's standing text its maker
+    pinned, and the engine's notices (a nudge, and the notice that the
+    world changed) instruct; every other input, a tool's output, and a
+    summary are data. None for a step a model does not read as content:
+    its own requests and responses, a control, and the other marks of a
+    loop. Only a run writes the engine's message, under its epoch: the
+    inbox refuses one (`steps.rules.batch_refusal`)."""
     if step.type is StepType.MESSAGE:
         from_parent = step.actor is Actor.AGENT and step.origin is Origin.PARENT
         notice = step.actor is Actor.ENGINE
         instructs = principal_authored(step) or from_parent or notice
         return Trust.INSTRUCTION if instructs else Trust.DATA
-    if step.type is StepType.ENVIRONMENT_CHANGED:
+    if step.type is StepType.ENVIRONMENT_CHANGED or switches_standing(step):
         return Trust.INSTRUCTION
     if step.type in DATA_TYPES:
         return Trust.DATA
@@ -68,12 +69,13 @@ def trust_of(step: Step) -> Trust | None:
 
 def instructs(step: Step) -> bool:
     """Whether an input instructs on someone's word: one a model reads as an
-    instruction, a principal's message or a parent's to its child, however
-    its actor is labelled, and not the engine's own notice, which a run
-    writes under its epoch and the inbox refuses. Its sender may make every
-    kind of call the session's registry offers (`steps.manager.InstructCheck`)."""
+    instruction, a principal's message, a parent's to its child, or the
+    standing text a maker pins, however its actor is labelled, and not the
+    engine's own notice, which a run writes under its epoch and the inbox
+    refuses. Its sender may make every kind of call the session's registry
+    offers (`steps.manager.InstructCheck`)."""
     return (
-        step.type.is_input()
+        (step.type.is_input() or switches_standing(step))
         and step.actor is not Actor.ENGINE
         and trust_of(step) is Trust.INSTRUCTION
     )

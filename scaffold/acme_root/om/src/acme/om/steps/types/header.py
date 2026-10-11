@@ -375,20 +375,31 @@ class ToolsetSwitch(Platform):
     tools: tuple[Stored, ...] = Field(min_length=1)
 
 
+class StandingSwitch(Platform):
+    """What a `switched` step says of the session's standing text: how many
+    characters it holds. The text is the step's content, sealed at rest as
+    every step's is; a switch to none holds no text."""
+
+    chars: int = Field(ge=0)
+
+
 class SwitchedHeader(Platform):
     """A switch, explicit: the fill set's new version and both fills it
-    names, or a toolset a load added to the session's registry, with the
-    tools it added. A switch is never silent, so no fill changes, and no
-    tool joins a request, without one."""
+    names, a toolset a load added to the session's registry, with the
+    tools it added, or the session's standing text. A switch is never
+    silent, so no fill changes, no tool joins a request, and no standing
+    text changes, without one."""
 
     kind: Literal["switched"] = "switched"
     fills: FillSwitch | None = None
     toolset: ToolsetSwitch | None = None
+    standing: StandingSwitch | None = None
 
     @model_validator(mode="after")
     def _one_switch(self) -> Self:
-        if (self.fills is None) == (self.toolset is None):
-            raise ValueError("a switch names a fill switch or a toolset, and not both")
+        named = (self.fills, self.toolset, self.standing)
+        if sum(each is not None for each in named) != 1:
+            raise ValueError("a switch names one of a fill switch, a toolset, or standing text")
         return self
 
 
