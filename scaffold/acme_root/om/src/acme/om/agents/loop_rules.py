@@ -213,9 +213,13 @@ class OpenLoop:
 
 
 def engine_written(step: Step) -> bool:
-    """Whether a run wrote the step: everything but what arrives through the
-    inbox, an input or a control, and the engine's own notices among the
-    inputs."""
+    """Whether a run wrote the step as part of its loop: everything but what
+    arrives through the inbox, an input or a control, and the engine's own
+    notices among the inputs. A snapshot's step is written whenever its
+    caller takes one, after a loop's end included, so it says nothing of
+    which loop is open or what a loop did."""
+    if step.type is StepType.SNAPSHOTTED:
+        return False
     if step.type.is_input():
         return step.actor is Actor.ENGINE
     return not step.type.is_control()

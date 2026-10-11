@@ -123,6 +123,10 @@ def after_step(state: Projection, step: Step) -> Projection:
         return state
     if isinstance(header, ParkedHeader):
         return replace(state, status=SessionStatus.PARKED, park=header.park)
+    if step.type is StepType.SNAPSHOTTED:
+        # Taken whenever its caller takes one, a loop's end included: it
+        # says nothing of a run.
+        return state
     if isinstance(header, LoopEndedHeader):
         waiting = state.pending_input is not None and header.outcome not in STOPPED
         status = SessionStatus.PENDING if waiting else SessionStatus.IDLE

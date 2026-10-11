@@ -364,6 +364,7 @@ def loop_over(
     extra: tuple[ToolInterface, ...] = (),
     ceilings: PolicyLayer | None = None,
     sessions: AgentSessionsOptions | None = None,
+    infra: InfraLocalImpl | None = None,
 ) -> Loop:
     """`storage` None is the memory storage, and `owner` None a fresh
     tenant's owner; a suite over Postgres hands in both. `jitter` is what
@@ -374,8 +375,10 @@ def loop_over(
     suite of a gate of its own builds it from the managers and the clock.
     `models_layer` goes to the root as a layer's root hands it in, and the
     loop takes the layer's call credentials. `ceilings` None keeps the
-    platform's, and `sessions` None is the sessions' own options."""
-    infra = InfraLocalImpl(tmp_path)
+    platform's, and `sessions` None is the sessions' own options. `infra`
+    None is the local root over `tmp_path`; a suite on real Docker hands in
+    one whose workspaces are containers."""
+    infra = infra or InfraLocalImpl(tmp_path)
     anthropic = ModelProviderScriptedImpl(ProviderName.ANTHROPIC)
     openai = ModelProviderScriptedImpl(ProviderName.OPENAI)
     providers = ModelProvidersOverImpl(
