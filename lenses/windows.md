@@ -200,25 +200,31 @@ overflow retried more than once for one request, or never.
 ## WIN-08 Large results are artifacts, read just in time
 
 **Principle.** A tool result above a size bound is stored as an
-artifact. The step holds a preview, its head and tail, and a handle, and
-a read tool pages through the rest. Agents retrieve just in time, by
-searching the history, reading an artifact, or querying a record,
-rather than preload. A sub-agent is the other context tool: it explores
+artifact. The step holds a preview, its head and tail, and a handle. The
+engine's read tool, `read_artifact`, pages through the rest by that
+handle, and reads back a result that compaction elided by the handle its
+stub names. The notice beside a preview and the stub both name it. It
+reads the calling session's own results alone. Agents retrieve just in
+time, by searching the history, reading an artifact, or querying a
+record, rather than preload. A sub-agent is the other context tool: it explores
 in a clean context and returns a report.
 
 **Source.** Context, Large Results and Retrieval.
 
 **Look for.** The size bound on a tool's output and what happens above
-it; the read tool that pages an artifact; what an agent kind preloads
-into its first request.
+it; `read_artifact`, which pages an artifact and reads an elided result
+back, and the session it looks a handle up in; what an agent kind
+preloads into its first request.
 
 **Violation.** A large result rendered whole into the window; a preview
-with no handle, so the rest cannot be read; a kind that loads whole
+or a stub with no handle, or one that names no tool to read it, so the
+rest cannot be read; a handle looked up in a session the input names,
+so one session reads another's result; a kind that loads whole
 documents or histories up front instead of a tool to fetch them.
 
 **Severity.** medium
 
 **Shape.** `scaffold/acme_root/om/src/acme/om/windows/impl/manager.py` and
-`scaffold/acme_root/om/src/acme/om/windows/rules.py`
+`scaffold/acme_root/om/src/acme/om/tools/native/read_artifact.py`
 
 **Check.** review

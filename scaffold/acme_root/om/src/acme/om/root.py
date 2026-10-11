@@ -91,6 +91,7 @@ from acme.om.tools.attachments import AttachmentReaderInterface
 from acme.om.tools.impl.attachments import AttachmentReaderNullImpl
 from acme.om.tools.impl.manager import ToolsManagerImpl, ToolsOptions
 from acme.om.tools.native.ask_person import AskPersonToolImpl
+from acme.om.tools.native.read_artifact import ReadArtifactToolImpl
 from acme.om.tools.native.read_attachment import ReadAttachmentToolImpl
 from acme.om.tools.native.spawn_sub_agent import SpawnSubAgentToolImpl
 from acme.om.tools.native.wait_for_sub_agents import WaitForSubAgentsToolImpl
@@ -448,11 +449,7 @@ def build_managers(
         attribution_options or AttributionOptions(),
     )
     kinds = AgentKindCatalog(kinds=agent_kinds)
-    # The spawn tool starts sub-agents through the agents manager, which is
-    # built below on this catalog, so that edge is bound at call time.
     reader = attachment_reader or AttachmentReaderNullImpl()
-    catalog = engine_tools(steps, agent_sessions, reader, lambda: managers.agents) + tool_catalog
-    ToolRegistry(catalog, domain_classes)  # refuses two tools of one name at boot
     # What a model request reads: rendered from the history, compacted by
     # the summarizer through the model providers, behind the gate, paid for
     # by the spender attribution names.
@@ -481,6 +478,13 @@ def build_managers(
         compaction_policy or CompactionPolicy(),
         WindowsOptions(),
     )
+    # The read tool pages through what windows keeps. The spawn tool starts
+    # sub-agents through the agents manager, which is built below on this
+    # catalog, so that edge is bound at call time.
+    catalog = (
+        engine_tools(steps, agent_sessions, reader, windows, lambda: managers.agents) + tool_catalog
+    )
+    ToolRegistry(catalog, domain_classes)  # refuses two tools of one name at boot
     # A child's report reaches its parent through windows, which bounds it.
     agents = AgentsManagerImpl(
         storage.get_agent_storage(),
@@ -584,16 +588,19 @@ def engine_tools(
     steps: StepsManagerInterface,
     sessions: AgentSessionsManagerInterface,
     attachments: AttachmentReaderInterface,
+    windows: WindowsManagerInterface,
     agents: Callable[[], AgentsManagerInterface],
 ) -> tuple[ToolInterface, ...]:
     """The tools the engine ships, offered to a session only when its kind
     names them: asking its person or standing down, writing its plan,
-    reading an attachment by range, starting a sub-agent through the
+    reading an attachment by range, reading a result kept whole outside the
+    window by the handle the window names, starting a sub-agent through the
     agents manager `agents` provides, and waiting on its sub-agents."""
     return (
         AskPersonToolImpl(),
         WritePlanToolImpl(),
         ReadAttachmentToolImpl(steps, attachments),
+        ReadArtifactToolImpl(steps, windows),
         SpawnSubAgentToolImpl(sessions, agents),
         WaitForSubAgentsToolImpl(sessions),
     )

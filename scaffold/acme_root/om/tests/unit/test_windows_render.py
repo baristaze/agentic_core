@@ -328,7 +328,8 @@ def test_a_bulky_result_read_before_the_summary_renders_as_a_stub_with_its_handl
     assert isinstance(stub, TextBlock)
     assert stub.text == (
         f"[A tool result of 6000 characters, elided once read. "
-        f"It is kept whole as step {bulky.id} of the history.]"
+        f"It is kept whole as step {bulky.id} of the history; read_artifact reads it by that "
+        "handle.]"
     )
     unread_result = unread.as_tool_response()
     assert results[unread_result.tool_use_id].parts == unread_result.parts, "not read yet"
