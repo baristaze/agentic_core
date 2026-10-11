@@ -607,11 +607,24 @@ other context tool: it explores in a clean context and returns a report
 A call site names a task, never a model. That task is a **model role**:
 the main agent, the summarizer, a title, a log triage, a vision task.
 (It is `ModelRole` in code, never the guideline's `Role`.) A **fill**
-serves a model role: a provider, a model, an effort level, an output
-bound, the output shape expected (text or a schema), the context window,
-and the eligibility it carries, such as zero retention or a region. An
-injected **resolver** turns model roles into fills. The engine never
-picks a model, and an agent kind names only model roles.
+serves a model role: a provider, a model, an effort level and the
+levels its model takes, an output bound, the output shape expected (text
+or a schema), the context window, and the eligibility it carries, such
+as zero retention or a region. An injected **resolver** turns model
+roles into fills. The engine never picks a model, and an agent kind
+never names one.
+
+A kind may **ask** of a model role how much model it needs: a **model
+size**, from XS to XL, and an effort. The resolver serves the size, so a
+role a kind declares as data gets a fitting model with no row of its
+own. A fill takes the ask's effort only when its model takes that level,
+so an ask never widens what a fill allows. The fill set keeps each ask
+beside the fill it got. A role a kind asks nothing of resolves by its
+name.
+
+*Example:* an engineering kind asks L of its main role at high effort,
+and S of its summarizer at low. A summarizer whose model takes no
+effort level runs at its own.
 
 > **Principle:** A call names a model role, never a model. A switch is
 > allowed; a silent switch is not.
@@ -1215,7 +1228,7 @@ One loop serves many agents. An **agent kind** is a profile over it:
 |---|---|---|
 | Prompts | Engineering method, report contract | Product explanations, citation rules |
 | Tool registry | Workspace, execute, spawn, a result tool | Read records, a handoff tool |
-| Model roles | main, summarizer, analysis | main, title |
+| Model roles and their asks | main L, summarizer S, analysis M | main M, title XS |
 | Done rule | Only the result tool ends a loop | A turn with no tool call is the answer |
 | Result contract and gate | A report with cited evidence; a success needs evidence | None |
 | Authority mode | Steady | Delegated |
@@ -1737,7 +1750,7 @@ attribution is `attribution` beside its identity plane.
 | `agent_sessions` | The session, its status projection, its parks |
 | `steps` | The step, its types, actors and origins, headers, content blocks, children, stream parts |
 | `windows` | Rendering, windows, the pinned zone, compaction policy, summaries |
-| `models` | Model roles, fills, fill sets, the resolver, error kinds, usage |
+| `models` | Model roles, model sizes and asks, fills, fill sets, the resolver, error kinds, usage |
 | `tools` | The tool contract, the registry, classes, effects, policy, approvals, failure classes, jobs, workspace snapshots |
 | `budgets` | Budgets, budget windows, the gate, holds, breaches, the ledger, pricing |
 | `agents` | Agent kinds, done rules, result gates, trees, handoffs |
