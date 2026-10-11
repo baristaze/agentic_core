@@ -99,7 +99,8 @@ a disk again, and the disk goes with the purge.
 every snapshot kept under its name. A copy that must outlive the
 workspace it came from is kept under its own: the provider interface's
 `keep` copies a snapshot under another workspace. A fork keeps its copy
-under the child's workspace, so the parent's purge leaves it. A base is
+under the child's workspace, so the parent's purge leaves it; a parent
+that is a cache keeps no disk of what the spawn took. A base is
 kept under an id of its own, taken from the tenant and the base's key,
 so the build's purge leaves it; it goes when the base is dropped and
 with the tenant's purge. An archive that holds its own bytes, a

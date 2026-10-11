@@ -13,6 +13,7 @@ more in one call does it in one command, or is not unsafe."""
 
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
 
@@ -40,6 +41,24 @@ SecretAudit = Callable[[SecretUse], Awaitable[None]]
 uses it runs."""
 
 
+@dataclass(frozen=True)
+class TakenSnapshot:
+    """A live workspace taken whole for a sub-agent to start from, held in
+    memory until the child is made: the provider's archive, its
+    credentials taken back and scanned for every injected secret's value,
+    the workspace it came from, and whether that workspace keeps it as its
+    own snapshot too. What one that does not keep it holds outside the
+    archive, such as a disk, goes once the child's copy is kept."""
+
+    workspace_id: UUID
+    archive: bytes = field(repr=False)
+    kept: bool = False
+
+
+TakeSnapshot = Callable[[], Awaitable[TakenSnapshot]]
+"""Takes the call's workspace as it stands: `ToolRuntime.snapshot`."""
+
+
 class ToolRuntime:
     """One call's way into its workspace. A preflight's is read-only. Its
     command goes with the seal its record keeps the output under: its
@@ -60,11 +79,13 @@ class ToolRuntime:
         effect: Effect,
         secrets: tuple[SecretUse, ...],
         audit: SecretAudit,
+        snapshot: TakeSnapshot,
         on_output: OutputSink | None = None,
         read_only: bool = False,
         answer_chars: int = 50_000,
     ) -> None:
         self._answer_chars = answer_chars  # the bound of what the model reads of an answer
+        self._snapshot = snapshot
         self.session_id = session_id
         self._transport = transport
         self._workspace = workspace
@@ -140,6 +161,16 @@ class ToolRuntime:
 
     async def list_files(self, path: str, limit: int) -> list[FileEntry]:
         return await self._transport.list_files(self._workspace, path, limit)
+
+    async def snapshot(self) -> TakenSnapshot:
+        """The workspace as it stands now, taken whole for a sub-agent that
+        starts from it, by the run that holds it and under its epoch. A
+        workspace kept by snapshots keeps it as its own too, named by a
+        `snapshotted` step in the call's loop. `SnapshotRefused`, with the
+        reason, when the provider cannot snapshot, the session keeps no
+        content at rest, or the workspace holds an injected secret's value."""
+        self._writable("take a snapshot")
+        return await self._snapshot()
 
     def _writable(self, what: str) -> None:
         if self._read_only:

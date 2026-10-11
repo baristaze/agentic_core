@@ -6,8 +6,9 @@ A snapshot is content: what a workspace's commands wrote. So it is sealed
 like the steps they answered, scanned for the values of the secrets the
 catalog's tools may have injected before anything of it is kept, and goes
 with its session's purge. Each session keeps its own: a child that starts
-from its parent's snapshot keeps a copy sealed under its own key, so
-neither purge nor revocation of one reaches the other (ADR 1027)."""
+from its parent's workspace keeps its copy sealed under its own key, so
+neither purge nor revocation of one reaches the other (ADR 1027, ADR
+1030)."""
 
 from collections.abc import AsyncIterable, Collection
 from uuid import UUID
@@ -37,6 +38,12 @@ def snapshot_key(session_id: UUID, digest: str) -> str:
     return session_prefix(session_id) + digest.removeprefix(HASH_SCHEME)
 
 
+def _unkept(session_id: UUID) -> SnapshotRefused:
+    return SnapshotRefused(
+        f"agent session {session_id} keeps no content at rest, so it keeps no snapshot"
+    )
+
+
 class SnapshotStore:
     """`secret_names` are the secrets the catalog's tools may have injected
     into a command: a snapshot that holds the value of one is refused."""
@@ -57,6 +64,13 @@ class SnapshotStore:
         self._secret_names = tuple(sorted(set(secret_names)))
         self._purge_batch = purge_batch
 
+    async def at_rest(self, ctx: TenantContext, session_id: UUID) -> None:
+        """Refuses (`SnapshotRefused`) a session that keeps no content at
+        rest, before anything of its workspace is taken: no snapshot of it
+        is kept, its own or a sub-agent's copy."""
+        if not await self._seal.keeps(ctx, session_id):
+            raise _unkept(session_id)
+
     async def keep(
         self,
         ctx: TenantContext,
@@ -71,9 +85,7 @@ class SnapshotStore:
         digest = HASH_SCHEME + await self._keyed_hash(ctx, session_id, archive)
         sealed = await self._seal.seal(ctx, session_id, digest, archive)
         if sealed is None:
-            raise SnapshotRefused(
-                f"agent session {session_id} keeps no content at rest, so it keeps no snapshot"
-            )
+            raise _unkept(session_id)
         key = snapshot_key(session_id, digest)
         await self._buckets.put(
             ctx.org_id, BUCKET, key, sealed, CONTENT_TYPE, deadline=ctx.deadline

@@ -2,9 +2,10 @@
 provider and its transport on the machines' twin (ADR 1029). A snapshot of a
 VM is its disk, kept by the machines: the archive the history names holds a
 name and a digest, and the scan for a secret's value reads the disk. A
-fork's copy is the child's own disk, and outlives its parent's purge. A
-base's disk is kept under the tenant, outlives the build that made it, and
-goes with the tenant's purge."""
+fork's copy is the child's own disk, and outlives its parent's purge; a
+cache parent keeps no disk of what the spawn took. A base's disk is kept
+under the tenant, outlives the build that made it, and goes with the
+tenant's purge."""
 
 from datetime import timedelta
 from pathlib import Path
@@ -36,6 +37,7 @@ from acme.om.context import Role
 from acme.om.steps.types.header import SnapshotHeader, WorkspaceSnapshot
 from acme.om.steps.types.step import Step
 from acme.om.tools.impl.bases import base_key, base_workspace_id
+from acme.om.tools.tool import TakenSnapshot
 
 PREFIX = "acme-test-"
 KEPT = IsolationSpec(
@@ -114,19 +116,29 @@ async def test_a_vm_snapshot_names_its_disk_and_the_scan_reads_the_disk(
     assert len(disks) == 1, "the refused snapshot's disk went; the kept one stays"
 
 
-async def test_a_fork_of_a_vm_snapshot_is_the_childs_own_disk(tmp_path: Path) -> None:
+async def test_a_fork_of_a_vm_is_the_childs_own_disk(tmp_path: Path) -> None:
+    """The child's copy of what the spawn took is a disk under its own
+    workspace, so its parent's purge leaves it whole. A parent kept by
+    snapshots keeps the disk it took; a cache keeps none."""
     vms = Vms(tmp_path)
-    parent, child = new_id(), new_id()
-    workspace = await vms.tools.manager.prepare_workspace(vms.ctx, parent, KEPT)
-    (vms.folder(parent) / WORKSPACE / "state.txt").write_text("the parent's")
-    source = await vms.snapshot(workspace)
+    for durability in (Durability.SNAPSHOT, Durability.CACHE):
+        parent, child = new_id(), new_id()
+        spec = KEPT.model_copy(update={"durability": durability})
+        workspace = await vms.tools.manager.prepare_workspace(vms.ctx, parent, spec)
+        (vms.folder(parent) / WORKSPACE / "state.txt").write_text("the parent's")
+        kept = durability is Durability.SNAPSHOT
+        taken = TakenSnapshot(
+            workspace_id=parent, archive=await vms.provider.snapshot(workspace), kept=kept
+        )
 
-    copy = await vms.tools.manager.fork_snapshot(vms.ctx, parent, child, new_id(), source)
-    await vms.tools.manager.purge_workspace(vms.ctx.org_id, parent)
+        copy = await vms.tools.manager.fork_snapshot(vms.ctx, child, new_id(), taken)
 
-    assert await vms.machines.names(machine_name(PREFIX, parent)) == []
-    forked = await vms.tools.manager.prepare_workspace(vms.ctx, child, KEPT, restore=copy)
-    assert (vms.folder(forked.id) / WORKSPACE / "state.txt").read_text() == "the parent's"
+        parents = await vms.machines.names(f"{machine_name(PREFIX, parent)}-")
+        assert len(parents) == (1 if kept else 0), durability
+        await vms.tools.manager.purge_workspace(vms.ctx.org_id, parent)
+        assert await vms.machines.names(machine_name(PREFIX, parent)) == []
+        forked = await vms.tools.manager.prepare_workspace(vms.ctx, child, KEPT, restore=copy)
+        assert (vms.folder(forked.id) / WORKSPACE / "state.txt").read_text() == "the parent's"
 
 
 async def test_a_vm_base_outlives_its_build_and_goes_with_the_tenants_purge(

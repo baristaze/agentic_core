@@ -16,6 +16,7 @@ from acme.infra.transports import (
     TransportInterface,
 )
 from acme.infra.workspaces import (
+    Durability,
     IsolationMode,
     IsolationRefused,
     IsolationSpec,
@@ -87,7 +88,7 @@ from acme.om.tools.rules import (
 )
 from acme.om.tools.seal import RecordSealInterface
 from acme.om.tools.storage import ToolStorageInterface
-from acme.om.tools.tool import JobToolInterface, ToolInterface, ToolRuntime
+from acme.om.tools.tool import JobToolInterface, TakenSnapshot, ToolInterface, ToolRuntime
 from acme.om.tools.types.call import (
     Gate,
     GateOutcome,
@@ -267,53 +268,29 @@ class ToolsManagerImpl(ToolsManagerInterface):
         loop_id: UUID,
     ) -> Step:
         ctx.require(Permission.WRITE)
-        if workspace.spec.mode is IsolationMode.NONE:
-            raise SnapshotRefused(f"agent session {session_id} has no workspace to snapshot")
-        # No credential is in what is kept: the broker takes back all it
-        # attached there, one a lost run never took back included, and an
-        # injected secret's value a command wrote there refuses the snapshot.
-        await self._broker.detach_all(workspace)
-        archive = await self._workspaces.snapshot(workspace)
-        try:
-            await self._snapshots.scan(ctx, self._workspaces.held(archive))
-            kept = await self._snapshots.keep(ctx, session_id, new_id(), workspace.id, archive)
-        except BaseException:
-            # Not kept, so nothing of it stays: a disk its provider keeps
-            # apart, such as one that holds a secret's value, goes too.
-            await self._workspaces.discard(archive)
-            raise
-        step = snapshotted_step(new_id(), self._clock(), session_id, loop_id, kept)
-        (stored,) = await self._steps.append_steps(ctx, session_id, epoch, [step])
-        return stored
-
-    async def latest_snapshot(
-        self, ctx: TenantContext, session_id: UUID
-    ) -> WorkspaceSnapshot | None:
-        ctx.require(Permission.READ)
-        latest: WorkspaceSnapshot | None = None
-        async for step in self._history(ctx, session_id):
-            latest = named_snapshot(step) or latest
-        return latest
+        archive = await self._take(ctx, session_id, workspace)
+        return await self._name(ctx, session_id, workspace, archive, epoch=epoch, loop_id=loop_id)
 
     async def fork_snapshot(
-        self,
-        ctx: TenantContext,
-        parent_id: UUID,
-        child_id: UUID,
-        snapshot_id: UUID,
-        source: WorkspaceSnapshot,
+        self, ctx: TenantContext, child_id: UUID, snapshot_id: UUID, taken: TakenSnapshot
     ) -> WorkspaceSnapshot:
         ctx.require(Permission.WRITE)
-        archive = await self._snapshots.load(ctx, parent_id, source)
         # The child's own copy: what the provider keeps outside the archive,
-        # such as a disk, is copied under the child's workspace, so the
-        # parent's purge leaves it whole.
-        copy = await self._workspaces.keep(archive, ctx.org_id, child_id)
+        # such as a disk, is copied under the child's workspace, so neither
+        # session's purge nor revocation reaches the other's.
+        copy = await self._workspaces.keep(taken.archive, ctx.org_id, child_id)
         try:
-            return await self._snapshots.keep(ctx, child_id, snapshot_id, source.workspace_id, copy)
+            kept = await self._snapshots.keep(
+                ctx, child_id, snapshot_id, taken.workspace_id, copy
+            )
         except BaseException:
             await self._workspaces.discard(copy)
             raise
+        if not taken.kept:
+            # A cache keeps nothing of what the spawn took: the child's copy
+            # holds it all.
+            await self._workspaces.discard(taken.archive)
+        return kept
 
     async def find_snapshot(
         self, ctx: TenantContext, session_id: UUID, snapshot_id: UUID
@@ -324,6 +301,64 @@ class ToolsManagerImpl(ToolsManagerInterface):
             if named is not None and named.id == snapshot_id:
                 return named
         raise NotFound(f"agent session {session_id} names no snapshot {snapshot_id}")
+
+    async def _take(self, ctx: TenantContext, session_id: UUID, workspace: Workspace) -> bytes:
+        """The live workspace's archive, refused before anything runs when
+        there is none to take or the session keeps no content at rest. No
+        credential is in it: the broker takes back all it attached there,
+        one a lost run never took back included, and an injected secret's
+        value a command wrote there refuses it."""
+        if workspace.spec.mode is IsolationMode.NONE:
+            raise SnapshotRefused(f"agent session {session_id} has no workspace to snapshot")
+        await self._snapshots.at_rest(ctx, session_id)
+        await self._broker.detach_all(workspace)
+        archive = await self._workspaces.snapshot(workspace)
+        try:
+            await self._snapshots.scan(ctx, self._workspaces.held(archive))
+        except BaseException:
+            # Refused, so nothing of it stays: a disk its provider keeps
+            # apart, one that holds a secret's value included, goes too.
+            await self._workspaces.discard(archive)
+            raise
+        return archive
+
+    async def _name(
+        self,
+        ctx: TenantContext,
+        session_id: UUID,
+        workspace: Workspace,
+        archive: bytes,
+        *,
+        epoch: int,
+        loop_id: UUID,
+    ) -> Step:
+        """`archive` kept as the session's snapshot, and the `snapshotted`
+        step that names it, appended under the run's epoch."""
+        try:
+            kept = await self._snapshots.keep(ctx, session_id, new_id(), workspace.id, archive)
+        except BaseException:
+            # Not kept, so nothing of it stays, a disk kept apart included.
+            await self._workspaces.discard(archive)
+            raise
+        step = snapshotted_step(new_id(), self._clock(), session_id, loop_id, kept)
+        (stored,) = await self._steps.append_steps(ctx, session_id, epoch, [step])
+        return stored
+
+    async def _fork_point(
+        self, ctx: TenantContext, request: Step, workspace: Workspace, epoch: int
+    ) -> TakenSnapshot:
+        """The call's workspace as it stands, taken for a sub-agent to start
+        from. A workspace kept by snapshots keeps it as its own too, named in
+        the call's loop, so its history holds the state the child started
+        from; a cache keeps nothing, and the child alone keeps it."""
+        session_id = request.session_id
+        archive = await self._take(ctx, session_id, workspace)
+        kept = workspace.spec.durability is Durability.SNAPSHOT
+        if kept:
+            await self._name(
+                ctx, session_id, workspace, archive, epoch=epoch, loop_id=request.loop_id
+            )
+        return TakenSnapshot(workspace_id=workspace.id, archive=archive, kept=kept)
 
     # A call.
 
@@ -750,6 +785,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
             effect=tool.spec.effect,
             secrets=tool.spec.secrets,
             audit=audit,
+            snapshot=lambda: self._fork_point(ctx, request, workspace, epoch),
             on_output=on_output,
             read_only=read_only,
             answer_chars=self._options.max_output_chars,

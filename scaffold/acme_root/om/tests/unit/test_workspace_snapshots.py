@@ -1,5 +1,5 @@
 """A workspace's snapshot, over the memory storage, the local buckets, and the
-twin provider (ADR 1027). A snapshot is kept sealed under its session's key,
+twin provider (ADR 1027, ADR 1030). A snapshot is kept sealed under its session's key,
 under a hash keyed by it, and a step names it. A restore trusts its bytes
 only by that hash, and one that does not match loses the workspace before
 it starts. A snapshot holds no credential and no injected secret's value.
@@ -7,8 +7,9 @@ The loop snapshots a workspace kept by snapshots at the end of each run, and
 the next run starts from it. A rewind starts the next loop from an earlier
 snapshot, a step records it, and every earlier step and snapshot stays; one
 that cannot load parks once, and a person's unlock goes on without it. A
-child forks its parent's latest snapshot into a copy of its own, and a fork
-with none spends nothing of the tree."""
+fork takes its parent's workspace as it stands at the spawn, in any run,
+and the child starts from a copy of its own; a fork whose snapshot is
+refused spends nothing of the tree."""
 
 from pathlib import Path
 from uuid import UUID
@@ -28,7 +29,8 @@ from contracts.loops import (
     reply,
     said,
 )
-from contracts.tools import Tools, tools_over, twin_transport
+from contracts.sub_agents import SPAWNING, answers, failure_of, text_of
+from contracts.tools import Command, Tools, tools_over, twin_transport
 
 from acme.infra.buckets import Buckets
 from acme.infra.buckets.local import BucketsLocalImpl
@@ -55,14 +57,18 @@ from acme.om.agents.types.request import Spawn
 from acme.om.agents.types.run import RunEnd
 from acme.om.base import Platform, new_id, utcnow
 from acme.om.context import Role, TenantContext
-from acme.om.exceptions import NotFound, ValidationFailed
+from acme.om.exceptions import NotFound
+from acme.om.privacy.types.session_privacy import StorageMode, StoragePolicy
 from acme.om.steps.rules import control_step
+from acme.om.steps.types.content import ToolUseBlock
 from acme.om.steps.types.header import (
     ControlCommand,
     ControlHeader,
     LoopOutcome,
     ParkReason,
     SnapshotHeader,
+    ToolFailure,
+    ToolRequestHeader,
     WorkspaceSnapshot,
 )
 from acme.om.steps.types.step import Step, StepType
@@ -70,7 +76,7 @@ from acme.om.tools.impl.snapshots import BUCKET, session_prefix, snapshot_key
 from acme.om.tools.native.ask_person import ASK_PERSON
 from acme.om.tools.native.spawn_sub_agent import SPAWN_SUB_AGENT
 from acme.om.tools.native.wait_for_sub_agents import WAIT_FOR_SUB_AGENTS
-from acme.om.tools.tool import ToolRuntime
+from acme.om.tools.tool import TakenSnapshot, ToolRuntime
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput
 
 KEPT = IsolationSpec(
@@ -313,18 +319,33 @@ FORKER = ASSISTANT.model_copy(
         "name": "forker",
         "isolation": KEPT,
         "tools": (*ASSISTANT.tools, "scribble", SPAWN_SUB_AGENT, WAIT_FOR_SUB_AGENTS),
+        "policy": SPAWNING,
     }
 )
 
 
+CACHE_FORKER = FORKER.model_copy(
+    update={
+        "name": "cache_forker",
+        "isolation": KEPT.model_copy(update={"durability": Durability.CACHE}),
+    }
+)
+TOKEN = "SERVICE_TOKEN"
+
+
 def kept_loop(tmp_path: Path) -> tuple[Loop, WorkspaceTwinImpl]:
     """A loop over the twin, with kinds that keep their workspace by
-    snapshots and a tool that writes into it."""
+    snapshots, or by none and fork, and a tool that writes into it. The
+    catalog's command may inject `TOKEN`, so a snapshot is scanned for it."""
     infra = InfraLocalImpl(tmp_path)
     twin = infra.get_workspaces()
     assert isinstance(twin, WorkspaceTwinImpl)
+    injected = SecretUse(name=TOKEN, via=SecretVia.INJECTED, env=TOKEN)
     loop = loop_over(
-        tmp_path, kinds=(ASSISTANT, DELIVERY, KEEPER, FORKER), infra=infra, extra=(Scribble(twin),)
+        tmp_path,
+        kinds=(ASSISTANT, DELIVERY, KEEPER, FORKER, CACHE_FORKER),
+        infra=infra,
+        extra=(Scribble(twin), Command("run_command", secrets=(injected,))),
     )
     return loop, twin
 
@@ -519,59 +540,149 @@ async def test_a_restore_whose_bytes_are_gone_parks_once_and_the_unlock_goes_on_
     assert again.outcome is LoopOutcome.SUCCEEDED, "parked once, never again"
 
 
-async def test_a_child_forks_its_parents_latest_snapshot_into_a_copy_of_its_own(
+def fork(title: str) -> ToolUseBlock:
+    return call(SPAWN_SUB_AGENT, title=title, objective="Try it on a copy. Report.", fork=True)
+
+
+def spawn_of(history: list[Step]) -> tuple[Step, Step]:
+    """The parent's one spawn call and its answer: the child's id is the
+    call's."""
+    (request,) = [
+        step
+        for step in history
+        if isinstance(step.header, ToolRequestHeader) and step.header.tool == SPAWN_SUB_AGENT
+    ]
+    (answer,) = answers(history, SPAWN_SUB_AGENT)
+    return request, answer
+
+
+async def forked_in_its_first_run(loop: Loop, kind: str) -> tuple[UUID, Step, Step]:
+    """A parent's first run writes, forks, and writes again before it ends."""
+    parent = await loop.start(kind)
+    await loop.say(parent, "Write it, fork a try, then go on.")
+    loop.anthropic.add(
+        reply(call("scribble", q="before the spawn")),
+        reply(fork("a try")),
+        reply(call("scribble", q="after the spawn")),
+        reply(said("Forked.")),
+    )
+    assert (await loop.loops.run(loop.owner, parent)).outcome is LoopOutcome.SUCCEEDED
+    request, answer = spawn_of(await loop.history(parent))
+    return parent, request, answer
+
+
+async def test_a_fork_in_the_parents_first_run_starts_from_its_workspace_at_the_spawn(
     tmp_path: Path,
 ) -> None:
+    """Nothing is refused, though no run of the parent ended before it. The
+    parent's history names the snapshot at the spawn, between the call and
+    its answer, and the child starts from its own copy of it: what the parent
+    wrote before the spawn, never what it wrote after."""
     loop, twin = kept_loop(tmp_path)
-    parent = await loop.start(FORKER.name)
-    await wrote(loop, parent, b"an older state")
-    latest = await wrote(loop, parent, b"the parent's files")
+    parent, request, answer = await forked_in_its_first_run(loop, FORKER.name)
+    assert failure_of(answer) is None, text_of(answer)
+    history = await loop.history(parent)
+    at_spawn = [s for s in snapshots(history) if request.seq < s.seq < answer.seq]
+    (spawned,) = at_spawn
+    assert spawned.loop_id == request.loop_id, "named in the run's own loop"
+    assert twin.files[parent] == b"after the spawn"
 
-    child = await loop.managers.agents.spawn(
-        loop.owner,
-        parent,
-        Spawn(
-            id=new_id(),
-            kind=FORKER.name,
-            title="a try",
-            objective="Try the change on a copy. Report what holds.",
-            fork=True,
-        ),
-    )
-    (restore,) = [s for s in await loop.history(child.id) if s.type is StepType.CONTROL]
+    child = request.id
+    (restore,) = [s for s in await loop.history(child) if s.type is StepType.CONTROL]
     assert isinstance(restore.header, ControlHeader)
     copy = restore.header.snapshot
-    assert copy is not None and copy.workspace_id == parent and copy.id != latest.id
-    loop.anthropic.add(reply(said("It holds.")))
-    await loop.loops.run(loop.owner, child.id)
+    assert copy is not None and copy.workspace_id == parent
+    assert copy.hash != named(spawned).hash, "its own copy, keyed by its own session"
+    loop.anthropic.add(reply(call("scribble", q="the child's own writes")), reply(said("Held.")))
+    assert (await loop.loops.run(loop.owner, child)).outcome is LoopOutcome.SUCCEEDED
 
-    assert twin.files[child.id] == b"the parent's files"
-    (notice,) = [step for step in await loop.history(child.id) if restore.id in step.refs]
+    (notice,) = [step for step in await loop.history(child) if restore.id in step.refs]
     assert notice.as_text() == FORKED
-    twin.files[child.id] = b"the child's own writes"
-    assert twin.files[parent] == b"the parent's files"
+    assert twin.files[child] == b"the child's own writes"
+    assert twin.files[parent] == b"after the spawn", "the child's writes never reach it"
     # The copy is the child's own: the parent's purge leaves it.
     await loop.managers.tools.purge_workspace(loop.owner.org_id, parent)
     kept = await loop.infra.get_buckets().list(
-        loop.owner.org_id, Buckets.SNAPSHOTS, session_prefix(child.id), 10
+        loop.owner.org_id, Buckets.SNAPSHOTS, session_prefix(child), 10
     )
-    assert kept == [snapshot_key(child.id, copy.hash)]
+    assert snapshot_key(child, copy.hash) in kept
 
 
-async def test_a_fork_with_no_snapshot_to_start_from_spends_nothing_of_the_tree(
+async def test_a_cache_parent_forks_and_the_child_alone_keeps_the_snapshot(
     tmp_path: Path,
 ) -> None:
-    """Refused before a slot is taken or a child is made: the tree's size is
-    as it was, and no child session exists, so a retry finds nothing spent."""
+    """A workspace that keeps no snapshot still forks: the child starts from
+    the parent's workspace at the spawn, and the parent keeps nothing of it,
+    no step and no bytes."""
+    loop, twin = kept_loop(tmp_path)
+    parent, request, answer = await forked_in_its_first_run(loop, CACHE_FORKER.name)
+    assert failure_of(answer) is None, text_of(answer)
+    assert snapshots(await loop.history(parent)) == [], "the parent names none"
+    buckets = loop.infra.get_buckets()
+    org_id = loop.owner.org_id
+    assert await buckets.list(org_id, Buckets.SNAPSHOTS, session_prefix(parent), 10) == []
+
+    child = request.id
+    loop.anthropic.add(reply(said("Held.")))
+    assert (await loop.loops.run(loop.owner, child)).outcome is LoopOutcome.SUCCEEDED
+    assert twin.files[child] == b"before the spawn"
+    assert len(await buckets.list(org_id, Buckets.SNAPSHOTS, session_prefix(child), 10)) == 1
+
+
+async def test_a_fork_asked_again_answers_its_child_on_the_copy_it_was_made_with(
+    tmp_path: Path,
+) -> None:
+    """A spawn asked again after a lost run answers the child it made, with
+    the copy its history already names: the workspace is taken once."""
     loop, _ = kept_loop(tmp_path)
     parent = await loop.start(FORKER.name)
-    before = (await loop.managers.agents.tree_of(loop.owner, parent)).size
-    asked = Spawn(id=new_id(), kind=FORKER.name, title="a try", objective="Try it.", fork=True)
+    taken: list[bytes] = []
 
-    for _ in range(2):
-        with pytest.raises(ValidationFailed, match="holds no snapshot"):
-            await loop.managers.agents.spawn(loop.owner, parent, asked)
+    async def take() -> TakenSnapshot:
+        taken.append(b"the parent's files")
+        return TakenSnapshot(workspace_id=parent, archive=taken[-1])
 
-    assert (await loop.managers.agents.tree_of(loop.owner, parent)).size == before
-    with pytest.raises(NotFound):
-        await loop.managers.agent_sessions.get_session(loop.owner, asked.id)
+    asked = Spawn(id=new_id(), kind=FORKER.name, title="a try", objective="Try it.")
+    first = await loop.managers.agents.spawn(loop.owner, parent, asked, take)
+    again = await loop.managers.agents.spawn(loop.owner, parent, asked, take)
+
+    assert again.id == first.id and len(taken) == 1, "taken once"
+    restores = [s for s in await loop.history(first.id) if s.type is StepType.CONTROL]
+    assert len(restores) == 1
+
+
+async def test_a_fork_whose_snapshot_is_refused_spends_nothing_of_the_tree(
+    tmp_path: Path,
+) -> None:
+    """A workspace that holds an injected secret's value, and a session that
+    keeps no content at rest, refuse the fork's snapshot. The call fails with
+    the reason, before a slot is taken or a child is made: the tree's size is
+    as it was, no child exists, and nothing is stored."""
+    loop, twin = kept_loop(tmp_path)
+    org_id = loop.owner.org_id
+    await loop.infra.get_secrets().put(org_id, TOKEN, "tok-0123456789abcdef")
+    leaked = await loop.start(CACHE_FORKER.name)
+    unkept = await loop.start(FORKER.name)
+    memory_only = StoragePolicy(mode=StorageMode.MEMORY_ONLY, keep_shape=False)
+    await loop.managers.privacy.set_policy(loop.owner, unkept, memory_only)
+    cases = ((leaked, "token=tok-0123456789abcdef", TOKEN), (unkept, "clean", "no content at rest"))
+
+    for parent, written, reason in cases:
+        before = (await loop.managers.agents.tree_of(loop.owner, parent)).size
+        await loop.say(parent, "Write it, then fork a try.")
+        loop.anthropic.add(
+            reply(call("scribble", q=written)), reply(fork("a try")), reply(said("Refused."))
+        )
+        assert (await loop.loops.run(loop.owner, parent)).outcome is LoopOutcome.SUCCEEDED
+        request, answer = spawn_of(await loop.history(parent))
+
+        assert failure_of(answer) is ToolFailure.PERMANENT
+        assert reason in text_of(answer)
+        assert "tok-0123456789abcdef" not in text_of(answer)
+        assert (await loop.managers.agents.tree_of(loop.owner, parent)).size == before
+        with pytest.raises(NotFound):
+            await loop.managers.agent_sessions.get_session(loop.owner, request.id)
+        for session_id in (parent, request.id):
+            prefix = session_prefix(session_id)
+            assert await loop.infra.get_buckets().list(org_id, BUCKET, prefix, 10) == []
+    assert twin.files[leaked] == b"token=tok-0123456789abcdef"

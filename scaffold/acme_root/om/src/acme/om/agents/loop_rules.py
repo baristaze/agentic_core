@@ -90,8 +90,8 @@ REWOUND = (
 own session."""
 
 FORKED = (
-    "Your workspace starts as a copy of your parent's, as its latest snapshot "
-    "held it. What you write there never reaches your parent's workspace."
+    "Your workspace starts as a copy of your parent's, as it stood when you "
+    "were spawned. What you write there never reaches your parent's workspace."
 )
 """The engine's notice when a child's workspace starts from its parent's
 snapshot."""

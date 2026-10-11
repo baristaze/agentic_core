@@ -36,11 +36,14 @@ class SnapshotSealKeysImpl(SnapshotSealInterface):
         self._keys = keys
         self._policies = policies
 
+    async def keeps(self, ctx: TenantContext, session_id: UUID) -> bool:
+        record = await self._policies.read_privacy(ctx.org_id, session_id)
+        return record is None or record.policy.mode is not StorageMode.MEMORY_ONLY
+
     async def seal(
         self, ctx: TenantContext, session_id: UUID, digest: str, data: bytes
     ) -> bytes | None:
-        record = await self._policies.read_privacy(ctx.org_id, session_id)
-        if record is not None and record.policy.mode is StorageMode.MEMORY_ONLY:
+        if not await self.keeps(ctx, session_id):
             return None
         current = await self._keys.current(ctx.org_id, session_id)
         return seal_blob(

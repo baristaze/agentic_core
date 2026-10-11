@@ -24,6 +24,7 @@ from acme.om.agents.types.result import Result, Verdict
 from acme.om.agents.types.tree import AgentTree
 from acme.om.context import TenantContext
 from acme.om.steps.types.step import Step
+from acme.om.tools.tool import TakeSnapshot
 
 
 class AgentsManagerInterface(ABC):
@@ -48,7 +49,9 @@ class AgentsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def spawn(self, ctx: TenantContext, parent_id: UUID, spawn: Spawn) -> AgentSession:
+    async def spawn(
+        self, ctx: TenantContext, parent_id: UUID, spawn: Spawn, fork: TakeSnapshot | None = None
+    ) -> AgentSession:
         """A child of `parent_id`, one level down its tree, under a budget on
         its own session of its kind's share, and its objective as its first
         input: a waking message from its parent, through the inbox, so the
@@ -57,7 +60,13 @@ class AgentsManagerInterface(ABC):
         lacks or that names no share is `ValidationFailed`, and a context
         that lacks a permission a call of the child's registry needs is
         `NotAuthorized`: nothing is made.
-        A spawn asked again under the same id answers the child it made."""
+
+        With `fork`, the spawning call's way to take its workspace as it
+        stands (`ToolRuntime.snapshot`), the child's workspace starts from
+        its own copy of it. The snapshot is taken before the tree's slot or
+        the child, so one refused (`SnapshotRefused`) spends nothing.
+        A spawn asked again under the same id answers the child it made, on
+        the copy it was made with."""
         ...
 
     @abstractmethod
