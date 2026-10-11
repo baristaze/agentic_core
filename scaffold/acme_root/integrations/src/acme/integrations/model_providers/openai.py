@@ -178,7 +178,11 @@ def request_body(call: ModelCall) -> tuple[dict[str, Any], tuple[Dropped, ...]]:
             items.extend(_user_items(call, message, dropped))
         else:
             items.extend(_assistant_items(call, message, dropped))
-    markers = int(call.system_cache) + sum(1 for m in call.messages if m.cache)
+    markers = (
+        int(call.system_cache)
+        + int(call.system_break is not None)
+        + sum(1 for m in call.messages if m.cache)
+    )
     if markers:
         dropped.append(
             _dropped(f"{markers} cache marker(s)", "the provider caches a prefix on its own")

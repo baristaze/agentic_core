@@ -36,6 +36,7 @@ from acme.om.steps.types.content import (
 from acme.om.steps.types.header import (
     InputHeader,
     StepHeader,
+    SwitchedHeader,
     ToolRequestHeader,
     ToolResponseHeader,
 )
@@ -65,7 +66,10 @@ class StepType(StrEnum):
     PARKED = "parked"
     RESUMED = "resumed"
     LOOP_ENDED = "loop_ended"
-    SWITCHED = "switched"  # a new fill set or kind version, or a toolset loaded
+    # A new fill set or kind version, or a toolset loaded, which the engine
+    # records; or standing text, which the session's maker pins through the
+    # inbox, and which instructs.
+    SWITCHED = "switched"
     ENVIRONMENT_CHANGED = "environment_changed"  # the world under the model changed
     SNAPSHOTTED = "snapshotted"  # the session holds a snapshot of a workspace
 
@@ -144,7 +148,7 @@ BLOCK_KINDS: dict[StepType, frozenset[str]] = {
     StepType.PARKED: frozenset(),
     StepType.RESUMED: frozenset(),
     StepType.LOOP_ENDED: frozenset(),
-    StepType.SWITCHED: frozenset(),
+    StepType.SWITCHED: frozenset({"text"}),  # the standing text it pins, and only that
     StepType.ENVIRONMENT_CHANGED: frozenset({"text"}),  # what a person did, or a restore
     StepType.SNAPSHOTTED: frozenset(),
 }
@@ -279,6 +283,12 @@ class Step(Identifiable, Created):
             raise ValueError(f"a {self.type.value} step is not a {step_type.value}")
 
 
+def switches_standing(step: Step) -> bool:
+    """Whether a step pins the session's standing text. Its maker sends it
+    through the inbox, as it sends an input, so it says nothing of a run."""
+    return isinstance(step.header, SwitchedHeader) and step.header.standing is not None
+
+
 def shape_refusal(step: Step) -> str | None:
     """Why a step breaks its type's shape, or None when it fits. Content that
     is sealed or absent holds nothing in the clear, so only its shape is
@@ -305,6 +315,12 @@ def shape_refusal(step: Step) -> str | None:
     allowed = BLOCK_KINDS[step.type]
     if stray := sorted(set(kinds) - allowed):
         return f"its content may not hold {', '.join(stray)}"
+    if isinstance(header, SwitchedHeader) and header.standing is None and kinds:
+        return "only a switch of the standing text holds text"
+    if isinstance(header, SwitchedHeader) and header.standing is not None:
+        chars = header.standing.chars
+        if len(kinds) != (1 if chars else 0) or len(step.as_text()) != chars:
+            return f"it holds its standing text of {chars} characters as one block"
     if step.type is StepType.TOOL_RESPONSE and kinds != ["tool_result"]:
         return "it holds exactly one tool result"
     uses = [block.id for block in step.content.blocks if isinstance(block, ToolUseBlock)]

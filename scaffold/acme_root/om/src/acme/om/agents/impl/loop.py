@@ -548,7 +548,9 @@ class LoopManagerImpl(LoopManagerInterface):
         # load settled since the last request adds its tools here, and never
         # to a call of the turn that made it.
         run.registry = self._registry(run.session, run.kind, history)
-        prompts = rules.kind_prompts(run.kind, run.registry, loads(history))
+        prompts = rules.kind_prompts(
+            run.kind, run.registry, loads(history), rules.standing_text(history, run.start_seq)
+        )
         # The agent's current plan, read off the whole history, so a summary
         # that folded the call that wrote it still leaves it in view.
         kept = current_plan(history)

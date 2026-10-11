@@ -57,11 +57,15 @@ class OutputSchema(InfraModel):
 
 class ModelCall(InfraModel):
     """One request to one model, rendered by the engine. `system_cache` marks
-    the system blocks, and the tools before them, as a stable prefix."""
+    the system blocks, and the tools before them, as a stable prefix.
+    `system_break` marks a shorter one, which more requests share: the tools
+    and the first that many system blocks. A provider with caching places a
+    breakpoint after each."""
 
     model: str = Field(min_length=1, max_length=MAX_NAME)
     system: tuple[TextBlock, ...] = ()
     system_cache: bool = False
+    system_break: int | None = Field(default=None, ge=1)
     messages: tuple[Message, ...]
     tools: tuple[ToolSpec, ...] = ()
     max_output_tokens: int = Field(gt=0)

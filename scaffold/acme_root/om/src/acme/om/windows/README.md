@@ -11,10 +11,15 @@ reads, sized for the model that reads it.
 
 - **Request**: what one call of a model sends, rendered from the
   session's [steps](../steps/README.md). It is laid out from what changes
-  least to what changes most: the agent kind's prompts and its tools, the
-  pinned zone, the latest summary, the steps since it, the inputs the
-  agent has not read yet, and its current plan last. So each request
-  starts with the one before it, and the provider can reuse what it read.
+  least to what changes most: the agent kind's prompts and the session's
+  standing text, its tools, the pinned zone, the latest summary, the
+  steps since it, the inputs the agent has not read yet, and its current
+  plan last. So each request starts with the one before it, and the
+  provider can reuse what it read.
+- **Standing text**: what a principal pins on a session to hold for its
+  whole life, such as a manual for its kind. It renders whole, as an
+  instruction, after the kind's prompts on every request, and changes
+  only at a recorded switch, from the next loop on (ADR 1033).
 - **Window**: the steps one request reads, by reference: the model it is
   sized for, how much it holds, and its first and last steps. A window
   belongs to a request, never to the history; it is rebuilt from the

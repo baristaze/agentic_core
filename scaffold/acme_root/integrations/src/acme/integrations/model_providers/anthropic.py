@@ -182,9 +182,19 @@ def request_body(call: ModelCall) -> tuple[dict[str, Any], tuple[Dropped, ...]]:
     }
     marked: list[dict[str, Any]] = []
     if call.system:
-        system = [{"type": "text", "text": block.text} for block in call.system if block.text]
+        system: list[dict[str, Any]] = []
+        shorter: dict[str, Any] | None = None
+        for count, block in enumerate(call.system, start=1):
+            if block.text:
+                system.append({"type": "text", "text": block.text})
+            if count == call.system_break and system:
+                shorter = system[-1]
         if system:
             body["system"] = system
+            # The shorter prefix's breakpoint, unless it falls where the
+            # whole layer's does: one block takes one marker.
+            if shorter is not None and not (call.system_cache and shorter is system[-1]):
+                marked.append(shorter)
             if call.system_cache:
                 marked.append(system[-1])
     messages: list[dict[str, Any]] = []

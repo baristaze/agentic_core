@@ -19,7 +19,7 @@ from uuid import UUID
 
 from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.agents.types.report import Report
-from acme.om.agents.types.request import Handoff, Spawn, Start
+from acme.om.agents.types.request import Handoff, Spawn, Start, SwitchStanding
 from acme.om.agents.types.result import Result, Verdict
 from acme.om.agents.types.tree import AgentTree
 from acme.om.context import TenantContext
@@ -35,7 +35,20 @@ class AgentsManagerInterface(ABC):
         deadline. An unknown kind is `UnknownAgentKind`, and a person who
         lacks a permission a call its registry offers needs is
         `NotAuthorized`, with nothing made. An id written already answers
-        the session as stored."""
+        the session as stored. Its standing text, when `start` sends one, is
+        pinned through the inbox before anything else arrives."""
+        ...
+
+    @abstractmethod
+    async def switch_standing(
+        self, ctx: TenantContext, session_id: UUID, switch: SwitchStanding
+    ) -> Step:
+        """A recorded switch of a session's standing text, through the
+        inbox: its requests render the new text from the first loop that
+        begins from an input after it, and a loop that began before keeps
+        the text it began with. A context that may not instruct the session
+        is `NotAuthorized`, with nothing appended. A switch asked again
+        under the same id answers the step as stored."""
         ...
 
     @abstractmethod
@@ -59,7 +72,8 @@ class AgentsManagerInterface(ABC):
         its count is `TreeBoundReached`, a kind whose result tool its parent
         lacks or that names no share is `ValidationFailed`, and a context
         that lacks a permission a call of the child's registry needs is
-        `NotAuthorized`: nothing is made.
+        `NotAuthorized`: nothing is made. Its standing text, when `spawn`
+        sends one, arrives before its objective.
 
         With `fork`, the spawning call's way to take its workspace as it
         stands (`ToolRuntime.snapshot`), the child's workspace starts from
@@ -124,7 +138,9 @@ class AgentsManagerInterface(ABC):
         its own tree that names where it came from, runs under the principal
         `session_id`'s calls run under, and carries its mark. Its objective
         arrives as data and wakes nothing; it starts when its principal
-        speaks, and the agent that handed it over has no way to steer it."""
+        speaks, and the agent that handed it over has no way to steer it.
+        Its standing text, when `handoff` sends one, arrives before its
+        objective."""
         ...
 
     @abstractmethod

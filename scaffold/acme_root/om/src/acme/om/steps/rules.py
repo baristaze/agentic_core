@@ -13,23 +13,32 @@ from acme.om.steps.types.header import (
     ControlCommand,
     ControlHeader,
     InputHeader,
+    StandingSwitch,
+    SwitchedHeader,
     WorkspaceSnapshot,
 )
-from acme.om.steps.types.step import Actor, Origin, Step, StepType
+from acme.om.steps.types.step import Actor, Origin, Step, StepType, switches_standing
+
+
+def arrives(step: Step) -> bool:
+    """Whether a step is one the inbox appends: an input, a control, or the
+    session's standing text its maker pins."""
+    return step.type.is_input() or step.type.is_control() or switches_standing(step)
 
 
 def batch_refusal(session_id: UUID, steps: Sequence[Step], *, inputs_only: bool) -> str | None:
     """Why a batch may not be appended to `session_id`, or None when it may.
     Every step names the session it is appended to, no id comes twice, and
-    the inbox's append (`inputs_only`) holds inputs and controls alone, and
-    no input the engine wrote: only a run, under its writer epoch, appends
-    what the engine writes, its notices included."""
+    the inbox's append (`inputs_only`) holds inputs, controls, and the
+    session's standing text its maker pins, and no input the engine wrote:
+    only a run, under its writer epoch, appends what the engine writes, its
+    notices included."""
     if len({step.id for step in steps}) != len(steps):
         return "an append names one step id twice"
     if any(step.session_id != session_id for step in steps):
         return f"a step names another session than {session_id}"
-    if inputs_only and any(not (s.type.is_input() or s.type.is_control()) for s in steps):
-        return "the inbox appends inputs and controls alone; a run appends the rest"
+    if inputs_only and not all(arrives(step) for step in steps):
+        return "the inbox appends inputs, controls, and standing text alone; a run appends the rest"
     if inputs_only and any(s.type.is_input() and s.actor is Actor.ENGINE for s in steps):
         return "the engine's notice is a run's to write, under its epoch"
     return None
@@ -78,6 +87,26 @@ def message_step(
         origin=origin_of(ctx.app.type),
         header=InputHeader(principal=principal_of(ctx)),
         content=Content(blocks=(TextBlock(text=text),)),
+    )
+
+
+def standing_step(
+    step_id: UUID, now: datetime, session_id: UUID, ctx: TenantContext, text: str
+) -> Step:
+    """The session's standing text, pinned by its maker in `ctx`'s name: a
+    `switched` step that holds it, none when `text` is empty. A loop that
+    begins from an input after it renders it, whole, in the system layer.
+    It arrives outside any run, so its loop id is its own."""
+    return Step(
+        id=step_id,
+        created_at=now,
+        session_id=session_id,
+        loop_id=step_id,
+        type=StepType.SWITCHED,
+        actor=actor_of(ctx.credential_kind),
+        origin=origin_of(ctx.app.type),
+        header=SwitchedHeader(standing=StandingSwitch(chars=len(text))),
+        content=Content(blocks=(TextBlock(text=text),) if text else ()),
     )
 
 
