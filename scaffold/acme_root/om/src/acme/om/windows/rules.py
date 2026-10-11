@@ -210,7 +210,11 @@ def call_shape(call: ModelCall, fill: Fill) -> CallShape:
     writes the provider's short cache. The output bound is the fill's, and
     thinking is billed inside it."""
     size = len(prompt_bytes(call, ())) + sum(len(file.data) for file in call.files)
-    marked = call.system_cache or any(message.cache for message in call.messages)
+    marked = (
+        call.system_cache
+        or call.system_break is not None
+        or any(message.cache for message in call.messages)
+    )
     return CallShape(
         prompt=PromptSize(tokens=size, counted_by=PromptCount.UPPER_BOUND),
         cache=CacheWrite.SHORT if marked else CacheWrite.NONE,
@@ -696,9 +700,13 @@ def _call(
     stable: int,
 ) -> ModelCall:
     """The call over its turns. The system layer and the tools are a
-    stable prefix; a rolling breakpoint sits on the last stable turn, and a
-    second on the turn the previous request's sat on, so the next read finds
-    what the last one wrote."""
+    stable prefix, and the tools with the kind's prompts a shorter one, which
+    every session of the kind version shares, whatever standing text it
+    pins, until a load adds tools; a rolling breakpoint sits on the last
+    stable turn, and a second on the turn the previous request's sat on, so
+    the next read finds what the last one wrote. Four marks in all, as many
+    as the caching provider takes."""
+    shared = sum(1 for prompt in kind.prompts if prompt)
     marks: set[int] = set()
     if stable:
         marks.add(stable - 1)
@@ -709,6 +717,7 @@ def _call(
         model=fill.model,
         system=_system(kind),
         system_cache=True,
+        system_break=shared or None,
         messages=tuple(
             Message(role=role, blocks=tuple(blocks), cache=index in marks)
             for index, (role, blocks) in enumerate(messages)

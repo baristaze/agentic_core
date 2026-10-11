@@ -56,6 +56,20 @@ def prefix(call: ModelCall) -> bytes:
     return json.dumps([body.get("tools"), body.get("system")]).encode()
 
 
+def cached(call: ModelCall) -> list[tuple[str, bytes]]:
+    """Each breakpoint in the system layer, as the adapter sends it: the
+    text of the block it sits on, and the bytes the provider caches there,
+    the tool definitions and the system layer up to that block."""
+    body, dropped = request_body(call)
+    assert not dropped, "every marker within the provider's limit"
+    system = body["system"]
+    return [
+        (block["text"], json.dumps([body.get("tools"), system[: index + 1]]).encode())
+        for index, block in enumerate(system)
+        if "cache_control" in block
+    ]
+
+
 def texts(call: ModelCall) -> list[str]:
     """Every text the call's turns carry."""
     return [b.text for m in call.messages for b in m.blocks if isinstance(b, TextBlock)]
@@ -142,6 +156,30 @@ async def test_standing_text_renders_whole_in_the_system_layer_through_a_compact
     (summarizer,) = [call for call in loop.anthropic.calls if call.model != SONNET]
     folded = [block.text for block in summarizer.system] + texts(summarizer)
     assert not any(MANUAL[:60] in text for text in folded), "no summary folds it in as data"
+
+
+# Sessions of a kind version share the cached tools and prompts, whatever
+# standing text each pins.
+
+
+async def test_sessions_of_a_kind_share_the_cached_tools_and_prompts_whatever_each_pins(
+    tmp_path: Path,
+) -> None:
+    loop = loop_over(tmp_path)
+    manual = await started(loop, MANUAL)
+    await asked(loop, manual, "What is the total?", reply(use("lookup")), reply(said("12.")))
+    for standing in (REVISED, ""):
+        await asked(loop, await started(loop, standing), "What is the total?", reply(said("12.")))
+    calls = main_calls(loop)
+    assert len(calls) == 4, "two requests of the manual's session, one of each other"
+    assert len([m for m in calls[1].messages if m.cache]) == 2, "both turn markers in use"
+    breakpoints = [cached(call) for call in calls]
+    assert all(len(points) == 2 for points in breakpoints), "two in the system layer"
+    ((text, _),) = {kind for kind, _ in breakpoints}
+    assert text == ASSISTANT.prompts[-1], "one cached entry, at the end of the kind's prompts"
+    ends = [end for _, end in breakpoints]
+    assert [text for text, _ in ends] == [DATA_NOTICE] * 4, "and one at the layer's end"
+    assert len({cache for _, cache in ends}) == 3, "the layer's end is each text's own"
 
 
 # Check 2: only a recorded switch changes it, from the next loop on.

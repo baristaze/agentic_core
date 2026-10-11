@@ -364,6 +364,28 @@ def test_cache_markers_take_the_latest_breakpoints_the_provider_allows() -> None
     assert [d.what for d in dropped] == ["cache marker"] * 2
 
 
+def test_a_system_break_marks_the_shorter_prefix_once() -> None:
+    def marked(system: tuple[TextBlock, ...], system_break: int) -> list[bool]:
+        call = ModelCall(
+            model=MODEL,
+            system=system,
+            system_cache=True,
+            system_break=system_break,
+            messages=(Message(role="user", blocks=(TextBlock(text="hi"),)),),
+            max_output_tokens=100,
+        )
+        body, dropped = request_body(call)
+        assert not dropped
+        return ["cache_control" in block for block in body["system"]]
+
+    kind, empty, standing, notice = (TextBlock(text=t) for t in ("kind", "", "manual", "notice"))
+    assert marked((kind, standing, notice), 1) == [True, False, True]
+    # An empty block sends nothing: the break stays after what it covers.
+    assert marked((kind, empty, standing, notice), 2) == [True, False, True]
+    # At the layer's end, the two breakpoints are one.
+    assert marked((kind, notice), 2) == [False, True]
+
+
 def test_files_render_from_the_bytes_the_call_carries() -> None:
     image, pdf, notes, sheet = uuid4(), uuid4(), uuid4(), uuid4()
     call = ModelCall(

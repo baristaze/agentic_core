@@ -313,15 +313,16 @@ def test_thinking_another_model_thought_or_unsigned_is_named_and_dropped(
 def test_cache_markers_and_a_thinking_budget_are_named_and_dropped() -> None:
     call = ModelCall(
         model=MODEL,
-        system=(TextBlock(text="kind prompt"),),
+        system=(TextBlock(text="kind prompt"), TextBlock(text="notice")),
         system_cache=True,
+        system_break=1,
         messages=(ASK.model_copy(update={"cache": True}),),
         max_output_tokens=100,
         thinking_budget=2048,
     )
     body, dropped = request_body(call)
     assert "cache_control" not in json.dumps(body) and "reasoning" not in body
-    assert [d.what for d in dropped] == ["2 cache marker(s)", "a thinking budget"]
+    assert [d.what for d in dropped] == ["3 cache marker(s)", "a thinking budget"]
 
 
 def test_files_render_as_data_urls_in_a_turn_and_in_a_tool_result() -> None:
