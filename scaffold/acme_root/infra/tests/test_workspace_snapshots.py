@@ -259,7 +259,8 @@ async def test_a_container_restored_from_its_snapshot_holds_the_whole_tree_it_ke
         snapshot = await provider.snapshot(workspace)
         await provider.purge(org, workspace_id)
         name = container_name(workspace_id)
-        assert not (await docker("inspect", name, bound=timedelta(seconds=20))).ok
+        gone = await docker("inspect", "--type", "container", name, bound=timedelta(seconds=20))
+        assert not gone.ok
         assert not (await docker("volume", "inspect", name, bound=timedelta(seconds=20))).ok
 
         restored = await provider.prepare(org, workspace_id, spec, snapshot=snapshot)

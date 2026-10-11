@@ -86,6 +86,9 @@ def docker_runs() -> bool:
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(not docker_runs(), reason="needs a local Docker"),
+    # The suite's schemas are made before any case's loop runs, so a run of
+    # this file alone sets them up as the whole suite does.
+    pytest.mark.usefixtures("migrated"),
 ]
 
 
@@ -203,7 +206,10 @@ def named(step: Step) -> WorkspaceSnapshot:
 
 
 async def container_runs(workspace_id: UUID) -> bool:
-    shown = await docker("inspect", container_name(workspace_id), bound=timedelta(seconds=20))
+    """Whether a container stands for the workspace; its volume, under the
+    same name, outlives a release."""
+    name = container_name(workspace_id)
+    shown = await docker("inspect", "--type", "container", name, bound=timedelta(seconds=20))
     return shown.ok
 
 
