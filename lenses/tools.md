@@ -416,20 +416,14 @@ environment with no
 
 **Principle.** A provider that can snapshots a workspace whole: all its
 commands could write. One that cannot refuses a snapshot, and a spec
-that asks for one, before anything runs, never a cache in its stead.
-The run that holds a `snapshot` workspace snapshots it, live, at its
-end, and lets the instance go only once a snapshot holds it; a
-workspace no run holds refuses a snapshot. A snapshot is sealed under
-its session's key, stored under a hash keyed by the session, and named
-by a `snapshotted` step, with its image named by a digest another host
-pulls. A restore trusts its bytes only once they match that hash, and
-replaces the workspace whole; anything else loses the workspace before
-it starts, parks the loop once, and the person's unlock goes on without
-it. The broker detaches every credential it attached before a snapshot
-is taken, and one that holds the value of a secret the engine injected
-is refused. A fork is the child's own copy, refused before anything of
-the tree is spent when the parent holds none, and a purge removes a
-session's snapshots.
+that asks for one, before anything runs. The run that holds a
+`snapshot` workspace snapshots it at its end, and lets the instance go
+only once a snapshot holds it. A snapshot is sealed under its session's
+key, stored under a hash keyed by the session, and named by a
+`snapshotted` step. A restore trusts its bytes only by that hash, and
+replaces the workspace whole; one that cannot load parks the loop once.
+The broker detaches its credentials first, and an injected secret's
+value refuses a snapshot. A fork is the child's own copy.
 
 **Source.** Workspace Snapshots.
 
