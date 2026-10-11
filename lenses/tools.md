@@ -448,3 +448,37 @@ a child whose writes reach its parent's workspace.
 and `scaffold/acme_root/om/src/acme/om/tools/impl/snapshots.py`
 
 **Check.** review
+
+## TOL-16 A base is built once, and its setup's egress reaches no workspace
+
+**Principle.** A base's setup runs once per tenant, in a workspace of
+its own, with the setup's egress alone, and is given no secret and no
+session's content. Its snapshot is kept under the tenant alone, keyed
+by a hash of the mode, the image, the commands, and the egress, so a
+changed base is built again. Every workspace on it starts from that
+snapshot and runs with its own egress. Two prepares racing on a base
+build it once; a setup command that fails keeps nothing and names the
+command and how it ended. A provider that cannot snapshot refuses a
+base, and one never starts a based workspace on the bare image.
+
+**Source.** Workspace Snapshots.
+
+**Look for.** Where the setup's commands are built: their secrets,
+their environment, and the spec of the workspace they run in; the key a
+base is stored and read under, and the tenant it is read for; what a
+failed or timed-out command leaves in the store and on the host; what a
+workspace found again keeps of its own files.
+
+**Violation.** A setup command given a secret, a session's content, or
+the engine's environment; a workspace on a base that holds the setup's
+egress; a base read under another tenant, or under a key that misses a
+part of its declaration; a half-built base kept, or a build's workspace
+left behind; a workspace's own files replaced by the base's when it is
+found again.
+
+**Severity.** high
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/tools/impl/bases.py` and
+`scaffold/acme_root/infra/src/acme/infra/workspaces/container.py`
+
+**Check.** review
