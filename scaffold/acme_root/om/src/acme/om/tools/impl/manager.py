@@ -245,8 +245,8 @@ class ToolsManagerImpl(ToolsManagerInterface):
         if workspace.spec.mode is IsolationMode.NONE:
             raise SnapshotRefused(f"agent session {session_id} has no workspace to snapshot")
         # No credential is in what is kept: the broker takes back all it
-        # attached there, one a lost run never took back included, and a
-        # secret's value a command wrote there refuses the snapshot.
+        # attached there, one a lost run never took back included, and an
+        # injected secret's value a command wrote there refuses the snapshot.
         await self._broker.detach_all(workspace)
         archive = await self._workspaces.snapshot(workspace)
         await self._snapshots.scan(ctx, archive)

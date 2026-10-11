@@ -416,26 +416,37 @@ environment with no
 
 **Principle.** A provider that can snapshots a workspace whole: all its
 commands could write. One that cannot refuses a snapshot, and a spec
-that asks for one, before anything runs, never a cache in its stead. A
-snapshot is sealed under its session's key, stored under a hash keyed
-by the session, and named by a `snapshotted` step. A restore trusts its
-bytes only once they match that hash, and replaces the workspace whole;
-anything else loses the workspace before it starts. The broker takes
-back every credential before a snapshot, and one that holds a secret's
-value is refused. A fork is the child's own copy, and a purge removes a
+that asks for one, before anything runs, never a cache in its stead.
+The run that holds a `snapshot` workspace snapshots it, live, at its
+end, and lets the instance go only once a snapshot holds it; a
+workspace no run holds refuses a snapshot. A snapshot is sealed under
+its session's key, stored under a hash keyed by the session, and named
+by a `snapshotted` step, with its image named by a digest another host
+pulls. A restore trusts its bytes only once they match that hash, and
+replaces the workspace whole; anything else loses the workspace before
+it starts, parks the loop once, and the person's unlock goes on without
+it. The broker detaches every credential it attached before a snapshot
+is taken, and one that holds the value of a secret the engine injected
+is refused. A fork is the child's own copy, refused before anything of
+the tree is spent when the parent holds none, and a purge removes a
 session's snapshots.
 
 **Source.** Workspace Snapshots.
 
 **Look for.** The provider's snapshot and its prepare from one; where
-the hash is held to the step's and the broker's credentials taken back;
-the copy a fork makes and what a purge removes.
+the loop takes one at a run's end and what the next run starts from;
+where the hash is held to the step's and the broker's credentials
+detached; what a restore that cannot load does after a person's unlock;
+the copy a fork makes, and what a purge removes.
 
 **Violation.** A snapshot of part of what the commands wrote, such as a
-host directory kept as if whole; a restore from bytes whose hash was not
-checked, or a half-restored workspace left to run; a credential or a
-secret's value in a kept snapshot, or a child whose writes reach its
-parent's workspace.
+host directory kept as if whole, or a released container's volume on a
+fresh instance; an instance let go that no snapshot holds; a restore
+from bytes whose hash was not checked, on an image named by a tag, or a
+half-restored workspace left to run; a lost restore tried again at each
+unlock; a credential or an injected secret's value in a kept snapshot; a
+fork that takes a slot or makes a child before it finds its snapshot, or
+a child whose writes reach its parent's workspace.
 
 **Severity.** high
 

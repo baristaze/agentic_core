@@ -83,17 +83,20 @@ thing [Acme is made of](../../../../README.md).
   takes the call's id, so a call asked again finds the child it made,
   and a bound the tree sets is the call's failure. With `fork`, the
   child's workspace starts from a copy of the agent's latest snapshot.
-- **Snapshot a workspace.** The product says when: a live workspace is
-  kept whole, everything its commands wrote, sealed under the session's
-  key and named by a step in its history. A credential is never in it,
-  and a workspace that holds a secret's value keeps none. A directory on
-  a host cannot be kept whole, so it refuses, before anything runs
-  (ADR 1027).
+- **Snapshot a workspace.** A kind that asks for `snapshot` durability
+  has its workspace kept whole at the end of each run, live: everything
+  its commands wrote, sealed under the session's key and named by a step
+  in its history, and the next run starts from it. A credential is never
+  in it, and a workspace that holds an injected secret's value keeps
+  none. A released workspace, and a directory on a host, cannot be kept
+  whole, so they refuse, before anything runs (ADR 1027).
 - **Restore, rewind, fork.** A restore names a snapshot the history
   holds, and the next loop starts from it, its bytes trusted only by
   their hash; one that does not match loses the workspace before it
-  starts. A person's restore rewinds the session, and nothing is
-  deleted. A child's fork is a copy of its own.
+  starts, and parks the loop once, until a person lets it go on as it
+  stands. A person's restore rewinds the session, and nothing is
+  deleted. A child's fork is a copy of its own, and a fork with none to
+  copy is refused before anything is spent.
 - **Wait on sub-agents.** The call answers the children still running,
   and the agent's loop waits, holding nothing, until one reports. With
   none running, it is refused.
