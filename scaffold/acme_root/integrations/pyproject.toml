@@ -11,6 +11,11 @@ dependencies = [
     # Pinned exactly: the identity provider's wire shapes are what the twin
     # mirrors and the fixtures record, so an upgrade is a change of its own.
     "workos==10.4.0",
+    # Pinned exactly: the MCP client speaks the protocol through the SDK, and
+    # the tests hold what a server's answer becomes, so an upgrade is a change
+    # of its own. httpx2 is the SDK's HTTP client, which the client configures.
+    "mcp==2.3.0",
+    "httpx2>=2.10.0",
 ]
 
 [tool.uv.sources]

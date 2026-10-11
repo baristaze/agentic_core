@@ -27,7 +27,7 @@ from acme.om.steps.types.header import (
 )
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.tools.types.call import Verdict
-from acme.om.tools.types.mcp import McpToolDefinition
+from acme.om.tools.types.mcp import McpBinding, McpToolDefinition
 from acme.om.tools.types.policy import (
     DEFAULT_APPROVERS,
     Decision,
@@ -137,6 +137,24 @@ def definition_hash(definition: McpToolDefinition) -> str:
         definition.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
     )
     return "sha256:" + hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def unreviewed(binding: McpBinding, definition: McpToolDefinition | None) -> str | None:
+    """Why a server's tool, as the server lists it now, is not served under
+    its binding, or None when it is the definition the binding pinned: a
+    server that lists no such tool, or a definition that no longer hashes
+    to the pin someone reviewed."""
+    where = f"{binding.server}/{binding.server_tool}"
+    if definition is None or definition.name != binding.server_tool:
+        return f"{binding.server} lists no tool {binding.server_tool!r} for {binding.name}"
+    found = definition_hash(definition)
+    if found != binding.definition_hash:
+        return (
+            f"{where} hashes to {found}, not the reviewed {binding.definition_hash}: "
+            "its definition changed, and it is not served until someone reviews it "
+            "and moves the pin"
+        )
+    return None
 
 
 def tool_request(

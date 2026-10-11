@@ -70,3 +70,34 @@ class DeliveryRefused(InfraException):
 
     http_status = 400
     code = "webhook_signature_invalid"
+
+
+class McpServerUnavailable(ProviderUnavailable):
+    """An MCP server that could not be reached: its program did not start,
+    its address refused the connection, or it answered with a server error.
+    Worth asking again."""
+
+
+class McpServerFailed(InfraException):
+    """An MCP server that answered something the protocol does not hold, or
+    closed the connection mid-call. The message is the client's own, never
+    what the server sent."""
+
+    http_status = 502
+    code = "mcp_server_failed"
+
+
+class McpServerRefused(ProviderRefused):
+    """An MCP server that refused a request with a protocol error, such as an
+    input it does not take or a credential it does not accept. The message
+    carries the server's reason, redacted of the credential."""
+
+    code = "mcp_server_refused"
+
+
+class McpToolRefused(InfraException):
+    """A server's tool its caller does not admit as listed: the caller's
+    reason, and the call never reached the server."""
+
+    http_status = 409
+    code = "mcp_tool_refused"
