@@ -99,17 +99,16 @@ included, so a message buys calls its sender may not make.
 ## TOL-04 An MCP server's annotations are hints, never authority
 
 **Principle.** Where tools come over MCP, each takes the same contract,
-and the adopter's registry assigns its class and effect. The server's
-own annotations, its read-only, destructive, and idempotent hints, are
-hints, never authority. A server's tool definitions are pinned by hash,
-and a changed definition is reviewed before the registry serves it.
-Each call lists the server's tools again on its own connection and
-refuses a tool whose definition moved from its pin, with the reason,
-before it runs. The server's credential is resolved for the call and
-redacted from everything the server sends back. Each of the server's
-tools declares it by name, so its use is audited and a session that may
-call one holds credentials for the rule of two. A server that hangs or
-answers outside the protocol is refused within the tool's own time.
+and the adopter's registry assigns its class and effect; the server's
+read-only, destructive, and idempotent hints are hints, never authority.
+A server's definitions are pinned by hash, and a changed one is reviewed
+before the registry serves it. Each call lists the server's tools again
+and refuses a tool whose definition moved, with the reason, before it
+runs. Each of the server's tools declares its credential, so a session
+that may call one holds credentials. The credential is audited at each
+use, resolved for the call, and redacted from all the server sends back.
+A server that hangs or answers outside the protocol is refused within
+the tool's own time.
 
 **Source.** Tools, Tools over MCP.
 
