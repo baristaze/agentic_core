@@ -4,10 +4,14 @@ restore from it gives the workspace back; one whose stored bytes were
 altered is refused before any container starts. A credential the broker
 attached, and a secret's variable, are never in what a snapshot keeps. A
 child forked from its parent's snapshot sees the parent's files, and what
-it writes never reaches the parent's workspace.
+it writes never reaches the parent's workspace. A loop's run snapshots its
+container at its end, so what it wrote outside the volume outlives the
+release, a park, and the loop; once released, the workspace snapshots
+nothing outside a run.
 
 Skipped, with the reason, where no Docker runs."""
 
+import json
 import secrets as tokens
 import subprocess
 from collections.abc import AsyncIterator
@@ -18,7 +22,7 @@ from uuid import UUID
 
 import aioboto3
 import pytest
-from contracts.loops import ASSISTANT, DELIVERY, Loop, loop_over
+from contracts.loops import ALLOWED, ASSISTANT, DELIVERY, Loop, call, loop_over, reply, said
 from contracts.tools import Command
 
 from acme.infra.buckets import Buckets, BucketsInterface
@@ -48,13 +52,23 @@ from acme.infra.workspaces import (
     WorkspaceProviderInterface,
 )
 from acme.infra.workspaces.container import WorkspaceContainerImpl, container_name
+from acme.om.agent_sessions.rules import QUESTION
 from acme.om.agents.loop_rules import pending_restore
 from acme.om.agents.types.request import Spawn
 from acme.om.base import new_id, utcnow
-from acme.om.steps.types.header import ControlHeader, SnapshotHeader, WorkspaceSnapshot
-from acme.om.steps.types.step import Step
-from acme.om.tools.impl.snapshots import BUCKET, snapshot_key
+from acme.om.steps.types.content import TextBlock
+from acme.om.steps.types.header import (
+    ControlHeader,
+    LoopOutcome,
+    SnapshotHeader,
+    WorkspaceSnapshot,
+)
+from acme.om.steps.types.step import Step, StepType
+from acme.om.tools.impl.snapshots import BUCKET, session_prefix, snapshot_key
+from acme.om.tools.native.ask_person import ASK_PERSON
 from acme.om.tools.native.spawn_sub_agent import SPAWN_SUB_AGENT
+from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule
+from acme.om.tools.types.tool import ToolClass
 
 IMAGE = "python:3.14-slim"
 CREDENTIALS = "/etc/acme-credentials"
@@ -70,7 +84,13 @@ BOXED = ASSISTANT.model_copy(
     update={
         "name": "boxed",
         "isolation": BOXED_SPEC,
-        "tools": (*ASSISTANT.tools, "run_command", SPAWN_SUB_AGENT),
+        "tools": (*ASSISTANT.tools, "run_command", SPAWN_SUB_AGENT, ASK_PERSON),
+        "policy": PolicyLayer(
+            rules=(
+                *ALLOWED.rules,
+                PolicyRule(authorization_class=ToolClass.EXECUTE, decision=Decision.ALLOW),
+            )
+        ),
     }
 )
 
@@ -342,3 +362,59 @@ async def test_a_child_forked_from_its_parents_snapshot_sees_its_files_and_never
         await tools.purge_workspace(ctx.org_id, parent)
         if child_id is not None:
             await tools.purge_workspace(ctx.org_id, child_id)
+
+
+def printed(history: list[Step]) -> str:
+    """What the last command the loop ran printed."""
+    last = [step for step in history if step.type is StepType.TOOL_RESPONSE][-1]
+    (part,) = last.as_tool_response().parts
+    assert isinstance(part, TextBlock)
+    return json.loads(part.text)["stdout"]
+
+
+async def test_a_kept_workspace_holds_what_a_loop_wrote_outside_its_volume_across_a_park(
+    tmp_path: Path,
+) -> None:
+    """A loop installs a tool outside `/workspace` and parks on its person:
+    its run snapshots the container, then removes it. The resumed run, and a
+    later loop, find the tool. Once released, a snapshot asked of the
+    workspace outside any run is refused with the reason, and nothing is
+    stored or named."""
+    loop, infra = on_docker(tmp_path)
+    tools, ctx = loop.managers.tools, loop.owner
+    await infra.get_secrets().put(ctx.org_id, TOKEN, f"tok-{tokens.token_hex(12)}")
+    session_id = await loop.start(BOXED.name)
+    install = "mkdir -p /opt/tool && echo 1.0 > /opt/tool/version"
+    try:
+        await loop.say(session_id, "Install the tool, then ask me which version.")
+        loop.anthropic.add(
+            reply(call("run_command", argv=["sh", "-c", install])),
+            reply(call(ASK_PERSON, question="Which version?")),
+        )
+        parked = await loop.loops.run(ctx, session_id)
+        assert parked.park == QUESTION
+        assert not await container_runs(session_id), "released once its snapshot held it"
+
+        for text in ("Version 1.", "Check it again."):
+            await loop.say(session_id, text)
+            loop.anthropic.add(
+                reply(call("run_command", argv=["cat", "/opt/tool/version"])),
+                reply(said("It is there.")),
+            )
+            assert (await loop.loops.run(ctx, session_id)).outcome is LoopOutcome.SUCCEEDED
+            assert printed(await loop.history(session_id)) == "1.0\n"
+        assert not await container_runs(session_id)
+
+        history = await loop.history(session_id)
+        stored = await infra.buckets.list(ctx.org_id, BUCKET, session_prefix(session_id), 100)
+        released = Workspace(
+            id=session_id, org_id=ctx.org_id, spec=BOXED_SPEC, location=container_name(session_id)
+        )
+        epoch = await loop.managers.steps.begin_run(ctx, session_id)
+        with pytest.raises(SnapshotRefused, match="no instance"):
+            await tools.snapshot_workspace(ctx, session_id, released, epoch=epoch, loop_id=new_id())
+        after = await infra.buckets.list(ctx.org_id, BUCKET, session_prefix(session_id), 100)
+        assert after == stored, "nothing stored"
+        assert await loop.history(session_id) == history, "no step names one"
+    finally:
+        await tools.purge_workspace(ctx.org_id, session_id)
