@@ -2,7 +2,9 @@
 listed alone do; a deferred toolset is one line in `load_toolset`'s
 description until a load adds its tools, after every tool before them,
 recorded as a `switched` step that a replay of the history renders the
-same way; and nothing else changes a session's tool definitions."""
+same way; nothing else changes a session's tool definitions; and a call
+of a tool its own turn loads is refused as not offered, after a lost run
+as well, and the session goes on."""
 
 import json
 from collections.abc import Sequence
@@ -19,6 +21,7 @@ from acme.om.agents.loop_rules import kind_prompts
 from acme.om.agents.types.kind import AgentKind, AgentKindCatalog, DoneRule
 from acme.om.agents.types.run import RunEnd
 from acme.om.attribution.types.authority import AuthorityMode
+from acme.om.context import TenantContext
 from acme.om.models.types.fill import MAIN
 from acme.om.steps.types.content import TextBlock
 from acme.om.steps.types.header import (
@@ -26,6 +29,7 @@ from acme.om.steps.types.header import (
     ModelRequestHeader,
     SwitchedHeader,
     ToolFailure,
+    ToolRequestHeader,
     ToolResponseHeader,
     ToolsetSwitch,
 )
@@ -260,6 +264,62 @@ async def test_a_sessions_tool_definitions_change_only_by_a_recorded_load(
     again = responses[3].as_tool_response().parts
     assert any(isinstance(p, TextBlock) and "already yours" in p.text for p in again)
     assert await replayed(loop, DEFERS, session_id) == calls
+
+
+# Check 5: a response that loads a toolset and calls one of its tools.
+
+
+class Lost(Exception):
+    """The run is lost once the load is stored, before the next call is
+    answered."""
+
+
+@pytest.mark.parametrize("lost", [False, True], ids=["one-run", "after-a-lost-run"])
+async def test_a_call_of_a_tool_its_own_turn_loads_is_not_offered_and_the_session_goes_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, lost: bool
+) -> None:
+    loop = loop_over(tmp_path, kinds=(DEFERS,))
+    session_id = await loop.start("operator")
+    await loop.say(session_id, "Note the total.")
+    loop.anthropic.add(
+        reply(call("load_toolset", toolset="writes"), use("note", use_id="use_early")),
+        reply(use("note", use_id="use_late")),
+        reply(said("Noted.")),
+    )
+    if lost:
+        append = loop.managers.steps.append_steps
+
+        async def lost_after_the_load(
+            ctx: TenantContext, session_id: UUID, epoch: int, steps: Sequence[Step]
+        ) -> tuple[Step, ...]:
+            stored = await append(ctx, session_id, epoch, steps)
+            if any(step.type is StepType.SWITCHED for step in stored):
+                raise Lost
+            return stored
+
+        monkeypatch.setattr(loop.managers.steps, "append_steps", lost_after_the_load)
+        with pytest.raises(Lost):
+            await loop.loops.run(loop.owner, session_id)
+        monkeypatch.undo()
+
+    steps = await ran(loop, session_id)
+
+    first, loaded, last = loop.anthropic.calls
+    answers = {step.responds_to: step for step in steps if step.type is StepType.TOOL_RESPONSE}
+    early, late = (
+        step
+        for step in steps
+        if isinstance(step.header, ToolRequestHeader) and step.header.tool == "note"
+    )
+    refused = answers[early.id]
+    assert failure_of(refused) is ToolFailure.INVALID_INPUT, "not offered when it was made"
+    parts = refused.as_tool_response().parts
+    assert any(isinstance(p, TextBlock) and "no tool named 'note'" in p.text for p in parts)
+    assert loaded.tools[: len(first.tools)] == first.tools
+    assert names(loaded)[len(first.tools) :] == ["note", "send"], "the next request has them"
+    assert failure_of(answers[late.id]) is None and len(loop.tools["note"].ran_as) == 1
+    assert last.tools == loaded.tools
+    assert await replayed(loop, DEFERS, session_id) == loop.anthropic.calls
 
 
 def test_a_sub_agent_cut_to_a_parent_without_the_load_still_loads_what_it_holds() -> None:
