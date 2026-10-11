@@ -134,6 +134,7 @@ def test_each_logger_the_sdk_writes_to_writes_nothing() -> None:
     entry points name others, and the engine never loads them."""
     named: dict[str, str] = {}
     for package in (mcp, mcp_types):
+        assert package.__file__ is not None
         root = Path(package.__file__).parent
         for source in root.rglob("*.py"):
             parts = source.relative_to(root.parent).with_suffix("").parts
