@@ -76,6 +76,9 @@ class WorkspaceHostImpl(WorkspaceProviderInterface):
     async def keep(self, snapshot: bytes, org_id: UUID, workspace_id: UUID) -> bytes:
         return snapshot
 
+    async def discard(self, snapshot: bytes) -> None:
+        return None
+
     def describe(self) -> str:
         return f"workspaces=host({self._root})"
 

@@ -162,6 +162,9 @@ class WorkspaceVmImpl(WorkspaceProviderInterface):
             raise WorkspaceLost(f"the snapshot {kept.name} changed while it was copied")
         return _archive(Kept(org_id=org_id, name=to, digest=digest))
 
+    async def discard(self, snapshot: bytes) -> None:
+        await self._machines.destroy(_opened(snapshot, self._prefix).name)
+
     async def release(self, workspace: Workspace) -> None:
         await self._machines.stop(workspace.location)
 

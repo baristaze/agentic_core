@@ -96,7 +96,8 @@ async def test_a_vm_snapshot_names_its_disk_and_the_scan_reads_the_disk(
 ) -> None:
     """The step names an archive of a few hundred bytes. A secret's value a
     command wrote anywhere on the disk, outside the workspace's folder
-    included, refuses the next snapshot, by the secret's name."""
+    included, refuses the next snapshot, by the secret's name, and its disk
+    is not kept."""
     vms = Vms(tmp_path)
     await vms.secrets.put(vms.ctx.org_id, "SERVICE_TOKEN", "tok-0123456789abcdef")
     session_id = new_id()
@@ -109,6 +110,8 @@ async def test_a_vm_snapshot_names_its_disk_and_the_scan_reads_the_disk(
     (vms.folder(session_id) / "etc-profile").write_text("export T=tok-0123456789abcdef\n")
     with pytest.raises(SnapshotRefused, match="SERVICE_TOKEN"):
         await vms.snapshot(workspace)
+    disks = await vms.machines.names(f"{machine_name(PREFIX, session_id)}-")
+    assert len(disks) == 1, "the refused snapshot's disk went; the kept one stays"
 
 
 async def test_a_fork_of_a_vm_snapshot_is_the_childs_own_disk(tmp_path: Path) -> None:

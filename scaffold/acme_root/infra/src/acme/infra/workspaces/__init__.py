@@ -282,6 +282,14 @@ class WorkspaceProviderInterface(ABC):
         ...
 
     @abstractmethod
+    async def discard(self, snapshot: bytes) -> None:
+        """What an archive this provider's `snapshot` made keeps outside the
+        archive, such as a disk, removed, when the archive is not kept: one
+        refused, or one whose store failed. An archive that holds its bytes
+        keeps nothing elsewhere."""
+        ...
+
+    @abstractmethod
     async def release(self, workspace: Workspace) -> None:
         """Lets the instance go and keeps the files. Releasing one that holds
         no instance does nothing."""

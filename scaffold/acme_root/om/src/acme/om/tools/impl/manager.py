@@ -274,8 +274,14 @@ class ToolsManagerImpl(ToolsManagerInterface):
         # injected secret's value a command wrote there refuses the snapshot.
         await self._broker.detach_all(workspace)
         archive = await self._workspaces.snapshot(workspace)
-        await self._snapshots.scan(ctx, self._workspaces.held(archive))
-        kept = await self._snapshots.keep(ctx, session_id, new_id(), workspace.id, archive)
+        try:
+            await self._snapshots.scan(ctx, self._workspaces.held(archive))
+            kept = await self._snapshots.keep(ctx, session_id, new_id(), workspace.id, archive)
+        except BaseException:
+            # Not kept, so nothing of it stays: a disk its provider keeps
+            # apart, such as one that holds a secret's value, goes too.
+            await self._workspaces.discard(archive)
+            raise
         step = snapshotted_step(new_id(), self._clock(), session_id, loop_id, kept)
         (stored,) = await self._steps.append_steps(ctx, session_id, epoch, [step])
         return stored
@@ -303,7 +309,11 @@ class ToolsManagerImpl(ToolsManagerInterface):
         # such as a disk, is copied under the child's workspace, so the
         # parent's purge leaves it whole.
         copy = await self._workspaces.keep(archive, ctx.org_id, child_id)
-        return await self._snapshots.keep(ctx, child_id, snapshot_id, source.workspace_id, copy)
+        try:
+            return await self._snapshots.keep(ctx, child_id, snapshot_id, source.workspace_id, copy)
+        except BaseException:
+            await self._workspaces.discard(copy)
+            raise
 
     async def find_snapshot(
         self, ctx: TenantContext, session_id: UUID, snapshot_id: UUID

@@ -103,7 +103,10 @@ under the child's workspace, so the parent's purge leaves it. A base is
 kept under an id of its own, taken from the tenant and the base's key,
 so the build's purge leaves it; it goes when the base is dropped and
 with the tenant's purge. An archive that holds its own bytes, a
-container's, is its own copy, and `keep` answers it as it is.
+container's, is its own copy, and `keep` answers it as it is. A snapshot
+that is not kept, refused by the scan or lost by its store, has its disk
+removed at once (`discard`), so no disk outlives an archive that names
+it.
 
 **No credential.** The provider interface's `held` reads what a
 snapshot holds, for the scan for injected secrets' values: the archive
