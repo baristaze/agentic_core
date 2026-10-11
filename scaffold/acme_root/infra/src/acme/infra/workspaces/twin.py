@@ -35,6 +35,8 @@ class WorkspaceTwinImpl(WorkspaceProviderInterface):
         spec: IsolationSpec,
         snapshot: bytes | None = None,
         base: bytes | None = None,
+        *,
+        building: bool = False,
     ) -> Workspace:
         why = refusal(
             spec,
@@ -97,6 +99,8 @@ class WorkspaceNullImpl(WorkspaceProviderInterface):
         spec: IsolationSpec,
         snapshot: bytes | None = None,
         base: bytes | None = None,
+        *,
+        building: bool = False,
     ) -> Workspace:
         raise IsolationRefused(
             f"this process prepares no workspace; a {spec.mode.value} workspace is refused"

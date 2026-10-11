@@ -8,6 +8,8 @@ snapshot; a changed command builds another. The setup reaches the registry
 and the workspace, with no egress, does not. The setup's environment holds
 no platform credential, no tenant's secret, and no session's content. A
 setup command that fails keeps nothing, and the next prepare builds again.
+A setup installs a system package from the image's own package mirror, and
+a workspace on its base runs the program with every capability dropped.
 
 Skipped, with the reason, where no Docker runs."""
 
@@ -49,6 +51,9 @@ from acme.om.tools.impl.bases import BUCKET, PREFIX, base_key
 
 IMAGE = "python:3.14-slim"
 TOKEN = "SERVICE_TOKEN"
+CAP_CHOWN = 1 << 0
+CAP_NET_RAW = 1 << 13
+CAP_SYS_ADMIN = 1 << 21
 
 REACH = r"""
 import socket, sys, urllib.request
@@ -148,10 +153,12 @@ class Spied(WorkspaceContainerImpl):
         spec: IsolationSpec,
         snapshot: bytes | None = None,
         base: bytes | None = None,
+        *,
+        building: bool = False,
     ) -> Workspace:
         if base is not None:
             self.started_from[workspace_id] = hashlib.sha256(base).hexdigest()
-        return await super().prepare(org_id, workspace_id, spec, snapshot, base)
+        return await super().prepare(org_id, workspace_id, spec, snapshot, base, building=building)
 
 
 class InfraOnDocker(InfraLocalImpl):
@@ -338,3 +345,32 @@ async def test_a_failed_setup_keeps_nothing_and_the_next_prepare_builds_again(
 
     assert await inside(workspace, "cat", "/opt/count") == (0, "built\n")
     assert await on_docker.kept() == [base_key(spec)]
+
+
+def status(shown: str) -> dict[str, str]:
+    """The fields of a process's `/proc/self/status`."""
+    return dict(line.split(":\t", 1) for line in shown.splitlines() if ":\t" in line)
+
+
+async def test_a_setup_installs_a_system_package_and_the_workspace_runs_it_with_no_capability(
+    on_docker: OnDocker,
+) -> None:
+    spec = on_base(
+        "cat /proc/self/status > /opt/setup-status",
+        "apt-get update && apt-get install -y --no-install-recommends tree",
+    )
+
+    workspace = await on_docker.prepare(spec)
+
+    code, shown = await inside(workspace, "tree", "--version")
+    assert code == 0 and shown.startswith("tree v"), "the installed program runs"
+    code, held = await inside(workspace, "cat", "/proc/self/status")
+    session = status(held)
+    assert code == 0 and session["NoNewPrivs"] == "1"
+    assert int(session["CapEff"], 16) == 0, "the workspace holds no capability"
+    assert int(session["CapBnd"], 16) == 0, "and can gain none"
+    code, built = await inside(workspace, "cat", "/opt/setup-status")
+    setup = status(built)
+    assert code == 0 and setup["NoNewPrivs"] == "1"
+    assert int(setup["CapEff"], 16) & CAP_CHOWN, "the setup could change a file's owner"
+    assert not int(setup["CapBnd"], 16) & (CAP_SYS_ADMIN | CAP_NET_RAW), "nothing privileged"
