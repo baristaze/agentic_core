@@ -15,6 +15,7 @@ class CacheScope(StrEnum):
     RATE_LIMIT = "rate_limit"
     REALTIME_TICKET = "realtime_ticket"
     WORKER_LIVENESS = "worker_liveness"
+    WORKSPACE_BASE = "workspace_base"  # a claim on a base's build: one builds, the rest wait
 
 
 def cache_key(org_id: UUID, key: str) -> str:

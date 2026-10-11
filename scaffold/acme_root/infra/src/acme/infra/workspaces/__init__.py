@@ -15,6 +15,12 @@ workspace from. A spec that asks for a workspace that can be kept so
 (`Durability.SNAPSHOT`) is refused by a provider that cannot, before
 anything is made, and is never met by a cache in its stead.
 
+A spec may name a base: an image, and the commands that set it up, run once
+with the setup's own egress. A base with setup is a snapshot of a workspace
+its setup ran in, so only a provider that snapshots can serve one. A
+workspace on it starts from that snapshot and runs with its spec's egress,
+never the setup's.
+
 What a workspace is rebuilt from may be gone for good, such as the branch a
 checkout tracks. A layer that prepares one then raises `WorkspaceLost`, and
 the loop parks, loudly, for a person."""
@@ -31,6 +37,7 @@ from acme.infra.base import InfraModel
 from acme.infra.exceptions import InfraException, InfraValidationFailed
 
 __all__ = [
+    "BaseSetupFailed",
     "Durability",
     "EgressMode",
     "EgressPolicy",
@@ -40,6 +47,7 @@ __all__ = [
     "ResourceLimits",
     "SnapshotRefused",
     "Workspace",
+    "WorkspaceBase",
     "WorkspaceLost",
     "WorkspaceProviderInterface",
     "refusal",
@@ -88,11 +96,23 @@ class ResourceLimits(InfraModel):
         return frozenset(name for name, value in self if value is not None)
 
 
+class WorkspaceBase(InfraModel):
+    """What a workspace starts from: an image, and the commands that set it
+    up, run in order, in the workspace's directory, with `egress` alone, such
+    as a package registry's. A setup runs no model, is given no secret, and
+    reads no session's content. A base with no setup is the image alone."""
+
+    image: str = Field(min_length=1)
+    setup: tuple[str, ...] = ()
+    egress: EgressPolicy = EgressPolicy(mode=EgressMode.NONE)
+
+
 class IsolationSpec(InfraModel):
     mode: IsolationMode
     egress: EgressPolicy
     limits: ResourceLimits = ResourceLimits()
     durability: Durability = Durability.CACHE
+    base: WorkspaceBase | None = None  # None: the provider's own image
 
 
 class Workspace(InfraModel):
@@ -126,6 +146,18 @@ class IsolationRefused(InfraValidationFailed):
         self.clears = clears
 
 
+class BaseSetupFailed(IsolationRefused):
+    """A command of a base's setup ended without success: the workspace on
+    the base is refused, named by the command and how it ended, and nothing
+    of the build is kept, so the next prepare builds it again."""
+
+    def __init__(self, index: int, command: str, exit_code: int | None) -> None:
+        ended = "ran out of time" if exit_code is None else f"exited {exit_code}"
+        super().__init__(f"the base's setup command {index + 1}, {command!r}, {ended}")
+        self.command = command
+        self.exit_code = exit_code
+
+
 class SnapshotRefused(InfraValidationFailed):
     """A provider cannot snapshot a workspace: its mode cannot be kept whole,
     or the workspace holds no instance to take one from. Refused before
@@ -155,7 +187,8 @@ def refusal(
     """Why a provider of `mode`, which enforces the egress modes and the
     limits named, cannot meet `spec`; None when it meets every part.
     `unkept` says why the provider cannot snapshot a workspace, and is None
-    when it can."""
+    when it can: one that cannot also starts none from a base. A base's
+    setup is held to the egress modes named, as the workspace is."""
     if spec.mode is not mode:
         return f"a {mode.value} provider cannot prepare a {spec.mode.value} workspace"
     if spec.egress.mode not in egress:
@@ -164,6 +197,11 @@ def refusal(
         return f"a {mode.value} workspace cannot enforce {', '.join(unmet)}"
     if spec.durability is Durability.SNAPSHOT and unkept is not None:
         return f"a {mode.value} workspace cannot be snapshotted: {unkept}"
+    if spec.base is not None and unkept is not None:
+        return f"a {mode.value} workspace cannot start from a base: {unkept}"
+    if spec.base is not None and spec.base.egress.mode not in egress:
+        setup = spec.base.egress.mode.value
+        return f"a {mode.value} workspace's setup cannot hold egress to {setup}"
     return None
 
 
@@ -175,6 +213,7 @@ class WorkspaceProviderInterface(ABC):
         workspace_id: UUID,
         spec: IsolationSpec,
         snapshot: bytes | None = None,
+        base: bytes | None = None,
     ) -> Workspace:
         """The workspace under `workspace_id`, prepared to `spec`: made, or
         found again with its files after a release. `IsolationRefused`, with
@@ -186,9 +225,18 @@ class WorkspaceProviderInterface(ABC):
         workspace starts from it: what it held before is replaced whole. A
         provider that cannot snapshot refuses it with `IsolationRefused`;
         one that cannot bring it in, such as an archive of another
-        provider's or one whose base is gone, raises `WorkspaceLost`. A
+        provider's or one whose image is gone, raises `WorkspaceLost`. A
         restore that fails part way leaves no workspace behind, never a
-        half-restored one."""
+        half-restored one.
+
+        With `base`, the archive this provider's `snapshot` made of a
+        workspace once the setup of `spec.base` ran in it, each instance
+        this prepare starts starts from it, and the files it holds are the
+        workspace's only when it has none yet: a workspace found again keeps
+        its own. `snapshot` wins over it. A spec whose base has setup is
+        refused without its archive, never started on the bare image. One
+        this provider cannot bring in raises `WorkspaceLost`, and nothing of
+        the workspace's own files is lost."""
         ...
 
     @abstractmethod

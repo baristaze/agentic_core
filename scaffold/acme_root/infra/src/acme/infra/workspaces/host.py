@@ -44,11 +44,12 @@ class WorkspaceHostImpl(WorkspaceProviderInterface):
         workspace_id: UUID,
         spec: IsolationSpec,
         snapshot: bytes | None = None,
+        base: bytes | None = None,
     ) -> Workspace:
         why = refusal(
             spec, mode=IsolationMode.HOST, egress={EgressMode.OPEN}, limits=(), unkept=UNKEPT
         )
-        if why is None and snapshot is not None:
+        if why is None and (snapshot is not None or base is not None):
             why = f"a host workspace cannot start from a snapshot: {UNKEPT}"
         if why is not None:
             raise IsolationRefused(why)

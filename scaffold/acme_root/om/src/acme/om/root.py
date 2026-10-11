@@ -91,6 +91,7 @@ from acme.om.tenancy.storage import TenancyStorageInterface
 from acme.om.tools import ToolRegistry, ToolsManagerInterface
 from acme.om.tools.attachments import AttachmentReaderInterface
 from acme.om.tools.impl.attachments import AttachmentReaderNullImpl
+from acme.om.tools.impl.bases import WorkspaceBases
 from acme.om.tools.impl.manager import ToolsManagerImpl, ToolsOptions
 from acme.om.tools.impl.snapshots import SnapshotStore
 from acme.om.tools.native.ask_person import AskPersonToolImpl
@@ -497,7 +498,17 @@ def build_managers(
     # two. What a call keeps of its session's content goes under the
     # session's key: its input's hash, its command's record, and a snapshot
     # of its workspace, which holds no secret a tool of the catalog may be
-    # given.
+    # given. A workspace base is the tenant's: built once, its claim on the
+    # cache every worker shares, and scanned as a snapshot is.
+    tools_settings = tools_options or ToolsOptions()
+    snapshots = SnapshotStore(
+        infra.get_buckets(),
+        snapshot_seal or SnapshotSealKeysImpl(session_keys, storage.get_privacy_storage()),
+        privacy.keyed_hash,
+        infra.get_secrets(),
+        injected_secrets(catalog),
+        tools_settings.purge_batch,
+    )
     tools = ToolsManagerImpl(
         storage.get_tool_storage(),
         steps,
@@ -506,18 +517,21 @@ def build_managers(
         outbox,
         infra.get_workspaces(),
         infra.get_transport(),
-        tools_options or ToolsOptions(),
+        tools_settings,
         keyed_hash=privacy.keyed_hash,
         record_seal=record_seal or RecordSealKeysImpl(session_keys, storage.get_privacy_storage()),
         attribution=attribution,
         broker=infra.get_broker(),
-        snapshots=SnapshotStore(
+        snapshots=snapshots,
+        bases=WorkspaceBases(
             infra.get_buckets(),
-            snapshot_seal or SnapshotSealKeysImpl(session_keys, storage.get_privacy_storage()),
-            privacy.keyed_hash,
-            infra.get_secrets(),
-            injected_secrets(catalog),
-            (tools_options or ToolsOptions()).purge_batch,
+            infra.get_workspaces(),
+            infra.get_transport(),
+            infra.get_cache(CacheScope.WORKSPACE_BASE),
+            snapshots.scan,
+            tools_settings.base_build_limit,
+            tools_settings.purge_batch,
+            utcnow,
         ),
     )
     # A child's report reaches its parent through windows, which bounds it.

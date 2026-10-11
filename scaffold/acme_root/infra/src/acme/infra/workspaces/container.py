@@ -101,7 +101,16 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
     paths removed from the image, and the id of the image beneath. It is
     taken with the container paused, so nothing writes while it is. A
     restore starts a container on that image and copies both back, owners
-    and modes kept (ADR 1027)."""
+    and modes kept (ADR 1027).
+
+    A base is the image it names, or, with setup, a snapshot of a container
+    its setup ran in. Each container on it starts on the image that
+    snapshot names, with the setup's layer copied in; its files are copied
+    into the volume only when the volume is new, so a workspace found again
+    keeps its own (ADR 1028). A setup is given open egress or none, as a
+    workspace is. An image a snapshot names by its id that this host lacks
+    is pulled again by the name the spec gives it; one whose name has moved
+    to another image is gone."""
 
     def __init__(self, image: str, timeout: timedelta) -> None:
         self._image = image
@@ -113,6 +122,7 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
         workspace_id: UUID,
         spec: IsolationSpec,
         snapshot: bytes | None = None,
+        base: bytes | None = None,
     ) -> Workspace:
         why = refusal(
             spec,
@@ -120,6 +130,9 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
             egress={EgressMode.NONE, EgressMode.OPEN},
             limits=LIMIT_FLAGS.keys(),
         )
+        built = snapshot is None and spec.base is not None and bool(spec.base.setup)
+        if why is None and built and base is None:
+            why = "a workspace on a base with setup starts from the base's snapshot alone"
         if why is not None:
             raise IsolationRefused(why)
         reachable = await docker("version", "--format", "{{.Server.Version}}", bound=self._timeout)
@@ -139,7 +152,10 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
             removed = await docker("rm", "-f", name, bound=self._timeout)
             if not removed.ok:
                 raise BackendFailed("docker", "rm", removed.reason())
-        await self._start(workspace, self._image)
+        if built and base is not None:
+            await self._start_on_base(workspace, _opened(base))
+        else:
+            await self._start(workspace, self._named_image(spec))
         return workspace
 
     async def snapshot(self, workspace: Workspace) -> bytes:
@@ -239,38 +255,77 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
         loses the workspace. A restore that fails part way removes what it
         made, so no half-restored workspace is ever found again."""
         kept = _opened(snapshot)
-        present = await docker("image", "inspect", kept.image, bound=self._timeout)
-        if not present.ok:
-            raise WorkspaceLost(f"the image {kept.image} the snapshot was taken on is gone")
+        await self._held(kept.image, self._named_image(workspace.spec))
         name = workspace.location
         await self._remove(name)
         try:
             await self._start(workspace, kept.image)
-            for part in (kept.layer, kept.files):
-                if part:
-                    copied = await docker(
-                        "cp", "--archive", "-", f"{name}:/", stdin=part, bound=self._timeout
-                    )
-                    if not copied.ok:
-                        raise BackendFailed("docker", "cp", copied.reason())
-            if kept.deleted:
-                paths = "".join(f"{path}\n" for path in kept.deleted).encode()
-                removed = await docker(
-                    "exec",
-                    "--interactive",
-                    name,
-                    "sh",
-                    "-c",
-                    REMOVE,
-                    stdin=paths,
-                    bound=self._timeout,
-                )
-                if not removed.ok:
-                    raise BackendFailed("docker", "exec", removed.reason())
+            await self._unpack(name, kept, files=True)
         except BaseException:
             await self._remove(name)
             raise
         return workspace
+
+    async def _start_on_base(self, workspace: Workspace, kept: Kept) -> None:
+        """A container started from a base's snapshot: on the image it names,
+        with the setup's layer copied in and the paths the setup removed
+        removed again, and the setup's files copied into the volume only when
+        the volume is new. One that fails part way removes the container,
+        and the volume only when it was new: the workspace's own files are
+        never lost to a base."""
+        await self._held(kept.image, self._named_image(workspace.spec))
+        name = workspace.location
+        listed = await docker(
+            "volume", "ls", "--quiet", "--filter", f"name={name}", bound=self._timeout
+        )
+        if not listed.ok:
+            raise BackendFailed("docker", "volume ls", listed.reason())
+        new = name.encode() not in listed.stdout.split()
+        try:
+            await self._start(workspace, kept.image)
+            await self._unpack(name, kept, files=new)
+        except BaseException:
+            if new:
+                await self._remove(name)
+            else:
+                await docker("rm", "-f", name, bound=self._timeout)
+            raise
+
+    async def _unpack(self, name: str, kept: Kept, *, files: bool) -> None:
+        """What `kept` holds copied into the container under `name`: its
+        writable layer, owners and modes kept, then its volume's files when
+        `files`, and the paths removed from the image removed again."""
+        for part in (kept.layer, kept.files if files else b""):
+            if part:
+                copied = await docker(
+                    "cp", "--archive", "-", f"{name}:/", stdin=part, bound=self._timeout
+                )
+                if not copied.ok:
+                    raise BackendFailed("docker", "cp", copied.reason())
+        if kept.deleted:
+            paths = "".join(f"{path}\n" for path in kept.deleted).encode()
+            removed = await docker(
+                "exec", "--interactive", name, "sh", "-c", REMOVE, stdin=paths, bound=self._timeout
+            )
+            if not removed.ok:
+                raise BackendFailed("docker", "exec", removed.reason())
+
+    async def _held(self, image_id: str, named: str) -> None:
+        """The image under `image_id` on this host: pulled again by `named`,
+        the name the spec gives it, when the host lacks it. One the name no
+        longer gives is gone, and so is the workspace that needs it."""
+        present = await docker("image", "inspect", image_id, bound=self._timeout)
+        if present.ok:
+            return
+        pulled = await docker("pull", "--quiet", named, bound=self._timeout)
+        present = await docker("image", "inspect", image_id, bound=self._timeout)
+        if not present.ok:
+            why = "is another image now" if pulled.ok else f"was not pulled: {pulled.reason()}"
+            raise WorkspaceLost(f"the image {image_id} is not on this host, and {named} {why}")
+
+    def _named_image(self, spec: IsolationSpec) -> str:
+        """The image a spec names: its base's, or this provider's own."""
+        return self._image if spec.base is None else spec.base.image
 
     def describe(self) -> str:
         return f"workspaces=container({self._image})"
