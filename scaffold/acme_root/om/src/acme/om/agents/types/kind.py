@@ -7,8 +7,8 @@ it may defer until the agent loads them; the rule that says when a loop is
 done, the result tool a delivery kind submits through, the authority mode
 its calls run under, the bounds of a tree it roots, and the share one of
 its sessions may spend when it runs as a sub-agent. It also carries
-what the loop reads of it: its prompts, the model roles it calls, the
-bounds of one loop, its layer of tool policy, the workspace its sessions
+what the loop reads of it: its prompts, the model roles it calls and
+what it asks of them, the bounds of one loop, its layer of tool policy, the workspace its sessions
 work in, and whether they hold private data. Its prompts and its tools'
 contracts are the product's, versioned with it."""
 
@@ -26,7 +26,7 @@ from acme.om.attribution.types.principal import MAX_KIND
 from acme.om.base import Platform
 from acme.om.budgets.types.amount import Amount
 from acme.om.exceptions import UnknownAgentKind
-from acme.om.models.types.fill import MAIN, SUMMARIZER, ModelRole
+from acme.om.models.types.fill import MAIN, SUMMARIZER, ModelAsk, ModelRole
 from acme.om.tools.types.policy import PolicyLayer
 from acme.om.tools.types.toolset import LOAD_TOOLSET, Toolset
 
@@ -84,6 +84,10 @@ class AgentKind(Platform):
     # The model roles it calls: its own turns, and the summarizer its
     # compaction calls.
     roles: tuple[ModelRole, ...] = (MAIN, SUMMARIZER)
+    # What it asks of them, a role at most once: how much model a role needs
+    # and how hard it works, never a model. A role it asks nothing of
+    # resolves by its name alone.
+    asks: tuple[ModelAsk, ...] = ()
     # The bounds of one loop: the step guard, the error streak, the run time.
     limits: Limits = Limits()
     # Its layer of tool policy, before a tenant narrows or loosens it and
@@ -133,6 +137,9 @@ class AgentKind(Platform):
             raise ValueError("a kind's result tool never waits for a load")
         if MAIN not in self.roles:
             raise ValueError("a kind calls the main model role")
+        asked = [ask.role for ask in self.asks]
+        if len(set(asked)) != len(asked) or not set(asked) <= set(self.roles):
+            raise ValueError("a kind asks once of a model role it calls")
         return self
 
     @property

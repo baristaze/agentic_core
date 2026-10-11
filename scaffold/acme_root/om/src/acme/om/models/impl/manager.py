@@ -14,6 +14,7 @@ from acme.om.models.types.fill import (
     Fill,
     FillSet,
     FillSwitch,
+    ModelAsk,
     ModelRole,
     SwitchReason,
 )
@@ -50,6 +51,7 @@ class ModelsManagerImpl(ModelsManagerInterface):
         session_id: UUID,
         roles: Sequence[ModelRole],
         eligibility: Eligibility,
+        asks: Sequence[ModelAsk] = (),
     ) -> FillSet:
         ctx.require(Permission.WRITE)
         head = await self._storage.read_fill_set(ctx.org_id, session_id, None)
@@ -60,7 +62,7 @@ class ModelsManagerImpl(ModelsManagerInterface):
             created_at=self._clock(),
             session_id=session_id,
             version=1,
-            roles=await self._resolver.resolve(ctx, roles, eligibility),
+            roles=await self._resolver.resolve(ctx, roles, eligibility, asks),
             eligibility=eligibility,
         )
         try:

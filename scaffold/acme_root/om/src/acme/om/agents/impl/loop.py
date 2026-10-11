@@ -125,6 +125,10 @@ WORKSPACE_UNLOCK = "workspace"
 PERMISSION = "permission"
 """The cause a park names for a credential error that is no refusal of the
 key: a permission, a region, or a model the key cannot reach."""
+NOT_OFFERED = "unknown"
+"""The class a call's request records when the registry held no tool of its
+name as the model made it. A tool a load in the same turn adds is never
+that call's, whatever the registry holds by the time it settles."""
 
 
 class LoopOptions(Platform):
@@ -313,7 +317,9 @@ class LoopManagerImpl(LoopManagerInterface):
             log.warning("session %s has a session above it past its purge", session_id)
             return await self._end(run, LoopOutcome.ERRORED)
         try:
-            await self._models.resolve_fill_set(ctx, session_id, kind.roles, Eligibility())
+            await self._models.resolve_fill_set(
+                ctx, session_id, kind.roles, Eligibility(), kind.asks
+            )
         except (UnresolvedRole, UnpricedModel) as refused:
             log.warning("session %s resolves no fill: %s", session_id, refused.message)
             return await self._end(run, LoopOutcome.ERRORED)
@@ -538,6 +544,10 @@ class LoopManagerImpl(LoopManagerInterface):
         )
         if outage is not None and outage.retry_at > self._clock():
             return await self._park(run, provider_park(fill, outage.retry_at))
+        # The tools this request offers: the history's loads included, so a
+        # load settled since the last request adds its tools here, and never
+        # to a call of the turn that made it.
+        run.registry = self._registry(run.session, run.kind, history)
         prompts = rules.kind_prompts(
             run.kind, run.registry, loads(history), rules.standing_text(history, run.start_seq)
         )
@@ -890,7 +900,7 @@ class LoopManagerImpl(LoopManagerInterface):
             return await self._cancelled(run)
         park: Park | None = None
         for use, request in lost:
-            tool = run.registry.get(use.name)
+            tool = self._offered(run, request)
             if park is not None and tool is not None and tool.spec.mode is ToolMode.JOB:
                 continue
             settled = await self._settle_call(run, history, use, request, fresh=False)
@@ -939,7 +949,19 @@ class LoopManagerImpl(LoopManagerInterface):
     ) -> _Settled:
         ctx = run.ctx
         assert run.workspace is not None
-        tool = run.registry.get(use.name)
+        tool = self._offered(run, request)
+        if tool is None and run.registry.get(use.name) is not None:
+            # A load in the call's own turn added its tool after the call was
+            # made, and a run that settles it after a lost one holds it now:
+            # it is refused as a tool its request did not offer.
+            text = (
+                f"there was no tool named {use.name!r} when this call was made; "
+                "a toolset's tools are callable from the request after its load"
+            )
+            await self._answer(
+                run, request, self._stopped(request, text, ToolFailure.INVALID_INPUT)
+            )
+            return _Settled()
         if tool is not None and tool.spec.mode is ToolMode.JOB:
             started = rules.started_jobs(history, run.loop_id).get(request.id)
             if started is not None:
@@ -1316,10 +1338,11 @@ class LoopManagerImpl(LoopManagerInterface):
     ) -> _Settled:
         """A load of a toolset the kind defers: its answer, and the `switched`
         step that names the tools it adds, in one append, so no tool joins
-        a request without its record. The run's registry holds them from
-        its next request on. A toolset the kind does not defer is the
-        call's invalid input; one whose tools the registry holds already
-        answers so, and switches nothing."""
+        a request without its record. The run's registry takes them as it
+        renders its next request, never for a call of this turn. A toolset
+        the kind does not defer is the call's invalid input; one whose
+        tools the registry holds already answers so, and switches
+        nothing."""
         history = await self._history(run.ctx, run.session_id, history)
         try:
             loaded = load(
@@ -1351,8 +1374,7 @@ class LoopManagerImpl(LoopManagerInterface):
             refs=(request.id,),
             header=SwitchedHeader(toolset=loaded.switch),
         )
-        stored = await self._answer(run, request, answer, switched)
-        run.registry = self._registry(run.session, run.kind, [*history, *stored])
+        await self._answer(run, request, answer, switched)
         return _Settled()
 
     def _registry(
@@ -1412,9 +1434,19 @@ class LoopManagerImpl(LoopManagerInterface):
 
     def _class_of(self, run: _Run, name: str) -> str:
         """A call's class, as its tool declares it. A name the registry does
-        not hold is refused by the gate before any class is read."""
+        not hold records `NOT_OFFERED`, and is refused before any class is
+        read."""
         tool = run.registry.get(name)
-        return tool.spec.authorization_class if tool is not None else "unknown"
+        return tool.spec.authorization_class if tool is not None else NOT_OFFERED
+
+    def _offered(self, run: _Run, request: Step) -> ToolInterface | None:
+        """The tool a call names, when its request was offered one: a call
+        recorded `NOT_OFFERED` has none, whatever the registry holds now."""
+        header = request.header
+        assert isinstance(header, ToolRequestHeader)
+        if header.authorization_class == NOT_OFFERED:
+            return None
+        return run.registry.get(header.tool)
 
     # How a run stops.
 

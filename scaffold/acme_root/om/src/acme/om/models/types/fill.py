@@ -1,6 +1,7 @@
 """Model roles, fills, and fill sets. A call site names a model role, never
 a model; a fill serves it; a session keeps its fills as a versioned fill
-set, and a switch is a new version, announced.
+set, and a switch is a new version, announced. A kind may ask a model size
+and an effort of a role, and the resolver turns the ask into a fill.
 
 In code a model role is `ModelRole`, never the tenancy namespace's `Role`."""
 
@@ -21,6 +22,27 @@ MAIN: ModelRole = "main"
 SUMMARIZER: ModelRole = "summarizer"
 """The two model roles the engine itself calls: the agent's own turns, and
 the compaction that folds a window into a summary."""
+
+
+class ModelSize(StrEnum):
+    """How much model a role needs, from the smallest to the largest. A
+    resolver maps each size to fills; a kind asks a size, never a model."""
+
+    XS = "xs"
+    S = "s"
+    M = "m"
+    L = "l"
+    XL = "xl"
+
+
+class ModelAsk(Platform):
+    """What a kind asks of one of its model roles: how much model the role
+    needs, and how hard it works. The resolver serves the size, and takes
+    the effort only where the fill allows it."""
+
+    role: ModelRole
+    size: ModelSize
+    effort: Effort | None = None  # None: each fill's own
 
 
 class OutputShape(StrEnum):
@@ -45,11 +67,13 @@ class Eligibility(Platform):
 class Fill(Platform):
     """What serves a model role: a provider, a model, how hard it works, its
     output bound and shape, its context window, and the eligibility it
-    carries."""
+    carries. `efforts` are the levels an ask may move it to: the ones its
+    model takes. A fill that names none runs at its own."""
 
     provider: ProviderName
     model: str = Field(min_length=1, max_length=200)
     effort: Effort | None = None
+    efforts: tuple[Effort, ...] = ()
     thinking_budget: int | None = Field(default=None, gt=0)
     max_output_tokens: int = Field(gt=0)
     output: OutputShape = OutputShape.TEXT
@@ -69,12 +93,36 @@ class Fill(Platform):
     def name(self) -> str:
         return f"{self.provider.value}/{self.model}"
 
+    def at(self, effort: Effort | None) -> Self:
+        """This fill at `effort` when it allows it, and as it is otherwise:
+        an ask never widens what a fill allows."""
+        if effort is None or effort is self.effort or effort not in self.efforts:
+            return self
+        return self.model_copy(update={"effort": effort})
+
 
 class RoleFill(Platform):
     """One model role's fill in a fill set, and the fallbacks it declares, in
-    the order a fallback takes them."""
+    the order a fallback takes them. `ask` is what the kind asked of the
+    role, kept beside what it got."""
 
     role: ModelRole
+    fill: Fill
+    fallbacks: tuple[Fill, ...] = ()
+    ask: ModelAsk | None = None
+
+    @model_validator(mode="after")
+    def _its_ask_is_its_own(self) -> Self:
+        if self.ask is not None and self.ask.role != self.role:
+            raise ValueError("a role's fill keeps the ask of that role")
+        return self
+
+
+class SizeFill(Platform):
+    """One model size's fill in a resolver's table, and the fallbacks it
+    declares, in the order a fallback takes them."""
+
+    size: ModelSize
     fill: Fill
     fallbacks: tuple[Fill, ...] = ()
 

@@ -87,7 +87,8 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
   version it read.
 - **A session takes what it must from where it came.** A sub-agent or
   a handed-over session carries the mark of the session it came from,
-  and a sub-agent calls only tools its parent may. Whoever makes it
+  and a sub-agent calls only tools its parent may, a deferred toolset's
+  counted loaded or not (`load_toolset` adds no power). Whoever makes it
   cannot choose otherwise.
 - **Every session belongs to one org.** Another org's session answers as
   one that never existed, and a session's parent is in its own org.

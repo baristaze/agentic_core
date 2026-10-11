@@ -19,10 +19,11 @@ spends inside its limits, never whether a limit holds.
 layers every request opens with, hold no value that differs per session,
 per person, or per tenant. Such a value renders after that stable
 prefix, in the places WIN-05 allows, so every session of a kind version
-shares one cached prefix. The one value of a session the system layer
-holds is its standing text, at the layer's end, so the sessions that pin
-the same text share the system layer too. The order of the layers, and
-that the same steps render the same bytes, are WIN-01's.
+shares one cached prefix until a load of a deferred toolset adds its
+tools after the rest. The one value of a session the system layer holds
+is its standing text, at the layer's end, so the sessions that pin the
+same text share the system layer too. The order of the layers, and that
+the same steps render the same bytes, are WIN-01's.
 
 **Source.** Economy, What a Request Carries (One prefix per kind
 version); Context, Rendering.

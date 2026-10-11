@@ -41,7 +41,7 @@ from acme.infra.workspaces import (
 )
 from acme.integrations.model_providers.calls import ModelCall
 from acme.integrations.model_providers.scripted import ScriptedFailure
-from acme.integrations.model_providers.types import ErrorKind, StopReason
+from acme.integrations.model_providers.types import Effort, ErrorKind, StopReason
 from acme.om.agent_sessions.limits import Limit, Limits, tally_loop, tripped
 from acme.om.agent_sessions.types.agent_session import SessionStatus
 from acme.om.agents.impl.sink import StreamSinkMemoryImpl
@@ -52,7 +52,7 @@ from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
 from acme.om.context import TenantContext
 from acme.om.exceptions import StaleWriter
-from acme.om.models.types.fill import MAIN, SUMMARIZER, Eligibility
+from acme.om.models.types.fill import MAIN, SUMMARIZER, Eligibility, ModelAsk, ModelSize
 from acme.om.steps.types.content import UNPARSED, TextBlock, ToolResultBlock, ToolUseBlock
 from acme.om.steps.types.header import (
     ControlCommand,
@@ -1242,3 +1242,21 @@ async def test_the_loop_draws_its_retry_wait_from_its_jitter(tmp_path: Path) -> 
 
     assert run.outcome is LoopOutcome.SUCCEEDED
     assert loop.clock() - before == timedelta(seconds=0.75), "half of 1s, and half of its half"
+
+
+async def test_a_kind_that_asks_a_size_runs_its_turns_on_that_sizes_fill(tmp_path: Path) -> None:
+    asked = ASSISTANT.model_copy(
+        update={"asks": (ModelAsk(role=MAIN, size=ModelSize.XL, effort=Effort.LOW),)}
+    )
+    loop = loop_over(tmp_path, kinds=(asked,))
+    session_id = await loop.start()
+    await loop.say(session_id, "What is the total?")
+    loop.anthropic.add(reply(said("The total is 12.")))
+
+    run = await loop.loops.run(loop.owner, session_id)
+
+    assert run.outcome is LoopOutcome.SUCCEEDED
+    (call,) = loop.anthropic.calls
+    assert (call.model, call.effort) == ("claude-opus-5-5", Effort.LOW)
+    fills = await loop.managers.models.get_fill_set(loop.owner, session_id)
+    assert [r.ask for r in fills.roles] == [asked.asks[0], None], "the summarizer by its name"
