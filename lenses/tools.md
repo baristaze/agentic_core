@@ -1,16 +1,16 @@
 # Tools
 
-Group id: `tools`. Covers Tools and The Runtime of
+Group id: `tools`. Covers Tools, The Runtime, and Workspace Snapshots of
 `agentic_core_spec.md`.
 
 This group judges where the engine touches the world: the tool contract,
 the registry, authorization classes, policy and approvals, execution and
-jobs, the failures the model reads, secrets, and the runtime tools
-execute in. It leaves the recovery of a tool call after a crash to
-`steps`, the untrusted mark and the rule of two to `trust`, a park on an
-approval or a job to `bounds`, the gate a spending job passes to
-`bounds`, and the loud null transport of a session with no workspace to
-`privacy`.
+jobs, the failures the model reads, secrets, the runtime tools execute
+in, and the snapshots that keep a workspace whole. It leaves the
+recovery of a tool call after a crash to `steps`, the untrusted mark and
+the rule of two to `trust`, a park on an approval or a job to `bounds`,
+the gate a spending job passes to `bounds`, and the loud null transport
+of a session with no workspace to `privacy`.
 
 ## TOL-01 Every tool declares its contract
 
@@ -409,5 +409,42 @@ environment with no
 
 **Shape.** `scaffold/acme_root/infra/src/acme/infra/workspaces/__init__.py` and
 `scaffold/acme_root/om/src/acme/om/tools/manager.py`
+
+**Check.** review
+
+## TOL-15 A snapshot is kept whole, trusted by its hash, and holds no credential
+
+**Principle.** A provider that can snapshots a workspace whole: all its
+commands could write. One that cannot refuses a snapshot, and a spec
+that asks for one, before anything runs. The run that holds a
+`snapshot` workspace snapshots it at its end, and lets the instance go
+only once a snapshot holds it. A snapshot is sealed under its session's
+key, stored under a hash keyed by the session, and named by a
+`snapshotted` step. A restore trusts its bytes only by that hash, and
+replaces the workspace whole; one that cannot load parks the loop once.
+The broker detaches its credentials first, and an injected secret's
+value refuses a snapshot. A fork is the child's own copy.
+
+**Source.** Workspace Snapshots.
+
+**Look for.** The provider's snapshot and its prepare from one; where
+the loop takes one at a run's end and what the next run starts from;
+where the hash is held to the step's and the broker's credentials
+detached; what a restore that cannot load does after a person's unlock;
+the copy a fork makes, and what a purge removes.
+
+**Violation.** A snapshot of part of what the commands wrote, such as a
+host directory kept as if whole, or a released container's volume on a
+fresh instance; an instance let go that no snapshot holds; a restore
+from bytes whose hash was not checked, on an image named by a tag, or a
+half-restored workspace left to run; a lost restore tried again at each
+unlock; a credential or an injected secret's value in a kept snapshot; a
+fork that takes a slot or makes a child before it finds its snapshot, or
+a child whose writes reach its parent's workspace.
+
+**Severity.** high
+
+**Shape.** `scaffold/acme_root/infra/src/acme/infra/workspaces/container.py`
+and `scaffold/acme_root/om/src/acme/om/tools/impl/snapshots.py`
 
 **Check.** review

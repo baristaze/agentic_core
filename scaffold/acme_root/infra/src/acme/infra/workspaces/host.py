@@ -11,11 +11,18 @@ from acme.infra.workspaces import (
     IsolationMode,
     IsolationRefused,
     IsolationSpec,
+    SnapshotRefused,
     Workspace,
     WorkspaceProviderInterface,
     refusal,
 )
 from acme.infra.workspaces.stragglers import end_stragglers
+
+UNKEPT = "its commands write outside its directory, so no snapshot of it holds all they wrote"
+"""Why a directory on a host is never snapshotted: what a command installs or
+leaves in the host's home, its temporary directory, or its packages sits
+outside the directory, and a snapshot of the directory alone would lose it
+without a word."""
 
 
 class WorkspaceHostImpl(WorkspaceProviderInterface):
@@ -24,18 +31,33 @@ class WorkspaceHostImpl(WorkspaceProviderInterface):
     not what it takes of the machine. So it meets the host mode with open
     egress and no resource limit, and refuses any spec that asks for more.
     Its instance is the processes running in it: a release ends what its
-    commands left running there, and keeps the files."""
+    commands left running there, and keeps the files. It never snapshots a
+    workspace (`UNKEPT`): a spec that asks for one is refused, and so is a
+    prepare from a snapshot."""
 
     def __init__(self, root: Path) -> None:
         self._root = root
 
-    async def prepare(self, org_id: UUID, workspace_id: UUID, spec: IsolationSpec) -> Workspace:
-        why = refusal(spec, mode=IsolationMode.HOST, egress={EgressMode.OPEN}, limits=())
+    async def prepare(
+        self,
+        org_id: UUID,
+        workspace_id: UUID,
+        spec: IsolationSpec,
+        snapshot: bytes | None = None,
+    ) -> Workspace:
+        why = refusal(
+            spec, mode=IsolationMode.HOST, egress={EgressMode.OPEN}, limits=(), unkept=UNKEPT
+        )
+        if why is None and snapshot is not None:
+            why = f"a host workspace cannot start from a snapshot: {UNKEPT}"
         if why is not None:
             raise IsolationRefused(why)
         directory = self._directory(org_id, workspace_id)
         await asyncio.to_thread(directory.mkdir, mode=0o700, parents=True, exist_ok=True)
         return Workspace(id=workspace_id, org_id=org_id, spec=spec, location=str(directory))
+
+    async def snapshot(self, workspace: Workspace) -> bytes:
+        raise SnapshotRefused(f"a host workspace cannot be snapshotted: {UNKEPT}")
 
     async def release(self, workspace: Workspace) -> None:
         await end_stragglers(self._directory(workspace.org_id, workspace.id))

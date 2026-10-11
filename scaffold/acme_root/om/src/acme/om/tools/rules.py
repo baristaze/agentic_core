@@ -19,9 +19,11 @@ from acme.om.steps.types.content import Content, TextBlock, ToolResultBlock, Too
 from acme.om.steps.types.header import (
     ControlCommand,
     ControlHeader,
+    SnapshotHeader,
     ToolFailure,
     ToolRequestHeader,
     ToolResponseHeader,
+    WorkspaceSnapshot,
 )
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.tools.types.call import Verdict
@@ -515,3 +517,33 @@ RECOVERED = (
 
 def recovered_text(result: CommandResult, limit: int) -> str:
     return RECOVERED + command_text(result, limit - len(RECOVERED))
+
+
+# Workspace snapshots.
+
+
+def named_snapshot(step: Step) -> WorkspaceSnapshot | None:
+    """The snapshot a step names: the one a `snapshotted` step says the
+    session took, or the one a restore starts its workspace from."""
+    header = step.header
+    if isinstance(header, SnapshotHeader):
+        return header.snapshot
+    if isinstance(header, ControlHeader):
+        return header.snapshot
+    return None
+
+
+def snapshotted_step(
+    step_id: UUID, at: datetime, session_id: UUID, loop_id: UUID, snapshot: WorkspaceSnapshot
+) -> Step:
+    """The step that names a snapshot the session took of its workspace."""
+    return Step(
+        id=step_id,
+        created_at=at,
+        session_id=session_id,
+        loop_id=loop_id,
+        type=StepType.SNAPSHOTTED,
+        actor=Actor.ENGINE,
+        origin=Origin.ENGINE,
+        header=SnapshotHeader(snapshot=snapshot),
+    )

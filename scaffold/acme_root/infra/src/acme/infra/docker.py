@@ -2,13 +2,18 @@
 call, each bounded by a timeout. The container workspace and the container
 transport share it. The command line's own environment is the one Docker
 needs and nothing of the engine's credentials: the path, the home, and the
-`DOCKER_*` variables that pick the daemon."""
+`DOCKER_*` variables that pick the daemon. A command that prints more than
+is held whole, such as a container's export, streams to a reader instead
+(`docker_stream`)."""
 
 import asyncio
 import os
-from collections.abc import Mapping
+import subprocess
+import threading
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import timedelta
+from typing import IO
 
 DOCKER_VARIABLES = (
     "PATH",
@@ -75,3 +80,59 @@ async def docker(
         await process.wait()
         return DockerReply(None, b"", b"")
     return DockerReply(process.returncode, stdout, stderr)
+
+
+async def docker_stream[T](
+    *args: str, bound: timedelta, read: Callable[[IO[bytes]], T]
+) -> tuple[DockerReply, T | None]:
+    """Runs `docker <args>` and hands its output, as it streams, to `read`, in
+    a thread of its own. Answers its exit and its errors, and what `read`
+    made of the output: None in its stead when the command failed, when
+    `read` could not read the output, or when the command had not ended
+    within `bound` and was killed, which answers no code."""
+    return await asyncio.to_thread(_streamed, args, bound, read)
+
+
+def _streamed[T](
+    args: tuple[str, ...], bound: timedelta, read: Callable[[IO[bytes]], T]
+) -> tuple[DockerReply, T | None]:
+    try:
+        process = subprocess.Popen(
+            ("docker", *args),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=docker_environment(),
+        )
+    except FileNotFoundError:
+        return DockerReply(127, b"", b"docker is not installed"), None
+    assert process.stdout is not None and process.stderr is not None
+    late = threading.Event()
+
+    def kill() -> None:
+        late.set()
+        process.kill()
+
+    timer = threading.Timer(bound.total_seconds(), kill)
+    timer.start()
+    made: T | None = None
+    unread = b""
+    try:
+        try:
+            made = read(process.stdout)
+        except Exception as error:  # the output was not what `read` reads
+            unread = f"\n{type(error).__name__}: {error}".encode()
+            process.kill()
+        # What `read` left of the output, so the command is never held on a
+        # full pipe.
+        while process.stdout.read(1 << 16):
+            pass
+        stderr = process.stderr.read()
+        code = process.wait()
+    finally:
+        timer.cancel()
+    if late.is_set():
+        return DockerReply(None, b"", b""), None
+    if unread:
+        return DockerReply(code or 1, b"", stderr + unread), None
+    return DockerReply(code, b"", stderr), made if code == 0 else None

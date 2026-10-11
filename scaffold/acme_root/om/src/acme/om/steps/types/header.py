@@ -7,6 +7,7 @@ An input and a tool request name their principal, and a model request its
 spender: the attribution the audit reads, typed where the step is made, so
 no step is stored without it."""
 
+import re
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal, Self
@@ -34,6 +35,7 @@ class ControlCommand(StrEnum):
     APPROVE = "approve"  # a person's decision on one exact tool call
     DENY = "deny"
     UNLOCK = "unlock"  # clears any park, such as by a raised budget
+    RESTORE = "restore"  # the workspace's next prepare starts from a snapshot the history names
 
 
 class ParkReason(StrEnum):
@@ -154,6 +156,26 @@ class ArtifactRef(Platform):
     characters: int = Field(gt=0)
 
 
+HASH_SCHEME = "hmac-sha256:"
+"""The scheme of a snapshot's hash: its bytes, hashed under a key of its
+session's."""
+
+SNAPSHOT_HASH = re.compile(rf"^{HASH_SCHEME}[0-9a-f]{{64}}$")
+
+
+class WorkspaceSnapshot(Platform):
+    """A workspace's snapshot as the history names it: its id, the hash of
+    its bytes keyed by its session, so once the key is revoked nothing can
+    confirm what it held, its size, and the workspace it was taken from:
+    the session's own, or its parent's when a child started from it. The
+    bytes live in the store, sealed under the session's key."""
+
+    id: UUID
+    hash: str = Field(pattern=SNAPSHOT_HASH.pattern)
+    size: int = Field(ge=0)
+    workspace_id: UUID
+
+
 class InputHeader(Platform):
     """A `message` or an `event`. `waking` is set when the input arrives, by
     the adopter's routing: a waking input starts a loop on an idle session.
@@ -201,11 +223,13 @@ class DecidedCall(Platform):
 
 class ControlHeader(Platform):
     """`call` is the decided call of an approve or a deny, and of nothing
-    else."""
+    else. `snapshot` is what a restore starts the workspace from, and is
+    named by nothing else."""
 
     kind: Literal["control"] = "control"
     command: ControlCommand
     call: DecidedCall | None = None
+    snapshot: WorkspaceSnapshot | None = None
 
     @model_validator(mode="after")
     def _a_decision_names_its_call(self) -> Self:
@@ -214,6 +238,8 @@ class ControlHeader(Platform):
             raise ValueError(
                 "an approve or a deny names the call it decides, and nothing else does"
             )
+        if (self.command is ControlCommand.RESTORE) != (self.snapshot is not None):
+            raise ValueError("a restore names the snapshot it starts from, and nothing else does")
         if self.call is not None and (
             (self.command is ControlCommand.APPROVE) != (self.call.expires_at is not None)
         ):
@@ -347,6 +373,13 @@ class SwitchedHeader(Platform):
     fills: FillSwitch
 
 
+class SnapshotHeader(Platform):
+    """A `snapshotted` step: the snapshot the session now holds."""
+
+    kind: Literal["snapshot"] = "snapshot"
+    snapshot: WorkspaceSnapshot
+
+
 class MarkHeader(Platform):
     """A lifecycle mark with nothing of its own to say: `resumed`,
     `environment_changed`."""
@@ -365,6 +398,7 @@ StepHeader = Annotated[
     | ParkedHeader
     | LoopEndedHeader
     | SwitchedHeader
+    | SnapshotHeader
     | MarkHeader,
     Field(discriminator="kind"),
 ]

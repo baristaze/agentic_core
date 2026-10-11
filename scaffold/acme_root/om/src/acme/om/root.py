@@ -1,7 +1,7 @@
 """The business-layer root: constructs every manager in dependency order and
 hands back one frozen object with a field per manager."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
@@ -9,6 +9,7 @@ from uuid import UUID
 from acme.infra.base import QuietNull
 from acme.infra.cache import CacheInterface, CacheScope
 from acme.infra.root import InfraInterface
+from acme.infra.transports import SecretVia
 from acme.integrations.identity import IdentityProviderInterface
 from acme.integrations.identity.absent import IdentityProviderAbsentImpl
 from acme.integrations.model_providers.registry import absent_model_providers
@@ -72,6 +73,7 @@ from acme.om.privacy.impl.memory_only_steps import StepStorageShapeOnlyImpl
 from acme.om.privacy.impl.records import RecordSealKeysImpl
 from acme.om.privacy.impl.routed_steps import StepStorageRoutedImpl
 from acme.om.privacy.impl.sealed_steps import StepStorageSealedImpl
+from acme.om.privacy.impl.snapshots import SnapshotSealKeysImpl
 from acme.om.privacy.keys import SessionKeysInterface
 from acme.om.steps import StepsManagerInterface
 from acme.om.steps.impl.manager import StepsManagerImpl, StepsOptions
@@ -90,13 +92,14 @@ from acme.om.tools import ToolRegistry, ToolsManagerInterface
 from acme.om.tools.attachments import AttachmentReaderInterface
 from acme.om.tools.impl.attachments import AttachmentReaderNullImpl
 from acme.om.tools.impl.manager import ToolsManagerImpl, ToolsOptions
+from acme.om.tools.impl.snapshots import SnapshotStore
 from acme.om.tools.native.ask_person import AskPersonToolImpl
 from acme.om.tools.native.read_artifact import ReadArtifactToolImpl
 from acme.om.tools.native.read_attachment import ReadAttachmentToolImpl
 from acme.om.tools.native.spawn_sub_agent import SpawnSubAgentToolImpl
 from acme.om.tools.native.wait_for_sub_agents import WaitForSubAgentsToolImpl
 from acme.om.tools.native.write_plan import WritePlanToolImpl
-from acme.om.tools.seal import RecordSealInterface
+from acme.om.tools.seal import RecordSealInterface, SnapshotSealInterface
 from acme.om.tools.tool import ToolInterface
 from acme.om.windows import WindowsManagerInterface
 from acme.om.windows.gate import CallGateInterface
@@ -257,6 +260,7 @@ def build_managers(
     prompt_hash: PromptHashInterface | None = None,
     artifact_seal: ArtifactSealInterface | None = None,
     record_seal: RecordSealInterface | None = None,
+    snapshot_seal: SnapshotSealInterface | None = None,
     compaction_policy: CompactionPolicy | None = None,
     agents_options: AgentsOptions | None = None,
     attribution_options: AttributionOptions | None = None,
@@ -295,8 +299,9 @@ def build_managers(
     the gate over the ledger; outside `environment` `local`, a quiet null
     gate or ledger is refused at boot (`UnsafeConfiguration`).
     `artifact_seal` is what seals an artifact's text under its session's
-    key, and `record_seal` what seals a command's output in its transport's
-    record; None wires the privacy namespace's seal over the session keys.
+    key, `record_seal` what seals a command's output in its transport's
+    record, and `snapshot_seal` what seals a workspace's snapshot; None
+    wires the privacy namespace's seal over the session keys.
     `compaction_policy` None keeps the default policy.
 
     Three are the adopter's for its agents: `agent_kinds`, every version of
@@ -485,6 +490,36 @@ def build_managers(
         engine_tools(steps, agent_sessions, reader, windows, lambda: managers.agents) + tool_catalog
     )
     ToolRegistry(catalog, domain_classes)  # refuses two tools of one name at boot
+    # Where the engine touches the world: the session's history for a
+    # person's decisions, the events for the audit of each secret a call
+    # uses, the workspace and the transport infra chose, and attribution,
+    # which answers whose authority each call runs under and the rule of
+    # two. What a call keeps of its session's content goes under the
+    # session's key: its input's hash, its command's record, and a snapshot
+    # of its workspace, which holds no secret a tool of the catalog may be
+    # given.
+    tools = ToolsManagerImpl(
+        storage.get_tool_storage(),
+        steps,
+        tenancy,
+        events,
+        outbox,
+        infra.get_workspaces(),
+        infra.get_transport(),
+        tools_options or ToolsOptions(),
+        keyed_hash=privacy.keyed_hash,
+        record_seal=record_seal or RecordSealKeysImpl(session_keys, storage.get_privacy_storage()),
+        attribution=attribution,
+        broker=infra.get_broker(),
+        snapshots=SnapshotStore(
+            infra.get_buckets(),
+            snapshot_seal or SnapshotSealKeysImpl(session_keys, storage.get_privacy_storage()),
+            privacy.keyed_hash,
+            infra.get_secrets(),
+            injected_secrets(catalog),
+            (tools_options or ToolsOptions()).purge_batch,
+        ),
+    )
     # A child's report reaches its parent through windows, which bounds it.
     agents = AgentsManagerImpl(
         storage.get_agent_storage(),
@@ -500,25 +535,7 @@ def build_managers(
         windows=windows,
         tool_classes={tool.spec.name: tool.spec.authorization_class for tool in catalog},
         secret_tools=frozenset(tool.spec.name for tool in catalog if tool.spec.secrets),
-    )
-    # Where the engine touches the world: the session's history for a
-    # person's decisions, the events for the audit of each secret a call
-    # uses, the workspace and the transport infra chose, and attribution,
-    # which answers whose authority each call runs under and the rule of
-    # two. What a call keeps of its session's content goes under the
-    # session's key: its input's hash, and its command's record.
-    tools = ToolsManagerImpl(
-        storage.get_tool_storage(),
-        steps,
-        tenancy,
-        events,
-        outbox,
-        infra.get_workspaces(),
-        infra.get_transport(),
-        tools_options or ToolsOptions(),
-        keyed_hash=privacy.keyed_hash,
-        record_seal=record_seal or RecordSealKeysImpl(session_keys, storage.get_privacy_storage()),
-        attribution=attribution,
+        tools=tools,
     )
     idempotency = IdempotencyManagerImpl(
         storage.get_idempotency_storage(), idempotency_options or IdempotencyOptions()
@@ -582,6 +599,14 @@ def build_managers(
         ),
     )
     return managers
+
+
+def injected_secrets(catalog: Iterable[ToolInterface]) -> frozenset[str]:
+    """The secrets a tool of the catalog may have injected into a command, by
+    name: what a workspace's snapshot is scanned for."""
+    return frozenset(
+        use.name for tool in catalog for use in tool.spec.secrets if use.via is SecretVia.INJECTED
+    )
 
 
 def engine_tools(

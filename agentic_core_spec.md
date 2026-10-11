@@ -80,6 +80,7 @@ These are the invariants. Each links the section that states it.
 - [Models](#models)
 - [Tools](#tools)
 - [The Runtime](#the-runtime)
+- [Workspace Snapshots](#workspace-snapshots)
 - [Streams](#streams)
 - [Steering](#steering)
 - [Identity, Trust, and Attribution](#identity-trust-and-attribution)
@@ -168,6 +169,7 @@ flowchart LR
 | Effect | Whether a tool call may be repeated: read-only, idempotent, unsafe | [The Tool Contract](#the-tool-contract) |
 | Approval | A person's decision on one exact tool call | [Approvals](#approvals) |
 | Workspace, transport | Where tools run; the only way to run there | [The Runtime](#the-runtime) |
+| Snapshot | A workspace kept whole, sealed, named by a step, and trusted by its hash | [Workspace Snapshots](#workspace-snapshots) |
 | Stream part | A typed, live fragment of a step or artifact | [Streams](#streams) |
 | Inbox, control | Inputs waiting for the next model call; out-of-band commands | [Steering](#steering) |
 | Actor, principal, spender | Who produced a step; on whose authority it runs; who pays | [Who Is Who](#who-is-who) |
@@ -261,11 +263,11 @@ ends in a step, marked truncated, holding what arrived.
 | Family | Types | Written by | Notes |
 |---|---|---|---|
 | Input | `message`, `event` | the product, an integration | `message`: a principal speaking through a product surface, or a parent agent to its child. `event`: anything from outside, such as a webhook, a bot's output, a callback, or a job's completion. |
-| Control | `control` | the product | pause, resume, cancel, interrupt, compact, approve, deny, unlock |
+| Control | `control` | the product | pause, resume, cancel, interrupt, compact, approve, deny, unlock, restore |
 | Model | `model_request`, `model_response` | the engine | One pair per call, per model role. The response carries its stop reason and usage. |
 | Tool | `tool_request`, `tool_response` | the engine | The response carries a result or a failure class. |
 | Context | `summary` | the engine | Replaces a range for reading and starts the next main window |
-| Lifecycle | `parked`, `resumed`, `loop_ended`, `switched`, `environment_changed` | the engine | `switched` records a new fill set or kind version; `environment_changed` tells the model the world under it changed. |
+| Lifecycle | `parked`, `resumed`, `loop_ended`, `switched`, `environment_changed`, `snapshotted` | the engine | `switched` records a new fill set or kind version; `environment_changed` tells the model the world under it changed; `snapshotted` names a snapshot of its workspace the session holds. |
 
 The type answers questions, so no caller compares strings:
 `is_tool_call()`, `is_model_call()`, `is_input()`, `is_summary()`.
@@ -856,8 +858,10 @@ the Guideline](#deviations-from-the-guideline)).
 
 <!-- agents-only
 Streams redact with a holdback as long as the longest secret, so a
-value split across two parts is still caught. A workspace snapshot is
-scanned for secrets before it is pushed.
+value split across two parts is still caught. A brokered credential is
+detached before a workspace snapshot is taken, and the snapshot is
+scanned for the values of the secrets the engine injected before it is
+kept.
 -->
 
 > **Principle:** A secret is brokered, or short-lived and scoped. Once it
@@ -913,6 +917,71 @@ loudly ([Null Objects](#null-objects)).
 > **Principle:** Where a tool runs is injected. Isolation is refused,
 > never weakened.
 
+## Workspace Snapshots
+
+`optional`
+
+A workspace is a cache, and stays one. Some sessions must resume on
+their whole machine: the tools they installed, a local database, the
+files they generated. For them, a provider that can **snapshots** a
+workspace: everything its commands could write, as one archive, kept as
+durable state the way the history is. A kind chooses its workspace's
+durability: `cache`, the default, or `snapshot`. The engine states the
+capability and takes the snapshots; which workspaces keep them, where
+they live relative to a customer's wall, and for how long are the
+platform's ([Next: The Platform](#next-the-platform)).
+
+- **What it holds.** Everything the workspace's commands could write: a
+  container's whole filesystem, its writable layer and its volume, on
+  the image beneath it, named by its id and by the digest its registry
+  serves it under; a VM's disk. Never a credential: the broker detaches
+  every credential it attached there before the snapshot is taken, and
+  a snapshot that holds the value of a secret the engine injected into
+  a command is refused.
+- **When.** The run that holds a `snapshot` workspace snapshots it at
+  its end, live, before its loop parks or ends, and lets the instance
+  go only once a snapshot holds it. The next run starts from the latest
+  snapshot, unless something touched the workspace after it: a person's
+  work by hand, or a run lost before its end, leaves it to be prepared
+  as it stands. A workspace no run holds has no instance, and refuses a
+  snapshot.
+- **Who can.** A provider says whether it can. A directory on a host
+  cannot, since its commands write outside it, and neither can an
+  account's. A spec may ask for a workspace that can be snapshotted. A
+  provider that cannot refuses it before the first model call, never a
+  cache in its stead, and refuses a snapshot before anything runs.
+- **Where it is kept.** Sealed under the session's key, in the
+  guideline's buckets ([Infrastructure][g-infra]), under a hash of its
+  bytes keyed by the session. A `snapshotted` step names it: its id, its
+  hash, its size, and the workspace it came from. The history is the
+  source of truth for which snapshots a session holds.
+- **Restore.** A prepare may start from a snapshot the history names,
+  and the workspace is replaced whole, on its image, pulled by its
+  digest where the host lacks it. Its bytes are trusted only once they
+  match its hash. One that is gone, erased, or altered loses the
+  workspace before it starts, and the loop parks for a person, once:
+  the person's unlock goes on from the workspace as it stands, and an
+  `environment_changed` step records the restore lost and tells the
+  model.
+- **Rewind.** A principal's `restore` control names an earlier
+  snapshot. The next loop's prepare starts from it, and an
+  `environment_changed` step that references the control records the
+  restore and tells the model. Nothing is deleted.
+- **Fork.** A sub-agent spawned with `fork` starts from a copy of its
+  parent's latest snapshot, sealed under its own key. What it writes
+  never reaches its parent's workspace. A fork whose parent holds no
+  snapshot is refused before anything of the tree is spent.
+- **Purge.** A snapshot is content. A session's purge removes its
+  snapshots, and revoking its key erases them.
+
+*Example:* the checkout session's workspace holds a test database it
+seeded. Its run snapshots it as the loop parks, and the review
+comment's loop a week later starts on the same database.
+
+> **Principle:** A workspace is a cache; a snapshot is kept state, named
+> by a step and trusted by its hash. It holds everything the workspace's
+> commands wrote, and never a credential.
+
 ## Streams
 
 An agent streams by default, so a person can watch it think and steer on
@@ -966,7 +1035,9 @@ Controls travel out of band, never queued behind inputs: **pause** (parks
 at the next safe point), **resume**, **cancel** (ends the loop
 `cancelled`, interrupts running tools, and cascades to children),
 **interrupt** (stops an interruptible tool), **compact**, **approve** and
-**deny**, and **unlock** (clears a park, such as by a raised budget). The
+**deny**, **unlock** (clears a park, such as by a raised budget), and
+**restore** (the workspace's next prepare starts from a snapshot the
+history names, [Workspace Snapshots](#workspace-snapshots)). The
 engine reads controls between steps and while a tool runs, and records
 each as a `control` step. An urgent message interrupts an interruptible
 tool; its response records `interrupted`, and the model reads the
@@ -1620,7 +1691,7 @@ attribution is `attribution` beside its identity plane.
 | `steps` | The step, its types, actors and origins, headers, content blocks, children, stream parts |
 | `windows` | Rendering, windows, the pinned zone, compaction policy, summaries |
 | `models` | Model roles, fills, fill sets, the resolver, error kinds, usage |
-| `tools` | The tool contract, the registry, classes, effects, policy, approvals, failure classes, jobs |
+| `tools` | The tool contract, the registry, classes, effects, policy, approvals, failure classes, jobs, workspace snapshots |
 | `budgets` | Budgets, budget windows, the gate, holds, breaches, the ledger, pricing |
 | `agents` | Agent kinds, done rules, result gates, trees, handoffs |
 | `attribution` | Actors, principals, spenders, authority modes, the untrusted mark |
@@ -1671,7 +1742,7 @@ The planned lens groups:
 | `steps` | `STP` | Steps; Loops, Runs, and Sessions; History |
 | `windows` | `WIN` | Context |
 | `models` | `MOD` | Models |
-| `tools` | `TOL` | Tools; The Runtime |
+| `tools` | `TOL` | Tools; The Runtime; Workspace Snapshots |
 | `live` | `LIV` | Streams; Steering |
 | `trust` | `TRU` | Identity, Trust, and Attribution |
 | `agents` | `AGT` | Agent Kinds and Sub-Agents |

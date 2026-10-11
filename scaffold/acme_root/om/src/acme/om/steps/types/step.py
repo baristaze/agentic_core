@@ -56,7 +56,7 @@ class StepType(StrEnum):
 
     MESSAGE = "message"  # a principal speaking through a product, or a parent to its child
     EVENT = "event"  # anything from outside: a webhook, a callback, a job's completion
-    CONTROL = "control"  # pause, resume, cancel, interrupt, compact, approve, deny, unlock
+    CONTROL = "control"  # pause, resume, cancel, interrupt, compact, approve, deny, unlock, restore
     MODEL_REQUEST = "model_request"
     MODEL_RESPONSE = "model_response"
     TOOL_REQUEST = "tool_request"
@@ -67,6 +67,7 @@ class StepType(StrEnum):
     LOOP_ENDED = "loop_ended"
     SWITCHED = "switched"  # a new fill set or kind version
     ENVIRONMENT_CHANGED = "environment_changed"  # the world under the model changed
+    SNAPSHOTTED = "snapshotted"  # the session holds a snapshot of a workspace
 
     @property
     def family(self) -> StepFamily:
@@ -108,6 +109,7 @@ FAMILIES: dict[StepType, StepFamily] = {
     StepType.LOOP_ENDED: StepFamily.LIFECYCLE,
     StepType.SWITCHED: StepFamily.LIFECYCLE,
     StepType.ENVIRONMENT_CHANGED: StepFamily.LIFECYCLE,
+    StepType.SNAPSHOTTED: StepFamily.LIFECYCLE,
 }
 
 HEADER_KINDS: dict[StepType, str] = {
@@ -124,6 +126,7 @@ HEADER_KINDS: dict[StepType, str] = {
     StepType.LOOP_ENDED: "loop_ended",
     StepType.SWITCHED: "switched",
     StepType.ENVIRONMENT_CHANGED: "mark",
+    StepType.SNAPSHOTTED: "snapshot",
 }
 """The header each type holds."""
 
@@ -142,7 +145,8 @@ BLOCK_KINDS: dict[StepType, frozenset[str]] = {
     StepType.RESUMED: frozenset(),
     StepType.LOOP_ENDED: frozenset(),
     StepType.SWITCHED: frozenset(),
-    StepType.ENVIRONMENT_CHANGED: frozenset({"text"}),  # what a person did there
+    StepType.ENVIRONMENT_CHANGED: frozenset({"text"}),  # what a person did, or a restore
+    StepType.SNAPSHOTTED: frozenset(),
 }
 """The blocks each type's content may hold."""
 

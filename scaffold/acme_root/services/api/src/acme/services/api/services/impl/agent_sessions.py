@@ -20,9 +20,11 @@ from acme.om.steps.types.header import (
     ParkedHeader,
     ToolRequestHeader,
     ToolResponseHeader,
+    WorkspaceSnapshot,
 )
 from acme.om.steps.types.step import Step, StepType
 from acme.om.tools import ToolsManagerInterface
+from acme.om.tools.rules import named_snapshot
 from acme.services.api.services.agent_sessions import AgentSessionsServiceInterface
 from acme.services.api.types.agent_sessions import (
     AgentSessionView,
@@ -30,6 +32,7 @@ from acme.services.api.types.agent_sessions import (
     DecisionRequest,
     MessageRequest,
     ParkView,
+    SnapshotView,
     StartSessionRequest,
     StepPageView,
     StepUsageView,
@@ -94,7 +97,12 @@ def step_view(step: Step) -> StepView:
         command=header.command if isinstance(header, ControlHeader) else None,
         park=park_view(header.park) if isinstance(header, ParkedHeader) else None,
         outcome=header.outcome if isinstance(header, LoopEndedHeader) else None,
+        snapshot=snapshot_view(named_snapshot(step)),
     )
+
+
+def snapshot_view(snapshot: WorkspaceSnapshot | None) -> SnapshotView | None:
+    return None if snapshot is None else SnapshotView.model_validate(snapshot.model_dump())
 
 
 class AgentSessionsServiceImpl(AgentSessionsServiceInterface):
@@ -133,7 +141,14 @@ class AgentSessionsServiceImpl(AgentSessionsServiceInterface):
         call = None
         if body.request_seq is not None:
             call = (await self._tool_request(ctx, session_id, body.request_seq)).id
-        control = control_step(step_id, utcnow(), session_id, ctx, command, call)
+        snapshot = None
+        if body.snapshot_id is not None:
+            # Read after the session itself, so another tenant's names
+            # nothing, and found in this session's history alone, so no
+            # session starts from another's snapshot.
+            await self._sessions.get_session(ctx, session_id)
+            snapshot = await self._tools.find_snapshot(ctx, session_id, body.snapshot_id)
+        control = control_step(step_id, utcnow(), session_id, ctx, command, call, snapshot)
         (stored,), _ = await self._sessions.receive(ctx, session_id, [control])
         return step_view(stored)
 

@@ -18,7 +18,7 @@ lens here names that rule without restating it.
 | `steps`   | `STP`  | `steps.md`   | The Engine and the Brain; Steps; Loops, Runs, and Sessions; History |
 | `windows` | `WIN`  | `windows.md` | Context |
 | `models`  | `MOD`  | `models.md`  | Models |
-| `tools`   | `TOL`  | `tools.md`   | Tools; The Runtime |
+| `tools`   | `TOL`  | `tools.md`   | Tools; The Runtime; Workspace Snapshots |
 | `live`    | `LIV`  | `live.md`    | Streams; Steering |
 | `trust`   | `TRU`  | `trust.md`   | Identity, Trust, and Attribution |
 | `agents`  | `AGT`  | `agents.md`  | Agent Kinds and Sub-Agents |

@@ -1457,16 +1457,20 @@ export interface components {
          * @description What a `control` step records: a command that travels out of band.
          * @enum {string}
          */
-        ControlCommand: "pause" | "resume" | "cancel" | "interrupt" | "compact" | "approve" | "deny" | "unlock";
+        ControlCommand: "pause" | "resume" | "cancel" | "interrupt" | "compact" | "approve" | "deny" | "unlock" | "restore";
         /**
          * ControlRequest
          * @description A control. An interrupt names the seq of the tool request it stops,
-         *     and no other control names one.
+         *     and a restore the id of a snapshot the session's history names, which
+         *     its workspace's next prepare starts from; no other control names
+         *     either.
          */
         ControlRequest: {
             command: components["schemas"]["SessionControl"];
             /** Request Seq */
             request_seq?: number | null;
+            /** Snapshot Id */
+            snapshot_id?: string | null;
         };
         /**
          * CreateOrgRequest
@@ -2567,7 +2571,7 @@ export interface components {
          *     tool call is a route of its own.
          * @enum {string}
          */
-        SessionControl: "pause" | "resume" | "cancel" | "interrupt" | "compact" | "unlock";
+        SessionControl: "pause" | "resume" | "cancel" | "interrupt" | "compact" | "unlock" | "restore";
         /**
          * SessionStatus
          * @enum {string}
@@ -2714,6 +2718,28 @@ export interface components {
             revoked_at: string | null;
         };
         /**
+         * SnapshotView
+         * @description A workspace's snapshot a step names: its id, which a restore names,
+         *     the hash of its bytes keyed by its session, its size in bytes, and the
+         *     workspace it was taken from.
+         */
+        SnapshotView: {
+            /** Hash */
+            hash: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Size */
+            size: number;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+        };
+        /**
          * SsoLinkRequest
          * @description What the identity provider's admin portal opens on: the single sign-on
          *     connection (`sso`) or the org's domains (`domain_verification`), and the
@@ -2791,7 +2817,7 @@ export interface components {
          *     compares strings.
          * @enum {string}
          */
-        StepType: "message" | "event" | "control" | "model_request" | "model_response" | "tool_request" | "tool_response" | "summary" | "parked" | "resumed" | "loop_ended" | "switched" | "environment_changed";
+        StepType: "message" | "event" | "control" | "model_request" | "model_response" | "tool_request" | "tool_response" | "summary" | "parked" | "resumed" | "loop_ended" | "switched" | "environment_changed" | "snapshotted";
         /**
          * StepUsageView
          * @description What a model call used, as its provider reported it, in disjoint
@@ -2815,7 +2841,8 @@ export interface components {
          *     says: a message's words, a model's answer, a tool's result. The rest is
          *     its header's, by type: the tools a model response called, why it
          *     stopped, and what it used; a tool call's tool and the class of its
-         *     failure; a control's command; a park; a loop's outcome.
+         *     failure; a control's command; a park; a loop's outcome; the snapshot a
+         *     `snapshotted` step names, or a restore starts from.
          */
         StepView: {
             actor: components["schemas"]["Actor"];
@@ -2845,6 +2872,7 @@ export interface components {
             responds_to: string | null;
             /** Seq */
             seq: number;
+            snapshot: components["schemas"]["SnapshotView"] | null;
             stop_reason: components["schemas"]["StopReason"] | null;
             /** Text */
             text: string;

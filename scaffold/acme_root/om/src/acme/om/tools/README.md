@@ -81,12 +81,27 @@ thing [Acme is made of](../../../../README.md).
 - **Start a sub-agent** with a title, an objective that stands on its
   own, and a kind, the agent's own unless it names another. The child
   takes the call's id, so a call asked again finds the child it made,
-  and a bound the tree sets is the call's failure.
+  and a bound the tree sets is the call's failure. With `fork`, the
+  child's workspace starts from a copy of the agent's latest snapshot.
+- **Snapshot a workspace.** A kind that asks for `snapshot` durability
+  has its workspace kept whole at the end of each run, live: everything
+  its commands wrote, sealed under the session's key and named by a step
+  in its history, and the next run starts from it. A credential is never
+  in it, and a workspace that holds an injected secret's value keeps
+  none. A released workspace, and a directory on a host, cannot be kept
+  whole, so they refuse, before anything runs (ADR 1027).
+- **Restore, rewind, fork.** A restore names a snapshot the history
+  holds, and the next loop starts from it, its bytes trusted only by
+  their hash; one that does not match loses the workspace before it
+  starts, and parks the loop once, until a person lets it go on as it
+  stands. A person's restore rewinds the session, and nothing is
+  deleted. A child's fork is a copy of its own, and a fork with none to
+  copy is refused before anything is spent.
 - **Wait on sub-agents.** The call answers the children still running,
   and the agent's loop waits, holding nothing, until one reports. With
   none running, it is refused.
-- **Purge.** When a deleted session is purged, its workspace and the
-  records of its commands go with its history.
+- **Purge.** When a deleted session is purged, its workspace, the
+  records of its commands, and its snapshots go with its history.
 
 ## The rules
 

@@ -82,6 +82,28 @@ HANDED_BACK = (
 )
 """The engine's notice when a person gives the environment back."""
 
+REWOUND = (
+    "Your workspace was restored from a snapshot it was in before. What changed "
+    "in it since that snapshot is gone: check the state of what you need again."
+)
+"""The engine's notice when a workspace starts from an earlier snapshot of its
+own session."""
+
+FORKED = (
+    "Your workspace starts as a copy of your parent's, as its latest snapshot "
+    "held it. What you write there never reaches your parent's workspace."
+)
+"""The engine's notice when a child's workspace starts from its parent's
+snapshot."""
+
+LOST = (
+    "Your workspace could not be restored from its snapshot: the snapshot is "
+    "gone, or no longer matches what was kept. It goes on as it stood instead, "
+    "and may lack what the snapshot held: check the state of what you need again."
+)
+"""The engine's notice when a restore cannot load and a person lets the loop
+go on without it."""
+
 REPEATED = (
     "The call {tool} failed {count} times in a row with the same input, and "
     "the same call will fail the same way again. Read its last error, then "
@@ -199,9 +221,13 @@ class OpenLoop:
 
 
 def engine_written(step: Step) -> bool:
-    """Whether a run wrote the step: everything but what arrives through the
-    inbox, an input or a control, and the engine's own notices among the
-    inputs."""
+    """Whether a run wrote the step as part of its loop: everything but what
+    arrives through the inbox, an input or a control, and the engine's own
+    notices among the inputs. A snapshot's step is written whenever its
+    caller takes one, after a loop's end included, so it says nothing of
+    which loop is open or what a loop did."""
+    if step.type is StepType.SNAPSHOTTED:
+        return False
     if step.type.is_input():
         return step.actor is Actor.ENGINE
     return not step.type.is_control()
@@ -649,6 +675,75 @@ def changed_step(step_id: UUID, at: datetime, session_id: UUID, loop_id: UUID) -
         origin=Origin.ENGINE,
         header=MarkHeader(),
         content=Content(blocks=(TextBlock(text=HANDED_BACK),)),
+    )
+
+
+def pending_restore(steps: Sequence[Step]) -> Step | None:
+    """The restore the workspace's next prepare starts from: the latest
+    `restore` control, unless a notice after it says it was done, or lost. A
+    later restore takes the place of an earlier one that was never done."""
+    done: set[UUID] = set()
+    for step in reversed(steps):
+        if step.type is StepType.ENVIRONMENT_CHANGED:
+            done.update(step.refs)
+        header = step.header
+        if isinstance(header, ControlHeader) and header.command is ControlCommand.RESTORE:
+            return None if step.id in done else step
+    return None
+
+
+def kept_snapshot(steps: Sequence[Step]) -> Step | None:
+    """The `snapshotted` step a workspace kept by snapshots starts from when
+    no restore is pending: the latest, when nothing touched the workspace
+    after it. A tool call after it, as a run lost before its end leaves, or a
+    change a notice records, such as a person's work by hand or a restore
+    that was lost, leaves the workspace newer than any snapshot: None, and it
+    is prepared as it stands."""
+    for step in reversed(steps):
+        if step.type is StepType.SNAPSHOTTED:
+            return step
+        if step.type.is_tool_call() or step.type is StepType.ENVIRONMENT_CHANGED:
+            return None
+    return None
+
+
+def lost_step(step_id: UUID, at: datetime, session_id: UUID, loop_id: UUID, source: Step) -> Step:
+    """The notice that the snapshot `source` names could not be loaded, and
+    the workspace went on as it stood: the record that its restore was lost,
+    which references it, so it is never tried again."""
+    return Step(
+        id=step_id,
+        created_at=at,
+        session_id=session_id,
+        loop_id=loop_id,
+        type=StepType.ENVIRONMENT_CHANGED,
+        actor=Actor.ENGINE,
+        origin=Origin.ENGINE,
+        refs=(source.id,),
+        header=MarkHeader(),
+        content=Content(blocks=(TextBlock(text=LOST),)),
+    )
+
+
+def restored_step(
+    step_id: UUID, at: datetime, session_id: UUID, loop_id: UUID, restore: Step
+) -> Step:
+    """The notice that the workspace started from the snapshot `restore`
+    names: the record that the restore was done, which references it."""
+    header = restore.header
+    assert isinstance(header, ControlHeader) and header.snapshot is not None
+    forked = header.snapshot.workspace_id != session_id
+    return Step(
+        id=step_id,
+        created_at=at,
+        session_id=session_id,
+        loop_id=loop_id,
+        type=StepType.ENVIRONMENT_CHANGED,
+        actor=Actor.ENGINE,
+        origin=Origin.ENGINE,
+        refs=(restore.id,),
+        header=MarkHeader(),
+        content=Content(blocks=(TextBlock(text=FORKED if forked else REWOUND),)),
     )
 
 

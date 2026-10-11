@@ -170,7 +170,7 @@ module "buckets" {
 
   environment = var.environment
   prefix      = var.bucket_prefix
-  buckets     = ["user-file-uploads", "exports", "artifacts"] # acme.infra.buckets.Buckets
+  buckets     = ["user-file-uploads", "exports", "artifacts", "snapshots"] # acme.infra.buckets.Buckets
   destroyable = var.destroyable
   # The portal posts a file straight to the uploads bucket with a form the
   # API signed, and fetches it back by a signed link.
