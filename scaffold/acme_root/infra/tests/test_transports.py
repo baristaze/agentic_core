@@ -718,25 +718,52 @@ def lima_runs() -> bool:
     return shutil.which("limactl") is not None and hypervisor() is None
 
 
+LIMA_TIMEOUT = timedelta(seconds=120)
+
+
+def on_lima() -> tuple[MachinesLimaImpl, WorkspaceVmImpl]:
+    machines = MachinesLimaImpl(LIMA_TIMEOUT, timedelta(minutes=15), encrypted=True)
+    prefix = os.environ.get("ACME_MACHINE_PREFIX", "acme-test-")
+    return machines, WorkspaceVmImpl(machines, "template:_images/ubuntu-lts", prefix, LIMA_TIMEOUT)
+
+
+@pytest.fixture(scope="module")
+def lima_start() -> Iterator[tuple[UUID, bytes]]:
+    """A machine booted once for the module, and the snapshot of it each case
+    starts a machine of its own from. Its calls run in a loop of their own,
+    as each is a process of its own."""
+    _, provider = on_lima()
+    workspace = asyncio.run(provider.prepare(new_id(), new_id(), VM))
+    try:
+        snapshot = asyncio.run(provider.snapshot(workspace))
+    except BaseException:
+        asyncio.run(provider.purge(workspace.org_id, workspace.id))
+        raise
+    yield workspace.org_id, snapshot
+    asyncio.run(provider.purge(workspace.org_id, workspace.id))
+
+
 @pytest.mark.integration
 @pytest.mark.slow
 @pytest.mark.skipif(not lima_runs(), reason="needs Lima and a hypervisor")
 class TestTransportVmLima(TransportContract):
-    """The VM transport in one machine on Lima, made for the class, named
-    under `ACME_MACHINE_PREFIX`, and destroyed at its end."""
+    """The VM transport in a machine on Lima: each case its own, a copy of the
+    one the module booted, named under `ACME_MACHINE_PREFIX`, and destroyed
+    at its end."""
 
-    @pytest.fixture(scope="class")
-    def provided(self) -> Iterator[tuple[MachinesLimaImpl, Workspace]]:
-        # A machine boots for the class, not for each case; its calls run
-        # in a loop of their own, as each is a process of its own.
-        machines = MachinesLimaImpl(timedelta(seconds=120), timedelta(minutes=15), encrypted=True)
-        prefix = os.environ.get("ACME_MACHINE_PREFIX", "acme-test-")
-        provider = WorkspaceVmImpl(
-            machines, "template:_images/ubuntu-lts", prefix, timedelta(seconds=120)
-        )
-        workspace = asyncio.run(provider.prepare(new_id(), new_id(), VM))
-        yield machines, workspace
-        asyncio.run(provider.purge(workspace.org_id, workspace.id))
+    @pytest.fixture
+    async def provided(
+        self, lima_start: tuple[UUID, bytes]
+    ) -> AsyncIterator[tuple[MachinesLimaImpl, Workspace]]:
+        machines, provider = on_lima()
+        org_id, snapshot = lima_start
+        workspace_id = new_id()
+        copy = await provider.keep(snapshot, org_id, workspace_id)
+        try:
+            workspace = await provider.prepare(org_id, workspace_id, VM, snapshot=copy)
+            yield machines, workspace
+        finally:
+            await provider.purge(org_id, workspace_id)
 
     @pytest.fixture
     def workspace(self, provided: tuple[MachinesLimaImpl, Workspace]) -> Workspace:
@@ -747,8 +774,8 @@ class TestTransportVmLima(TransportContract):
         self, records: Path, provided: tuple[MachinesLimaImpl, Workspace], broker: BrokerTwinImpl
     ) -> TransportInterface:
         machines, workspace = provided
-        timeout = timedelta(seconds=120)
-        return TransportVmImpl(records, secrets_for(workspace.org_id), broker, machines, timeout)
+        secrets = secrets_for(workspace.org_id)
+        return TransportVmImpl(records, secrets, broker, machines, LIMA_TIMEOUT)
 
 
 def test_a_secret_in_the_base64_of_a_basic_header_is_one_of_the_forms() -> None:
