@@ -9,7 +9,7 @@ with its session's purge. Each session keeps its own: a child that starts
 from its parent's snapshot keeps a copy sealed under its own key, so
 neither purge nor revocation of one reaches the other (ADR 1027)."""
 
-from collections.abc import Collection
+from collections.abc import AsyncIterable, Collection
 from uuid import UUID
 
 from acme.infra.buckets import BlobNotFound, Buckets, BucketsInterface
@@ -108,11 +108,12 @@ class SnapshotStore:
             raise WorkspaceLost(f"{what} does not match its hash")
         return archive
 
-    async def scan(self, ctx: TenantContext, archive: bytes) -> None:
-        """Refuses an archive that holds the value of a secret the catalog's
-        tools may have injected, in any form redaction matches, and names the
-        secret, never its value. A secret the tenant does not hold was never
-        given, so it is not looked for."""
+    async def scan(self, ctx: TenantContext, held: AsyncIterable[bytes]) -> None:
+        """Refuses a snapshot whose bytes, `held` as its provider reads them
+        (`WorkspaceProviderInterface.held`), hold the value of a secret the
+        catalog's tools may have injected, in any form redaction matches, and
+        names the secret, never its value. A secret the tenant does not hold
+        was never given, so it is not looked for."""
         values: dict[str, str] = {}
         for name in self._secret_names:
             try:
@@ -120,10 +121,10 @@ class SnapshotStore:
             except InfraException as error:
                 if error.code != SecretNotFound.code:
                     raise
-        held = secret_held(archive, values)
-        if held is not None:
+        found = await secret_held(held, values)
+        if found is not None:
             raise SnapshotRefused(
-                f"the workspace holds the secret {held!r}, so no snapshot is kept"
+                f"the workspace holds the secret {found!r}, so no snapshot is kept"
             )
 
     async def purge(self, org_id: UUID, session_id: UUID) -> None:

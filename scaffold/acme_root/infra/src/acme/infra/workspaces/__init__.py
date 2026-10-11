@@ -13,7 +13,9 @@ A workspace is a cache. A provider that can also snapshots one: everything
 its commands could write, as one archive its own `prepare` starts a
 workspace from. A spec that asks for a workspace that can be kept so
 (`Durability.SNAPSHOT`) is refused by a provider that cannot, before
-anything is made, and is never met by a cache in its stead.
+anything is made, and is never met by a cache in its stead. A snapshot too
+large to pass as bytes, such as a VM's disk, stays in the provider's own
+store, and its archive names it by a reference and a digest (ADR 1029).
 
 A spec may name a base: an image, and the commands that set it up, run once
 with the setup's own egress. A base with setup is a snapshot of a workspace
@@ -26,7 +28,7 @@ checkout tracks. A layer that prepares one then raises `WorkspaceLost`, and
 the loop parks, loudly, for a person."""
 
 from abc import ABC, abstractmethod
-from collections.abc import Collection
+from collections.abc import AsyncIterator, Collection
 from enum import StrEnum
 from typing import Self
 from uuid import UUID
@@ -248,6 +250,22 @@ class WorkspaceProviderInterface(ABC):
         instance."""
         ...
 
+    async def held(self, snapshot: bytes) -> AsyncIterator[bytes]:
+        """What an archive this provider's `snapshot` made holds, in parts,
+        for a scan for a secret's value: the archive itself, for a provider
+        whose archive holds its bytes. One whose archive names bytes it
+        keeps elsewhere, such as a disk, reads those."""
+        yield snapshot
+
+    async def keep(self, snapshot: bytes, org_id: UUID, workspace_id: UUID) -> bytes:
+        """An archive this provider's `snapshot` made, kept as the workspace
+        under `workspace_id`'s own, such as a fork's copy or a base: one
+        whose bytes outlive the purge of the workspace it was taken of, and
+        go with the purge of `workspace_id`. An archive that holds its bytes
+        is its own copy. One that names bytes kept elsewhere copies them,
+        and a copy kept already is answered again."""
+        return snapshot
+
     @abstractmethod
     async def release(self, workspace: Workspace) -> None:
         """Lets the instance go and keeps the files. Releasing one that holds
@@ -257,8 +275,9 @@ class WorkspaceProviderInterface(ABC):
     @abstractmethod
     async def purge(self, org_id: UUID, workspace_id: UUID) -> None:
         """Lets the instance and the files of the workspace under
-        `workspace_id` go, found by the ids `prepare` names it by, so a purge
-        needs no workspace in hand. Purging one already gone, or never made,
+        `workspace_id` go, and every snapshot this provider keeps elsewhere
+        under it, found by the ids `prepare` names it by, so a purge needs
+        no workspace in hand. Purging one already gone, or never made,
         does nothing; one this provider cannot remove is an error."""
         ...
 

@@ -128,8 +128,9 @@ class ToolsManagerInterface(ABC):
         """A copy, for the child, of `source`, its parent's latest snapshot
         (`latest_snapshot`): opened under the parent's key and held to its
         hash, sealed again under the child's, and stored as the child's under
-        `snapshot_id`, so neither purge nor revocation of one reaches the
-        other. It names the parent's workspace as the one it came from. A
+        `snapshot_id`, with what its provider keeps outside the archive, such
+        as a disk, copied under the child's workspace, so neither purge nor
+        revocation of one reaches the other. It names the parent's workspace as the one it came from. A
         copy made before is made again the same. `WorkspaceLost` when the
         snapshot is gone or altered."""
         ...

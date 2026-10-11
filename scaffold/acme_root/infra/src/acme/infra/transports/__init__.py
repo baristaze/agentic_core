@@ -28,7 +28,7 @@ the command ends; the result names each secret it used, never a value."""
 
 import re
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import AsyncIterable, Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -40,7 +40,7 @@ from pydantic import Field, model_validator
 
 from acme.infra.base import InfraModel
 from acme.infra.exceptions import InfraException, InfraValidationFailed
-from acme.infra.transports.redaction import Redactor
+from acme.infra.transports.redaction import forms
 from acme.infra.workspaces import IsolationMode, Workspace
 
 __all__ = [
@@ -303,11 +303,27 @@ class CredentialBrokerInterface(ABC):
     async def close(self) -> None: ...
 
 
-def secret_held(data: bytes, secrets: Mapping[str, str]) -> str | None:
-    """The name of a secret, of `secrets` by name, whose value `data` holds in
-    any form redaction matches; None when it holds none. What a workspace's
-    snapshot is scanned for before anything of it is kept."""
-    text = data.decode("utf-8", errors="surrogateescape")
-    for _, _, name in Redactor(secrets).matches(text):
-        return name
+async def secret_held(parts: AsyncIterable[bytes], secrets: Mapping[str, str]) -> str | None:
+    """The name of a secret, of `secrets` by name, whose value the bytes of
+    `parts` hold in any form redaction matches; None when they hold none.
+    What a workspace's snapshot is scanned for before anything of it is
+    kept. The parts are read as they come, never held whole, with a
+    holdback as long as the longest form less one byte, so a value split
+    across two parts is still found. With no value to look for, nothing is
+    read."""
+    needles: dict[bytes, str] = {}
+    for name, value in secrets.items():
+        if value:
+            for form in forms(value):
+                needles.setdefault(form.encode(), name)
+    if not needles:
+        return None
+    hold = max(len(needle) for needle in needles) - 1
+    tail = b""
+    async for part in parts:
+        window = tail + part
+        for needle, name in needles.items():
+            if needle in window:
+                return name
+        tail = window[len(window) - hold :] if hold else b""
     return None
