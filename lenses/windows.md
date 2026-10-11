@@ -17,9 +17,10 @@ window, and the new inputs: the same steps render the same bytes. It is
 laid out from the most stable layer to the least: the kind's prompts and
 the standing text, whole, after them, the tool definitions in a fixed
 order, the pinned zone, the latest summary, the window's steps
-since it, then the new inputs and the agent's current plan. A rolling
-cache breakpoint sits on the last stable step, within the provider's
-limit on breakpoints.
+since it, then the new inputs and the agent's current plan. One cache
+breakpoint sits at the end of the kind's prompts, one at the end of the
+system layer, and a rolling one on the last stable step, within the
+provider's limit on breakpoints.
 
 **Source.** Context, Rendering; Tools, The Registry.
 

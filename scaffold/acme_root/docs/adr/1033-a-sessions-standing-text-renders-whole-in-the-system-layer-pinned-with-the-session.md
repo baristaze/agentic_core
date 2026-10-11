@@ -63,9 +63,11 @@ only now and then is invoked when it is needed, never pinned.
 ## Consequences
 
 - The system layer is the kind's prompts, the standing text, and the
-  notice. Sessions of a kind version that pin the same text share one
-  cached system layer; a different text is a different prefix. A switch
-  costs one cache write at the next loop.
+  notice, with a cache breakpoint after the prompts and one at its end.
+  Every session of a kind version shares the cached tools and prompts,
+  whatever text it pins; only the sessions that pin the same text share
+  the whole layer. A switch writes the cache again from the text on, at
+  the next loop.
 - A `switched` step names one of a fill switch, a toolset, or standing
   text. Only a standing switch holds content, one text block of the size
   its header names.

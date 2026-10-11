@@ -489,10 +489,11 @@ flowchart TB
 
 The pinned zone changes only at a summary. Between summaries, a new
 standing instruction is simply a message in the window, and the plan's
-current value renders last, so neither invalidates the cached window. A
-rolling cache breakpoint sits on the last stable step, within the
-provider's limit on breakpoints. The `model_request` header records a
-hash of the rendered prompt, so a cache regression is a query.
+current value renders last, so neither invalidates the cached window.
+One cache breakpoint sits at the end of the kind's prompts, one at the
+end of the system layer, and a rolling one on the last stable step,
+within the provider's limit on breakpoints. The `model_request` header
+records a hash of the rendered prompt, so a cache regression is a query.
 
 A session's **standing text** is what a principal pins on it to hold for
 its whole life, such as an organization's manual for a kind. It renders
@@ -1573,10 +1574,13 @@ part the provider's cache can serve across sessions.
   definitions hold no value that differs per session, per person, or
   per tenant. Such a value renders after them, in the places
   [Rendering](#rendering) and [The Pinned Zone](#the-pinned-zone)
-  allow, and the session's standing text closes the system layer. So
-  every session of a kind version shares one cached prefix until a load
-  of a deferred toolset adds its tools after the rest, and every one
-  that pins the same standing text shares it through the system layer.
+  allow. The session's standing text is the one such value in the
+  system layer, after the kind's prompts and before the engine's notice
+  of what data is. A cache breakpoint at the end of the kind's prompts
+  makes the tools and the prompts one cached prefix, which every session
+  of a kind version shares, whatever standing text it pins, until a load
+  of a deferred toolset adds its tools after the rest. Only the sessions
+  that pin the same text share the whole system layer.
 - **A tool definition earns its weight.** A definition rides every
   request of every session of its kind. A kind registers the tools its
   loops use, and defers a toolset its loops seldom need
