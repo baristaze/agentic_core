@@ -32,8 +32,11 @@ from acme.infra.workspaces import (
 from acme.infra.workspaces.account import WorkspaceAccountImpl
 from acme.infra.workspaces.container import (
     FORMAT,
+    Kept,
     WorkspaceContainerImpl,
+    _archive,
     _changes,
+    _opened,
     container_name,
 )
 from acme.infra.workspaces.host import UNKEPT, WorkspaceHostImpl
@@ -149,8 +152,26 @@ IMAGE_ID = "sha256:" + "0" * 64
         (archive({"format": FORMAT, "image": "python:3.14-slim", "deleted": []}), "by its id"),
         (archive({"format": FORMAT, "image": "--privileged", "deleted": []}), "by its id"),
         (archive({"format": FORMAT, "image": IMAGE_ID, "deleted": ["etc"]}), "removed path"),
+        (
+            archive({"format": FORMAT, "image": IMAGE_ID, "pull": "busybox:1.37", "deleted": []}),
+            "no reference to pull",
+        ),
+        (
+            archive(
+                {"format": FORMAT, "image": IMAGE_ID, "pull": f"--all@{IMAGE_ID}", "deleted": []}
+            ),
+            "no reference to pull",
+        ),
     ],
-    ids=["noise", "another-provider", "a-tag", "an-option", "a-relative-path"],
+    ids=[
+        "noise",
+        "another-provider",
+        "a-tag",
+        "an-option",
+        "a-relative-path",
+        "a-tag-to-pull",
+        "an-option-to-pull",
+    ],
 )
 async def test_a_snapshot_the_container_provider_did_not_write_loses_the_workspace_before_docker(
     snapshot: bytes, says: str, monkeypatch: pytest.MonkeyPatch
@@ -171,6 +192,46 @@ async def test_a_snapshot_the_container_provider_did_not_write_loses_the_workspa
     with pytest.raises(WorkspaceLost, match=says):
         await provider.prepare(new_id(), new_id(), kept(IsolationMode.CONTAINER), snapshot=snapshot)
     assert [call[0] for call in calls] == ["version"]
+
+
+@pytest.mark.parametrize(
+    ("pull", "pulled", "says"),
+    [
+        (None, None, "no registry serves it"),
+        (f"registry.example/team/tool@{IMAGE_ID}", 1, "manifest unknown"),
+        (f"registry.example/team/tool@{IMAGE_ID}", 0, "pulled an image other than"),
+    ],
+    ids=["no-reference", "pull-fails", "pull-gives-another"],
+)
+async def test_a_restore_whose_image_cannot_be_had_is_refused_with_its_reason_and_removes_nothing(
+    pull: str | None, pulled: int | None, says: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A host that lacks the image a snapshot was taken on pulls it by the
+    digest the snapshot names. With no digest, a pull that fails, or a pull
+    that brings another image, the workspace is lost with the reason before
+    anything of it is removed, and nothing is pulled by a tag."""
+    from acme.infra.docker import DockerReply
+
+    calls: list[tuple[str, ...]] = []
+
+    async def replied(*args: str, **_: object) -> DockerReply:
+        calls.append(args)
+        if args[0] == "version":
+            return DockerReply(0, b"29.0.0\n", b"")
+        if args[0] == "pull":
+            assert pulled is not None
+            return DockerReply(pulled, b"", b"Error: manifest unknown\n")
+        return DockerReply(1, b"", b"Error: No such image\n")
+
+    monkeypatch.setattr("acme.infra.workspaces.container.docker", replied)
+    provider = WorkspaceContainerImpl(IMAGE, timedelta(seconds=5))
+    snapshot = _archive(Kept(image=IMAGE_ID, pull=pull, deleted=(), layer=b"", files=b""))
+    with pytest.raises(WorkspaceLost, match=says):
+        await provider.prepare(new_id(), new_id(), kept(IsolationMode.CONTAINER), snapshot=snapshot)
+    assert {call[0] for call in calls} <= {"version", "image", "pull"}, "nothing removed or made"
+    assert [call for call in calls if call[0] == "pull"] == (
+        [] if pull is None else [("pull", pull)]
+    )
 
 
 def docker_runs() -> bool:
@@ -312,3 +373,41 @@ async def test_a_snapshot_is_taken_from_a_live_workspace_and_leaves_it_running()
     finally:
         await provider.purge(org, first)
         await provider.purge(org, second)
+
+
+PULLED = "busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e"
+"""An image no other case runs on, pinned by its digest, so this case may
+remove it from the host."""
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not docker_runs(), reason="needs a local Docker")
+async def test_a_restore_on_a_host_without_the_image_pulls_it_by_the_digest_the_snapshot_names() -> (
+    None
+):
+    """A snapshot names its image by its id and by the digest its registry
+    serves it under. Restored on a host that no longer holds the image, the
+    image is pulled by that digest, and the workspace comes back whole."""
+    if not (await docker("pull", PULLED, bound=timedelta(seconds=300))).ok:
+        pytest.skip("needs the registry that serves the image")
+    provider = WorkspaceContainerImpl(PULLED, timedelta(seconds=300))
+    org, workspace_id = new_id(), new_id()
+    spec = kept(IsolationMode.CONTAINER, NONE)
+    workspace = await provider.prepare(org, workspace_id, spec)
+    try:
+        await inside(workspace, "sh", "-c", "echo in > /workspace/in.txt")
+        await inside(workspace, "sh", "-c", "mkdir -p /opt && echo out > /opt/out.txt")
+        snapshot = await provider.snapshot(workspace)
+        named = _opened(snapshot)
+        assert named.pull is not None and named.pull.startswith("busybox@sha256:")
+        await provider.purge(org, workspace_id)
+        removed = await docker("image", "rm", "--force", named.image, bound=timedelta(seconds=60))
+        assert removed.ok, removed.reason()
+        assert not (await docker("image", "inspect", named.image, bound=timedelta(seconds=20))).ok
+
+        restored = await provider.prepare(org, workspace_id, spec, snapshot=snapshot)
+
+        assert await inside(restored, "cat", "/workspace/in.txt", "/opt/out.txt") == "in\nout\n"
+        assert (await docker("image", "inspect", named.image, bound=timedelta(seconds=20))).ok
+    finally:
+        await provider.purge(org, workspace_id)
