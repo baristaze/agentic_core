@@ -55,6 +55,7 @@ from acme.om.exceptions import (
     PrincipalLapsed,
     SpenderUnknown,
     StaleWriter,
+    ToolFailed,
     Unavailable,
     UnpricedModel,
     UnresolvedRole,
@@ -79,13 +80,15 @@ from acme.om.steps.types.header import (
     ModelResponseHeader,
     Park,
     ParkReason,
+    SwitchedHeader,
     ToolFailure,
     ToolRequestHeader,
     ToolResponseHeader,
 )
-from acme.om.steps.types.step import Actor, Step, StepType
+from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.steps.types.stream import StreamPart, ToolOutputPart
 from acme.om.tools import ToolsManagerInterface
+from acme.om.tools.native.load_toolset import callable_tools, load, loads
 from acme.om.tools.native.write_plan import current_plan
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.rules import (
@@ -106,6 +109,7 @@ from acme.om.tools.types.call import (
 )
 from acme.om.tools.types.policy import PolicyLayer
 from acme.om.tools.types.tool import ToolMode
+from acme.om.tools.types.toolset import LOAD_TOOLSET
 from acme.om.windows import WindowsManagerInterface
 from acme.om.windows.gate import CallGateInterface
 from acme.om.windows.rules import request_step
@@ -286,10 +290,7 @@ class LoopManagerImpl(LoopManagerInterface):
                 session = await self._sessions.resume(ctx, session_id, epoch, loop_id)
                 resumed = loop.park.reason is not ParkReason.HANDOVER and not loop.park.unsettled
         kind = self._kinds.get(session.kind, session.kind_version)
-        registry = ToolRegistry(
-            (tool for tool in self._catalog if tool.spec.name in session.tools),
-            self._domain_classes,
-        )
+        registry = self._registry(session, kind, history)
         tree = await self._agents.tree_of(ctx, session_id)
         above = await self._policies_above(ctx, session)
         run = _Run(
@@ -537,7 +538,7 @@ class LoopManagerImpl(LoopManagerInterface):
         )
         if outage is not None and outage.retry_at > self._clock():
             return await self._park(run, provider_park(fill, outage.retry_at))
-        prompts = rules.kind_prompts(run.kind, run.registry)
+        prompts = rules.kind_prompts(run.kind, run.registry, loads(history))
         # The agent's current plan, read off the whole history, so a summary
         # that folded the call that wrote it still leaves it in view.
         kept = current_plan(history)
@@ -974,6 +975,8 @@ class LoopManagerImpl(LoopManagerInterface):
             return _Settled(asked=True)
         if use.name == run.kind.result_tool:
             return await self._submit(run, request, use)
+        if use.name == LOAD_TOOLSET:
+            return await self._load(run, history, request, use)
         assert tool is not None  # the gate resolved it
         if tool.spec.mode is ToolMode.JOB:
             return await self._start_job(
@@ -1306,14 +1309,70 @@ class LoopManagerImpl(LoopManagerInterface):
         await self._answer(run, request, answer.model_copy(update={"header": verdicted}))
         return _Settled()
 
-    async def _answer(self, run: _Run, request: Step, answer: Step) -> None:
+    async def _load(
+        self, run: _Run, history: Sequence[Step], request: Step, use: ToolUseBlock
+    ) -> _Settled:
+        """A load of a toolset the kind defers: its answer, and the `switched`
+        step that names the tools it adds, in one append, so no tool joins
+        a request without its record. The run's registry holds them from
+        its next request on. A toolset the kind does not defer is the
+        call's invalid input; one whose tools the registry holds already
+        answers so, and switches nothing."""
+        history = await self._history(run.ctx, run.session_id, history)
+        try:
+            loaded = load(
+                run.kind.deferred,
+                run.session.tools,
+                run.kind.waiting,
+                loads(history),
+                thaw_mapping(use.input),
+            )
+        except ToolFailed as refused:
+            await self._answer(
+                run, request, self._stopped(request, refused.message, refused.failure)
+            )
+            return _Settled()
+        answer = response(
+            new_id(), self._clock(), request, loaded.text, limit=self._options.stopped_chars
+        )
+        if loaded.switch is None:
+            await self._answer(run, request, answer)
+            return _Settled()
+        switched = Step(
+            id=new_id(),
+            created_at=self._clock(),
+            session_id=run.session_id,
+            loop_id=run.loop_id,
+            type=StepType.SWITCHED,
+            actor=Actor.ENGINE,
+            origin=Origin.ENGINE,
+            refs=(request.id,),
+            header=SwitchedHeader(toolset=loaded.switch),
+        )
+        stored = await self._answer(run, request, answer, switched)
+        run.registry = self._registry(run.session, run.kind, [*history, *stored])
+        return _Settled()
+
+    def _registry(
+        self, session: AgentSession, kind: AgentKind, history: Sequence[Step]
+    ) -> ToolRegistry:
+        """The run's registry: the tools of the catalog its session may call
+        that wait for no load, and those the history's loads added."""
+        names = callable_tools(session.tools, kind.waiting, loads(history))
+        return ToolRegistry(
+            (tool for tool in self._catalog if tool.spec.name in names), self._domain_classes
+        )
+
+    async def _answer(
+        self, run: _Run, request: Step, answer: Step, *after: Step
+    ) -> tuple[Step, ...]:
         """A call's response under the id this run gives it, kept whole as an
         artifact when it is too large for a step, and persisted before the
-        next model call. A run that lost its claim is refused here, whatever
-        it answered."""
+        next model call, with the steps `after` it in the same append. A
+        run that lost its claim is refused here, whatever it answered."""
         own = answer.model_copy(update={"id": response_id(request, run.epoch)})
         bounded = await self._windows.bound_tool_response(run.ctx, run.session_id, own)
-        await self._steps.append_steps(run.ctx, run.session_id, run.epoch, [bounded])
+        return await self._steps.append_steps(run.ctx, run.session_id, run.epoch, [bounded, *after])
 
     def _lost(self, request: Step) -> Step:
         text = "a run that made this call was lost before it answered; whether it ran is unknown"

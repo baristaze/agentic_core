@@ -47,13 +47,16 @@ from acme.om.steps.types.header import (
     ParkReason,
     ToolRequestHeader,
     ToolResponseHeader,
+    ToolsetSwitch,
 )
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.steps.types.stream import StreamPart, TextPart, ThinkingPart, ToolInputPart
 from acme.om.tools.native.ask_person import ASK_PERSON
+from acme.om.tools.native.load_toolset import description as load_toolset_description
 from acme.om.tools.native.wait_for_sub_agents import WAIT_FOR_SUB_AGENTS
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.types.call import JobCompletion
+from acme.om.tools.types.toolset import LOAD_TOOLSET
 from acme.om.windows.rules import exchanges
 from acme.om.windows.types.kind import KindPrompts
 
@@ -541,17 +544,33 @@ def holds_private(
     )
 
 
-def kind_prompts(kind: AgentKind, registry: ToolRegistry) -> KindPrompts:
+def kind_prompts(
+    kind: AgentKind, registry: ToolRegistry, loaded: Sequence[ToolsetSwitch] = ()
+) -> KindPrompts:
     """The first two layers of every request the kind renders: its prompts,
-    and the tools its registry holds, in the registry's fixed order."""
+    and the tools its registry holds: those it held before any load, in the
+    registry's fixed order, then those each of the history's loads
+    (`loaded`) added, in the order the loads happened. `load_toolset`
+    describes the toolsets the kind defers, one line each."""
+    specs = {
+        tool.name: ToolSpec(
+            name=tool.name,
+            description=(
+                load_toolset_description(kind.deferred)
+                if tool.name == LOAD_TOOLSET
+                else tool.description
+            ),
+            input_schema=tool.input_schema,
+        )
+        for tool in registry.render()
+    }
+    added = tuple(dict.fromkeys(tool for load in loaded for tool in load.tools if tool in specs))
     return KindPrompts(
         kind=kind.name,
         version=kind.version,
         prompts=kind.prompts,
-        tools=tuple(
-            ToolSpec(name=tool.name, description=tool.description, input_schema=tool.input_schema)
-            for tool in registry.render()
-        ),
+        tools=tuple(spec for name, spec in specs.items() if name not in added),
+        loaded=tuple(specs[name] for name in added),
     )
 
 

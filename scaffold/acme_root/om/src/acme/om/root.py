@@ -95,6 +95,7 @@ from acme.om.tools.impl.bases import WorkspaceBases
 from acme.om.tools.impl.manager import ToolsManagerImpl, ToolsOptions
 from acme.om.tools.impl.snapshots import SnapshotStore
 from acme.om.tools.native.ask_person import AskPersonToolImpl
+from acme.om.tools.native.load_toolset import LoadToolsetToolImpl
 from acme.om.tools.native.read_artifact import ReadArtifactToolImpl
 from acme.om.tools.native.read_attachment import ReadAttachmentToolImpl
 from acme.om.tools.native.spawn_sub_agent import SpawnSubAgentToolImpl
@@ -638,10 +639,12 @@ def engine_tools(
     names them: asking its person or standing down, writing its plan,
     reading an attachment by range, reading a result kept whole outside the
     window by the handle the window names, starting a sub-agent through the
-    agents manager `agents` provides, and waiting on its sub-agents."""
+    agents manager `agents` provides, and waiting on its sub-agents. A kind
+    that defers a toolset holds the seventh, loading it."""
     return (
         AskPersonToolImpl(),
         WritePlanToolImpl(),
+        LoadToolsetToolImpl(),
         ReadAttachmentToolImpl(steps, attachments),
         ReadArtifactToolImpl(steps, windows),
         SpawnSubAgentToolImpl(sessions, agents),

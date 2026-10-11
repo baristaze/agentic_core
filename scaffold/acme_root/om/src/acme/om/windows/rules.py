@@ -481,7 +481,10 @@ class Draft:
 
 
 def _tools(kind: KindPrompts) -> tuple[ToolSpec, ...]:
-    tools = tuple(sorted(kind.tools, key=lambda tool: tool.name))
+    """The tool definitions: the kind's sorted by name, then those its
+    session's loads added, in the order they were added, so a load leaves
+    every definition before it as it was."""
+    tools = (*sorted(kind.tools, key=lambda tool: tool.name), *kind.loaded)
     names = [tool.name for tool in tools]
     if len(set(names)) != len(names):
         raise ValueError(f"kind {kind.kind} offers a tool twice")
@@ -771,7 +774,7 @@ def thinking_held(steps: Sequence[Step]) -> bool:
             if not (header.truncated or header.abandoned):
                 cycle = bool(step.as_tool_uses())
                 held = held and cycle
-        elif isinstance(header, SwitchedHeader) and header.fills.role == MAIN:
+        elif isinstance(header, SwitchedHeader) and header.fills and header.fills.role == MAIN:
             held = held or cycle
     return held
 
