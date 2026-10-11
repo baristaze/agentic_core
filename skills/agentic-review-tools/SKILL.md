@@ -1,6 +1,6 @@
 ---
 name: agentic-review-tools
-description: "Engine review through the Tools lenses of the agentic_core spec: Tools; The Runtime. For a change in this area, or as one leg of agentic-review-full."
+description: "Engine review through the Tools lenses of the agentic_core spec: Tools; The Runtime; Workspace Snapshots. For a change in this area, or as one leg of agentic-review-full."
 allowed-tools: Read, Grep, Glob, Bash(git diff:*), Bash(git show:*), Bash(git log:*), Bash(git status:*), Bash(git rev-parse:*), Bash(git merge-base:*), Bash(git symbolic-ref:*), Bash(git ls-files:*)
 ---
 
@@ -14,7 +14,7 @@ needs its source read in full. A path that starts with `../` is read
 from this skill's folder as `realpath` resolves it. If either file is
 missing, stop and say the installation is incomplete.
 
-This pass covers these sections of the spec: Tools; The Runtime.
+This pass covers these sections of the spec: Tools; The Runtime; Workspace Snapshots.
 
 A lens that leans on a rule of the guideline judges the engine's rule
 only: the guideline's own rule is its own review's

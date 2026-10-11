@@ -11,9 +11,10 @@ This is one of the kinds of thing [Acme is made of](../../../../README.md).
   points at the steps it came from instead of copying them.
 - **Type**: what the step records. An input (a person's message, or an
   event from outside), a control (pause, resume, cancel, interrupt,
-  compact, approve, deny, unlock), a model's request and response, a
-  tool's request and response, a summary, and the marks of a loop's
-  life: parked, resumed, ended, switched, and the world changed.
+  compact, approve, deny, unlock, restore), a model's request and
+  response, a tool's request and response, a summary, the marks of a
+  loop's life: parked, resumed, ended, switched, and the world changed,
+  and a snapshot of the workspace the session holds.
 - **Actor and origin**: who produced the step (a person, a program, an
   agent, the model, the engine, or something outside) and where it came
   in.
