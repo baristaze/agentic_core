@@ -1269,10 +1269,12 @@ which the model reads.
   constraints that bind it, its bounds, and the shape of a good report.
   It never inherits its parent's history; context isolation is the
   point.
-- **No escalation.** A child's registry and principal are at most its
-  parent's, and it inherits its parent's untrusted mark. Each of its
-  calls is decided under its own kind's policy and under that of every
-  kind above it, and the strictest decision holds.
+- **No escalation.** A child's tools and principal are at most its
+  parent's, and it inherits its parent's untrusted mark. Its tools are
+  cut to those its parent may call, a deferred toolset's counted loaded
+  or not; `load_toolset` adds no power, so the cut never takes it. Each
+  of its calls is decided under its own kind's policy and under that of
+  every kind above it, and the strictest decision holds.
 - **Reporting.** A child's report reaches its parent's inbox, as data,
   when the child's loop ends or when it needs a person. The parent
   learns of each status change when it happens and never polls.
@@ -1541,7 +1543,8 @@ part the provider's cache can serve across sessions.
   definitions hold no value that differs per session, per person, or
   per tenant. Such a value renders after them, in the places
   [Rendering](#rendering) and [The Pinned Zone](#the-pinned-zone)
-  allow. So every session of a kind version shares one cached prefix.
+  allow. So every session of a kind version shares one cached prefix
+  until a load of a deferred toolset adds its tools after the rest.
 - **A tool definition earns its weight.** A definition rides every
   request of every session of its kind. A kind registers the tools its
   loops use, and defers a toolset its loops seldom need

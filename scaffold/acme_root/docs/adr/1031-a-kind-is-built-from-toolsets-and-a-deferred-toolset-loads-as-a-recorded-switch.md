@@ -44,7 +44,10 @@ toolset, its version, and the tools it added, and references the call.
 A load adds the toolset's tools the session may call that its registry
 does not hold yet, sorted by name. A load that adds nothing writes no
 switch, and a toolset the kind does not defer is the call's invalid
-input. A loaded toolset stays loaded for the session.
+input. A loaded toolset stays loaded for the session. Its tools join
+the next request: a call the load's own turn makes to one of them is
+refused as a tool not offered, by a run that settles it after a lost
+one as well.
 
 **The render.** A run's registry is a projection of the session and its
 history: the tools the session may call that wait for no load, the

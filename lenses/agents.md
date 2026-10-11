@@ -88,11 +88,12 @@ cancel that leaves a child running.
 
 ## AGT-04 A child never escalates
 
-**Principle.** A child's registry and principal are at most its
-parent's: a spawn gives the child no tool its parent's registry lacks,
-and no authority its parent's principal lacks. Each of its calls is
-decided under its own kind's policy and under that of every kind above
-it, and the strictest decision holds.
+**Principle.** A child's tools and principal are at most its parent's:
+a spawn gives the child no tool its parent may not call, a deferred
+toolset's counted loaded or not, and no authority its parent's principal
+lacks. `load_toolset` adds no power, so the cut never takes it. Each of
+its calls is decided under its own kind's policy and under that of every
+kind above it, and the strictest decision holds.
 
 **Source.** Agent Kinds and Sub-Agents, Sub-Agents (No escalation).
 
@@ -100,10 +101,10 @@ it, and the strictest decision holds.
 and the check against the parent's; the policy layers the gate decides
 a child's call under.
 
-**Violation.** A child given a tool its parent lacks, or run under a
-principal with more authority than its parent's; a child's registry
-taken from its kind with no limit by the parent's; a child's call
-decided under its own kind's policy alone. (A child that starts
+**Violation.** A child given a tool its parent may not call, or run
+under a principal with more authority than its parent's; a child's
+registry taken from its kind with no limit by the parent's; a child's
+call decided under its own kind's policy alone. (A child that starts
 without its parent's untrusted mark is TRU-06.)
 
 **Severity.** high

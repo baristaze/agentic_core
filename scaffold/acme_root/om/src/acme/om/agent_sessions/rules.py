@@ -225,7 +225,10 @@ def lineage(source: AgentSession | None, session: AgentSession) -> dict[str, Any
     came from another carries its mark, and holds private data where its
     source does, since its objective may carry it. A child also joins its
     parent's tree one level down and may call only the tools both its kind
-    and its parent may: no child holds more than its parent. A session
+    and its parent may, a deferred toolset's counted loaded or not: no
+    child holds more than its parent. `load_toolset` adds no power, so a
+    run's registry offers it to a child whose tools wait for a load,
+    whatever the cut kept. A session
     handed over roots a tree of its own. Whose authority it runs under, and who pays,
     is attribution's (`attribution.rules.inherited`)."""
     if source is None:
