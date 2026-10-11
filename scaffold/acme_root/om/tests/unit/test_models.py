@@ -185,6 +185,7 @@ async def test_a_switch_writes_a_new_version_and_a_switched_step_naming_both_fil
     (step,) = await switches(managers, ctx, session_id)
     assert isinstance(step.header, SwitchedHeader)
     named = step.header.fills
+    assert named is not None
     assert (named.role, named.from_fill, named.to_fill) == (MAIN, first.fill_for(MAIN), to)
     assert (named.fill_set_version, named.reason) == (2, SwitchReason.FALLBACK)
     assert (second.version, second.switched_by, second.reason) == (
@@ -310,6 +311,7 @@ async def test_a_version_a_crash_left_unwritten_is_written_from_its_step(
     assert (await models.get_fill_set(ctx, session_id)).version == 1, "the step is ahead"
     assert isinstance(step.header, SwitchedHeader)
     fills, at = step.header.fills, step.created_at
+    assert fills is not None
     settled = await models.settle_switch(ctx, session_id, step.id, fills, at)
     assert (settled.version, settled.switched_by, settled.fill_for(MAIN)) == (2, step.id, SOL)
     again = await models.settle_switch(ctx, session_id, step.id, fills, at)
