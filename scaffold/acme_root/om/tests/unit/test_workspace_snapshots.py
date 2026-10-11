@@ -2,10 +2,13 @@
 twin provider (ADR 1027). A snapshot is kept sealed under its session's key,
 under a hash keyed by it, and a step names it. A restore trusts its bytes
 only by that hash, and one that does not match loses the workspace before
-it starts. A snapshot holds no credential and no secret's value. A rewind
-starts the next loop from an earlier snapshot, a step records it, and every
-earlier step and snapshot stays. A child forks its parent's latest
-snapshot into a copy of its own."""
+it starts. A snapshot holds no credential and no injected secret's value.
+The loop snapshots a workspace kept by snapshots at the end of each run, and
+the next run starts from it. A rewind starts the next loop from an earlier
+snapshot, a step records it, and every earlier step and snapshot stays; one
+that cannot load parks once, and a person's unlock goes on without it. A
+child forks its parent's latest snapshot into a copy of its own, and a fork
+with none spends nothing of the tree."""
 
 from pathlib import Path
 from uuid import UUID
@@ -13,11 +16,23 @@ from uuid import UUID
 import pytest
 from contracts.doubles import context
 from contracts.factories import make_org
-from contracts.loops import ASSISTANT, DELIVERY, Loop, loop_over, reply, said
-from contracts.tools import TWIN_SPEC, Tools, tools_over, twin_transport
+from contracts.loops import (
+    ASSISTANT,
+    DELIVERY,
+    Asked,
+    Found,
+    Lookup,
+    Loop,
+    call,
+    loop_over,
+    reply,
+    said,
+)
+from contracts.tools import Tools, tools_over, twin_transport
 
 from acme.infra.buckets import Buckets
 from acme.infra.buckets.local import BucketsLocalImpl
+from acme.infra.impl.local import InfraLocalImpl
 from acme.infra.secrets.local import SecretsLocalImpl
 from acme.infra.transports import SecretUse, SecretVia
 from acme.infra.transports.broker import BrokerTwinImpl
@@ -34,9 +49,11 @@ from acme.infra.workspaces import (
 )
 from acme.infra.workspaces.host import UNKEPT, WorkspaceHostImpl
 from acme.infra.workspaces.twin import WorkspaceTwinImpl
-from acme.om.agents.loop_rules import FORKED, REWOUND, open_loop, pending_restore
+from acme.om.agent_sessions.rules import QUESTION
+from acme.om.agents.loop_rules import FORKED, LOST, REWOUND, pending_restore
 from acme.om.agents.types.request import Spawn
-from acme.om.base import new_id
+from acme.om.agents.types.run import RunEnd
+from acme.om.base import Platform, new_id, utcnow
 from acme.om.context import Role, TenantContext
 from acme.om.exceptions import NotFound, ValidationFailed
 from acme.om.steps.rules import control_step
@@ -44,13 +61,17 @@ from acme.om.steps.types.header import (
     ControlCommand,
     ControlHeader,
     LoopOutcome,
+    ParkReason,
     SnapshotHeader,
     WorkspaceSnapshot,
 )
 from acme.om.steps.types.step import Step, StepType
 from acme.om.tools.impl.snapshots import BUCKET, session_prefix, snapshot_key
+from acme.om.tools.native.ask_person import ASK_PERSON
 from acme.om.tools.native.spawn_sub_agent import SPAWN_SUB_AGENT
 from acme.om.tools.native.wait_for_sub_agents import WAIT_FOR_SUB_AGENTS
+from acme.om.tools.tool import ToolRuntime
+from acme.om.tools.types.tool import Effect, ToolClass, ToolInput
 
 KEPT = IsolationSpec(
     mode=IsolationMode.TWIN,
@@ -262,35 +283,63 @@ async def test_a_session_finds_only_the_snapshots_its_own_history_names(tmp_path
 
 # Over the loop.
 
-KEEPER = ASSISTANT.model_copy(update={"name": "keeper", "isolation": TWIN_SPEC})
+
+class Scribble(Lookup):
+    """A command's writes, on the twin: its input becomes all the workspace's
+    files hold, as a command that writes inside and outside a container's
+    volume would leave them."""
+
+    def __init__(self, twin: WorkspaceTwinImpl) -> None:
+        super().__init__("scribble", effect=Effect.IDEMPOTENT, authorization_class=ToolClass.WRITE)
+        self._twin = twin
+
+    async def run(
+        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
+    ) -> Platform:
+        assert isinstance(call_input, Asked)
+        self._twin.files[runtime.session_id] = call_input.q.encode()
+        return Found(text="written")
+
+
+KEEPER = ASSISTANT.model_copy(
+    update={
+        "name": "keeper",
+        "isolation": KEPT,
+        "tools": (*ASSISTANT.tools, "scribble", ASK_PERSON),
+    }
+)
 FORKER = ASSISTANT.model_copy(
     update={
         "name": "forker",
-        "isolation": TWIN_SPEC,
-        "tools": (*ASSISTANT.tools, SPAWN_SUB_AGENT, WAIT_FOR_SUB_AGENTS),
+        "isolation": KEPT,
+        "tools": (*ASSISTANT.tools, "scribble", SPAWN_SUB_AGENT, WAIT_FOR_SUB_AGENTS),
     }
 )
 
 
-def twin_of(loop: Loop) -> WorkspaceTwinImpl:
-    provider = loop.infra.get_workspaces()
-    assert isinstance(provider, WorkspaceTwinImpl)
-    return provider
-
-
-async def taken(loop: Loop, session_id: UUID, files: bytes) -> WorkspaceSnapshot:
-    """A snapshot of the session's workspace holding `files`, taken between
-    its loops the way a platform takes one: in a run of its own."""
-    ctx = loop.owner
-    epoch = await loop.managers.steps.begin_run(ctx, session_id)
-    workspace = await loop.managers.tools.prepare_workspace(ctx, session_id, TWIN_SPEC)
-    twin_of(loop).files[session_id] = files
-    last = (await loop.history(session_id))[-1]
-    step = await loop.managers.tools.snapshot_workspace(
-        ctx, session_id, workspace, epoch=epoch, loop_id=last.loop_id
+def kept_loop(tmp_path: Path) -> tuple[Loop, WorkspaceTwinImpl]:
+    """A loop over the twin, with kinds that keep their workspace by
+    snapshots and a tool that writes into it."""
+    infra = InfraLocalImpl(tmp_path)
+    twin = infra.get_workspaces()
+    assert isinstance(twin, WorkspaceTwinImpl)
+    loop = loop_over(
+        tmp_path, kinds=(ASSISTANT, DELIVERY, KEEPER, FORKER), infra=infra, extra=(Scribble(twin),)
     )
-    await loop.managers.tools.release_workspace(ctx, workspace)
-    return named(step)
+    return loop, twin
+
+
+async def wrote(loop: Loop, session_id: UUID, files: bytes) -> WorkspaceSnapshot:
+    """A loop that writes `files` into the workspace and ends: its run
+    snapshots the workspace at its end, and the step names the snapshot."""
+    await loop.say(session_id, "Write it.")
+    loop.anthropic.add(reply(call("scribble", q=files.decode())), reply(said("Written.")))
+    assert (await loop.loops.run(loop.owner, session_id)).outcome is LoopOutcome.SUCCEEDED
+    return named(snapshots(await loop.history(session_id))[-1])
+
+
+def snapshots(history: list[Step]) -> list[Step]:
+    return [step for step in history if step.type is StepType.SNAPSHOTTED]
 
 
 async def rewind(loop: Loop, session_id: UUID, snapshot_id: UUID) -> Step:
@@ -303,17 +352,62 @@ async def rewind(loop: Loop, session_id: UUID, snapshot_id: UUID) -> Step:
     return stored
 
 
+async def test_a_kept_workspace_is_snapshotted_at_each_runs_end_and_the_next_run_starts_from_it(
+    tmp_path: Path,
+) -> None:
+    """The run that parks snapshots the workspace before its park, then lets
+    the instance go. The resumed run, and a later loop, start from that
+    snapshot: what a release lost is back."""
+    loop, twin = kept_loop(tmp_path)
+    session_id = await loop.start(KEEPER.name)
+    await loop.say(session_id, "Install the tool, then ask me which version.")
+    loop.anthropic.add(
+        reply(call("scribble", q="the tool, installed")),
+        reply(call(ASK_PERSON, question="Which version?")),
+    )
+
+    parked = await loop.loops.run(loop.owner, session_id)
+
+    assert parked.end is RunEnd.PARKED and parked.park == QUESTION
+    history = await loop.history(session_id)
+    assert [step.type for step in history[-2:]] == [StepType.SNAPSHOTTED, StepType.PARKED]
+    assert named(history[-2]).workspace_id == session_id
+    assert session_id not in twin.live, "its instance went once the snapshot held it"
+    for text in ("Version 1.", "Check it again."):
+        # On the twin the files outlive a release; a container's layer does not.
+        twin.files[session_id] = b"what a release loses"
+        await loop.say(session_id, text)
+        loop.anthropic.add(reply(said("It is there.")))
+        assert (await loop.loops.run(loop.owner, session_id)).outcome is LoopOutcome.SUCCEEDED
+        assert twin.files[session_id] == b"the tool, installed"
+    assert len(snapshots(await loop.history(session_id))) == 3, "one at each run's end"
+
+
+async def test_a_workspace_a_person_worked_in_by_hand_is_never_replaced_by_an_older_snapshot(
+    tmp_path: Path,
+) -> None:
+    loop, twin = kept_loop(tmp_path)
+    session_id = await loop.start(KEEPER.name)
+    await wrote(loop, session_id, b"as the agent left it")
+    await loop.loops.take_over(loop.owner, session_id)
+    twin.files[session_id] = b"as the person fixed it"
+    await loop.loops.give_back(loop.owner, session_id, "Fixed the config by hand.")
+    loop.anthropic.add(reply(said("Seen.")))
+
+    assert (await loop.loops.run(loop.owner, session_id)).outcome is LoopOutcome.SUCCEEDED
+
+    assert twin.files[session_id] == b"as the person fixed it"
+    latest = named(snapshots(await loop.history(session_id))[-1])
+    assert latest.size == len(b"as the person fixed it"), "the run kept what the person left"
+
+
 async def test_a_rewind_starts_the_next_loop_from_the_earlier_snapshot_and_keeps_all_before_it(
     tmp_path: Path,
 ) -> None:
-    loop = loop_over(tmp_path, kinds=(ASSISTANT, DELIVERY, KEEPER))
+    loop, twin = kept_loop(tmp_path)
     session_id = await loop.start(KEEPER.name)
-    await loop.say(session_id, "Set the records up.")
-    loop.anthropic.add(reply(said("Set up.")))
-    assert (await loop.loops.run(loop.owner, session_id)).outcome is LoopOutcome.SUCCEEDED
-    earlier = await taken(loop, session_id, b"the records as first set up")
-    later = await taken(loop, session_id, b"the records after a bad change")
-    assert open_loop(await loop.history(session_id)) is None, "a snapshot opens no loop"
+    earlier = await wrote(loop, session_id, b"the records as first set up")
+    later = await wrote(loop, session_id, b"the records after a bad change")
     before = await loop.history(session_id)
 
     control = await rewind(loop, session_id, earlier.id)
@@ -322,7 +416,7 @@ async def test_a_rewind_starts_the_next_loop_from_the_earlier_snapshot_and_keeps
     run = await loop.loops.run(loop.owner, session_id)
 
     assert run.outcome is LoopOutcome.SUCCEEDED
-    assert twin_of(loop).files[session_id] == b"the records as first set up"
+    assert twin.files[session_id] == b"the records as first set up"
     history = await loop.history(session_id)
     assert history[: len(before)] == before, "every earlier step stays as it was"
     (done,) = [step for step in history if control.id in step.refs]
@@ -337,24 +431,74 @@ async def test_a_rewind_starts_the_next_loop_from_the_earlier_snapshot_and_keeps
         "every snapshot stays"
     )
 
-    # The next loop finds the workspace as it is: no restore again.
-    twin_of(loop).files[session_id] = b"written since the rewind"
+    # The next loop starts from what the rewound run kept, and the rewind is
+    # never done again.
+    await wrote(loop, session_id, b"written since the rewind")
     await loop.say(session_id, "One more.")
     loop.anthropic.add(reply(said("Done.")))
     await loop.loops.run(loop.owner, session_id)
-    assert twin_of(loop).files[session_id] == b"written since the rewind"
+    assert twin.files[session_id] == b"written since the rewind"
+    notices = [step for step in await loop.history(session_id) if control.id in step.refs]
+    assert notices == [done]
+
+
+@pytest.mark.parametrize("asked", ["a rewind", "the next run"])
+async def test_a_restore_whose_bytes_are_gone_parks_once_and_the_unlock_goes_on_without_it(
+    tmp_path: Path, asked: str
+) -> None:
+    """A rewind, or the next run's start from the latest snapshot, whose bytes
+    are gone: the loop parks for a person, with no model call. The person's
+    unlock goes on from the workspace as it stands, a model call follows, and
+    a notice that references what named the snapshot records the restore
+    lost, which the model reads. It is never tried again."""
+    loop, twin = kept_loop(tmp_path)
+    session_id = await loop.start(KEEPER.name)
+    earlier = await wrote(loop, session_id, b"the earlier state")
+    latest = await wrote(loop, session_id, b"the latest state")
+    gone = earlier if asked == "a rewind" else latest
+    await loop.infra.get_buckets().delete(
+        loop.owner.org_id, BUCKET, snapshot_key(session_id, gone.hash)
+    )
+    if asked == "a rewind":
+        source = await rewind(loop, session_id, earlier.id)
+    else:
+        (source,) = [s for s in snapshots(await loop.history(session_id)) if named(s) == latest]
+    await loop.say(session_id, "Go on.")
+    calls = len(loop.anthropic.calls)
+
+    parked = await loop.loops.run(loop.owner, session_id)
+
+    assert parked.park is not None
+    assert (parked.park.reason, parked.park.unlock) == (ParkReason.PERSON, "workspace")
+    assert len(loop.anthropic.calls) == calls, "no model call on a lost restore"
+
+    unlock = control_step(new_id(), utcnow(), session_id, loop.owner, ControlCommand.UNLOCK)
+    await loop.managers.agent_sessions.receive(loop.owner, session_id, [unlock])
+    loop.anthropic.add(reply(said("Going on as it stands.")))
+    run = await loop.loops.run(loop.owner, session_id)
+
+    assert run.outcome is LoopOutcome.SUCCEEDED
+    assert len(loop.anthropic.calls) == calls + 1, "a model call follows the unlock"
+    assert twin.files[session_id] == b"the latest state", "the workspace as it stood"
+    history = await loop.history(session_id)
+    (lost,) = [step for step in history if source.id in step.refs]
+    assert lost.type is StepType.ENVIRONMENT_CHANGED and lost.as_text() == LOST
+    assert LOST in loop.anthropic.calls[-1].model_dump_json(), "the model reads it was lost"
+    assert pending_restore(history) is None
+
+    await loop.say(session_id, "And again.")
+    loop.anthropic.add(reply(said("Fine.")))
+    again = await loop.loops.run(loop.owner, session_id)
+    assert again.outcome is LoopOutcome.SUCCEEDED, "parked once, never again"
 
 
 async def test_a_child_forks_its_parents_latest_snapshot_into_a_copy_of_its_own(
     tmp_path: Path,
 ) -> None:
-    loop = loop_over(tmp_path, kinds=(ASSISTANT, DELIVERY, FORKER))
+    loop, twin = kept_loop(tmp_path)
     parent = await loop.start(FORKER.name)
-    await loop.say(parent, "Set the records up.")
-    loop.anthropic.add(reply(said("Set up.")))
-    await loop.loops.run(loop.owner, parent)
-    await taken(loop, parent, b"an older state")
-    latest = await taken(loop, parent, b"the parent's files")
+    await wrote(loop, parent, b"an older state")
+    latest = await wrote(loop, parent, b"the parent's files")
 
     child = await loop.managers.agents.spawn(
         loop.owner,
@@ -374,11 +518,11 @@ async def test_a_child_forks_its_parents_latest_snapshot_into_a_copy_of_its_own(
     loop.anthropic.add(reply(said("It holds.")))
     await loop.loops.run(loop.owner, child.id)
 
-    assert twin_of(loop).files[child.id] == b"the parent's files"
+    assert twin.files[child.id] == b"the parent's files"
     (notice,) = [step for step in await loop.history(child.id) if restore.id in step.refs]
     assert notice.as_text() == FORKED
-    twin_of(loop).files[child.id] = b"the child's own writes"
-    assert twin_of(loop).files[parent] == b"the parent's files"
+    twin.files[child.id] = b"the child's own writes"
+    assert twin.files[parent] == b"the parent's files"
     # The copy is the child's own: the parent's purge leaves it.
     await loop.managers.tools.purge_workspace(loop.owner.org_id, parent)
     kept = await loop.infra.get_buckets().list(
@@ -387,9 +531,20 @@ async def test_a_child_forks_its_parents_latest_snapshot_into_a_copy_of_its_own(
     assert kept == [snapshot_key(child.id, copy.hash)]
 
 
-async def test_a_fork_with_no_snapshot_to_start_from_is_refused(tmp_path: Path) -> None:
-    loop = loop_over(tmp_path, kinds=(ASSISTANT, DELIVERY, FORKER))
+async def test_a_fork_with_no_snapshot_to_start_from_spends_nothing_of_the_tree(
+    tmp_path: Path,
+) -> None:
+    """Refused before a slot is taken or a child is made: the tree's size is
+    as it was, and no child session exists, so a retry finds nothing spent."""
+    loop, _ = kept_loop(tmp_path)
     parent = await loop.start(FORKER.name)
+    before = (await loop.managers.agents.tree_of(loop.owner, parent)).size
     asked = Spawn(id=new_id(), kind=FORKER.name, title="a try", objective="Try it.", fork=True)
-    with pytest.raises(ValidationFailed, match="holds no snapshot"):
-        await loop.managers.agents.spawn(loop.owner, parent, asked)
+
+    for _ in range(2):
+        with pytest.raises(ValidationFailed, match="holds no snapshot"):
+            await loop.managers.agents.spawn(loop.owner, parent, asked)
+
+    assert (await loop.managers.agents.tree_of(loop.owner, parent)).size == before
+    with pytest.raises(NotFound):
+        await loop.managers.agent_sessions.get_session(loop.owner, asked.id)

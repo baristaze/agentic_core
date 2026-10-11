@@ -88,14 +88,15 @@ class ToolsManagerInterface(ABC):
     ) -> Step:
         """A snapshot of the session's live workspace, kept, and the
         `snapshotted` step that names it, appended in the loop under
-        `loop_id` and under the run's `epoch`. Every credential the broker
-        attached there is taken back first, and the snapshot holds no value
-        of a secret the catalog's tools may be given: one that does is
-        refused, and nothing is kept. It is sealed under the session's key
-        and stored under its keyed hash. `SnapshotRefused` before anything
-        runs when the provider cannot snapshot, the workspace holds no
-        instance, or the session keeps no content at rest. When to take one
-        is the caller's."""
+        `loop_id` and under the run's `epoch`. The loop takes one at the end
+        of each run that holds a workspace kept by snapshots, before it lets
+        the instance go. Every credential the broker attached there is taken
+        back first, and the snapshot holds no value of a secret the
+        catalog's tools may have injected: one that does is refused, and
+        nothing is kept. It is sealed under the session's key and stored
+        under its keyed hash. `SnapshotRefused` before anything runs when
+        the provider cannot snapshot, the workspace holds no instance, as
+        once its run let it go, or the session keeps no content at rest."""
         ...
 
     @abstractmethod

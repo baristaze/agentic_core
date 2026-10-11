@@ -15,7 +15,7 @@ from acme.infra.base import SYSTEM_SCOPE
 from acme.infra.exceptions import InfraException
 from acme.infra.outages import Outage, OutageSignalInterface
 from acme.infra.transports import OutputSink
-from acme.infra.workspaces import IsolationRefused, Workspace, WorkspaceLost
+from acme.infra.workspaces import Durability, IsolationRefused, Workspace, WorkspaceLost
 from acme.integrations.model_providers import ModelProviderInterface
 from acme.integrations.model_providers.calls import Finished, ModelCall, ModelReply
 from acme.integrations.model_providers.failures import ModelCallFailed
@@ -72,7 +72,6 @@ from acme.om.steps.types.content import Content, TextBlock, ToolUseBlock
 from acme.om.steps.types.header import (
     AcceptedResult,
     ControlCommand,
-    ControlHeader,
     InputHeader,
     JobPark,
     LoopOutcome,
@@ -83,7 +82,6 @@ from acme.om.steps.types.header import (
     ToolFailure,
     ToolRequestHeader,
     ToolResponseHeader,
-    WorkspaceSnapshot,
 )
 from acme.om.steps.types.step import Actor, Step, StepType
 from acme.om.steps.types.stream import StreamPart, ToolOutputPart
@@ -93,6 +91,7 @@ from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.rules import (
     ISOLATION_REFUSED,
     job_deadline,
+    named_snapshot,
     response,
     response_id,
     tool_request,
@@ -169,6 +168,7 @@ class _Run:
     # first: each of its calls is decided under them as under its own kind's.
     above: tuple[PolicyLayer, ...] = ()
     workspace: Workspace | None = None
+    kept: bool = False  # a snapshot holds its workspace whole, taken at its end
     made: set[UUID] = field(default_factory=lambda: set[UUID]())  # tool requests it wrote
     failures: int = 0  # provider errors in a row
     tried: list[Fill] = field(default_factory=lambda: [])
@@ -316,47 +316,18 @@ class LoopManagerImpl(LoopManagerInterface):
         except (UnresolvedRole, UnpricedModel) as refused:
             log.warning("session %s resolves no fill: %s", session_id, refused.message)
             return await self._end(run, LoopOutcome.ERRORED)
-        restore = rules.pending_restore(history)
+        # A restore a principal or a fork asked for wins. A workspace kept by
+        # snapshots otherwise starts from its latest, unless something touched
+        # it since: then it stands newer than any snapshot.
+        start = rules.pending_restore(history)
+        if start is None and kind.isolation.durability is Durability.SNAPSHOT:
+            start = rules.kept_snapshot(history)
+        # A person let a loop go on that parked on its lost workspace.
+        unlocked = loop is not None and loop.park is not None and lost_workspace(loop.park)
         try:
-            # Before the first model call: a workspace weaker than the spec
-            # is never made, and nothing is spent on a loop that cannot run.
-            # A restore the history asks for starts it from its snapshot.
-            run.workspace = await self._tools.prepare_workspace(
-                ctx, session_id, kind.isolation, restore=restored_from(restore)
-            )
-        except InfraException as refused:
-            if isinstance(refused, IsolationRefused) and refused.clears:
-                # No host can give it the workspace yet: no weaker one, and
-                # no call spent. It waits on the resource and asks again.
-                log.warning("session %s waits for a workspace: %s", session_id, refused)
-                retry_at = self._clock() + self._options.workspace_wait
-                park = Park(
-                    reason=ParkReason.RESOURCE,
-                    unlock=WORKSPACE_UNLOCK,
-                    retry_at=retry_at,
-                    unsettled=not resumed,
-                )
-                return await self._park(run, park)
-            if refused.code == ISOLATION_REFUSED:
-                # A provider that cannot meet the spec refuses it whole: no
-                # weaker workspace, and no call spent on a loop that cannot run.
-                log.warning("session %s has no workspace: %s", session_id, refused)
-                return await self._end(run, LoopOutcome.ERRORED)
-            if refused.code != WorkspaceLost.code:
-                raise
-            # What the workspace is rebuilt from is gone: nothing restarts
-            # from scratch in its stead, and a person says what comes next.
-            # The loop parks with everything it reached kept.
-            log.error("session %s lost its workspace: %s", session_id, refused)
-            park = Park(reason=ParkReason.PERSON, unlock=WORKSPACE_UNLOCK, unsettled=not resumed)
-            return await self._park(run, park)
-        try:
-            if restore is not None:
-                # The record that it was done, and the model's notice: it is
-                # delivered with the next model request. A run lost before
-                # it is written restores again, to the same snapshot.
-                done = rules.restored_step(new_id(), self._clock(), session_id, loop_id, restore)
-                await self._steps.append_steps(ctx, session_id, epoch, [done])
+            stopped = await self._prepare(run, start, unlocked=unlocked)
+            if stopped is not None:
+                return stopped
             return await self._drive(run, history)
         except StaleWriter:
             # The claim is another run's, or a person's who took the
@@ -365,6 +336,65 @@ class LoopManagerImpl(LoopManagerInterface):
             raise
         finally:
             await self._release(run)
+
+    async def _prepare(self, run: _Run, start: Step | None, *, unlocked: bool) -> LoopRun | None:
+        """The run's workspace, before the first model call: a workspace
+        weaker than the spec is never made, and nothing is spent on a loop
+        that cannot run. It starts from the snapshot `start` names, when
+        there is one. None once it is prepared; else how the run stopped.
+
+        A restore that cannot load parks the loop for a person. Once the
+        person lets it go on (`unlocked`) and it still cannot load, the loop
+        goes on from the workspace as it stands, and a notice that
+        references `start` records the restore lost, so it is never tried
+        again and the model reads why."""
+        restore = None if start is None else named_snapshot(start)
+        try:
+            run.workspace = await self._tools.prepare_workspace(
+                run.ctx, run.session_id, run.kind.isolation, restore=restore
+            )
+        except InfraException as refused:
+            if start is not None and unlocked and refused.code == WorkspaceLost.code:
+                log.warning("session %s goes on without its snapshot: %s", run.session_id, refused)
+                lost = rules.lost_step(new_id(), self._clock(), run.session_id, run.loop_id, start)
+                await self._steps.append_steps(run.ctx, run.session_id, run.epoch, [lost])
+                return await self._prepare(run, None, unlocked=unlocked)
+            return await self._unprepared(run, refused)
+        if start is not None and start.type is StepType.CONTROL:
+            # The record that the restore was done, and the model's notice: it
+            # is delivered with the next model request. A run lost before it
+            # is written restores again, to the same snapshot.
+            done = rules.restored_step(new_id(), self._clock(), run.session_id, run.loop_id, start)
+            await self._steps.append_steps(run.ctx, run.session_id, run.epoch, [done])
+        return None
+
+    async def _unprepared(self, run: _Run, refused: InfraException) -> LoopRun:
+        """How a run stops when its workspace cannot be prepared."""
+        if isinstance(refused, IsolationRefused) and refused.clears:
+            # No host can give it the workspace yet: no weaker one, and
+            # no call spent. It waits on the resource and asks again.
+            log.warning("session %s waits for a workspace: %s", run.session_id, refused)
+            retry_at = self._clock() + self._options.workspace_wait
+            park = Park(
+                reason=ParkReason.RESOURCE,
+                unlock=WORKSPACE_UNLOCK,
+                retry_at=retry_at,
+                unsettled=not run.resumed,
+            )
+            return await self._park(run, park)
+        if refused.code == ISOLATION_REFUSED:
+            # A provider that cannot meet the spec refuses it whole: no
+            # weaker workspace, and no call spent on a loop that cannot run.
+            log.warning("session %s has no workspace: %s", run.session_id, refused)
+            return await self._end(run, LoopOutcome.ERRORED)
+        if refused.code != WorkspaceLost.code:
+            raise refused
+        # What the workspace is rebuilt from is gone: nothing restarts
+        # from scratch in its stead, and a person says what comes next.
+        # The loop parks with everything it reached kept.
+        log.error("session %s lost its workspace: %s", run.session_id, refused)
+        park = Park(reason=ParkReason.PERSON, unlock=WORKSPACE_UNLOCK, unsettled=not run.resumed)
+        return await self._park(run, park)
 
     async def _drive(self, run: _Run, history: Sequence[Step]) -> LoopRun:
         # What a lost run left in flight: a model request with no response is
@@ -460,6 +490,7 @@ class LoopManagerImpl(LoopManagerInterface):
                         await self._leases.leave(run.ctx, WaiterKind.SESSION, run.session_id)
                         await self._give_back(run, history)
                     return await self._park(run, trip.park)
+                await self._keep(run)
                 return self._result(run, RunEnd.YIELDED)
             repeated = rules.repeated_failure(history, run.loop_id, self._options.repeats_noticed)
             if repeated is not None:
@@ -1369,6 +1400,7 @@ class LoopManagerImpl(LoopManagerInterface):
         if run.jobs:
             why = f"the loop ended {outcome.value}; the job was cancelled"
             await self._stop_jobs(run, list(run.jobs.values()), why)
+        await self._keep(run)
         if run.session.parent_id is not None:
             # Before the loop is closed: a run lost in between leaves it open,
             # and the run that ends it again repeats the report, written once.
@@ -1385,6 +1417,7 @@ class LoopManagerImpl(LoopManagerInterface):
         return self._result(run, RunEnd.ENDED, outcome=outcome)
 
     async def _park(self, run: _Run, park: Park) -> LoopRun:
+        await self._keep(run)
         await self._sessions.park(run.ctx, run.session_id, run.epoch, run.loop_id, park)
         if park.line is not None and park.job is not None:
             # A job's call in line: a grant, or the request's end, that came
@@ -1587,10 +1620,35 @@ class LoopManagerImpl(LoopManagerInterface):
                 await self._gate.settle(run.ctx, header.hold_id, None, billed=True, site=site)
         await self._steps.append_steps(run.ctx, run.session_id, run.epoch, [closing])
 
+    async def _keep(self, run: _Run) -> None:
+        """A workspace kept by snapshots is snapshotted whole at the end of
+        each run that held it, live, before its loop parks or ends: no run
+        that follows starts before the step names it. One that is refused,
+        such as for a secret's value in it, or that fails keeps nothing, and
+        the run keeps its instance (`_release`)."""
+        workspace = run.workspace
+        if workspace is None or workspace.spec.durability is not Durability.SNAPSHOT:
+            return
+        try:
+            await self._tools.snapshot_workspace(
+                run.ctx, run.session_id, workspace, epoch=run.epoch, loop_id=run.loop_id
+            )
+        except StaleWriter:
+            raise
+        except Exception:
+            log.exception("session %s: the workspace was not snapshotted", run.session_id)
+            return
+        run.kept = True
+
     async def _release(self, run: _Run) -> None:
         """The workspace's instance goes between runs; its files stay. A loop
-        that parks holds no runtime."""
+        that parks holds no runtime, but for a workspace kept by snapshots
+        that no snapshot holds whole: its instance stays, so nothing in it is
+        lost, and the next run prepares it as it stands."""
         if run.workspace is None:
+            return
+        if run.workspace.spec.durability is Durability.SNAPSHOT and not run.kept:
+            log.warning("session %s keeps its workspace live: no snapshot holds it", run.session_id)
             return
         try:
             await self._tools.release_workspace(run.ctx, run.workspace)
@@ -1692,13 +1750,9 @@ class LoopManagerImpl(LoopManagerInterface):
         return list(page.items)
 
 
-def restored_from(restore: Step | None) -> WorkspaceSnapshot | None:
-    """The snapshot a pending restore names."""
-    if restore is None:
-        return None
-    header = restore.header
-    assert isinstance(header, ControlHeader)
-    return header.snapshot
+def lost_workspace(park: Park) -> bool:
+    """Whether a park waits for a person on a workspace that was lost."""
+    return park.reason is ParkReason.PERSON and park.unlock == WORKSPACE_UNLOCK
 
 
 def provider_park(fill: Fill, retry_at: datetime) -> Park:
