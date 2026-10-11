@@ -30,6 +30,17 @@ workspace's directory, with no secret and no variable of its own, so its
 environment is the image's alone. No model runs, and nothing of a
 session is in it. What a command printed is not kept. The build's
 workspace and the records of its commands go, however the build ends.
+
+**What a setup may do.** A setup installs what its workspaces need, a
+system's packages among them, and a package manager changes a file's
+owner and drops to a user of its own. So the setup's workspace holds
+those powers: a container holds the runtime's default capabilities
+less raw sockets, takes no new privileges, and is never privileged.
+That is safe because a setup runs the commands a person declared, no
+model's, with no secret and nothing of a session. A workspace a
+session uses, on a base or not, drops every capability. A container is
+reused only under the spec and the role it was started to, so a setup's
+container never serves a session.
 The snapshot is scanned for the values of the catalog's secrets, as a
 session's is; one that holds a value is refused.
 
@@ -79,8 +90,9 @@ of the session is lost with the base: it is dropped, the prepare is
 refused with a refusal that clears, and the next one builds it again.
 
 **The seam.** Building needs only what every provider already offers:
-`prepare`, `snapshot`, `purge`, and the transport's `run`. A VM provider
-serves a base by those same calls, its disk for the container's layer.
+`prepare`, told when it prepares a setup's workspace, `snapshot`,
+`purge`, and the transport's `run`. A VM provider serves a base by
+those same calls, its disk for the container's layer.
 
 ## Consequences
 

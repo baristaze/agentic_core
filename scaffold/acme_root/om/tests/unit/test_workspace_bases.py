@@ -83,6 +83,7 @@ class BuiltTwin(WorkspaceTwinImpl):
         self._transport = transport
         self.specs: list[tuple[Workspace, IsolationSpec]] = []
         self.lost = False
+        self.building: set[UUID] = set()
 
     async def prepare(
         self,
@@ -91,11 +92,17 @@ class BuiltTwin(WorkspaceTwinImpl):
         spec: IsolationSpec,
         snapshot: bytes | None = None,
         base: bytes | None = None,
+        *,
+        building: bool = False,
     ) -> Workspace:
         if self.lost and base is not None:
             raise WorkspaceLost("the image the base was built on is gone")
-        workspace = await super().prepare(org_id, workspace_id, spec, snapshot, base)
+        workspace = await super().prepare(
+            org_id, workspace_id, spec, snapshot, base, building=building
+        )
         self.specs.append((workspace, spec))
+        if building:
+            self.building.add(workspace_id)
         return workspace
 
     async def snapshot(self, workspace: Workspace) -> bytes:
@@ -155,6 +162,7 @@ async def test_a_base_is_built_once_and_every_workspace_on_it_starts_from_its_sn
     assert b"echo built >> /opt/count" in snapshot, "what the setup wrote is in it"
     assert await bases.kept() == [base_key(ON_BASE)]
     (build,) = bases.builds()
+    assert bases.provider.building == {build.id}, "no session's workspace is prepared building"
     assert build.id not in bases.provider.live, "the build's workspace is gone"
     assert not [key for key in bases.transport.records if key[0] == build.id]
 

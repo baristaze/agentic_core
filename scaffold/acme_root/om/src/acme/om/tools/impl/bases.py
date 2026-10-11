@@ -130,8 +130,8 @@ class WorkspaceBases:
 
     async def _build(self, ctx: TenantContext, spec: IsolationSpec) -> bytes:
         """The base's setup run in a workspace of its own, on its image with
-        the setup's egress and the spec's limits, then snapshotted and
-        scanned. The workspace and the records of its commands go, however
+        the setup's egress, the spec's limits, and what a package manager
+        needs (`building`), then snapshotted and scanned. The workspace and the records of its commands go, however
         the build ends."""
         base = spec.base
         if base is None:
@@ -146,7 +146,9 @@ class WorkspaceBases:
         build_id = new_id()
         deadline = self._clock() + self._build_limit
         try:
-            workspace = await self._workspaces.prepare(ctx.org_id, build_id, setup_spec)
+            workspace = await self._workspaces.prepare(
+                ctx.org_id, build_id, setup_spec, building=True
+            )
             for index, command in enumerate(base.setup):
                 ran = await self._transport.run(
                     workspace,

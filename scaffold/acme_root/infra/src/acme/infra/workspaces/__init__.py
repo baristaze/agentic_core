@@ -99,8 +99,11 @@ class ResourceLimits(InfraModel):
 class WorkspaceBase(InfraModel):
     """What a workspace starts from: an image, and the commands that set it
     up, run in order, in the workspace's directory, with `egress` alone, such
-    as a package registry's. A setup runs no model, is given no secret, and
-    reads no session's content. A base with no setup is the image alone."""
+    as a package registry's. A setup runs commands a person declared and no
+    model, is given no secret, and reads no session's content, so its
+    workspace holds what a system's package manager needs and nothing
+    privileged; every workspace a session uses on the base holds no such
+    power. A base with no setup is the image alone."""
 
     image: str = Field(min_length=1)
     setup: tuple[str, ...] = ()
@@ -214,6 +217,8 @@ class WorkspaceProviderInterface(ABC):
         spec: IsolationSpec,
         snapshot: bytes | None = None,
         base: bytes | None = None,
+        *,
+        building: bool = False,
     ) -> Workspace:
         """The workspace under `workspace_id`, prepared to `spec`: made, or
         found again with its files after a release. `IsolationRefused`, with
@@ -236,7 +241,13 @@ class WorkspaceProviderInterface(ABC):
         its own. `snapshot` wins over it. A spec whose base has setup is
         refused without its archive, never started on the bare image. One
         this provider cannot bring in raises `WorkspaceLost`, and nothing of
-        the workspace's own files is lost."""
+        the workspace's own files is lost.
+
+        With `building`, the workspace is the one a base's setup runs in,
+        on commands a person declared: its instance holds what a system's
+        package manager needs, such as changing a file's owner, and nothing
+        privileged. Every other workspace, each one a session uses, holds
+        no such power. A provider whose instances hold none ignores it."""
         ...
 
     @abstractmethod

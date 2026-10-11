@@ -973,20 +973,23 @@ platform's ([Next: The Platform](#next-the-platform)).
   parent's latest snapshot, sealed under its own key. What it writes
   never reaches its parent's workspace. A fork whose parent holds no
   snapshot is refused before anything of the tree is spent.
-- **Bases.** A spec may name a **base**: an image, the commands that
-  set it up, and the egress the setup may use, such as a package
-  registry's. The setup runs once, in a workspace of its own, and the
-  base is kept as a snapshot of it. Every workspace on the base starts
-  from that snapshot and runs with its own egress, never the setup's.
-  A setup runs no model, is given no secret, and reads no session's
+- **Bases.** A spec may name a **base**: an image, the commands that set
+  it up, and the egress the setup may use, such as a package registry's.
+  The setup runs once, in a workspace of its own, and the base is kept
+  as a snapshot of it. Every workspace on the base starts from that
+  snapshot and runs with its own egress, never the setup's. A setup runs
+  the commands a person declared, so its workspace holds what a system's
+  package manager needs, such as changing a file's owner, and nothing
+  privileged. Every workspace a session uses holds no such power. A
+  setup runs no model, is given no secret, and reads no session's
   content, so its base is the tenant's, not a session's: kept under the
   tenant alone, never sealed under a session's key, and gone with the
   tenant's purge. It is keyed by a hash of its mode, its image, its
   commands, and its egress, so a changed base is built again, never
   served stale. Two prepares racing on one base build it once. A setup
   command that fails keeps nothing, and names the command and how it
-  ended. A base with no setup is the image alone. A provider that
-  cannot snapshot refuses a base.
+  ended. A base with no setup is the image alone. A provider that cannot
+  snapshot refuses a base.
 - **Purge.** A snapshot is content. A session's purge removes its
   snapshots, and revoking its key erases them.
 
