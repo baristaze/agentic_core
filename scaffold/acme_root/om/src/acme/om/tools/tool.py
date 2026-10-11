@@ -6,6 +6,9 @@ through the `ToolRuntime` its call is given: the workspace's transport,
 bound to the call's key, its run's writer epoch, its deadline, and the
 secrets its spec declares. It never holds the transport or a workspace of
 its own, and never starts a process or opens a file on the engine's host.
+The one process a call starts there is an MCP tool's stdio server, a
+program the adopter names, which the MCP client starts for the call and
+stops with it (ADR 1034).
 
 An `unsafe` tool runs at most one command a call, so the transport's record
 of that command is the call's outcome after a crash. A tool that must do
@@ -151,6 +154,19 @@ class ToolRuntime:
         if result.timed_out:
             raise ToolFailed(ToolFailure.TIMEOUT, command_text(result, self._answer_chars))
         return result
+
+    async def use_secret(self, name: str) -> SecretUse:
+        """Records that the call uses a declared secret outside a command,
+        by name, before it is used: a server's credential, which the engine
+        sends with the call itself. A secret the tool does not declare is
+        refused, as a command's is."""
+        use = self._secrets.get(name)
+        if use is None:
+            raise ToolFailed(
+                ToolFailure.PERMANENT, f"the tool does not declare the secrets {[name]}"
+            )
+        await self._audit(use)
+        return use
 
     async def read_file(self, path: str, max_bytes: int, offset: int = 0) -> bytes:
         return await self._transport.read_file(self._workspace, path, max_bytes, offset)

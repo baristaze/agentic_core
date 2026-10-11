@@ -87,6 +87,17 @@ thing [Acme is made of](../../../../README.md).
   every tool the agent had, so what came before reads as it did. A
   toolset the kind does not defer is the call's bad input; one already
   loaded adds nothing (ADR 1031).
+- **Call a server's tool.** A tool from a server over MCP is built from
+  the server's listing only when its definition is the one a person
+  reviewed, pinned by its hash; the product's binding gives its class
+  and its effect. Each call lists the server's tools again and refuses
+  a tool that changed since, with the reason, until someone reviews it
+  and moves the pin. The server's credential, the org's secret, is
+  declared by each of its tools, audited by its name at each call,
+  fetched for the one call, and kept out of everything the server sends
+  back, and the server's answer is data. A server that hangs, or answers
+  outside the protocol, is refused within the tool's own time
+  (ADR 1034).
 - **Read an attachment** a range of lines or pages at a time, at most a
   bounded amount a call. A line or page longer than one read is read on
   from the offset the read before stopped at. How a file turns into text

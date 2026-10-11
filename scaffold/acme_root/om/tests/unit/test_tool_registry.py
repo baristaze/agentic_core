@@ -243,10 +243,9 @@ def binding(**changes: Any) -> McpBinding:
 
 
 async def test_an_mcp_tool_takes_its_class_and_effect_from_the_binding_never_the_server() -> None:
-    calls: list[tuple[str, str, dict[str, Any]]] = []
-
-    async def call(ctx: TenantContext, server: str, tool: str, call_input: Any, key: UUID) -> str:
-        calls.append((server, tool, dict(call_input)))
+    async def call(
+        ctx: TenantContext, bound: McpBinding, call_input: Any, runtime: ToolRuntime
+    ) -> str:
         return "closed"
 
     tool = McpToolImpl(DEFINITION, binding(), call)
@@ -260,7 +259,9 @@ async def test_an_mcp_tool_takes_its_class_and_effect_from_the_binding_never_the
 
 
 async def test_a_changed_definition_is_not_served_until_its_pin_moves() -> None:
-    async def call(ctx: TenantContext, server: str, tool: str, call_input: Any, key: UUID) -> str:
+    async def call(
+        ctx: TenantContext, bound: McpBinding, call_input: Any, runtime: ToolRuntime
+    ) -> str:
         raise AssertionError("not served")
 
     for changed in (
@@ -283,8 +284,10 @@ async def test_an_mcp_call_goes_through_the_adopters_client_with_the_typed_input
     ctx = context(Role.SERVICE, make_org())
     seen: list[Any] = []
 
-    async def call(ctx: TenantContext, server: str, tool: str, call_input: Any, key: UUID) -> str:
-        seen.append((server, tool, call_input, key))
+    async def call(
+        ctx: TenantContext, bound: McpBinding, call_input: Any, runtime: ToolRuntime
+    ) -> str:
+        seen.append((bound.server, bound.server_tool, call_input, runtime.key))
         return "closed #7"
 
     registry = registry_of(McpToolImpl(DEFINITION, binding(), call))
