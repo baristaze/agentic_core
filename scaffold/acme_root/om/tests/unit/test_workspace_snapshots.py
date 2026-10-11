@@ -383,6 +383,33 @@ async def test_a_kept_workspace_is_snapshotted_at_each_runs_end_and_the_next_run
     assert len(snapshots(await loop.history(session_id))) == 3, "one at each run's end"
 
 
+async def test_a_run_whose_snapshot_fails_keeps_its_instance_and_the_next_starts_as_it_stands(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A snapshot refused at a run's end, such as for a secret's value in the
+    workspace, keeps nothing and names nothing: the instance stays live, and
+    the next run goes on from it, never from the older snapshot."""
+    loop, twin = kept_loop(tmp_path)
+    session_id = await loop.start(KEEPER.name)
+    await wrote(loop, session_id, b"kept at the first end")
+
+    async def refused(*args: object, **kwargs: object) -> Step:
+        raise SnapshotRefused("the workspace holds the secret 'SERVICE_TOKEN'")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(loop.managers.tools, "snapshot_workspace", refused)
+        await loop.say(session_id, "Change it.")
+        loop.anthropic.add(reply(call("scribble", q="written since")), reply(said("Changed.")))
+        assert (await loop.loops.run(loop.owner, session_id)).outcome is LoopOutcome.SUCCEEDED
+    assert session_id in twin.live, "no snapshot holds it, so its instance stays"
+    assert len(snapshots(await loop.history(session_id))) == 1
+
+    await loop.say(session_id, "Look again.")
+    loop.anthropic.add(reply(said("Seen.")))
+    assert (await loop.loops.run(loop.owner, session_id)).outcome is LoopOutcome.SUCCEEDED
+    assert twin.files[session_id] == b"written since"
+
+
 async def test_a_workspace_a_person_worked_in_by_hand_is_never_replaced_by_an_older_snapshot(
     tmp_path: Path,
 ) -> None:
