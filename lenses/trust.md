@@ -119,9 +119,10 @@ and `scaffold/acme_root/om/src/acme/om/attribution/impl/manager.py`
 
 **Principle.** Content has two trust tiers, and the renderer keeps them
 apart. Instructions are the agent kind's prompts and the engine's
-notices; a principal's messages through a product surface; and, for a
-child, its parent's objective and messages, under the authority its
-spawn was granted. Everything else is data: tool output, external
+notices; a principal's messages through a product surface, and the
+standing text a principal pins on a session; and, for a child, its
+parent's objective and messages, under the authority its spawn was
+granted. Everything else is data: tool output, external
 events, documents, attachments, recalled knowledge, third-party tool
 descriptions, summaries of the window, and a child's report to its
 parent. Data renders in the provider's native result blocks, quoted,

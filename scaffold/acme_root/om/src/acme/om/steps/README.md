@@ -14,7 +14,9 @@ This is one of the kinds of thing [Acme is made of](../../../../README.md).
   compact, approve, deny, unlock, restore), a model's request and
   response, a tool's request and response, a summary, the marks of a
   loop's life: parked, resumed, ended, switched, and the world changed,
-  and a snapshot of the workspace the session holds.
+  and a snapshot of the workspace the session holds. A switch of the
+  session's standing text arrives through the inbox, as an input does,
+  and holds the text as its content.
 - **Actor and origin**: who produced the step (a person, a program, an
   agent, the model, the engine, or something outside) and where it came
   in.

@@ -17,22 +17,27 @@ spends inside its limits, never whether a limit holds.
 
 **Principle.** The kind's prompts and its tool definitions, the two
 layers every request opens with, hold no value that differs per session,
-per person, or per tenant. Such a value renders after that stable
-prefix, in the places WIN-05 allows, so every session of a kind version
-shares one cached prefix until a load of a deferred toolset adds its
-tools after the rest. The order of the layers, and that the same steps
-render the same bytes, are WIN-01's.
+per person, or per tenant. Such a value renders after them, where WIN-05
+allows: in the system layer, only the standing text, after the kind's
+prompts. A cache breakpoint at the end of the prompts keeps them and the
+tools one cached prefix, which every session of a kind version shares,
+whatever text it pins, until a load of a deferred toolset adds its tools
+after the rest. Only sessions that pin the same text share the whole
+system layer. The order of the layers, and that the same steps render
+the same bytes, are WIN-01's.
 
 **Source.** Economy, What a Request Carries (One prefix per kind
 version); Context, Rendering.
 
 **Look for.** Where a kind's prompts and its tool definitions are built,
-and every value formatted into them.
+every value formatted into them, and where the cache breakpoints go.
 
 **Violation.** A kind prompt or a tool description filled with a
 session's objective, a person's or a tenant's name, or a record; a value
-of one session rendered above the pinned zone. (A time or a fresh id
-rendered into a request is WIN-01.)
+of one session rendered above the pinned zone, other than its standing
+text after the kind's prompts; a request with no cache breakpoint at the
+end of the kind's prompts, so sessions that pin different text share
+nothing. (A time or a fresh id rendered into a request is WIN-01.)
 
 **Severity.** medium
 

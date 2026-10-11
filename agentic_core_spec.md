@@ -162,6 +162,7 @@ flowchart LR
 | History | Every step of a session, append-only; the source of truth | [History](#history) |
 | Context window | The part of the history one model request reads, sized for its model | [Windows](#windows) |
 | Pinned zone | What every request carries through any compaction: objective, standing instructions | [The Pinned Zone](#the-pinned-zone) |
+| Standing text | A principal's instructions pinned on a session, whole in the system layer of every request | [Rendering](#rendering) |
 | Compaction | Eliding and summarizing old steps so the window fits | [Compaction](#compaction) |
 | Model role, fill | A task a call site names; the provider, model, and settings that serve it | [Roles and Fills](#roles-and-fills) |
 | Fill set | A session's versioned resolution of model roles to fills | [Fill Sets and Switches](#fill-sets-and-switches) |
@@ -269,7 +270,7 @@ ends in a step, marked truncated, holding what arrived.
 | Model | `model_request`, `model_response` | the engine | One pair per call, per model role. The response carries its stop reason and usage. |
 | Tool | `tool_request`, `tool_response` | the engine | The response carries a result or a failure class. |
 | Context | `summary` | the engine | Replaces a range for reading and starts the next main window |
-| Lifecycle | `parked`, `resumed`, `loop_ended`, `switched`, `environment_changed`, `snapshotted` | the engine | `switched` records a new fill set or kind version, or the tools a load added; `environment_changed` tells the model the world under it changed; `snapshotted` names a snapshot of its workspace the session holds. |
+| Lifecycle | `parked`, `resumed`, `loop_ended`, `switched`, `environment_changed`, `snapshotted` | the engine; a standing switch, the session's maker | `switched` records a new fill set or kind version, the tools a load added, or the session's standing text, which its maker pins through the inbox and which instructs; `environment_changed` tells the model the world under it changed; `snapshotted` names a snapshot of its workspace the session holds. |
 
 The type answers questions, so no caller compares strings:
 `is_tool_call()`, `is_model_call()`, `is_input()`, `is_summary()`.
@@ -469,7 +470,7 @@ is how the engine bridges the two.
 
 A model request is a pure, deterministic function of its inputs:
 
-    render(kind version, fill, pinned zone, window, new inputs) → request
+    render(kind version, standing text, fill, pinned zone, window, new inputs) → request
 
 The same steps render the same bytes, which keeps the prompt cache warm
 and makes replay possible ([Testing and
@@ -479,7 +480,7 @@ follows it:
 
 ```mermaid
 flowchart TB
-    A["1. Kind prompts, versioned"] --> B["2. Tool definitions, in a fixed order"]
+    A["1. Kind prompts, versioned, and the standing text"] --> B["2. Tool definitions, in a fixed order"]
     B --> C["3. Pinned zone, as of the latest summary"]
     C --> D["4. Latest summary"]
     D --> E["5. Window steps since the summary"]
@@ -488,10 +489,22 @@ flowchart TB
 
 The pinned zone changes only at a summary. Between summaries, a new
 standing instruction is simply a message in the window, and the plan's
-current value renders last, so neither invalidates the cached window. A
-rolling cache breakpoint sits on the last stable step, within the
-provider's limit on breakpoints. The `model_request` header records a
-hash of the rendered prompt, so a cache regression is a query.
+current value renders last, so neither invalidates the cached window.
+One cache breakpoint sits at the end of the kind's prompts, one at the
+end of the system layer, and a rolling one on the last stable step,
+within the provider's limit on breakpoints. The `model_request` header
+records a hash of the rendered prompt, so a cache regression is a query.
+
+A session's **standing text** is what a principal pins on it to hold for
+its whole life, such as an organization's manual for a kind. It renders
+in the system layer, after the kind's prompts, as an instruction: whole
+on every request, never cut by a compaction, and cached with the
+prompts. The session pins it when it is made, from whatever its maker
+sends. Only a recorded switch changes it: a `switched` step that holds
+the new text. A loop renders the text pinned before the input it began
+from, so a session's instructions never change under its work, and the
+same steps render the same bytes. Text past its bound is refused when it
+is pinned: it rides every request, and would crowd out the work.
 
 Data is rendered as data, in the provider's native result blocks, with
 delimiters escaped, quoted, and labelled with its origin ([Only a
@@ -546,7 +559,11 @@ fit a bound, and beyond it as a digest in which each item cites the
 message it came from. A summary of the window, which folds in data, is
 never a source of instructions and renders as data. The agent's **plan**,
 which it keeps through a plan tool, is not pinned: it renders last, as
-the agent's own notes ([Rendering](#rendering)).
+the agent's own notes ([Rendering](#rendering)). Nor is the session's
+standing text: the zone renders only from the first summary on, and cuts
+what is past its bound to excerpts, so a manual there would be missing
+before the first summary and cut after it. It renders whole in the
+system layer instead ([Rendering](#rendering)).
 
 *Example:* "Don't touch the retry settings" is a standing instruction.
 From the next summary on it sits in the pinned zone, however many
@@ -1190,9 +1207,9 @@ Each agent kind picks its **authority mode** for tool calls:
 Content has two trust tiers, and the renderer keeps them apart:
 
 - **Instructions:** the agent kind's prompts and the engine's notices; a
-  principal's messages through a product surface; and, for a child, its
-  parent's objective and messages, under the authority its spawn was
-  granted.
+  principal's messages through a product surface, and the standing text
+  a principal pins on a session; and, for a child, its parent's objective
+  and messages, under the authority its spawn was granted.
 - **Data:** everything else. Tool output, external events, documents,
   attachments, recalled knowledge, third-party tool descriptions,
   summaries of the window, and a child's report to its parent.
@@ -1269,7 +1286,8 @@ One loop serves many agents. An **agent kind** is a profile over it:
 
 A kind is versioned. A session pins its kind version as it pins its fill
 set; an upgrade happens at a loop boundary and is recorded as a
-`switched` step.
+`switched` step. It pins its standing text the same way
+([Rendering](#rendering)).
 
 ### Done Rules and the Result Gate
 
@@ -1573,8 +1591,13 @@ part the provider's cache can serve across sessions.
   definitions hold no value that differs per session, per person, or
   per tenant. Such a value renders after them, in the places
   [Rendering](#rendering) and [The Pinned Zone](#the-pinned-zone)
-  allow. So every session of a kind version shares one cached prefix
-  until a load of a deferred toolset adds its tools after the rest.
+  allow. The session's standing text is the one such value in the
+  system layer, after the kind's prompts and before the engine's notice
+  of what data is. A cache breakpoint at the end of the kind's prompts
+  makes the tools and the prompts one cached prefix, which every session
+  of a kind version shares, whatever standing text it pins, until a load
+  of a deferred toolset adds its tools after the rest. Only the sessions
+  that pin the same text share the whole system layer.
 - **A tool definition earns its weight.** A definition rides every
   request of every session of its kind. A kind registers the tools its
   loops use, and defers a toolset its loops seldom need

@@ -65,10 +65,11 @@ authority. The rest is read off the session and its
 
 - **Actor, principal, and spender are three answers.** No field stands
   for two of them.
-- **Only a principal instructs.** A person's message, and a parent
-  agent's message to its own sub-agent, are instructions, and so are the
-  engine's own notices, such as a nudge, which only the loop writes.
-  Everything else is data: read, quoted, and never obeyed.
+- **Only a principal instructs.** A person's message, a parent agent's
+  message to its own sub-agent, and the standing text a session's maker
+  pins on it through the inbox are instructions, and so are the engine's
+  own notices, such as a nudge, which only the loop writes. Everything
+  else is data: read, quoted, and never obeyed.
 - **The person who asked pays.**
 - **A permission taken away stops the next call.** A delegated call asks
   again every time, never once a conversation.

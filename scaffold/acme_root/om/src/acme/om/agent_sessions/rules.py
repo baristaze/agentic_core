@@ -56,7 +56,7 @@ from acme.om.steps.types.header import (
     ParkedHeader,
     ParkReason,
 )
-from acme.om.steps.types.step import Actor, Origin, Step, StepType
+from acme.om.steps.types.step import Actor, Origin, Step, StepType, switches_standing
 
 EVERY_PARK = frozenset(ParkReason)
 
@@ -123,9 +123,10 @@ def after_step(state: Projection, step: Step) -> Projection:
         return state
     if isinstance(header, ParkedHeader):
         return replace(state, status=SessionStatus.PARKED, park=header.park)
-    if step.type is StepType.SNAPSHOTTED:
-        # Taken whenever its caller takes one, a loop's end included: it
-        # says nothing of a run.
+    if step.type is StepType.SNAPSHOTTED or switches_standing(step):
+        # Taken whenever its caller takes one, a loop's end included, or
+        # pinned by the session's maker through the inbox: it says nothing
+        # of a run.
         return state
     if isinstance(header, LoopEndedHeader):
         waiting = state.pending_input is not None and header.outcome not in STOPPED

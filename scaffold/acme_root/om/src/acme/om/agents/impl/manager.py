@@ -21,7 +21,7 @@ from acme.om.agents.rules import (
 from acme.om.agents.storage import AgentStorageInterface
 from acme.om.agents.types.kind import AgentKind, AgentKindCatalog
 from acme.om.agents.types.report import Report
-from acme.om.agents.types.request import Handoff, Spawn, Start
+from acme.om.agents.types.request import Handoff, Spawn, Start, SwitchStanding
 from acme.om.agents.types.result import Result, Verdict
 from acme.om.agents.types.tree import AgentTree
 from acme.om.attribution import AttributionManagerInterface
@@ -34,6 +34,7 @@ from acme.om.exceptions import NotAuthorized, NotFound, TreeBoundReached, Valida
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.types.row import OutboxRow, versioned_row
 from acme.om.steps import StepsManagerInterface
+from acme.om.steps.rules import standing_step
 from acme.om.steps.types.content import Content, TextBlock
 from acme.om.steps.types.header import (
     ControlCommand,
@@ -104,7 +105,18 @@ class AgentsManagerImpl(AgentsManagerInterface):
         session = self._session(ctx, kind, start.id, start.title, start.participants)
         created = await self._sessions.create_session(ctx, session)
         await self._open(ctx, created)
+        standing = self._standing(ctx, created, start.standing)
+        if standing:
+            await self._steps.append_inputs(ctx, created.id, standing)
         return created
+
+    async def switch_standing(
+        self, ctx: TenantContext, session_id: UUID, switch: SwitchStanding
+    ) -> Step:
+        ctx.require(Permission.WRITE)
+        step = standing_step(switch.id, self._clock(), session_id, ctx, switch.standing)
+        (stored,), _ = await self._sessions.receive(ctx, session_id, [step])
+        return stored
 
     async def require_instructor(self, ctx: TenantContext, session_id: UUID) -> None:
         ctx.require(Permission.WRITE)
@@ -189,6 +201,8 @@ class AgentsManagerImpl(AgentsManagerInterface):
                 header=ControlHeader(command=ControlCommand.RESTORE, snapshot=copy),
             )
             arrivals = [restore, objective]
+        # Its standing text first: it is pinned before anything wakes it.
+        arrivals = [*self._standing(ctx, child, spawn.standing), *arrivals]
         # Through the inbox: the projection that turns the child pending
         # asks for its loop's run.
         _, child = await self._sessions.receive(ctx, child.id, arrivals)
@@ -328,7 +342,8 @@ class AgentsManagerImpl(AgentsManagerInterface):
             waking=False,
             untrusted=session.untrusted,
         )
-        await self._steps.append_inputs(ctx, session.id, [objective])
+        standing = self._standing(ctx, session, handoff.standing)
+        await self._steps.append_inputs(ctx, session.id, [*standing, objective])
         return session
 
     async def judge_result(self, ctx: TenantContext, session_id: UUID, result: Result) -> Verdict:
@@ -392,6 +407,14 @@ class AgentsManagerImpl(AgentsManagerInterface):
             root_id=session_id,
             handed_off_from=handed_off_from,
         )
+
+    def _standing(self, ctx: TenantContext, session: AgentSession, text: str) -> list[Step]:
+        """The standing text a session pins when it is made, under an id its
+        making derives, so a retry pins the one it pinned: none for none."""
+        if not text:
+            return []
+        step_id = derived_id(session.id, session.created_at, "standing")
+        return [standing_step(step_id, self._clock(), session.id, ctx, text)]
 
     async def _open(self, ctx: TenantContext, session: AgentSession) -> SessionAuthority:
         """The session's authority, in the mode of the kind version it
