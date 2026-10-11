@@ -270,7 +270,7 @@ ends in a step, marked truncated, holding what arrived.
 | Model | `model_request`, `model_response` | the engine | One pair per call, per model role. The response carries its stop reason and usage. |
 | Tool | `tool_request`, `tool_response` | the engine | The response carries a result or a failure class. |
 | Context | `summary` | the engine | Replaces a range for reading and starts the next main window |
-| Lifecycle | `parked`, `resumed`, `loop_ended`, `switched`, `environment_changed`, `snapshotted` | the engine | `switched` records a new fill set or kind version, or the tools a load added; `environment_changed` tells the model the world under it changed; `snapshotted` names a snapshot of its workspace the session holds. |
+| Lifecycle | `parked`, `resumed`, `loop_ended`, `switched`, `environment_changed`, `snapshotted` | the engine; a standing switch, the session's maker | `switched` records a new fill set or kind version, the tools a load added, or the session's standing text, which its maker pins through the inbox and which instructs; `environment_changed` tells the model the world under it changed; `snapshotted` names a snapshot of its workspace the session holds. |
 
 The type answers questions, so no caller compares strings:
 `is_tool_call()`, `is_model_call()`, `is_input()`, `is_summary()`.

@@ -109,8 +109,9 @@ Role = Literal["user", "assistant"]
 def is_instruction(step: Step) -> bool:
     """Whether an input renders as an instruction, as attribution's one rule
     of the two tiers says: a principal's message, a parent's message to its
-    child, and the engine's notice that the world changed. Everything else
-    is data."""
+    child, the standing text the session's maker pinned through the inbox,
+    and the engine's notices, a nudge and the notice that the world changed.
+    Everything else is data."""
     return trust_of(step) is Trust.INSTRUCTION
 
 
