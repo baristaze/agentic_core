@@ -19,6 +19,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -308,15 +309,15 @@ async def test_a_changed_definition_is_refused_with_its_reason_until_its_pin_mov
 # The credential reaches the server, and nothing else.
 
 
-@pytest.fixture
-def engine_log(capsys: pytest.CaptureFixture[str]) -> Iterator[io.StringIO]:
+@contextmanager
+def logged(*, json_logs: bool) -> Iterator[io.StringIO]:
     """Every line the engine's logging writes, configured as a process
-    configures it, at its most verbose, in the text format, which writes an
-    exception whole."""
+    configures it, at its most verbose. The text format writes an exception
+    whole."""
     root = logging.getLogger()
     kept = (list(root.handlers), root.level)
     levels = {name: logging.getLogger(name).level for name in logging.root.manager.loggerDict}
-    configure_logging("DEBUG", json_logs=False)
+    configure_logging("DEBUG", json_logs=json_logs)
     written = io.StringIO()
     for handler in root.handlers:
         assert isinstance(handler, logging.StreamHandler)
@@ -331,6 +332,12 @@ def engine_log(capsys: pytest.CaptureFixture[str]) -> Iterator[io.StringIO]:
         root.setLevel(kept[1])
         for name, level in levels.items():
             logging.getLogger(name).setLevel(level)
+
+
+@pytest.fixture
+def engine_log(capsys: pytest.CaptureFixture[str]) -> Iterator[io.StringIO]:
+    with logged(json_logs=False) as written:
+        yield written
 
 
 def leaks(text: str) -> bool:
@@ -370,16 +377,35 @@ async def test_the_credential_reaches_no_step_no_log_line_and_no_definition(
     assert not leaks(engine_log.getvalue())
 
 
+@pytest.mark.parametrize("json_logs", [False, True], ids=["text", "json"])
+async def test_a_notification_the_sdk_cannot_read_writes_no_line_to_the_log(
+    tmp_path: Path, json_logs: bool, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The server sends a log notification with no level, its data the
+    # credential: the SDK cannot read it, and its line about it quotes it.
+    with logged(json_logs=json_logs) as written:
+        at = await engine(tmp_path, garbage("stdio", {}, SECRET, variant="leaky"))
+        with pytest.raises(McpServerFailed):
+            await at.servers.tools(bindings({}), org_id=at.ctx.org_id)
+        logging.getLogger("acme.om.tools").debug("probe")
+    lines = written.getvalue().splitlines()
+    assert any("probe" in line for line in lines), "the engine's log is read"
+    assert [line for line in lines if "probe" not in line] == []
+
+
 # A server that hangs, or sends what is not JSON, is refused by the deadline.
 
 
-def garbage(transport: str, urls: Mapping[str, str], secret: str | None = None) -> McpServer:
+def garbage(
+    transport: str, urls: Mapping[str, str], secret: str | None = None, variant: str = ""
+) -> McpServer:
     if transport == "stdio":
         return McpServer(
             name="words",
             transport=McpStdio(
                 command=sys.executable,
                 args=(str(SERVER), "garbage"),
+                env=(("MCP_TEST_VARIANT", variant),),
                 credential_env="MCP_TEST_TOKEN" if secret else None,
             ),
             secret=secret,

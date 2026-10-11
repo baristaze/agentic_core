@@ -250,12 +250,13 @@ would carry it. So they write from WARNING up, whatever the level; the
 request's own breadcrumb keeps its method, its status, and its URL's scheme
 and host (`outgoing_breadcrumb`)."""
 
-SILENT_LOGGERS = ("mcp",)
-"""Loggers that write nothing. The MCP SDK's writes what a server sent it, at
-every level up to an error: a message it received, a line it could not
-parse. A server's answer may carry the credential the call sent it, so the
-SDK's line could too; the MCP client says what failed in its own words,
-redacted (ADR 1034)."""
+SILENT_LOGGERS = ("mcp", "client")
+"""Loggers that write nothing: the MCP SDK's, `mcp` and the `client` its
+client session writes to. They write what a server sent, at every level up
+to an error: a message received, a line or a notification they could not
+read, with the server's text quoted in the exception. A server's answer may
+carry the credential the call sent it, so the SDK's line could too; the MCP
+client says what failed in its own words, redacted (ADR 1034)."""
 
 
 def configure_logging(level: str, json_logs: bool) -> None:

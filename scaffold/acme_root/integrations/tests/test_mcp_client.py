@@ -3,18 +3,25 @@ credential may go, and what an HTTP server's refusal is. A refused
 credential, a 429, and a server error are unavailable, so work waits for
 them; any other refusal is the request's (ADR 0051). The credential is
 named, never its value. The tools over a real server are the object
-model's tests (`test_tools_mcp_servers.py`)."""
+model's tests (`test_tools_mcp_servers.py`). Each logger the SDK writes
+to writes nothing, since its lines quote what a server sent."""
 
+import re
+import sys
 import threading
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
+import mcp
+import mcp_types
 import pytest
 from pydantic import SecretStr, ValidationError
 
 from acme.infra.base import utcnow
+from acme.infra.observability import SILENT_LOGGERS
 from acme.integrations.mcp import (
     McpHttp,
     McpServer,
@@ -115,3 +122,26 @@ async def test_a_server_that_does_not_start_is_unavailable_and_no_time_starts_no
         await McpClientSdkImpl().list_tools(server, None, deadline=utcnow() + timedelta(seconds=10))
     with pytest.raises(TimeoutError):
         await McpClientSdkImpl().list_tools(server, None, deadline=utcnow() - timedelta(seconds=1))
+
+
+LOGGER_NAMED = re.compile(r"get_?[lL]ogger\(\s*[\"']([^\"']+)[\"']")
+
+
+def test_each_logger_the_sdk_writes_to_writes_nothing() -> None:
+    """The SDK's modules the client loads write to `mcp` and its children,
+    and to any logger they name themselves. Read from the installed
+    package, so a version that names another fails here. Its command-line
+    entry points name others, and the engine never loads them."""
+    named: dict[str, str] = {}
+    for package in (mcp, mcp_types):
+        root = Path(package.__file__).parent
+        for source in root.rglob("*.py"):
+            parts = source.relative_to(root.parent).with_suffix("").parts
+            module = ".".join(parts[:-1] if parts[-1] == "__init__" else parts)
+            if module in sys.modules:
+                for name in LOGGER_NAMED.findall(source.read_text()):
+                    named[name] = module
+    assert named.get("client") == "mcp.client.session"
+    for name, module in named.items():
+        silent = any(name == each or name.startswith(f"{each}.") for each in SILENT_LOGGERS)
+        assert silent, f"{module} writes to the logger {name!r}"

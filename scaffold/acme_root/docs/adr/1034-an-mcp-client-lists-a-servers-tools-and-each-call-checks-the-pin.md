@@ -44,8 +44,9 @@ sends back, its listing, its answer, and its error's reason, is
 redacted of the value, in every form the transports redact, before it
 leaves the client. The client writes its errors in its own words, with
 no cause attached, since the SDK's text quotes the server. The SDK's own
-logger writes nothing (`SILENT_LOGGERS`), since it quotes what a server
-sent, and a stdio server's error stream is dropped. The SDK's HTTP
+loggers write nothing (`SILENT_LOGGERS`): `mcp`, and `client`, which its
+client session writes to. They quote what a server sent, and a stdio
+server's error stream is dropped. The SDK's HTTP
 client writes from WARNING up, as the other HTTP clients do.
 
 **The answer, as data.** A text part is passed on; an image, an audio

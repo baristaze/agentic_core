@@ -8,11 +8,15 @@ streamable HTTP on a port they name:
 
 `MCP_TEST_VARIANT=changed` changes `lookup`'s description, as a server's
 update would; `MCP_TEST_VARIANT=leaky` writes the credential into
-`whoami`'s description. Over stdio the credential is `MCP_TEST_TOKEN`, which
-`garbage` writes into each line; over HTTP, the `Authorization` header."""
+`whoami`'s description, and makes `garbage` send first a log notification
+with no level, which the SDK cannot read, its data quoting the credential.
+Over stdio the credential is `MCP_TEST_TOKEN`, which `garbage` writes into
+each line; over HTTP, the `Authorization` header."""
 
+import json
 import os
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import anyio
@@ -78,6 +82,10 @@ def main(mode: str, *args: str) -> None:
         server.run("streamable-http", host="127.0.0.1", port=int(args[0]))
     elif mode == "garbage":
         for _ in sys.stdin:
+            if VARIANT == "leaky":
+                unreadable = {"method": "notifications/message", "params": {"data": TOKEN}}
+                print(json.dumps({"jsonrpc": "2.0", **unreadable}), flush=True)
+                time.sleep(0.2)  # the client reads it before the line that ends the exchange
             print(f"{{not json, {TOKEN}", flush=True)
     elif mode == "http-garbage":
         ThreadingHTTPServer(("127.0.0.1", int(args[0])), Garbage).serve_forever()
