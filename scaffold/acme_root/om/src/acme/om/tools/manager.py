@@ -115,10 +115,12 @@ class ToolsManagerInterface(ABC):
     ) -> WorkspaceSnapshot:
         """The child's own copy of its parent's workspace as the spawning
         call took it (`ToolRuntime.snapshot`): sealed under the child's key
-        and stored as the child's under `snapshot_id`, so neither purge nor
-        revocation of one session reaches the other. It names the parent's
-        workspace as the one it came from. `SnapshotRefused` when the child
-        keeps no content at rest."""
+        and stored as the child's under `snapshot_id`, with what its
+        provider keeps outside the archive, such as a disk, copied under the
+        child's workspace, so neither purge nor revocation of one session
+        reaches the other. What the parent did not keep as its own goes once
+        the copy is kept. It names the parent's workspace as the one it came
+        from. `SnapshotRefused` when the child keeps no content at rest."""
         ...
 
     @abstractmethod
@@ -274,6 +276,16 @@ class ToolsManagerInterface(ABC):
         there ended, and every snapshot kept of it. For no principal. A
         process with no workspace provider or transport holds none of it,
         and removes nothing."""
+        ...
+
+    @abstractmethod
+    async def erase_snapshots(self, ctx: TenantContext, session_id: UUID) -> None:
+        """What the session's snapshots keep outside their sealed archives,
+        such as a VM's disks, destroyed with the revocation of its key,
+        which leaves every archive noise. A copy kept for another session,
+        such as a fork's, is that session's and stays, and so does the
+        workspace itself, a cache. A process with no workspace provider
+        keeps none of it."""
         ...
 
     @abstractmethod

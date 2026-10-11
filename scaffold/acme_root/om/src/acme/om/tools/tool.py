@@ -46,10 +46,13 @@ class TakenSnapshot:
     """A live workspace taken whole for a sub-agent to start from, held in
     memory until the child is made: the provider's archive, its
     credentials taken back and scanned for every injected secret's value,
-    and the workspace it came from."""
+    the workspace it came from, and whether that workspace keeps it as its
+    own snapshot too. What one that does not keep it holds outside the
+    archive, such as a disk, goes once the child's copy is kept."""
 
     workspace_id: UUID
     archive: bytes = field(repr=False)
+    kept: bool = False
 
 
 TakeSnapshot = Callable[[], Awaitable[TakenSnapshot]]

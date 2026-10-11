@@ -418,6 +418,10 @@ def build_managers(
         tenancy,
         outbox,
         PrivacyOptions(),
+        # What the tools keep of a session outside its seal goes with its
+        # key. They are built below on this manager, so the edge is bound at
+        # call time.
+        revoked=lambda ctx, session_id: managers.tools.erase_snapshots(ctx, session_id),
     )
     # The gate reads the budgets of a call's scopes and holds on the ledger.
     budgets = BudgetsManagerImpl(

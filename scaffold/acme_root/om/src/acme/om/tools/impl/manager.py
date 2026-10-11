@@ -275,9 +275,20 @@ class ToolsManagerImpl(ToolsManagerInterface):
         self, ctx: TenantContext, child_id: UUID, snapshot_id: UUID, taken: TakenSnapshot
     ) -> WorkspaceSnapshot:
         ctx.require(Permission.WRITE)
-        return await self._snapshots.keep(
-            ctx, child_id, snapshot_id, taken.workspace_id, taken.archive
-        )
+        # The child's own copy: what the provider keeps outside the archive,
+        # such as a disk, is copied under the child's workspace, so neither
+        # session's purge nor revocation reaches the other's.
+        copy = await self._workspaces.keep(taken.archive, ctx.org_id, child_id)
+        try:
+            kept = await self._snapshots.keep(ctx, child_id, snapshot_id, taken.workspace_id, copy)
+        except BaseException:
+            await self._workspaces.discard(copy)
+            raise
+        if not taken.kept:
+            # A cache keeps nothing of what the spawn took: the child's copy
+            # holds it all.
+            await self._workspaces.discard(taken.archive)
+        return kept
 
     async def find_snapshot(
         self, ctx: TenantContext, session_id: UUID, snapshot_id: UUID
@@ -300,7 +311,13 @@ class ToolsManagerImpl(ToolsManagerInterface):
         await self._snapshots.at_rest(ctx, session_id)
         await self._broker.detach_all(workspace)
         archive = await self._workspaces.snapshot(workspace)
-        await self._snapshots.scan(ctx, archive)
+        try:
+            await self._snapshots.scan(ctx, self._workspaces.held(archive))
+        except BaseException:
+            # Refused, so nothing of it stays: a disk its provider keeps
+            # apart, one that holds a secret's value included, goes too.
+            await self._workspaces.discard(archive)
+            raise
         return archive
 
     async def _name(
@@ -315,7 +332,12 @@ class ToolsManagerImpl(ToolsManagerInterface):
     ) -> Step:
         """`archive` kept as the session's snapshot, and the `snapshotted`
         step that names it, appended under the run's epoch."""
-        kept = await self._snapshots.keep(ctx, session_id, new_id(), workspace.id, archive)
+        try:
+            kept = await self._snapshots.keep(ctx, session_id, new_id(), workspace.id, archive)
+        except BaseException:
+            # Not kept, so nothing of it stays, a disk kept apart included.
+            await self._workspaces.discard(archive)
+            raise
         step = snapshotted_step(new_id(), self._clock(), session_id, loop_id, kept)
         (stored,) = await self._steps.append_steps(ctx, session_id, epoch, [step])
         return stored
@@ -329,11 +351,12 @@ class ToolsManagerImpl(ToolsManagerInterface):
         from; a cache keeps nothing, and the child alone keeps it."""
         session_id = request.session_id
         archive = await self._take(ctx, session_id, workspace)
-        if workspace.spec.durability is Durability.SNAPSHOT:
+        kept = workspace.spec.durability is Durability.SNAPSHOT
+        if kept:
             await self._name(
                 ctx, session_id, workspace, archive, epoch=epoch, loop_id=request.loop_id
             )
-        return TakenSnapshot(workspace_id=workspace.id, archive=archive)
+        return TakenSnapshot(workspace_id=workspace.id, archive=archive, kept=kept)
 
     # A call.
 
@@ -640,6 +663,12 @@ class ToolsManagerImpl(ToolsManagerInterface):
         await self._workspaces.purge(org_id, session_id)
         await self._transport.purge_records(session_id)
         await self._snapshots.purge(org_id, session_id)
+
+    async def erase_snapshots(self, ctx: TenantContext, session_id: UUID) -> None:
+        ctx.require(Permission.WRITE)
+        # A session's workspace is prepared under the session's id, and its
+        # snapshots are kept under it.
+        await self._workspaces.erase_snapshots(ctx.org_id, session_id)
 
     async def purge_tenant(self, ctx: TenantContext) -> int:
         ctx.require(Permission.WRITE)

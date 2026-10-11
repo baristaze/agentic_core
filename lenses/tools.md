@@ -416,14 +416,14 @@ environment with no
 
 **Principle.** A provider that can snapshots a workspace whole: all its
 commands could write. One that cannot refuses a snapshot, and a spec
-that asks for one, before anything runs. The run that holds a
-`snapshot` workspace snapshots it at its end, and lets the instance go
-only once a snapshot holds it. A snapshot is sealed under its session's
-key, stored under a keyed hash, and named by a `snapshotted` step. A
-restore trusts its bytes only by that hash, and replaces the workspace
-whole; one that cannot load parks the loop once. The broker detaches its
-credentials first, and an injected secret's value refuses a snapshot. A
-fork copies its parent's workspace at the spawn.
+asking for one, before anything runs. The run that holds a `snapshot`
+workspace snapshots it at its end, and lets the instance go only once a
+snapshot holds it. A snapshot, or a VM disk's name, is sealed under its
+session's key, stored under a keyed hash, and named by a `snapshotted`
+step. A restore trusts its bytes only by that hash, and replaces the
+workspace whole; one that cannot load parks the loop once. The broker
+detaches its credentials first; an injected secret's value refuses a
+snapshot. A fork copies its parent's workspace at the spawn.
 
 **Source.** Workspace Snapshots.
 
@@ -432,7 +432,8 @@ the loop takes one at a run's end and what the next run starts from;
 where the hash is held to the step's and the broker's credentials
 detached; what a restore that cannot load does after a person's unlock;
 where a fork takes its parent's workspace and the copy it makes, and
-what a purge removes.
+what a purge and a key's revocation remove; for a VM, the digest its
+disk is held to, its store's encryption at rest, and what the scan reads.
 
 **Violation.** A snapshot of part of what the commands wrote, such as a
 host directory kept as if whole, or a released container's volume on a
@@ -443,7 +444,9 @@ unlock; a credential or an injected secret's value in a kept snapshot; a
 fork that starts from a snapshot older than its spawn, or takes a slot
 or makes a child before its snapshot is taken; a cache that keeps a
 fork's snapshot as its own; a copy of a session that keeps no content at
-rest; or a child whose writes reach its parent's workspace.
+rest; a child whose writes reach its parent's workspace; or a VM's disk
+the scan never reads, one kept in a store not encrypted at rest, or one
+a revocation of its session's key leaves.
 
 **Severity.** high
 

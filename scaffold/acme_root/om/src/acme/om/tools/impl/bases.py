@@ -17,8 +17,8 @@ builds again."""
 
 import hashlib
 import json
-from collections.abc import Awaitable, Callable
-from datetime import datetime, timedelta
+from collections.abc import AsyncIterable, Awaitable, Callable
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from acme.infra.buckets import BlobNotFound, Buckets, BucketsInterface
@@ -34,7 +34,7 @@ from acme.infra.workspaces import (
     WorkspaceBase,
     WorkspaceProviderInterface,
 )
-from acme.om.base import new_id
+from acme.om.base import derived_id, new_id
 from acme.om.context import TenantContext
 
 BUCKET = Buckets.SNAPSHOTS
@@ -43,9 +43,9 @@ PREFIX = "workspace-bases/"
 """Where a tenant's bases sit in the bucket, apart from its sessions'
 snapshots."""
 
-Scan = Callable[[TenantContext, bytes], Awaitable[None]]
-"""Refuses an archive that holds the value of a secret a tool may be given
-(`SnapshotRefused`)."""
+Scan = Callable[[TenantContext, AsyncIterable[bytes]], Awaitable[None]]
+"""Refuses a snapshot whose bytes, as its provider reads them, hold the
+value of a secret a tool may be given (`SnapshotRefused`)."""
 
 
 def base_key(spec: IsolationSpec) -> str:
@@ -56,6 +56,19 @@ def base_key(spec: IsolationSpec) -> str:
         named["base"] = spec.base.model_dump(mode="json")
     digest = hashlib.sha256(json.dumps(named, sort_keys=True).encode()).hexdigest()
     return PREFIX + digest
+
+
+KEPT_AT = datetime(1970, 1, 1, tzinfo=UTC)
+"""A base's workspace holds no time of its own: its id is its tenant's and
+its key's alone."""
+
+
+def base_workspace_id(org_id: UUID, key: str) -> UUID:
+    """The workspace a provider keeps a base's snapshot under, when it keeps
+    one outside the archive, such as a disk: the tenant's and the key's
+    alone, so every build, the base's drop, and the tenant's purge find the
+    same one."""
+    return derived_id(org_id, KEPT_AT, key)
 
 
 async def _unkept(data: bytes) -> None:
@@ -117,14 +130,18 @@ class WorkspaceBases:
         return kept
 
     async def drop(self, ctx: TenantContext, spec: IsolationSpec) -> None:
-        """The base `spec` names removed, so the next prepare builds it
-        again."""
-        await self._buckets.delete(ctx.org_id, BUCKET, base_key(spec))
+        """The base `spec` names removed, what its provider keeps of it
+        first, so the next prepare builds it again."""
+        key = base_key(spec)
+        await self._workspaces.purge(ctx.org_id, base_workspace_id(ctx.org_id, key))
+        await self._buckets.delete(ctx.org_id, BUCKET, key)
 
     async def purge(self, org_id: UUID) -> int:
-        """A page of the tenant's bases removed; how many went."""
+        """A page of the tenant's bases removed, what their provider keeps of
+        each first; how many went."""
         keys = await self._buckets.list(org_id, BUCKET, PREFIX, self._purge_batch)
         for key in keys:
+            await self._workspaces.purge(org_id, base_workspace_id(org_id, key))
             await self._buckets.delete(org_id, BUCKET, key)
         return len(keys)
 
@@ -144,6 +161,7 @@ class WorkspaceBases:
             }
         )
         build_id = new_id()
+        kept_under = base_workspace_id(ctx.org_id, base_key(spec))
         deadline = self._clock() + self._build_limit
         try:
             workspace = await self._workspaces.prepare(
@@ -159,13 +177,17 @@ class WorkspaceBases:
                 )
                 if ran.exit_code != 0:
                     raise BaseSetupFailed(index, command, ran.exit_code)
-            archive = await self._workspaces.snapshot(workspace)
+            taken = await self._workspaces.snapshot(workspace)
+            # Kept under the base's own workspace, so the build's purge
+            # leaves what the provider keeps outside the archive.
+            archive = await self._workspaces.keep(taken, ctx.org_id, kept_under)
         finally:
             await self._workspaces.purge(ctx.org_id, build_id)
             await self._transport.purge_records(build_id)
         try:
-            await self._scan(ctx, archive)
+            await self._scan(ctx, self._workspaces.held(archive))
         except InfraException as refused:
+            await self._workspaces.purge(ctx.org_id, kept_under)
             if refused.code != SnapshotRefused.code:
                 raise
             raise IsolationRefused(

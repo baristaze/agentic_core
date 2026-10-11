@@ -38,8 +38,10 @@ of](../../../../README.md).
   becomes unreadable and the shape stays: every step keeps its place,
   its type, and its cost, and reads as absent. An artifact keeps its
   record, and its text is noise. A command's record still says how it
-  ended, and what it printed is noise. It cannot be undone, and
-  the session takes no content again.
+  ended, and what it printed is noise. What the session's snapshots
+  keep outside the seal, a VM's disks, is destroyed with the key; a
+  fork's copy is its child's, and stays. It cannot be undone, and the
+  session takes no content again.
 - **Rotate the tenant's key.** Each version is wrapped again under the
   new one. No content is read or rewritten.
 - **Purge.** A deleted tenant's records and keys go with the tenant.
@@ -70,7 +72,9 @@ form (`impl/blobs.py`) through `impl/records.py`, which the root wires
 behind the tools' `RecordSealInterface`; each call binds it to its session
 and key as the transport's `RecordSeal`. A data key is in the clear only
 inside `impl/keys.py`. Revocation is
-`PrivacyStorageInterface.revoke`, one commit (ADR 1004).
+`PrivacyStorageInterface.revoke`, one commit (ADR 1004); the root binds
+the manager's `revoked` to the tools' `erase_snapshots`, which destroys
+what a session's snapshots keep outside the seal.
 -->
 
 ## How another namespace composes it

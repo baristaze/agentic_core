@@ -1,6 +1,8 @@
 """The transports, each over real processes in the workspace it serves: the
-local one over a directory on this host, and the container one over a
-container on the local Docker, which needs Docker and is skipped without it.
+local one over a directory on this host, the container one over a
+container on the local Docker, which needs Docker and is skipped without it,
+and the VM one over a machine of the machines' twin and, where this host
+runs Lima, over a machine on Lima, skipped without it.
 
 A secret injected into one process is redacted from everything it prints,
 raw, encoded, and escaped, before any of it streams or returns, and the
@@ -37,6 +39,8 @@ import pytest
 from acme.infra.base import new_id, utcnow
 from acme.infra.docker import DOCKER_VARIABLES
 from acme.infra.exceptions import InfraNotFound, InfraValidationFailed
+from acme.infra.machines.lima import MachinesLimaImpl, hypervisor
+from acme.infra.machines.twin import MachinesTwinImpl
 from acme.infra.secrets.local import SecretsLocalImpl
 from acme.infra.transports import (
     CapabilityMissing,
@@ -53,6 +57,7 @@ from acme.infra.transports.local import DEFAULT_PATH, TransportLocalImpl
 from acme.infra.transports.processes import DRAIN_SECONDS, GRACE_SECONDS
 from acme.infra.transports.redaction import forms, marker
 from acme.infra.transports.twin import RecordSealTwin, TransportNullImpl
+from acme.infra.transports.vm import TransportVmImpl
 from acme.infra.workspaces import (
     EgressMode,
     EgressPolicy,
@@ -65,6 +70,7 @@ from acme.infra.workspaces import (
 from acme.infra.workspaces.account import WorkspaceAccountImpl, switch_to
 from acme.infra.workspaces.container import WorkspaceContainerImpl
 from acme.infra.workspaces.host import WorkspaceHostImpl
+from acme.infra.workspaces.vm import WorkspaceVmImpl
 
 SECRET = 'tok-3f9A/b+c="q"\\9z-0123456789'
 TOKEN = SecretUse(name="api_token", via=SecretVia.INJECTED, env="API_TOKEN")
@@ -678,6 +684,98 @@ class TestTransportContainer(TransportContract):
         await provider.release(workspace)
         again = await provider.prepare(workspace.org_id, workspace.id, workspace.spec)
         assert await transport.read_file(again, "kept.txt", 10) == b"kept"
+
+
+VM = IsolationSpec(mode=IsolationMode.VM, egress=EgressPolicy(mode=EgressMode.OPEN))
+
+
+class TestTransportVmTwin(TransportContract):
+    """The VM transport over a machine of the machines' twin: a folder of this
+    host, its commands processes of this host run from it."""
+
+    @pytest.fixture
+    async def provided(self, tmp_path: Path) -> AsyncIterator[tuple[MachinesTwinImpl, Workspace]]:
+        machines = MachinesTwinImpl(tmp_path / "machines")
+        provider = WorkspaceVmImpl(machines, "twin", "acme-test-", timedelta(seconds=60))
+        workspace = await provider.prepare(new_id(), new_id(), VM)
+        yield machines, workspace
+        await provider.purge(workspace.org_id, workspace.id)
+
+    @pytest.fixture
+    def workspace(self, provided: tuple[MachinesTwinImpl, Workspace]) -> Workspace:
+        return provided[1]
+
+    @pytest.fixture
+    def transport(
+        self, records: Path, provided: tuple[MachinesTwinImpl, Workspace], broker: BrokerTwinImpl
+    ) -> TransportInterface:
+        machines, workspace = provided
+        timeout = timedelta(seconds=60)
+        return TransportVmImpl(records, secrets_for(workspace.org_id), broker, machines, timeout)
+
+
+def lima_runs() -> bool:
+    return shutil.which("limactl") is not None and hypervisor() is None
+
+
+LIMA_TIMEOUT = timedelta(seconds=120)
+
+
+def on_lima() -> tuple[MachinesLimaImpl, WorkspaceVmImpl]:
+    machines = MachinesLimaImpl(LIMA_TIMEOUT, timedelta(minutes=15), encrypted=True)
+    prefix = os.environ.get("ACME_MACHINE_PREFIX", "acme-test-")
+    return machines, WorkspaceVmImpl(machines, "template:_images/ubuntu-lts", prefix, LIMA_TIMEOUT)
+
+
+@pytest.fixture(scope="module")
+def lima_start() -> Iterator[tuple[UUID, bytes]]:
+    """A machine booted once for the module, and the snapshot of it each case
+    starts a machine of its own from. Its calls run in a loop of their own,
+    as each is a process of its own."""
+    _, provider = on_lima()
+    workspace = asyncio.run(provider.prepare(new_id(), new_id(), VM))
+    try:
+        snapshot = asyncio.run(provider.snapshot(workspace))
+    except BaseException:
+        asyncio.run(provider.purge(workspace.org_id, workspace.id))
+        raise
+    yield workspace.org_id, snapshot
+    asyncio.run(provider.purge(workspace.org_id, workspace.id))
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+@pytest.mark.skipif(not lima_runs(), reason="needs Lima and a hypervisor")
+class TestTransportVmLima(TransportContract):
+    """The VM transport in a machine on Lima: each case its own, a copy of the
+    one the module booted, named under `ACME_MACHINE_PREFIX`, and destroyed
+    at its end."""
+
+    @pytest.fixture
+    async def provided(
+        self, lima_start: tuple[UUID, bytes]
+    ) -> AsyncIterator[tuple[MachinesLimaImpl, Workspace]]:
+        machines, provider = on_lima()
+        org_id, snapshot = lima_start
+        workspace_id = new_id()
+        copy = await provider.keep(snapshot, org_id, workspace_id)
+        try:
+            workspace = await provider.prepare(org_id, workspace_id, VM, snapshot=copy)
+            yield machines, workspace
+        finally:
+            await provider.purge(org_id, workspace_id)
+
+    @pytest.fixture
+    def workspace(self, provided: tuple[MachinesLimaImpl, Workspace]) -> Workspace:
+        return provided[1]
+
+    @pytest.fixture
+    def transport(
+        self, records: Path, provided: tuple[MachinesLimaImpl, Workspace], broker: BrokerTwinImpl
+    ) -> TransportInterface:
+        machines, workspace = provided
+        secrets = secrets_for(workspace.org_id)
+        return TransportVmImpl(records, secrets, broker, machines, LIMA_TIMEOUT)
 
 
 def test_a_secret_in_the_base64_of_a_basic_header_is_one_of_the_forms() -> None:
