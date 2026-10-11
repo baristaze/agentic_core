@@ -41,7 +41,13 @@ variables alone, so nothing of the engine's environment reaches a
 guest. A deployed process refuses Lima at boot.
 
 **One machine per workspace.** The VM provider names a workspace's
-machine by its id, under a prefix the operator sets. Its folder is
+machine by 64 bits of a hash of its id, under a prefix the operator
+sets, and each snapshot kept under it by that name and a tag. Lima keeps
+a socket in each machine's folder, and refuses a machine whose path to
+it reaches the host's bound, 104 characters on macOS. So a name is
+short, the prefix holds a project's name and no more, and Lima's probe
+refuses a Lima home too deep for the longest name, with the reason,
+before any machine starts. Its folder is
 `/workspace`, where commands start and which is their home. Its
 commands hold the guest whole, its root through Docker and `sudo`: the
 machine is the wall, so a base's setup holds nothing more than a

@@ -280,9 +280,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         # session's purge nor revocation reaches the other's.
         copy = await self._workspaces.keep(taken.archive, ctx.org_id, child_id)
         try:
-            kept = await self._snapshots.keep(
-                ctx, child_id, snapshot_id, taken.workspace_id, copy
-            )
+            kept = await self._snapshots.keep(ctx, child_id, snapshot_id, taken.workspace_id, copy)
         except BaseException:
             await self._workspaces.discard(copy)
             raise

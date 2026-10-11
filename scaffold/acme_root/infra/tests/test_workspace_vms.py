@@ -24,11 +24,20 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
+from annotated_types import MaxLen
 
 from acme.infra.base import new_id, utcnow
 from acme.infra.exceptions import InfraValidationFailed
+from acme.infra.impl.settings import InfraSettings
 from acme.infra.machines import MachineReply, MachineSpec, MachineState
-from acme.infra.machines.lima import MachinesLimaImpl, hypervisor, lima_environment, template
+from acme.infra.machines.lima import (
+    SOCKET,
+    MachinesLimaImpl,
+    hypervisor,
+    lima_environment,
+    name_refused,
+    template,
+)
 from acme.infra.machines.twin import MachinesNullImpl, MachinesTwinImpl
 from acme.infra.secrets.local import SecretsLocalImpl
 from acme.infra.transports import CommandSpec, TransportInterface, secret_held
@@ -49,7 +58,7 @@ from acme.infra.workspaces import (
     WorkspaceLost,
     WorkspaceProviderInterface,
 )
-from acme.infra.workspaces.vm import WorkspaceVmImpl, machine_name
+from acme.infra.workspaces.vm import WorkspaceVmImpl, longest_name, machine_name
 
 PREFIX = "acme-test-"
 ENGINE_CREDENTIAL = "ACME_DATABASE_URL"
@@ -336,6 +345,48 @@ async def test_lima_with_no_hypervisor_refuses_before_any_machine_command() -> N
         await provider.prepare(new_id(), new_id(), vm())
 
     assert fake.calls == [("--version",)], "only the probe ran"
+
+
+def longest_prefix() -> str:
+    """The longest machine prefix the setting allows."""
+    field = InfraSettings.model_fields["machine_prefix"]
+    (bound,) = [rule.max_length for rule in field.metadata if isinstance(rule, MaxLen)]
+    prefix = "a" * (bound - 1) + "-"
+    assert InfraSettings(machine_prefix=prefix).machine_prefix == prefix
+    return prefix
+
+
+async def test_lima_names_fit_its_socket_path_or_its_probe_refuses_before_any_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Lima keeps a socket in each machine's folder, and refuses a machine
+    whose path to it reaches 104 characters on macOS. Under the longest
+    prefix the setting allows, a Lima home that fits keeps every machine's,
+    snapshot's, and copy's path under that bound. A home of 60 characters,
+    a long macOS short name's, does not fit: the probe refuses with the
+    reason before any command, and no machine starts."""
+    prefix = longest_prefix()
+    for depth in (18, 30, 60):
+        home = Path("/" + "h" * (depth - 1))
+        monkeypatch.setenv("LIMA_HOME", str(home))
+        monkeypatch.setattr("acme.infra.machines.lima.socket_bound", lambda: 104)
+        fake = FakeLima()
+        machines = lima(fake)
+        provider = WorkspaceVmImpl(machines, "template:x", prefix, TIMEOUT)
+        refused = name_refused(longest_name(prefix), home, 104)
+        if refused is None:
+            workspace = await provider.prepare(new_id(), new_id(), vm())
+            fake.instances = [{"name": workspace.location, "status": "Running", "dir": ""}]
+            unused = provider._unused  # pyright: ignore[reportPrivateUsage]
+            named = [workspace.location, *[await unused(workspace.id) for _ in range(20)]]
+            for name in named:
+                assert len(str(home / name / SOCKET)) < 104, (depth, name)
+            continue
+        assert depth == 60, f"a home of {depth} characters fits"
+        with pytest.raises(IsolationRefused, match="LIMA_HOME") as caught:
+            await provider.prepare(new_id(), new_id(), vm())
+        assert str(home) in caught.value.message
+        assert fake.calls == [], "the probe refused before any command"
 
 
 async def test_lima_refuses_no_egress_and_a_process_limit_before_it_is_called() -> None:

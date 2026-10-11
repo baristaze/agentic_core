@@ -1,12 +1,12 @@
 import hashlib
 import json
 import re
+import secrets
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import timedelta
 from uuid import UUID
 
-from acme.infra.base import new_id
 from acme.infra.exceptions import BackendFailed, InfraException
 from acme.infra.machines import MachinesInterface, MachineSpec, MachineState
 from acme.infra.workspaces import (
@@ -35,18 +35,33 @@ READY = (
 """The workspace's folder, made once, the guest user's: a machine's root is
 the guest's own, and its user may write only what it is given."""
 
-SNAPSHOT_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*[0-9a-f]{32}-[0-9a-f]{12}$")
+HASHED = 16
+"""Hex digits of a workspace's id in its machine's name: 64 bits of a hash
+of the id, so no two workspaces of one store share a name."""
+
+TAG = 8
+"""Hex digits that tell a workspace's snapshots apart."""
+
+SNAPSHOT_NAME = re.compile(rf"^[a-z0-9][a-z0-9-]*[0-9a-f]{{{HASHED}}}-[0-9a-f]{{{TAG}}}$")
 
 
 def machine_name(prefix: str, workspace_id: UUID) -> str:
-    """The machine of a workspace: one per workspace, under the prefix."""
-    return f"{prefix}{workspace_id.hex}"
+    """The machine of a workspace: one per workspace, under the prefix,
+    named by a hash of its id. A name is short, since a backend may keep a
+    socket under it, whose path the host bounds."""
+    return prefix + hashlib.sha256(workspace_id.bytes).hexdigest()[:HASHED]
 
 
 def snapshot_name(prefix: str, workspace_id: UUID, tag: str) -> str:
     """A snapshot kept under a workspace: its machine's name, then a tag, so
     the workspace's purge finds it by that name."""
     return f"{machine_name(prefix, workspace_id)}-{tag}"
+
+
+def longest_name(prefix: str) -> str:
+    """The longest name this provider gives the machines under `prefix`: a
+    snapshot's, which the machines' probe holds to what they can keep."""
+    return snapshot_name(prefix, UUID(int=0), "0" * TAG)
 
 
 @dataclass(frozen=True)
@@ -107,7 +122,7 @@ class WorkspaceVmImpl(WorkspaceProviderInterface):
             why = "a workspace on a base with setup starts from the base's snapshot alone"
         if why is not None:
             raise IsolationRefused(why)
-        missing = await self._machines.probe()
+        missing = await self._machines.probe(longest_name(self._prefix))
         if missing is not None:
             raise IsolationRefused(f"a vm workspace needs a machine: {missing}")
         name = machine_name(self._prefix, workspace_id)
@@ -137,9 +152,9 @@ class WorkspaceVmImpl(WorkspaceProviderInterface):
             raise SnapshotRefused(f"a vm workspace cannot be snapshotted: {unkept}")
         if await self._machines.state(name) is not MachineState.RUNNING:
             raise SnapshotRefused(f"workspace {workspace.id} holds no instance to snapshot")
+        to = await self._unused(workspace.id)
         await self._machines.stop(name)
         try:
-            to = snapshot_name(self._prefix, workspace.id, new_id().hex[:12])
             digest = await self._machines.snapshot(name, to)
         finally:
             # The workspace keeps its instance, whether the snapshot held.
@@ -154,7 +169,7 @@ class WorkspaceVmImpl(WorkspaceProviderInterface):
     async def keep(self, snapshot: bytes, org_id: UUID, workspace_id: UUID) -> bytes:
         kept = await self._held_to(snapshot, org_id)
         # Named by what it copies, so a copy asked again is the one made.
-        tag = hashlib.sha256(kept.name.encode()).hexdigest()[:12]
+        tag = hashlib.sha256(kept.name.encode()).hexdigest()[:TAG]
         to = snapshot_name(self._prefix, workspace_id, tag)
         digest = await self._machines.snapshot(kept.name, to)
         if digest != kept.digest:
@@ -182,6 +197,15 @@ class WorkspaceVmImpl(WorkspaceProviderInterface):
 
     async def close(self) -> None:
         return None
+
+    async def _unused(self, workspace_id: UUID) -> str:
+        """A name for a new snapshot of the workspace that no snapshot
+        stands under: the machines answer a name kept already as the
+        snapshot made, so a tag drawn twice would name an older disk."""
+        while True:
+            to = snapshot_name(self._prefix, workspace_id, secrets.token_hex(TAG // 2))
+            if await self._machines.state(to) is MachineState.ABSENT:
+                return to
 
     def _unkept(self) -> str | None:
         """Why a workspace here keeps no snapshot; None when it can."""

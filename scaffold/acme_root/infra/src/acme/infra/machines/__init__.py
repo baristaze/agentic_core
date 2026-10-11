@@ -5,7 +5,8 @@ and each snapshot has a name its caller chooses; a backend keeps them apart
 by that name alone.
 
 A backend says up front what it can hold: whether this host runs a machine
-at all (its `probe` of the hypervisor), the egress it enforces outside the
+at all, under names as long as its caller's (its `probe` of the hypervisor
+and of what a name may be), the egress it enforces outside the
 guest, the limits it enforces, and whether the store that keeps its
 snapshots is encrypted at rest. A caller refuses what a backend cannot hold
 before a machine starts, and never asks for less in its stead.
@@ -93,9 +94,10 @@ class SnapshotNotFound(InfraNotFound):
 
 class MachinesInterface(ABC):
     @abstractmethod
-    async def probe(self) -> str | None:
-        """Why this host runs no machine, such as a hypervisor it lacks or a
-        backend it cannot reach; None when it runs one."""
+    async def probe(self, longest: str) -> str | None:
+        """Why this host runs no machine, such as a hypervisor it lacks, a
+        backend it cannot reach, or a name as long as `longest`, the longest
+        its caller gives, that it cannot keep; None when it runs one."""
         ...
 
     @abstractmethod

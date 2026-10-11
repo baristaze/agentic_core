@@ -65,6 +65,11 @@ DISK = "disk"
 CHUNK = 8 << 20
 """How much of a disk is read at once."""
 
+SOCKET = "ssh.sock.1234567890123456"
+"""The longest socket Lima keeps in an instance's folder, as Lima measures
+it: an instance whose path to it reaches the host's bound on a socket's
+path is refused, a clone included."""
+
 
 def lima_environment() -> dict[str, str]:
     """The command line's environment: where it finds Lima, and nothing of
@@ -93,6 +98,33 @@ def hypervisor() -> str | None:
             return None
         return "this host has no /dev/kvm this process may open"
     return f"Lima runs no machine on {sys.platform}"
+
+
+def lima_home() -> Path:
+    """Where Lima keeps its instances, as Lima finds it: `LIMA_HOME`, else
+    `.lima` in the home, its links resolved once it stands."""
+    home = os.environ.get("LIMA_HOME") or os.path.join(os.path.expanduser("~"), ".lima")
+    return Path(os.path.realpath(home) if os.path.exists(home) else home)
+
+
+def socket_bound() -> int:
+    """The bound on a socket's path on this host: 104 on macOS, 108 on
+    Linux."""
+    return 104 if sys.platform == "darwin" else 108
+
+
+def name_refused(longest: str, home: Path, bound: int) -> str | None:
+    """Why Lima, keeping its instances in `home`, refuses an instance named
+    `longest`: the path to its socket reaches `bound`. None when it fits."""
+    length = len(str(home / longest / SOCKET))
+    if length < bound:
+        return None
+    return (
+        f"Lima keeps its machines in {home}, and a machine named as long as "
+        f"{longest!r} would put its socket {length} characters deep, where this "
+        f"host allows fewer than {bound}: set LIMA_HOME to a shorter folder, or "
+        "the machine prefix shorter"
+    )
 
 
 def template(spec: MachineSpec) -> dict[str, object]:
@@ -129,7 +161,9 @@ class MachinesLimaImpl(MachinesInterface):
     instance, held to a digest of its disk: the bytes of each run of data
     the disk holds, by offset, so the holes of a sparse disk are never
     read. `encrypted` declares the disk that holds Lima's instances
-    encrypted at rest; nothing here can see it."""
+    encrypted at rest; nothing here can see it. Lima keeps a socket in
+    each instance's folder, so its probe refuses a name whose socket path
+    this host cannot hold, before any machine starts."""
 
     def __init__(
         self,
@@ -144,7 +178,10 @@ class MachinesLimaImpl(MachinesInterface):
         self._encrypted = encrypted
         self._hypervisor = probe_hypervisor
 
-    async def probe(self) -> str | None:
+    async def probe(self, longest: str) -> str | None:
+        refused = name_refused(longest, lima_home(), socket_bound())
+        if refused is not None:
+            return refused
         version = await self._limactl("--version", bound=self._timeout)
         if not version.ok:
             return f"Lima cannot be run: {version.reason()}"

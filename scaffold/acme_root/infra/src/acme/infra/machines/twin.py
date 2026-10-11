@@ -52,7 +52,7 @@ class MachinesTwinImpl(MachinesInterface):
         self.machines: dict[str, TwinMachine] = {}
         self.calls: list[tuple[str, ...]] = []
 
-    async def probe(self) -> str | None:
+    async def probe(self, longest: str) -> str | None:
         self.calls.append(("probe",))
         return self.hypervisor
 
@@ -189,7 +189,7 @@ class MachinesNullImpl(MachinesInterface):
     """A process that runs no machine: its probe says so, so every VM
     workspace is refused, loudly, before anything is made."""
 
-    async def probe(self) -> str | None:
+    async def probe(self, longest: str) -> str | None:
         return "this process runs no machines"
 
     def closes_egress(self) -> bool:
