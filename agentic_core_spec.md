@@ -622,9 +622,9 @@ so an ask never widens what a fill allows. The fill set keeps each ask
 beside the fill it got. A role a kind asks nothing of resolves by its
 name.
 
-*Example:* a reviewer kind asks XL of its main role at high effort, and
-S of its summarizer at low. A summarizer whose model takes no effort
-level runs at its own.
+*Example:* an engineering kind asks L of its main role at high effort,
+and S of its summarizer at low. A summarizer whose model takes no
+effort level runs at its own.
 
 > **Principle:** A call names a model role, never a model. A switch is
 > allowed; a silent switch is not.
