@@ -103,21 +103,31 @@ and the adopter's registry assigns its class and effect. The server's
 own annotations, its read-only, destructive, and idempotent hints, are
 hints, never authority. A server's tool definitions are pinned by hash,
 and a changed definition is reviewed before the registry serves it.
+Each call lists the server's tools again on its own connection and
+refuses a tool whose definition moved from its pin, with the reason,
+before it runs. The server's credential is resolved for the call and
+redacted from everything the server sends back, and a server that hangs
+or answers outside the protocol is refused within the tool's own time.
 
 **Source.** Tools, Tools over MCP.
 
 **Look for.** Where an MCP tool's class and effect come from; the hash
 pinned for each definition; what happens when a server's definition
-changes.
+changes after its tool was built; where the server's credential is
+resolved, and what of the server's answer, its errors, or the client's
+own log reaches a step or a log line; what bounds a call's connection.
 
 **Violation.** A class or an effect read from a server's annotations; a
 definition served with no pinned hash, or a changed one served before it
-is reviewed.
+is reviewed; a call that reaches a tool its server changed since the
+listing; a credential resolved before the call, or found in anything the
+client hands back; a connection a hung server holds past the tool's
+time.
 
 **Severity.** high
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/tools/types/mcp.py` and
-`scaffold/acme_root/om/src/acme/om/tools/mcp.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/tools/mcp.py` and
+`scaffold/acme_root/integrations/src/acme/integrations/mcp/sdk.py`
 
 **Check.** review
 
@@ -356,18 +366,22 @@ streamed, and reads, writes, and lists files there. Every tool that runs
 a command or touches a file goes through the transport, and none reaches
 past it to the engine's own host. A host that only executes tool calls
 needs no access to the history, the models, or the record. Both
-capabilities live under `infra/`.
+capabilities live under `infra/`. A call starts one process on the
+host: an MCP server over stdio, whose tools run no command and touch no
+file.
 
-**Source.** The Runtime; The Object Model.
+**Source.** The Runtime; The Object Model; Tools, Tools over MCP.
 
 **Look for.** Every tool that runs a command or touches a file, and the
 path it takes; any subprocess, file, or socket call in tool code outside
-the transport; what a remote executor is given.
+the transport; what a remote executor is given; the MCP servers reached
+over stdio, and what their tools do.
 
 **Violation.** A tool that opens a file or starts a process on the
-engine's host; an isolation spec with no egress policy or no limits; a
-transport whose executor needs the history, a model, or the record to
-run a command.
+engine's host, but the MCP client's stdio server; an MCP server over
+stdio whose tools run commands or touch files; an isolation spec with no
+egress policy or no limits; a transport whose executor needs the
+history, a model, or the record to run a command.
 
 **Severity.** high
 

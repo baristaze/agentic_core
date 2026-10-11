@@ -71,11 +71,24 @@ REASON_CHARS = 500
 HTTP_TIMEOUT = httpx2.Timeout(30.0)
 
 AUTH_STATUSES = frozenset({401, 403})
+TOO_MANY = 429
 
 
 @dataclass(frozen=True)
 class _Refusal:
     reason: str
+
+
+@dataclass
+class _Answered:
+    """The status of the last answer an HTTP server gave a request: a POST,
+    since the stream a GET opens answers on its own."""
+
+    status: int | None = None
+
+    async def note(self, response: httpx2.Response) -> None:
+        if response.request.method == "POST":
+            self.status = response.status_code if response.status_code >= 400 else None
 
 
 class McpClientSdkImpl(McpClientInterface):
@@ -132,6 +145,7 @@ async def _exchange[T](
     if seconds <= 0:
         raise TimeoutError(f"{server.name}: no time is left for the exchange")
     failure: InfraException = McpServerFailed(f"{server.name} sent something that is not MCP")
+    answered = _Answered()
     try:
         with anyio.fail_after(seconds), anyio.CancelScope() as unreadable:
 
@@ -140,7 +154,7 @@ async def _exchange[T](
                     unreadable.cancel()
 
             async with AsyncExitStack() as stack:
-                transport = await _transport(stack, server, credential)
+                transport = await _transport(stack, server, credential, answered)
                 client = await stack.enter_async_context(
                     Client(transport, cache=None, message_handler=on_message)
                 )
@@ -148,12 +162,15 @@ async def _exchange[T](
     except TimeoutError:
         raise TimeoutError(f"{server.name} did not answer in time") from None
     except Exception as error:  # an exception group too, which is one
-        failure = _failure(server, error, redactor)
+        failure = _failure(server, error, redactor, answered.status)
     raise failure
 
 
-async def _transport(stack: AsyncExitStack, server: McpServer, credential: SecretStr | None) -> Any:
-    """The SDK's transport to the server, its resources on `stack`."""
+async def _transport(
+    stack: AsyncExitStack, server: McpServer, credential: SecretStr | None, answered: _Answered
+) -> Any:
+    """The SDK's transport to the server, its resources on `stack`. Over
+    HTTP, `answered` keeps the status of each answer to a request."""
     value = credential.get_secret_value() if credential is not None else None
     match server.transport:
         case McpStdio() as stdio:
@@ -172,7 +189,9 @@ async def _transport(stack: AsyncExitStack, server: McpServer, credential: Secre
                 scheme = http.credential_scheme
                 headers[http.credential_header] = f"{scheme} {value}" if scheme else value
             client = await stack.enter_async_context(
-                httpx2.AsyncClient(headers=headers, timeout=HTTP_TIMEOUT)
+                httpx2.AsyncClient(
+                    headers=headers, timeout=HTTP_TIMEOUT, event_hooks={"response": [answered.note]}
+                )
             )
             return streamable_http_client(http.url, http_client=client)
 
@@ -245,12 +264,28 @@ def _redactor(server: McpServer, credential: SecretStr | None) -> Redactor:
     return Redactor({server.secret: credential.get_secret_value()})
 
 
-def _failure(server: McpServer, error: BaseException, redactor: Redactor) -> InfraException:
+def _failure(
+    server: McpServer, error: BaseException, redactor: Redactor, status: int | None
+) -> InfraException:
     """The client's own error for what the SDK, or the transport under it,
     raised: written here, never the SDK's text, which may quote the
-    server."""
+    server. Over HTTP, the status of the last answer to a request decides
+    first, since the SDK turns it into a protocol error that drops it: a
+    refused credential, a 429, and a server error are unavailable, and the
+    credential is named, never its value; any other refusal is the
+    request's."""
     leaf = _leaf(error)
     name = server.name
+    reason = redactor.redact(leaf.message)[:REASON_CHARS] if isinstance(leaf, MCPError) else ""
+    if status is not None and status in AUTH_STATUSES:
+        what = (
+            f"the credential {server.secret!r}" if server.secret else "a request with no credential"
+        )
+        return McpServerUnavailable(f"{name} answered {status}: it did not accept {what}")
+    if status is not None and (status == TOO_MANY or status >= 500):
+        return McpServerUnavailable(f"{name} answered {status}")
+    if status is not None and status >= 400:
+        return McpServerRefused(f"{name} answered {status}: {reason}")
     match leaf:
         case McpServerFailed() | McpServerRefused() | McpServerUnavailable():
             return leaf
@@ -259,16 +294,9 @@ def _failure(server: McpServer, error: BaseException, redactor: Redactor) -> Inf
         case MCPError() if leaf.code == CONNECTION_CLOSED:
             return McpServerFailed(f"{name} closed the connection")
         case MCPError():
-            reason = redactor.redact(leaf.message)[:REASON_CHARS]
             return McpServerRefused(f"{name} refused the request ({leaf.code}): {reason}")
         case ValidationError() | json.JSONDecodeError():
             return McpServerFailed(f"{name} answered something that is not MCP")
-        case httpx2.HTTPStatusError() if leaf.response.status_code in AUTH_STATUSES:
-            return McpServerRefused(f"{name} did not accept the credential")
-        case httpx2.HTTPStatusError() if leaf.response.status_code >= 500:
-            return McpServerUnavailable(f"{name} answered {leaf.response.status_code}")
-        case httpx2.HTTPStatusError():
-            return McpServerFailed(f"{name} answered {leaf.response.status_code}")
         case httpx2.TransportError() | OSError():
             return McpServerUnavailable(f"{name} could not be reached")
         case _:

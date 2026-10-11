@@ -6,6 +6,9 @@ through the `ToolRuntime` its call is given: the workspace's transport,
 bound to the call's key, its run's writer epoch, its deadline, and the
 secrets its spec declares. It never holds the transport or a workspace of
 its own, and never starts a process or opens a file on the engine's host.
+The one process a call starts there is an MCP tool's stdio server, a
+program the adopter names, which the MCP client starts for the call and
+stops with it (ADR 1034).
 
 An `unsafe` tool runs at most one command a call, so the transport's record
 of that command is the call's outcome after a crash. A tool that must do

@@ -1,10 +1,12 @@
 # Integrations
 
-The third-party providers Acme talks to: the identity provider and the
-model providers. Each is one interface with a real client and a twin,
-and a caller never knows which it holds. Nothing here imports the object
-model: a provider's errors root at infra's exception family, since a
-provider is a dependency the way a backend is.
+The third-party providers Acme talks to: the identity provider, the
+model providers, and the MCP servers a product binds tools of. Each
+provider is one interface with a real client and a twin, and a caller
+never knows which it holds; the MCP client's tests start a real server
+of their own instead. Nothing here imports the object model: a
+provider's errors root at infra's exception family, since a provider is
+a dependency the way a backend is.
 
 ## The identity provider
 
@@ -95,6 +97,31 @@ provider's turns, read once at boot), `ACME_ANTHROPIC_API_KEY` and `ACME_OPENAI_
 platform's keys; empty or `off` leaves a provider with none),
 `ACME_ANTHROPIC_BASE_URL`, `ACME_OPENAI_BASE_URL`, and
 `ACME_MODEL_TIMEOUT_SECONDS`.
+
+## The MCP client
+
+`mcp.McpClientInterface` speaks the Model Context Protocol to a server
+over stdio or streamable HTTP, through the official SDK, pinned
+(`mcp/sdk.py`). It lists a server's tools, and calls one after asking
+its caller about the tool as the server lists it now. What a tool may
+do, and whether its definition is the one a person reviewed, is the
+[tools namespace](../om/src/acme/om/tools/README.md)'s to decide
+([ADR 1034](../docs/adr/1034-an-mcp-client-lists-a-servers-tools-and-each-call-checks-the-pin.md)).
+
+- **One connection an exchange**, closed with it, and bounded by the
+  deadline the caller gives. A stdio server is started for it and
+  stopped with it; its error stream is dropped.
+- **The credential for one exchange.** The caller hands it over,
+  resolved for the call. It goes in one variable of a stdio server's
+  environment, or in a header over https or to this host. Everything
+  the server sends back is redacted of it, and the client writes its
+  errors in its own words.
+- **The answer as text.** Text parts are passed on; anything else is
+  named and not passed on.
+- **A line that is not the protocol** ends the exchange at once, as
+  `McpServerFailed`. A refused credential, a 429, and a server error
+  are `McpServerUnavailable`; any other refusal is `McpServerRefused`,
+  with the server's reason, redacted.
 
 ## What every integration holds to
 
