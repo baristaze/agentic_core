@@ -13,7 +13,7 @@ from collections.abc import Collection
 from uuid import UUID
 
 from acme.infra.buckets import BlobNotFound, Buckets, BucketsInterface
-from acme.infra.exceptions import SecretNotFound
+from acme.infra.exceptions import InfraException, SecretNotFound
 from acme.infra.secrets import SecretsInterface
 from acme.infra.transports import secret_held
 from acme.infra.workspaces import SnapshotRefused, WorkspaceLost
@@ -93,7 +93,9 @@ class SnapshotStore:
             sealed = await self._buckets.get(
                 ctx.org_id, BUCKET, snapshot_key(session_id, snapshot.hash), deadline=ctx.deadline
             )
-        except BlobNotFound as error:
+        except InfraException as error:
+            if error.code != BlobNotFound.code:
+                raise
             raise WorkspaceLost(f"{what} is gone from the store") from error
         try:
             archive = await self._seal.open(ctx, session_id, snapshot.hash, sealed)
@@ -115,8 +117,9 @@ class SnapshotStore:
         for name in self._secret_names:
             try:
                 values[name] = await self._secrets.get(ctx.org_id, name, deadline=ctx.deadline)
-            except SecretNotFound:
-                continue
+            except InfraException as error:
+                if error.code != SecretNotFound.code:
+                    raise
         held = secret_held(archive, values)
         if held is not None:
             raise SnapshotRefused(

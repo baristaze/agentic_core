@@ -14,6 +14,7 @@ from uuid import UUID
 
 from pydantic import Field
 
+from acme.infra.exceptions import InfraException
 from acme.infra.workspaces import WorkspaceLost
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agents.manager import AgentsManagerInterface
@@ -125,8 +126,10 @@ class SpawnSubAgentToolImpl(ToolInterface):
             raise ToolFailed(ToolFailure.DENIED, refused.message) from refused
         except (TreeBoundReached, UnknownAgentKind, ValidationFailed) as refused:
             raise ToolFailed(ToolFailure.PERMANENT, refused.message) from refused
-        except WorkspaceLost as lost:
+        except InfraException as lost:
             # The snapshot it would fork is gone or altered: no child starts
             # from anything else in its stead.
+            if lost.code != WorkspaceLost.code:
+                raise
             raise ToolFailed(ToolFailure.PERMANENT, lost.message) from lost
         return Spawned(session_id=child.id, title=child.title, kind=child.kind)
