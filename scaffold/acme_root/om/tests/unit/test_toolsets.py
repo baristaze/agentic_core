@@ -260,6 +260,13 @@ async def test_a_sessions_tool_definitions_change_only_by_a_recorded_load(
     assert await replayed(loop, DEFERS, session_id) == calls
 
 
+def test_a_sub_agent_cut_to_a_parent_without_the_load_still_loads_what_it_holds() -> None:
+    cut = ("lookup", "note")  # its parent holds neither `load_toolset` nor `send`
+    assert callable_tools(cut, DEFERS.waiting, ()) == {"lookup", LOAD_TOOLSET}
+    switch = ToolsetSwitch(name="writes", version=1, tools=("note",))
+    assert callable_tools(cut, DEFERS.waiting, (switch,)) == {"lookup", "note", LOAD_TOOLSET}
+
+
 def test_kind_prompts_render_a_loads_tools_after_the_rest() -> None:
     catalog = [LoadToolsetToolImpl(), *tools().values()]
     held = callable_tools(DEFERS.tools, DEFERS.waiting, ())

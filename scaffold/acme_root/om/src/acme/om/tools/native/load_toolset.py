@@ -78,9 +78,13 @@ def callable_tools(
     holds: Collection[str], waiting: Collection[str], loaded: Sequence[ToolsetSwitch]
 ) -> frozenset[str]:
     """What a session's registry holds: each tool it may call (`holds`) that
-    waits for no load, and each one a load added."""
+    waits for no load, each one a load added, and `load_toolset` while any
+    tool waits. The load adds no power of its own, only tools the session
+    may call, so a sub-agent whose tools were cut to a parent's that lacks
+    it still loads what it holds."""
     added = {tool for load in loaded for tool in load.tools}
-    return frozenset(tool for tool in holds if tool not in waiting or tool in added)
+    names = {tool for tool in holds if tool not in waiting or tool in added}
+    return frozenset({*names, LOAD_TOOLSET} if waiting else names)
 
 
 def load(
@@ -101,8 +105,11 @@ def load(
     toolset = next((each for each in deferred if each.name == name), None)
     if toolset is None:
         raise ToolFailed(ToolFailure.INVALID_INPUT, _names(deferred, f"no toolset {name} to load"))
+    mine = [tool for tool in toolset.tools if tool in holds]
+    if not mine:
+        return Load(text=f"The toolset {name} adds nothing: none of its tools is yours to call.")
     now = callable_tools(holds, waiting, loaded)
-    added = tuple(sorted(tool for tool in toolset.tools if tool in holds and tool not in now))
+    added = tuple(sorted(tool for tool in mine if tool not in now))
     if not added:
         return Load(text=f"The toolset {name} adds nothing: its tools are already yours.")
     tools = ", ".join(added)

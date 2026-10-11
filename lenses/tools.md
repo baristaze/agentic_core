@@ -74,20 +74,21 @@ recovery runs it twice (STP-11); a key the tool receives and drops.
 workspace tool cannot touch a workspace, whatever the model asks for. A
 message to a session enqueues its loop, so the guideline's enqueue rule
 applies to the registry: a principal may start or instruct a session of
-a kind only if it may make each kind of call the registry offers. Policy
-then gates each call on its own, since an agent picks its calls at
-runtime.
+a kind only if it may make each kind of call the registry offers, a
+deferred toolset's included. Policy then gates each call on its own,
+since an agent picks its calls at runtime.
 
 **Source.** Tools, The Registry.
 
 **Look for.** How a tool call from the model is resolved to a tool; the
 permission check on starting or messaging a session; what that check
-compares against the kind's registry.
+compares against the kind's registry and its deferred toolsets.
 
 **Violation.** A tool resolved from a name the model chose that the
-registry does not hold; a session started or messaged by a principal who
-may not make every kind of call its registry offers, so a message buys
-calls its sender may not make.
+registry does not hold, a waiting tool of a deferred toolset before its
+load among them; a session started or messaged by a principal who may
+not make every kind of call its registry offers, a deferred toolset's
+included, so a message buys calls its sender may not make.
 
 **Severity.** high
 

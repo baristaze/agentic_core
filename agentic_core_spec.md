@@ -269,7 +269,7 @@ ends in a step, marked truncated, holding what arrived.
 | Model | `model_request`, `model_response` | the engine | One pair per call, per model role. The response carries its stop reason and usage. |
 | Tool | `tool_request`, `tool_response` | the engine | The response carries a result or a failure class. |
 | Context | `summary` | the engine | Replaces a range for reading and starts the next main window |
-| Lifecycle | `parked`, `resumed`, `loop_ended`, `switched`, `environment_changed`, `snapshotted` | the engine | `switched` records a new fill set or kind version; `environment_changed` tells the model the world under it changed; `snapshotted` names a snapshot of its workspace the session holds. |
+| Lifecycle | `parked`, `resumed`, `loop_ended`, `switched`, `environment_changed`, `snapshotted` | the engine | `switched` records a new fill set or kind version, or the tools a load added; `environment_changed` tells the model the world under it changed; `snapshotted` names a snapshot of its workspace the session holds. |
 
 The type answers questions, so no caller compares strings:
 `is_tool_call()`, `is_model_call()`, `is_input()`, `is_summary()`.
@@ -714,11 +714,27 @@ renders in a fixed order, so the prompt prefix stays stable. Tools come
 from native code, from MCP servers ([Tools over MCP](#tools-over-mcp)),
 and from sub-agents, under one contract.
 
+A kind names its tools one by one, or in **toolsets**: a toolset is a
+named, versioned group of tools with a one-line summary. The registry is
+their union, in the same order however the tools are grouped, so a kind
+rebuilt from toolsets renders the same bytes.
+
+A kind may **defer** a toolset its loops seldom need. Its tools stay out
+of the registry, and out of every request, and the toolset is one line,
+its name and its summary, in the description of the engine's
+`load_toolset` tool. The agent loads it when the work needs it. A load is
+a `switched` step that names the tools it added. They render after every
+tool before them, from the next request on, for the rest of the session,
+and the one cache write that costs is paid knowingly and recorded, as a
+fill switch is. Nothing else changes a session's tool definitions: they
+follow from its kind version and its history, so a replay renders the
+same requests.
+
 A message to a session enqueues its loop, so the guideline's enqueue
 rule applies to the registry ([The Work Queue][g-workq]): a principal may
 start or instruct a session of a kind only if it may make each kind of
-call the registry offers. Policy then gates each call on its own, since
-an agent picks its calls at runtime.
+call the registry offers, a deferred toolset's included. Policy then
+gates each call on its own, since an agent picks its calls at runtime.
 
 ### Tools over MCP
 
@@ -1528,8 +1544,10 @@ part the provider's cache can serve across sessions.
   allow. So every session of a kind version shares one cached prefix.
 - **A tool definition earns its weight.** A definition rides every
   request of every session of its kind. A kind registers the tools its
-  loops use. A description says what the model needs to choose the tool
-  and fill its input, and nothing its schema already says.
+  loops use, and defers a toolset its loops seldom need
+  ([The Registry](#the-registry)). A description says what the model
+  needs to choose the tool and fill its input, and nothing its schema
+  already says.
 
 ### What a Delegation Moves
 

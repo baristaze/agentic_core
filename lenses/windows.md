@@ -20,15 +20,16 @@ since it, then the new inputs and the agent's current plan. A rolling
 cache breakpoint sits on the last stable step, within the provider's
 limit on breakpoints.
 
-**Source.** Context, Rendering.
+**Source.** Context, Rendering; Tools, The Registry.
 
 **Look for.** The render function and everything it reads; the order of
 its layers and of the tool definitions; where the cache breakpoint goes.
 
 **Violation.** A time, a fresh id, or an unordered collection rendered
-into a request; tool definitions in an order that varies; the plan or a
-new standing instruction rendered above the window, so each change
-invalidates the cached window.
+into a request; tool definitions in an order that varies, or that change
+within a session other than by a recorded load, whose tools render after
+every tool before them; the plan or a new standing instruction rendered
+above the window, so each change invalidates the cached window.
 
 **Severity.** medium
 

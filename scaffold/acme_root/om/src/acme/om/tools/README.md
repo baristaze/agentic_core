@@ -17,6 +17,11 @@ thing [Acme is made of](../../../../README.md).
   or from another agent, and all three say the same things.
 - **Registry**: the tools one kind of agent has. An agent can do only
   what its registry holds, whatever the model asks for.
+- **Toolset**: a named, versioned group of tools with a one-line
+  summary. A kind names its toolsets, or its tools one by one, and the
+  same tools make the same registry either way. A kind may defer a
+  toolset it seldom needs: its tools stay out of the registry until the
+  agent loads it.
 - **Policy**: who must agree to a call. It looks at the tool, its class,
   its effect, and what the call acts on (whether a branch is protected),
   and never at what the model says about the call. The agent's kind sets
@@ -32,12 +37,13 @@ thing [Acme is made of](../../../../README.md).
   starts it and names it, and the agent waits for it without holding
   anything. It has a deadline of its own, never later than the whole
   task's. A job that costs money by the hour says how much, at most.
-- **The engine's own tools**: six a kind may name. Five act on nothing
+- **The engine's own tools**: seven a kind may name. Six act on nothing
   outside the session: asking its person, writing its plan, reading part
   of a file attached to the session, reading a result the window keeps
-  whole outside a step, and waiting on its sub-agents. They read and keep
-  the session's own records, so their class is reading. The sixth starts
-  a sub-agent, and its class is `spawn`.
+  whole outside a step, waiting on its sub-agents, and loading a
+  deferred toolset, which every kind that defers one holds. They read
+  and keep the session's own records, so their class is reading. The
+  seventh starts a sub-agent, and its class is `spawn`.
 
 ## What can happen
 
@@ -74,6 +80,13 @@ thing [Acme is made of](../../../../README.md).
 - **Keep a plan.** Each plan the agent writes is kept in the session's
   history as one more version. The latest is shown to the agent at the
   end of each request, and a person reads it among the session's steps.
+- **Load a toolset.** The agent names a toolset its kind defers, one of
+  those its load tool lists, and the toolset's tools are its to call
+  from its next turn on, for the rest of the session. The load is a step
+  in the history that names the tools it added, and they come after
+  every tool the agent had, so what came before reads as it did. A
+  toolset the kind does not defer is the call's bad input; one already
+  loaded adds nothing (ADR 1031).
 - **Read an attachment** a range of lines or pages at a time, at most a
   bounded amount a call. A line or page longer than one read is read on
   from the offset the read before stopped at. How a file turns into text
