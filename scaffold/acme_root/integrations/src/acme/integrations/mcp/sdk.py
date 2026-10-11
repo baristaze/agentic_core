@@ -66,9 +66,11 @@ KEY_META = "idempotencyKey"
 REASON_CHARS = 500
 """The most of a server's own reason for a refusal the client passes on."""
 
-# The connect, write, and pool timeouts of an HTTP exchange; the deadline
-# bounds the whole of it, a read included.
-HTTP_TIMEOUT = httpx2.Timeout(30.0)
+# The connect, write, and pool timeouts of an HTTP exchange. A read has no
+# bound of its own: the deadline, the tool's own time, bounds it with the
+# rest. A read cut short sooner would report a call the server ran as one
+# that never reached it, and the model would make it again.
+HTTP_TIMEOUT = httpx2.Timeout(30.0, read=None)
 
 AUTH_STATUSES = frozenset({401, 403})
 TOO_MANY = 429

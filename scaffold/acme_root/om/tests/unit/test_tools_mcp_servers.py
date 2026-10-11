@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 
+import httpx2
 import pytest
 from contracts.doubles import context
 from contracts.factories import make_org
@@ -42,7 +43,7 @@ from acme.infra.base import utcnow
 from acme.infra.observability import configure_logging
 from acme.infra.secrets.local import SecretsLocalImpl
 from acme.infra.transports.redaction import forms
-from acme.integrations.mcp import McpHttp, McpServer, McpServerFailed, McpStdio
+from acme.integrations.mcp import McpHttp, McpServer, McpServerFailed, McpStdio, sdk
 from acme.integrations.mcp.sdk import McpClientSdkImpl
 from acme.om.agents.types.kind import AgentKind, DoneRule
 from acme.om.attribution.types.authority import AuthorityMode
@@ -74,6 +75,7 @@ INPUTS: dict[str, type[ToolInput]] = {
     "lookup": Word,
     "whoami": Nothing,
     "refuse": Nothing,
+    "slow": Nothing,
     "hang": Nothing,
 }
 
@@ -425,6 +427,21 @@ async def test_a_server_that_hangs_is_refused_by_the_tools_deadline(
     assert failure_of(response) is ToolFailure.TIMEOUT
     assert "did not answer in time" in response.model_dump_json()
     assert took < TIMEOUT.total_seconds() + SLACK
+
+
+async def test_an_http_call_slower_than_the_clients_own_bounds_answers_by_its_deadline(
+    tmp_path: Path, http_servers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Every bound the HTTP client sets, cut to a third of a second; the tool
+    # takes a second, within its deadline of two. A read cut short would
+    # report a call the server ran as one that never reached it.
+    shrunk = {k: None if v is None else 0.3 for k, v in sdk.HTTP_TIMEOUT.as_dict().items()}
+    monkeypatch.setattr(sdk, "HTTP_TIMEOUT", httpx2.Timeout(**shrunk))
+    at = await engine(tmp_path, http(http_servers["reviewed"]))
+    tools = await at.servers.tools(bindings(await review(at)), org_id=at.ctx.org_id)
+    response = await call(tmp_path, at, named(tools, "words_slow"), {})
+    assert failure_of(response) is None
+    assert output_of(response) == "late, but in time"
 
 
 @pytest.mark.parametrize("transport", TRANSPORTS)

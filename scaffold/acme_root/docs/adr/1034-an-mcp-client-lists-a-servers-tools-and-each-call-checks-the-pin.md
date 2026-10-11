@@ -58,7 +58,9 @@ idempotency key travels in its request's `_meta`, as `idempotencyKey`.
 
 **The bound.** An exchange runs in one cancel scope that ends at the
 call's deadline, the tool's own time. A server that hangs is cut off
-then, and a stdio server's process tree is stopped. A line the
+then, and a stdio server's process tree is stopped. Over HTTP, a read
+has no shorter bound of its own: one cut short would report a call the
+server ran as one that never reached it. A line the
 transport cannot read as the protocol ends the exchange at once, since
 the SDK would wait for the answer it never parsed. A server that
 answers outside the protocol is `permanent`, and one that cannot be

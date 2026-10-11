@@ -55,6 +55,12 @@ def refuse(ctx: Context) -> str:
     raise ToolError(f"{_credential(ctx)} may not do that")
 
 
+@server.tool(description="Answers after a second.")
+async def slow() -> str:
+    await anyio.sleep(1.0)
+    return "late, but in time"
+
+
 @server.tool(description="Never answers.")
 async def hang() -> str:
     await anyio.sleep(3600)
