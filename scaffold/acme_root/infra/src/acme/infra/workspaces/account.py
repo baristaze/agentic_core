@@ -378,11 +378,14 @@ class WorkspaceAccountImpl(WorkspaceProviderInterface):
         workspace_id: UUID,
         spec: IsolationSpec,
         snapshot: bytes | None = None,
+        base: bytes | None = None,
+        *,
+        building: bool = False,
     ) -> Workspace:
         why = refusal(
             spec, mode=IsolationMode.ACCOUNT, egress={EgressMode.OPEN}, limits=LIMITS, unkept=UNKEPT
         )
-        if why is None and snapshot is not None:
+        if why is None and (snapshot is not None or base is not None):
             why = f"an account workspace cannot start from a snapshot: {UNKEPT}"
         if why is not None:
             raise IsolationRefused(why)

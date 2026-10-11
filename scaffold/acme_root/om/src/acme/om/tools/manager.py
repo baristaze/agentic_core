@@ -70,7 +70,15 @@ class ToolsManagerInterface(ABC):
         the store, opened under the session's key, and held to its hash
         first: one that is gone, erased with its key, altered, or of
         another hash loses the workspace (`WorkspaceLost`) before anything
-        starts."""
+        starts.
+
+        Without it, a spec whose base has setup starts from the base's
+        snapshot, built first when the tenant has none: its setup runs once,
+        in a workspace of its own with the setup's egress, given no secret
+        and no session's content. A build another prepare is making now
+        refuses this one, and it clears once that build is kept. A setup
+        command that fails refuses it with the command and how it ended
+        (`BaseSetupFailed`), and nothing of the build is kept."""
         ...
 
     @abstractmethod
@@ -270,6 +278,6 @@ class ToolsManagerInterface(ABC):
 
     @abstractmethod
     async def purge_tenant(self, ctx: TenantContext) -> int:
-        """The sweep, for one tenant past its own retention: its policy. Any
-        other tenant returns 0 and reads nothing."""
+        """The sweep, for one tenant past its own retention: its policy and
+        its workspace bases. Any other tenant returns 0 and reads nothing."""
         ...

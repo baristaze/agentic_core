@@ -14,6 +14,8 @@ from uuid import UUID
 
 from acme.infra.buckets import BucketsInterface
 from acme.infra.buckets.local import BucketsLocalImpl
+from acme.infra.cache import CacheInterface, CacheScope
+from acme.infra.cache.memory import CacheMemoryImpl
 from acme.infra.keys.memory import KeyServiceMemoryImpl
 from acme.infra.secrets import SecretsInterface
 from acme.infra.secrets.local import SecretsLocalImpl
@@ -54,6 +56,7 @@ from acme.om.steps.types.header import ModelResponseHeader, ToolFailure, ToolRes
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.tenancy.rules import permissions_of
+from acme.om.tools.impl.bases import WorkspaceBases
 from acme.om.tools.impl.manager import ToolsManagerImpl, ToolsOptions
 from acme.om.tools.impl.snapshots import SnapshotStore
 from acme.om.tools.manager import ToolsManagerInterface
@@ -259,6 +262,7 @@ class Tools:
     clock: Clock
     attribution: Answering
     waits: list[float]  # each wait of the manager's, in seconds
+    members: Members
 
 
 def tools_over(
@@ -270,6 +274,7 @@ def tools_over(
     buckets: BucketsInterface | None = None,
     secrets: SecretsInterface | None = None,
     secret_names: frozenset[str] = frozenset(),
+    claims: CacheInterface | None = None,
 ) -> Tools:
     storage = StorageMemoryImpl()
     members = Members()  # pyright: ignore[reportAbstractUsage] (a partial double)
@@ -291,31 +296,46 @@ def tools_over(
         waits.append(seconds)
         clock.now += timedelta(seconds=seconds)
 
+    workspaces = workspaces or WorkspaceTwinImpl()
+    buckets = buckets or BucketsLocalImpl(Path(tempfile.mkdtemp(prefix="snapshots-")))
+    options = options or ToolsOptions()
+    snapshots = SnapshotStore(
+        buckets,
+        SnapshotSealKeysImpl(keys, storage.get_privacy_storage()),
+        hashes.keyed_hash,
+        secrets or SecretsLocalImpl(Path(tempfile.mkdtemp(prefix="secrets-")) / "secrets.env"),
+        secret_names,
+        options.purge_batch,
+    )
+    bases = WorkspaceBases(
+        buckets,
+        workspaces,
+        transport,
+        claims or CacheMemoryImpl(CacheScope.WORKSPACE_BASE),
+        snapshots.scan,
+        options.base_build_limit,
+        options.purge_batch,
+        clock,
+    )
     manager = ToolsManagerImpl(
         storage.get_tool_storage(),
         steps,
         members,
         events,
         relay,
-        workspaces or WorkspaceTwinImpl(),
+        workspaces,
         transport,
-        options or ToolsOptions(),
+        options,
         clock,
         keyed_hash=hashes.keyed_hash,
         record_seal=RecordSealKeysImpl(keys, storage.get_privacy_storage()),
         attribution=attribution,
         broker=broker or BrokerTwinImpl(),
-        snapshots=SnapshotStore(
-            buckets or BucketsLocalImpl(Path(tempfile.mkdtemp(prefix="snapshots-"))),
-            SnapshotSealKeysImpl(keys, storage.get_privacy_storage()),
-            hashes.keyed_hash,
-            secrets or SecretsLocalImpl(Path(tempfile.mkdtemp(prefix="secrets-")) / "secrets.env"),
-            secret_names,
-            (options or ToolsOptions()).purge_batch,
-        ),
+        snapshots=snapshots,
+        bases=bases,
         sleep=sleep,
     )
-    return Tools(manager, steps, events, storage, clock, attribution, waits)
+    return Tools(manager, steps, events, storage, clock, attribution, waits, members)
 
 
 def twin_transport(

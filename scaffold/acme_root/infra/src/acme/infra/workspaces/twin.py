@@ -18,11 +18,14 @@ class WorkspaceTwinImpl(WorkspaceProviderInterface):
     default. It refuses every other mode, as the real ones refuse theirs,
     and remembers which workspaces hold an instance. A workspace's files are
     `files`, its state as bytes, which a test writes: a snapshot answers
-    them, and a prepare from one sets them."""
+    them, a prepare from one sets them, and a prepare from a base sets them
+    when the workspace holds none. `bases` holds the base each workspace
+    last started from."""
 
     def __init__(self) -> None:
         self.live: set[UUID] = set()
         self.files: dict[UUID, bytes] = {}
+        self.bases: dict[UUID, bytes] = {}
 
     async def prepare(
         self,
@@ -30,6 +33,9 @@ class WorkspaceTwinImpl(WorkspaceProviderInterface):
         workspace_id: UUID,
         spec: IsolationSpec,
         snapshot: bytes | None = None,
+        base: bytes | None = None,
+        *,
+        building: bool = False,
     ) -> Workspace:
         why = refusal(
             spec,
@@ -37,11 +43,17 @@ class WorkspaceTwinImpl(WorkspaceProviderInterface):
             egress=set(EgressMode),
             limits={"cpus", "memory_mb", "processes"},
         )
+        built = snapshot is None and spec.base is not None and bool(spec.base.setup)
+        if why is None and built and base is None:
+            why = "a workspace on a base with setup starts from the base's snapshot alone"
         if why is not None:
             raise IsolationRefused(why)
         self.live.add(workspace_id)
         if snapshot is not None:
             self.files[workspace_id] = snapshot
+        elif built and base is not None:
+            self.bases[workspace_id] = base
+            self.files.setdefault(workspace_id, base)
         return Workspace(
             id=workspace_id, org_id=org_id, spec=spec, location=f"twin:{workspace_id.hex}"
         )
@@ -57,6 +69,7 @@ class WorkspaceTwinImpl(WorkspaceProviderInterface):
     async def purge(self, org_id: UUID, workspace_id: UUID) -> None:
         self.live.discard(workspace_id)
         self.files.pop(workspace_id, None)
+        self.bases.pop(workspace_id, None)
 
     def describe(self) -> str:
         return "workspaces=twin"
@@ -78,6 +91,9 @@ class WorkspaceNullImpl(WorkspaceProviderInterface):
         workspace_id: UUID,
         spec: IsolationSpec,
         snapshot: bytes | None = None,
+        base: bytes | None = None,
+        *,
+        building: bool = False,
     ) -> Workspace:
         raise IsolationRefused(
             f"this process prepares no workspace; a {spec.mode.value} workspace is refused"

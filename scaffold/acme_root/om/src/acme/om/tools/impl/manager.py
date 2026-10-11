@@ -22,6 +22,7 @@ from acme.infra.workspaces import (
     IsolationSpec,
     SnapshotRefused,
     Workspace,
+    WorkspaceLost,
     WorkspaceProviderInterface,
 )
 from acme.om.attribution import AttributionManagerInterface
@@ -57,6 +58,7 @@ from acme.om.steps.types.header import (
 )
 from acme.om.steps.types.step import Step, StepType
 from acme.om.tenancy import TenancyManagerInterface
+from acme.om.tools.impl.bases import WorkspaceBases
 from acme.om.tools.impl.snapshots import SnapshotStore
 from acme.om.tools.manager import KeyedHash, ToolsManagerInterface
 from acme.om.tools.registry import ToolRegistry
@@ -120,6 +122,9 @@ class ToolsOptions(Platform):
     # How long the engine waits before it runs again, once, a call of a tool
     # a repeat cannot harm that failed in a way that may pass on its own.
     retry_wait: timedelta = timedelta(seconds=2)
+    # The most a workspace base's build takes, its setup's commands together;
+    # its claim holds as long, so a build lost with its process is made again.
+    base_build_limit: timedelta = timedelta(minutes=30)
 
 
 class ToolsManagerImpl(ToolsManagerInterface):
@@ -140,10 +145,12 @@ class ToolsManagerImpl(ToolsManagerInterface):
         attribution: AttributionManagerInterface,
         broker: CredentialBrokerInterface,
         snapshots: SnapshotStore,
+        bases: WorkspaceBases,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self._broker = broker
         self._snapshots = snapshots
+        self._bases = bases
         self._keyed_hash = keyed_hash
         self._record_seal = record_seal
         self._sleep = sleep
@@ -226,7 +233,25 @@ class ToolsManagerImpl(ToolsManagerInterface):
         # Its bytes are trusted by their hash before the provider sees them:
         # a snapshot that does not match starts nothing.
         archive = None if restore is None else await self._snapshots.load(ctx, session_id, restore)
-        return await self._workspaces.prepare(ctx.org_id, session_id, spec, snapshot=archive)
+        # A snapshot holds its base already; without one, a base with setup
+        # is read, or built once for the tenant.
+        base = None
+        if archive is None and spec.base is not None and spec.base.setup:
+            base = await self._bases.archive(ctx, spec)
+        try:
+            return await self._workspaces.prepare(
+                ctx.org_id, session_id, spec, snapshot=archive, base=base
+            )
+        except InfraException as lost:
+            if base is None or lost.code != WorkspaceLost.code:
+                raise
+            # A base this host cannot bring in, such as one on an image this
+            # host cannot pull, holds nothing of the session's: it is built
+            # again, and the loop asks again once it is.
+            await self._bases.drop(ctx, spec)
+            raise IsolationRefused(
+                f"the workspace base is built again: {lost.message}", clears=True
+            ) from lost
 
     async def release_workspace(self, ctx: TenantContext, workspace: Workspace) -> None:
         ctx.require(Permission.WRITE)
@@ -620,7 +645,9 @@ class ToolsManagerImpl(ToolsManagerInterface):
         ctx.require(Permission.WRITE)
         if not await self._tenancy.tenant_expired(ctx):
             return 0
-        return await self._storage.purge_tenant(ctx.org_id, self._options.purge_batch)
+        # The tenant's workspace bases are its own, and go with it.
+        bases = await self._bases.purge(ctx.org_id)
+        return bases + await self._storage.purge_tenant(ctx.org_id, self._options.purge_batch)
 
     # Helpers.
 

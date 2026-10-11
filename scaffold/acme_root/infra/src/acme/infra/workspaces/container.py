@@ -71,6 +71,11 @@ REPO_DIGEST = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:-]*@sha256:[0-9a-f]{64}$")
 """A reference another daemon pulls an image by: a repository and the digest
 that pins it, never a tag that may have moved."""
 
+SETUP_DROPS = "NET_RAW"
+"""What a setup's container drops of the runtime's default capabilities:
+raw sockets, which no package manager needs, on a network other tenants'
+containers may share."""
+
 REMOVE = 'while IFS= read -r path; do rm -rf -- "$path" || exit 1; done'
 """Removes each path its input names, one a line."""
 
@@ -80,10 +85,12 @@ def container_name(workspace_id: UUID) -> str:
     return f"acme-ws-{workspace_id.hex}"
 
 
-def spec_print(spec: IsolationSpec) -> str:
+def spec_print(spec: IsolationSpec, *, building: bool = False) -> str:
     """The fingerprint of a spec, as a container started to it is labelled:
-    a running container is reused only under the spec it was started to."""
-    return hashlib.sha256(spec.model_dump_json().encode()).hexdigest()
+    a running container is reused only under the spec it was started to,
+    and a setup's, which holds capabilities, never as any other."""
+    started_to = spec.model_dump_json() + ("+building" if building else "")
+    return hashlib.sha256(started_to.encode()).hexdigest()
 
 
 class WorkspaceContainerImpl(WorkspaceProviderInterface):
@@ -96,13 +103,13 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
     refused; so is every spec when Docker cannot be reached. There is no
     weaker place to fall back to.
 
-    The container drops every capability, takes no new privileges, and
-    keeps nothing of the engine's environment: its variables are the
-    image's. With no egress it has no network; with open egress it joins
-    `OPEN_NETWORK`, where no container reaches another. What the host
-    itself answers on the bridge, its metadata service included, is the
-    host's to close (ADR 1017). Its hostname is its name, the same for
-    every container the workspace runs in.
+    A workspace's container drops every capability, takes no new
+    privileges, and keeps nothing of the engine's environment: its
+    variables are the image's. With no egress it has no network; with open
+    egress it joins `OPEN_NETWORK`, where no container reaches another.
+    What the host itself answers on the bridge, its metadata service
+    included, is the host's to close (ADR 1017). Its hostname is its name,
+    the same for every container the workspace runs in.
 
     A snapshot holds the container's whole filesystem: its writable layer,
     as `docker diff` names what changed in it, and its volume, with the
@@ -110,7 +117,16 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
     by the digest a registry serves it under, when it has one. It is taken
     with the container paused, so nothing writes while it is. A restore
     starts a container on that image, pulled by its digest on a host that
-    lacks it, and copies both back, owners and modes kept (ADR 1027)."""
+    lacks it, and copies both back, owners and modes kept (ADR 1027).
+
+    A base is the image it names, or, with setup, a snapshot of a container
+    its setup ran in. Each container on it starts on the image that
+    snapshot names, with the setup's layer copied in; its files are copied
+    into the volume only when the volume is new, so a workspace found again
+    keeps its own (ADR 1028). A setup is given open egress or none, as a
+    workspace is. Its container holds the runtime's default capabilities
+    less raw sockets, so a package manager can change owners and drop to
+    its own user; it takes no new privileges and is never privileged."""
 
     def __init__(self, image: str, timeout: timedelta) -> None:
         self._image = image
@@ -122,6 +138,9 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
         workspace_id: UUID,
         spec: IsolationSpec,
         snapshot: bytes | None = None,
+        base: bytes | None = None,
+        *,
+        building: bool = False,
     ) -> Workspace:
         why = refusal(
             spec,
@@ -129,6 +148,9 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
             egress={EgressMode.NONE, EgressMode.OPEN},
             limits=LIMIT_FLAGS.keys(),
         )
+        built = snapshot is None and spec.base is not None and bool(spec.base.setup)
+        if why is None and built and base is None:
+            why = "a workspace on a base with setup starts from the base's snapshot alone"
         if why is not None:
             raise IsolationRefused(why)
         reachable = await docker("version", "--format", "{{.Server.Version}}", bound=self._timeout)
@@ -139,7 +161,8 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
         if snapshot is not None:
             return await self._restore(workspace, snapshot)
         running = await docker("inspect", "--format", STARTED_TO, name, bound=self._timeout)
-        if running.ok and running.stdout.split() == [b"true", spec_print(spec).encode()]:
+        started_to = spec_print(spec, building=building).encode()
+        if running.ok and running.stdout.split() == [b"true", started_to]:
             return workspace
         if running.ok:
             # A container left stopped, or started to another spec, such as
@@ -148,7 +171,10 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
             removed = await docker("rm", "-f", name, bound=self._timeout)
             if not removed.ok:
                 raise BackendFailed("docker", "rm", removed.reason())
-        await self._start(workspace, self._image)
+        if built and base is not None:
+            await self._start_on_base(workspace, _opened(base))
+        else:
+            await self._start(workspace, self._named_image(spec), building=building)
         return workspace
 
     async def snapshot(self, workspace: Workspace) -> bytes:
@@ -211,9 +237,10 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
             if not removed.ok:
                 raise BackendFailed("docker", " ".join(removal[:-2]), removed.reason())
 
-    async def _start(self, workspace: Workspace, image: str) -> None:
+    async def _start(self, workspace: Workspace, image: str, *, building: bool = False) -> None:
         """The workspace's volume, made when it is missing, and a container
-        on `image` that mounts it, started to the workspace's spec."""
+        on `image` that mounts it, started to the workspace's spec: with no
+        capability, or, `building`, with a setup's."""
         name, spec = workspace.location, workspace.spec
         labels = (
             "--label",
@@ -236,9 +263,9 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
             name,
             *labels,
             "--label",
-            f"{SPEC_LABEL}={spec_print(spec)}",
+            f"{SPEC_LABEL}={spec_print(spec, building=building)}",
             "--cap-drop",
-            "ALL",
+            SETUP_DROPS if building else "ALL",
             "--security-opt",
             "no-new-privileges",
             *_network(spec),
@@ -268,31 +295,59 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
         await self._remove(name)
         try:
             await self._start(workspace, kept.image)
-            for part in (kept.layer, kept.files):
-                if part:
-                    copied = await docker(
-                        "cp", "--archive", "-", f"{name}:/", stdin=part, bound=self._timeout
-                    )
-                    if not copied.ok:
-                        raise BackendFailed("docker", "cp", copied.reason())
-            if kept.deleted:
-                paths = "".join(f"{path}\n" for path in kept.deleted).encode()
-                removed = await docker(
-                    "exec",
-                    "--interactive",
-                    name,
-                    "sh",
-                    "-c",
-                    REMOVE,
-                    stdin=paths,
-                    bound=self._timeout,
-                )
-                if not removed.ok:
-                    raise BackendFailed("docker", "exec", removed.reason())
+            await self._unpack(name, kept, files=True)
         except BaseException:
             await self._remove(name)
             raise
         return workspace
+
+    async def _start_on_base(self, workspace: Workspace, kept: Kept) -> None:
+        """A container started from a base's snapshot: on the image it names,
+        with the setup's layer copied in and the paths the setup removed
+        removed again, and the setup's files copied into the volume only when
+        the volume is new. One that fails part way removes the container,
+        and the volume only when it was new: the workspace's own files are
+        never lost to a base."""
+        await self._bring_image(kept)
+        name = workspace.location
+        listed = await docker(
+            "volume", "ls", "--quiet", "--filter", f"name={name}", bound=self._timeout
+        )
+        if not listed.ok:
+            raise BackendFailed("docker", "volume ls", listed.reason())
+        new = name.encode() not in listed.stdout.split()
+        try:
+            await self._start(workspace, kept.image)
+            await self._unpack(name, kept, files=new)
+        except BaseException:
+            if new:
+                await self._remove(name)
+            else:
+                await docker("rm", "-f", name, bound=self._timeout)
+            raise
+
+    async def _unpack(self, name: str, kept: Kept, *, files: bool) -> None:
+        """What `kept` holds copied into the container under `name`: its
+        writable layer, owners and modes kept, then its volume's files when
+        `files`, and the paths removed from the image removed again."""
+        for part in (kept.layer, kept.files if files else b""):
+            if part:
+                copied = await docker(
+                    "cp", "--archive", "-", f"{name}:/", stdin=part, bound=self._timeout
+                )
+                if not copied.ok:
+                    raise BackendFailed("docker", "cp", copied.reason())
+        if kept.deleted:
+            paths = "".join(f"{path}\n" for path in kept.deleted).encode()
+            removed = await docker(
+                "exec", "--interactive", name, "sh", "-c", REMOVE, stdin=paths, bound=self._timeout
+            )
+            if not removed.ok:
+                raise BackendFailed("docker", "exec", removed.reason())
+
+    def _named_image(self, spec: IsolationSpec) -> str:
+        """The image a spec names: its base's, or this provider's own."""
+        return self._image if spec.base is None else spec.base.image
 
     async def _bring_image(self, kept: Kept) -> None:
         """The image a snapshot was taken on, on this host: found by its id,
