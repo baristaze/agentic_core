@@ -12,10 +12,11 @@ compaction passes to `bounds`.
 ## WIN-01 A request is a pure render of its inputs
 
 **Principle.** A model request is a pure, deterministic function of the
-kind version, the fill, the pinned zone, the window, and the new inputs:
-the same steps render the same bytes. It is laid out from the most
-stable layer to the least: the kind's prompts, the tool definitions in a
-fixed order, the pinned zone, the latest summary, the window's steps
+kind version, the session's standing text, the fill, the pinned zone, the
+window, and the new inputs: the same steps render the same bytes. It is
+laid out from the most stable layer to the least: the kind's prompts and
+the standing text, whole, after them, the tool definitions in a fixed
+order, the pinned zone, the latest summary, the window's steps
 since it, then the new inputs and the agent's current plan. A rolling
 cache breakpoint sits on the last stable step, within the provider's
 limit on breakpoints.
@@ -28,8 +29,10 @@ its layers and of the tool definitions; where the cache breakpoint goes.
 **Violation.** A time, a fresh id, or an unordered collection rendered
 into a request; tool definitions in an order that varies, or that change
 within a session other than by a recorded load, whose tools render after
-every tool before them; the plan or a new standing instruction rendered
-above the window, so each change invalidates the cached window.
+every tool before them; standing text that changes other than by a
+recorded switch, or within the loop that began before the switch; the
+plan or a new standing instruction rendered above the window, so each
+change invalidates the cached window.
 
 **Severity.** medium
 
@@ -123,8 +126,9 @@ only from principal-authored messages: quoted verbatim while they fit a
 bound, and beyond it as a digest in which each item cites the message it
 came from. A summary of the window, which folds in data, is never a
 source of instructions and renders as data. The agent's plan is not
-pinned; it renders last, as its own notes. The pinned zone changes only
-at a summary.
+pinned; it renders last, as its own notes. Nor is the session's standing
+text, which renders whole in the system layer. The pinned zone changes
+only at a summary.
 
 **Source.** Context, The Pinned Zone; Rendering.
 
@@ -134,7 +138,8 @@ render.
 
 **Violation.** A standing instruction drawn from a tool result, an
 event, an agent's message, or a summary; a digest item with no message
-behind it; the plan rendered in the pinned zone.
+behind it; the plan, or the session's standing text, rendered in the
+pinned zone.
 
 **Severity.** high
 

@@ -40,7 +40,12 @@ of](../../../../README.md).
 
 ## What can happen
 
-- **Start** a session on a kind. Its tree starts with it.
+- **Start** a session on a kind. Its tree starts with it. Its maker may
+  pin standing text on it, as on a sub-agent or a hand-off: instructions
+  every request carries whole, after the kind's prompts.
+- **Switch the standing text** of a session. The switch is recorded, and
+  the session's next loop renders the new text; the loop running now
+  keeps the text it began with.
 - **Spawn** a sub-agent. It starts from a self-contained objective of
   bounded size, never its parent's history, one level down the tree.
   An agent spawns through the engine's spawn tool, which names the
