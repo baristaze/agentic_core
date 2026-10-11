@@ -969,10 +969,14 @@ platform's ([Next: The Platform](#next-the-platform)).
   snapshot. The next loop's prepare starts from it, and an
   `environment_changed` step that references the control records the
   restore and tells the model. Nothing is deleted.
-- **Fork.** A sub-agent spawned with `fork` starts from a copy of its
-  parent's latest snapshot, sealed under its own key. What it writes
-  never reaches its parent's workspace. A fork whose parent holds no
-  snapshot is refused before anything of the tree is spent.
+- **Fork.** A sub-agent spawned with `fork` starts from its parent's
+  workspace as it stands at the spawn, in any run, the first included.
+  The run that holds the workspace snapshots it live, and the child
+  keeps a copy sealed under its own key. A parent kept by snapshots
+  also keeps it, named in its history; a cache keeps nothing of it.
+  What the child writes never reaches its parent's workspace. A fork
+  whose snapshot is refused, as for a secret's value in the workspace,
+  is refused with the reason before anything of the tree is spent.
 - **Bases.** A spec may name a **base**: an image, the commands that set
   it up, and the egress the setup may use, such as a package registry's.
   The setup runs once, in a workspace of its own, and the base is kept

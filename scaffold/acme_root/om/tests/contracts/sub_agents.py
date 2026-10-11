@@ -44,6 +44,7 @@ from acme.om.steps.types.header import (
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.tools.native.spawn_sub_agent import SPAWN_SUB_AGENT
 from acme.om.tools.native.wait_for_sub_agents import WAIT_FOR_SUB_AGENTS
+from acme.om.tools.tool import TakeSnapshot
 from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule
 from acme.om.tools.types.tool import ToolClass
 from contracts.agent_session_storage import marked
@@ -439,9 +440,11 @@ async def a_spawn_asked_twice_starts_one_child(loop: Loop, monkeypatch: pytest.M
     asked: list[UUID] = []
     started, release = asyncio.Event(), asyncio.Event()
 
-    async def held(ctx: TenantContext, parent_id: UUID, request: Spawn) -> AgentSession:
+    async def held(
+        ctx: TenantContext, parent_id: UUID, request: Spawn, fork: TakeSnapshot | None = None
+    ) -> AgentSession:
         asked.append(request.id)
-        child = await real(ctx, parent_id, request)
+        child = await real(ctx, parent_id, request, fork)
         if len(asked) == 1:
             started.set()
             await release.wait()

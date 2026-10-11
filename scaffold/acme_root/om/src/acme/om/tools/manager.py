@@ -13,7 +13,8 @@ What a call keeps of its session's content goes under that session's key
 too: its input's hash is keyed by it, and the transport's record of its
 command keeps the output sealed by it. So does a snapshot of its workspace:
 sealed by that key, stored under a hash keyed by it, and named in the
-history by a step (ADR 1027)."""
+history by a step (ADR 1027). A sub-agent forked from it keeps its own
+copy, taken by the spawning call (ADR 1030)."""
 
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -27,6 +28,7 @@ from acme.om.context import TenantContext
 from acme.om.steps.types.header import WorkspaceSnapshot
 from acme.om.steps.types.step import Step
 from acme.om.tools.registry import ToolRegistry
+from acme.om.tools.tool import TakenSnapshot
 from acme.om.tools.types.call import Gate, JobHandle, JobNotStarted
 from acme.om.tools.types.policy import PolicyLayer, ToolPolicy
 
@@ -108,30 +110,15 @@ class ToolsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def latest_snapshot(
-        self, ctx: TenantContext, session_id: UUID
-    ) -> WorkspaceSnapshot | None:
-        """The latest snapshot the session's history names, one it took or
-        one a restore started it from; None when it names none. What a fork
-        of it starts from."""
-        ...
-
-    @abstractmethod
     async def fork_snapshot(
-        self,
-        ctx: TenantContext,
-        parent_id: UUID,
-        child_id: UUID,
-        snapshot_id: UUID,
-        source: WorkspaceSnapshot,
+        self, ctx: TenantContext, child_id: UUID, snapshot_id: UUID, taken: TakenSnapshot
     ) -> WorkspaceSnapshot:
-        """A copy, for the child, of `source`, its parent's latest snapshot
-        (`latest_snapshot`): opened under the parent's key and held to its
-        hash, sealed again under the child's, and stored as the child's under
-        `snapshot_id`, so neither purge nor revocation of one reaches the
-        other. It names the parent's workspace as the one it came from. A
-        copy made before is made again the same. `WorkspaceLost` when the
-        snapshot is gone or altered."""
+        """The child's own copy of its parent's workspace as the spawning
+        call took it (`ToolRuntime.snapshot`): sealed under the child's key
+        and stored as the child's under `snapshot_id`, so neither purge nor
+        revocation of one session reaches the other. It names the parent's
+        workspace as the one it came from. `SnapshotRefused` when the child
+        keeps no content at rest."""
         ...
 
     @abstractmethod

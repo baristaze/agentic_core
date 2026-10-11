@@ -45,7 +45,7 @@ of](../../../../README.md).
   An agent spawns through the engine's spawn tool, which names the
   child's title, its objective, and its kind, the agent's own unless
   it names another, and whether the child's workspace forks the
-  agent's latest snapshot. The child's id is the call's, so a call asked again
+  agent's as it stands at the call. The child's id is the call's, so a call asked again
   finds the child it made. A bound the spawn reaches is the call's
   failure, which the agent reads and acts on. Each call of the child is
   decided under its own kind's policy and under every kind's above it,
