@@ -28,6 +28,7 @@ from acme.om.models import rules
 from acme.om.models.impl.manager import ModelsManagerImpl, ModelsOptions
 from acme.om.models.impl.prices import ModelPricesFromPricingImpl, ModelPricesNullImpl
 from acme.om.models.impl.resolver import (
+    DEFAULT_SIZES,
     DEFAULT_TABLE,
     ModelResolverTableImpl,
     ResolverOptions,
@@ -40,6 +41,8 @@ from acme.om.models.types.fill import (
     Eligibility,
     Fill,
     FillSet,
+    ModelAsk,
+    ModelSize,
     RoleFill,
     SwitchReason,
 )
@@ -75,7 +78,9 @@ class Priced(ModelPricesInterface):
         return "model prices: the test's rows"
 
 
-EVERY_DEFAULT = Priced(*(f for entry in DEFAULT_TABLE for f in (entry.fill, *entry.fallbacks)))
+EVERY_DEFAULT = Priced(
+    *(f for entry in (*DEFAULT_TABLE, *DEFAULT_SIZES) for f in (entry.fill, *entry.fallbacks))
+)
 
 
 @pytest.fixture
@@ -146,6 +151,111 @@ async def test_a_role_resolves_within_the_sessions_eligibility() -> None:
         await resolver.resolve(ctx, ["title"], Eligibility())
     with pytest.raises(UnresolvedRole):
         await resolver.resolve(ctx, [SUMMARIZER], Eligibility(zero_retention=True))
+
+
+# A kind's asks: a model size and an effort for a role, never a model.
+
+
+def served(role: RoleFill) -> list[tuple[str, Effort | None]]:
+    """Each fill of a role, its fallbacks after it: the model and its effort."""
+    return [(f.name, f.effort) for f in (role.fill, *role.fallbacks)]
+
+
+async def test_a_kind_that_asks_sizes_gets_the_tables_fills_at_its_efforts() -> None:
+    resolver = ModelResolverTableImpl(
+        ModelPricesFromPricingImpl(PricingTableImpl()), ResolverOptions()
+    )
+    ctx = context(Role.MEMBER)
+    asks = (
+        ModelAsk(role=MAIN, size=ModelSize.L, effort=Effort.HIGH),
+        ModelAsk(role=SUMMARIZER, size=ModelSize.S, effort=Effort.LOW),
+        ModelAsk(role="analysis", size=ModelSize.XL, effort=Effort.MEDIUM),
+    )
+    analysis, main, summarizer = await resolver.resolve(
+        ctx, [MAIN, SUMMARIZER, "analysis"], Eligibility(), asks
+    )
+    sizes = {entry.size: entry for entry in DEFAULT_SIZES}
+    for role, size in ((main, ModelSize.L), (summarizer, ModelSize.S), (analysis, ModelSize.XL)):
+        row = sizes[size]
+        assert [f.name for f in (role.fill, *role.fallbacks)] == [
+            f.name for f in (row.fill, *row.fallbacks)
+        ], f"{role.role} runs on the models its size names"
+    assert served(main) == [
+        ("anthropic/claude-sonnet-5-5", Effort.HIGH),
+        ("openai/gpt-6.1-sol", Effort.HIGH),
+    ]
+    assert served(summarizer) == [
+        ("anthropic/claude-haiku-4-5", None),
+        ("openai/gpt-6-luna", Effort.LOW),
+    ], "a model that takes no effort runs at its own"
+    assert served(analysis) == [
+        ("anthropic/claude-opus-5-5", Effort.MEDIUM),
+        ("openai/gpt-6-astra", Effort.MEDIUM),
+    ], "a role no table names, served by its size, at the effort asked"
+    assert (main.ask, summarizer.ask, analysis.ask) == (asks[0], asks[1], asks[2])
+    # A kind with no ask resolves as before; one role asked leaves the other.
+    assert await resolver.resolve(ctx, [MAIN, SUMMARIZER], Eligibility()) == DEFAULT_TABLE
+    raised = ModelAsk(role=MAIN, size=ModelSize.L, effort=Effort.XHIGH)
+    main, summarizer = await resolver.resolve(ctx, [MAIN, SUMMARIZER], Eligibility(), (raised,))
+    assert served(main) == [
+        ("anthropic/claude-sonnet-5-5", Effort.XHIGH),
+        ("openai/gpt-6.1-sol", Effort.XHIGH),
+    ]
+    assert summarizer == DEFAULT_TABLE[1]
+    with pytest.raises(UnresolvedRole):
+        await resolver.resolve(ctx, [MAIN], Eligibility(), (raised, raised))
+    unsized = ModelResolverTableImpl(EVERY_DEFAULT, ResolverOptions(sizes=()))
+    with pytest.raises(UnresolvedRole, match="model size"):
+        await unsized.resolve(ctx, [MAIN], Eligibility(), (raised,))
+
+
+async def test_an_ask_never_widens_what_a_fill_allows_and_the_fill_set_keeps_both(
+    managers: Managers,
+) -> None:
+    ctx = context(Role.MEMBER)
+    session_id = new_id()
+    asks = (
+        ModelAsk(role=MAIN, size=ModelSize.L, effort=Effort.NONE),
+        ModelAsk(role=SUMMARIZER, size=ModelSize.S, effort=Effort.HIGH),
+    )
+    await managers.models.resolve_fill_set(ctx, session_id, [MAIN, SUMMARIZER], Eligibility(), asks)
+    main, summarizer = (await managers.models.get_fill_set(ctx, session_id)).roles
+    assert served(main) == [
+        ("anthropic/claude-sonnet-5-5", Effort.HIGH),
+        ("openai/gpt-6.1-sol", Effort.HIGH),
+    ], "neither model takes none, and each keeps its own"
+    assert served(summarizer) == [
+        ("anthropic/claude-haiku-4-5", None),
+        ("openai/gpt-6-luna", Effort.HIGH),
+    ], "the haiku takes no effort, and keeps its own"
+    assert (main.ask, summarizer.ask) == asks, "the fill set keeps the ask beside what it got"
+    assert Effort.NONE not in main.fallbacks[0].efforts
+
+
+async def test_each_openai_fill_lists_exactly_the_efforts_its_model_takes() -> None:
+    low_to_max = (Effort.LOW, Effort.MEDIUM, Effort.HIGH, Effort.XHIGH, Effort.MAX)
+    takes = {
+        "gpt-6.1-sol": low_to_max,
+        "gpt-6-astra": low_to_max,
+        "gpt-6-luna": (Effort.NONE, *low_to_max),
+    }
+    openai = [
+        f
+        for entry in DEFAULT_SIZES
+        for f in (entry.fill, *entry.fallbacks)
+        if f.provider is ProviderName.OPENAI
+    ]
+    assert {f.model for f in openai} == set(takes)
+    for f in openai:
+        assert f.efforts == takes[f.model], f"{f.model} lists the levels its provider lists"
+    resolver = ModelResolverTableImpl(
+        ModelPricesFromPricingImpl(PricingTableImpl()), ResolverOptions()
+    )
+    ctx = context(Role.MEMBER)
+    for asked, fallback in ((Effort.NONE, Effort.HIGH), (Effort.MAX, Effort.MAX)):
+        ask = ModelAsk(role=MAIN, size=ModelSize.L, effort=asked)
+        (main,) = await resolver.resolve(ctx, [MAIN], Eligibility(), (ask,))
+        assert served(main)[1] == ("openai/gpt-6.1-sol", fallback), f"an ask at {asked}"
 
 
 # A session's fill set, and its switches.
