@@ -244,9 +244,9 @@ class ToolsManagerImpl(ToolsManagerInterface):
         except InfraException as lost:
             if base is None or lost.code != WorkspaceLost.code:
                 raise
-            # A base this host cannot bring in, such as one built on an image
-            # its name no longer gives, holds nothing of the session's: it is
-            # built again, and the loop asks again once it is.
+            # A base this host cannot bring in, such as one on an image this
+            # host cannot pull, holds nothing of the session's: it is built
+            # again, and the loop asks again once it is.
             await self._bases.drop(ctx, spec)
             raise IsolationRefused(
                 f"the workspace base is built again: {lost.message}", clears=True
@@ -270,8 +270,8 @@ class ToolsManagerImpl(ToolsManagerInterface):
         if workspace.spec.mode is IsolationMode.NONE:
             raise SnapshotRefused(f"agent session {session_id} has no workspace to snapshot")
         # No credential is in what is kept: the broker takes back all it
-        # attached there, one a lost run never took back included, and a
-        # secret's value a command wrote there refuses the snapshot.
+        # attached there, one a lost run never took back included, and an
+        # injected secret's value a command wrote there refuses the snapshot.
         await self._broker.detach_all(workspace)
         archive = await self._workspaces.snapshot(workspace)
         await self._snapshots.scan(ctx, archive)
@@ -280,19 +280,26 @@ class ToolsManagerImpl(ToolsManagerInterface):
         (stored,) = await self._steps.append_steps(ctx, session_id, epoch, [step])
         return stored
 
+    async def latest_snapshot(
+        self, ctx: TenantContext, session_id: UUID
+    ) -> WorkspaceSnapshot | None:
+        ctx.require(Permission.READ)
+        latest: WorkspaceSnapshot | None = None
+        async for step in self._history(ctx, session_id):
+            latest = named_snapshot(step) or latest
+        return latest
+
     async def fork_snapshot(
-        self, ctx: TenantContext, parent_id: UUID, child_id: UUID, snapshot_id: UUID
+        self,
+        ctx: TenantContext,
+        parent_id: UUID,
+        child_id: UUID,
+        snapshot_id: UUID,
+        source: WorkspaceSnapshot,
     ) -> WorkspaceSnapshot:
         ctx.require(Permission.WRITE)
-        latest: WorkspaceSnapshot | None = None
-        async for step in self._history(ctx, parent_id):
-            latest = named_snapshot(step) or latest
-        if latest is None:
-            raise ValidationFailed(
-                f"agent session {parent_id} holds no snapshot for a child to start from"
-            )
-        archive = await self._snapshots.load(ctx, parent_id, latest)
-        return await self._snapshots.keep(ctx, child_id, snapshot_id, latest.workspace_id, archive)
+        archive = await self._snapshots.load(ctx, parent_id, source)
+        return await self._snapshots.keep(ctx, child_id, snapshot_id, source.workspace_id, archive)
 
     async def find_snapshot(
         self, ctx: TenantContext, session_id: UUID, snapshot_id: UUID

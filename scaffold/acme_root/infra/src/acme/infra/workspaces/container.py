@@ -63,6 +63,14 @@ workspace's volume, kept apart, and what the kernel mounts."""
 
 IMAGE_ID = re.compile(r"^sha256:[0-9a-f]{64}$")
 
+REPO_DIGESTS = "{{json .RepoDigests}}"
+"""What an inspect answers of an image: the references a registry serves it
+under, each pinned by its digest."""
+
+REPO_DIGEST = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:-]*@sha256:[0-9a-f]{64}$")
+"""A reference another daemon pulls an image by: a repository and the digest
+that pins it, never a tag that may have moved."""
+
 REMOVE = 'while IFS= read -r path; do rm -rf -- "$path" || exit 1; done'
 """Removes each path its input names, one a line."""
 
@@ -98,19 +106,18 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
 
     A snapshot holds the container's whole filesystem: its writable layer,
     as `docker diff` names what changed in it, and its volume, with the
-    paths removed from the image, and the id of the image beneath. It is
-    taken with the container paused, so nothing writes while it is. A
-    restore starts a container on that image and copies both back, owners
-    and modes kept (ADR 1027).
+    paths removed from the image. It names the image beneath by its id and
+    by the digest a registry serves it under, when it has one. It is taken
+    with the container paused, so nothing writes while it is. A restore
+    starts a container on that image, pulled by its digest on a host that
+    lacks it, and copies both back, owners and modes kept (ADR 1027).
 
     A base is the image it names, or, with setup, a snapshot of a container
     its setup ran in. Each container on it starts on the image that
     snapshot names, with the setup's layer copied in; its files are copied
     into the volume only when the volume is new, so a workspace found again
     keeps its own (ADR 1028). A setup is given open egress or none, as a
-    workspace is. An image a snapshot names by its id that this host lacks
-    is pulled again by the name the spec gives it; one whose name has moved
-    to another image is gone."""
+    workspace is."""
 
     def __init__(self, image: str, timeout: timedelta) -> None:
         self._image = image
@@ -165,6 +172,7 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
         if not shown.ok or len(running) != 2 or running[0] != b"true":
             raise SnapshotRefused(f"workspace {workspace.id} holds no instance to snapshot")
         image = running[1].decode()
+        pull = await self._pullable(image)
         paused = await docker("pause", name, bound=self._timeout)
         if not paused.ok:
             raise BackendFailed("docker", "pause", paused.reason())
@@ -188,10 +196,24 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
             unpaused = await docker("unpause", name, bound=self._timeout)
         if not unpaused.ok:
             raise BackendFailed("docker", "unpause", unpaused.reason())
-        return _archive(Kept(image=image, deleted=deleted, layer=layer, files=files.stdout))
+        return _archive(
+            Kept(image=image, pull=pull, deleted=deleted, layer=layer, files=files.stdout)
+        )
 
     async def release(self, workspace: Workspace) -> None:
         await docker("rm", "-f", workspace.location, bound=self._timeout)
+
+    async def _pullable(self, image: str) -> str | None:
+        """The reference another daemon pulls `image` by: the first of the
+        digests a registry serves it under, or None for an image no registry
+        serves, such as one built on this host."""
+        shown = await docker(
+            "image", "inspect", "--format", REPO_DIGESTS, image, bound=self._timeout
+        )
+        if not shown.ok:
+            raise BackendFailed("docker", "image inspect", shown.reason())
+        served = json.loads(shown.stdout or b"null") or []
+        return min((ref for ref in served if REPO_DIGEST.match(ref)), default=None)
 
     async def purge(self, org_id: UUID, workspace_id: UUID) -> None:
         await self._remove(container_name(workspace_id))
@@ -251,11 +273,11 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
         """The workspace replaced whole by what `snapshot` holds: a container
         on the image it names, its writable layer and its volume copied back,
         and the paths removed from the image removed again. The image is
-        named by its id, never by a tag that may have moved; one that is gone
-        loses the workspace. A restore that fails part way removes what it
-        made, so no half-restored workspace is ever found again."""
+        named by its id, never by a tag that may have moved. A restore that
+        fails part way removes what it made, so no half-restored workspace is
+        ever found again."""
         kept = _opened(snapshot)
-        await self._held(kept.image, self._named_image(workspace.spec))
+        await self._bring_image(kept)
         name = workspace.location
         await self._remove(name)
         try:
@@ -273,7 +295,7 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
         the volume is new. One that fails part way removes the container,
         and the volume only when it was new: the workspace's own files are
         never lost to a base."""
-        await self._held(kept.image, self._named_image(workspace.spec))
+        await self._bring_image(kept)
         name = workspace.location
         listed = await docker(
             "volume", "ls", "--quiet", "--filter", f"name={name}", bound=self._timeout
@@ -310,22 +332,25 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
             if not removed.ok:
                 raise BackendFailed("docker", "exec", removed.reason())
 
-    async def _held(self, image_id: str, named: str) -> None:
-        """The image under `image_id` on this host: pulled again by `named`,
-        the name the spec gives it, when the host lacks it. One the name no
-        longer gives is gone, and so is the workspace that needs it."""
-        present = await docker("image", "inspect", image_id, bound=self._timeout)
-        if present.ok:
-            return
-        pulled = await docker("pull", "--quiet", named, bound=self._timeout)
-        present = await docker("image", "inspect", image_id, bound=self._timeout)
-        if not present.ok:
-            why = "is another image now" if pulled.ok else f"was not pulled: {pulled.reason()}"
-            raise WorkspaceLost(f"the image {image_id} is not on this host, and {named} {why}")
-
     def _named_image(self, spec: IsolationSpec) -> str:
         """The image a spec names: its base's, or this provider's own."""
         return self._image if spec.base is None else spec.base.image
+
+    async def _bring_image(self, kept: Kept) -> None:
+        """The image a snapshot was taken on, on this host: found by its id,
+        or pulled by the digest the snapshot names and held to that id. One
+        that cannot be had loses the workspace, with the reason, before
+        anything of it is removed."""
+        if (await docker("image", "inspect", kept.image, bound=self._timeout)).ok:
+            return
+        taken_on = f"the image {kept.image} the snapshot was taken on"
+        if kept.pull is None:
+            raise WorkspaceLost(f"{taken_on} is not on this host, and no registry serves it")
+        pulled = await docker("pull", kept.pull, bound=self._timeout)
+        if not pulled.ok:
+            raise WorkspaceLost(f"{taken_on} is not on this host: {pulled.reason()}")
+        if not (await docker("image", "inspect", kept.image, bound=self._timeout)).ok:
+            raise WorkspaceLost(f"{kept.pull} pulled an image other than {taken_on}")
 
     def describe(self) -> str:
         return f"workspaces=container({self._image})"
@@ -396,11 +421,13 @@ def _limits(spec: IsolationSpec) -> tuple[str, ...]:
 
 @dataclass(frozen=True)
 class Kept:
-    """What a container's snapshot holds: the image beneath it, by id; the
-    paths its commands removed from the image; and, as two archives, what
-    changed in its writable layer and what its volume holds."""
+    """What a container's snapshot holds: the image beneath it, by id, and the
+    digest another daemon pulls it by, when a registry serves it; the paths
+    its commands removed from the image; and, as two archives, what changed
+    in its writable layer and what its volume holds."""
 
     image: str
+    pull: str | None
     deleted: tuple[str, ...]
     layer: bytes
     files: bytes
@@ -444,7 +471,12 @@ def _layer(export: IO[bytes], kept: frozenset[str]) -> bytes:
 
 def _archive(kept: Kept) -> bytes:
     """A snapshot's bytes: its manifest, then its two archives."""
-    manifest = {"format": FORMAT, "image": kept.image, "deleted": list(kept.deleted)}
+    manifest = {
+        "format": FORMAT,
+        "image": kept.image,
+        "pull": kept.pull,
+        "deleted": list(kept.deleted),
+    }
     out = io.BytesIO()
     with tarfile.open(fileobj=out, mode="w", format=tarfile.PAX_FORMAT) as archive:
         for name, data in (
@@ -471,19 +503,22 @@ def _opened(snapshot: bytes) -> Kept:
                     parts[member.name] = handle.read()
         manifest = json.loads(parts["manifest.json"])
         image, deleted = manifest["image"], tuple(manifest["deleted"])
-        format_ = manifest["format"]
+        format_, pull = manifest["format"], manifest.get("pull")
     except (tarfile.TarError, KeyError, TypeError, ValueError) as error:
         raise WorkspaceLost(f"the snapshot is no container's: {error}") from error
     if format_ != FORMAT:
         raise WorkspaceLost(f"the snapshot is {format_!r}, not a container's")
     if not isinstance(image, str) or not IMAGE_ID.match(image):
         raise WorkspaceLost("the snapshot names no image by its id")
+    if pull is not None and (not isinstance(pull, str) or not REPO_DIGEST.match(pull)):
+        raise WorkspaceLost("the snapshot names its image's digest by no reference to pull")
     if not all(
         isinstance(path, str) and path.startswith("/") and "\n" not in path for path in deleted
     ):
         raise WorkspaceLost("the snapshot names a removed path that is not one")
     return Kept(
         image=image,
+        pull=pull,
         deleted=deleted,
         layer=parts.get("layer.tar", b""),
         files=parts.get("workspace.tar", b""),

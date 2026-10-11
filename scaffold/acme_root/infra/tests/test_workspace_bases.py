@@ -3,8 +3,7 @@ snapshot refuses a base, and the container provider refuses a setup egress
 it does not enforce, both before anything is made. A container on a base
 starts on the setup's whole filesystem; its files are the base's only when
 its volume is new, so a workspace found again keeps its own, and gets the
-setup's layer back. An image the base names by its id that the host lacks
-is pulled again by its name, and one the name no longer gives is gone.
+setup's layer back.
 
 The cases on real Docker are integration cases, skipped, with the reason,
 where no Docker runs."""
@@ -25,7 +24,6 @@ from acme.infra.workspaces import (
     IsolationSpec,
     Workspace,
     WorkspaceBase,
-    WorkspaceLost,
 )
 from acme.infra.workspaces.account import WorkspaceAccountImpl
 from acme.infra.workspaces.container import WorkspaceContainerImpl
@@ -35,7 +33,6 @@ NONE = EgressPolicy(mode=EgressMode.NONE)
 OPEN = EgressPolicy(mode=EgressMode.OPEN)
 IMAGE = "python:3.14-slim"
 BASE = WorkspaceBase(image=IMAGE, setup=("echo layer > /opt/tool",), egress=OPEN)
-IMAGE_ID = "sha256:" + "a" * 64
 
 
 def on(
@@ -83,31 +80,6 @@ async def test_the_container_provider_refuses_what_it_cannot_hold_before_docker(
     with pytest.raises(IsolationRefused, match="starts from the base's snapshot alone"):
         await provider.prepare(new_id(), new_id(), on(IsolationMode.CONTAINER, egress=NONE))
     assert calls == []
-
-
-async def test_an_image_the_host_lacks_is_pulled_by_its_name_and_one_moved_is_gone(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    pulled: list[str] = []
-    gives: dict[str, bool] = {"after": True}
-
-    async def fake(*args: str, **_: object) -> DockerReply:
-        if args[:2] == ("image", "inspect"):
-            return DockerReply(0 if pulled and gives["after"] else 1, b"", b"No such image")
-        if args[0] == "pull":
-            pulled.append(args[-1])
-        return DockerReply(0, b"", b"")
-
-    monkeypatch.setattr("acme.infra.workspaces.container.docker", fake)
-    provider = WorkspaceContainerImpl(IMAGE, timedelta(seconds=5))
-
-    await provider._held(IMAGE_ID, "python:3.14-slim")  # pyright: ignore[reportPrivateUsage]
-    assert pulled == ["python:3.14-slim"]
-
-    pulled.clear()
-    gives["after"] = False
-    with pytest.raises(WorkspaceLost, match="is another image now"):
-        await provider._held(IMAGE_ID, "python:3.14-slim")  # pyright: ignore[reportPrivateUsage]
 
 
 def docker_runs() -> bool:

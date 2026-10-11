@@ -72,13 +72,11 @@ and refuses an allowlist, as it does a workspace's. A provider that
 cannot snapshot refuses a base before anything is made, and none starts
 a workspace on a base with setup without its snapshot.
 
-**An image the host lacks.** A snapshot names its image by id. A host
-that lacks it pulls the image by the name the spec gives it and looks
-again; a session's snapshot does the same with the image its spec
-names. When the name now gives another image, the workspace is lost.
-For a base, nothing of the session is lost with it: the base is dropped,
-the prepare is refused with a refusal that clears, and the next one
-builds it again on the image the name gives now.
+**An image the host lacks.** A base's snapshot names its image as any
+snapshot does: by its id, and by the digest a registry serves it under,
+which a host that lacks it pulls. When the image cannot be had, nothing
+of the session is lost with the base: it is dropped, the prepare is
+refused with a refusal that clears, and the next one builds it again.
 
 **The seam.** Building needs only what every provider already offers:
 `prepare`, `snapshot`, `purge`, and the transport's `run`. A VM provider
@@ -86,10 +84,9 @@ serves a base by those same calls, its disk for the container's layer.
 
 ## Consequences
 
-- A base's image is named as the spec gives it. A tag that moves does
-  not rebuild a base already kept on a host that still holds the old
-  image; a spec that names an image by digest is exact, and a platform
-  that wants a newer image names a new one, or rebuilds.
+- A base's image is named as the spec gives it, and its snapshot pins
+  the image it was built on. A tag that moves does not rebuild a base: a
+  platform that wants the newer image names a new base, or rebuilds.
 - A base no spec names any more stays in the store until the tenant's
   purge. A tenant's store of bases outgrowing what its live specs name
   is the trigger for removing the ones none names.

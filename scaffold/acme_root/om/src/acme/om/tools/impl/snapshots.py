@@ -4,10 +4,10 @@ trusted only by that hash when they are read back.
 
 A snapshot is content: what a workspace's commands wrote. So it is sealed
 like the steps they answered, scanned for the values of the secrets the
-catalog's tools may be given before anything of it is kept, and goes with
-its session's purge. Each session keeps its own: a child that starts from
-its parent's snapshot keeps a copy sealed under its own key, so neither
-purge nor revocation of one reaches the other (ADR 1027)."""
+catalog's tools may have injected before anything of it is kept, and goes
+with its session's purge. Each session keeps its own: a child that starts
+from its parent's snapshot keeps a copy sealed under its own key, so
+neither purge nor revocation of one reaches the other (ADR 1027)."""
 
 from collections.abc import Collection
 from uuid import UUID
@@ -110,7 +110,7 @@ class SnapshotStore:
 
     async def scan(self, ctx: TenantContext, archive: bytes) -> None:
         """Refuses an archive that holds the value of a secret the catalog's
-        tools may be given, in any form redaction matches, and names the
+        tools may have injected, in any form redaction matches, and names the
         secret, never its value. A secret the tenant does not hold was never
         given, so it is not looked for."""
         values: dict[str, str] = {}

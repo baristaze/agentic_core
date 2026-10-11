@@ -859,8 +859,10 @@ the Guideline](#deviations-from-the-guideline)).
 
 <!-- agents-only
 Streams redact with a holdback as long as the longest secret, so a
-value split across two parts is still caught. A workspace snapshot is
-scanned for secrets before it is pushed.
+value split across two parts is still caught. A brokered credential is
+detached before a workspace snapshot is taken, and the snapshot is
+scanned for the values of the secrets the engine injected before it is
+kept.
 -->
 
 > **Principle:** A secret is brokered, or short-lived and scoped. Once it
@@ -925,17 +927,26 @@ A workspace is a cache, and stays one. Some sessions must resume on
 their whole machine: the tools they installed, a local database, the
 files they generated. For them, a provider that can **snapshots** a
 workspace: everything its commands could write, as one archive, kept as
-durable state the way the history is. The engine states the capability;
-when to take a snapshot, where it lives relative to a customer's wall,
-and for how long are the platform's ([Next: The
-Platform](#next-the-platform)).
+durable state the way the history is. A kind chooses its workspace's
+durability: `cache`, the default, or `snapshot`. The engine states the
+capability and takes the snapshots; which workspaces keep them, where
+they live relative to a customer's wall, and for how long are the
+platform's ([Next: The Platform](#next-the-platform)).
 
 - **What it holds.** Everything the workspace's commands could write: a
   container's whole filesystem, its writable layer and its volume, on
-  the image beneath it, named by its id; a VM's disk. Never a
-  credential: the broker takes back all it attached there first, and a
-  snapshot that holds the value of a secret a tool may be given is
-  refused.
+  the image beneath it, named by its id and by the digest its registry
+  serves it under; a VM's disk. Never a credential: the broker detaches
+  every credential it attached there before the snapshot is taken, and
+  a snapshot that holds the value of a secret the engine injected into
+  a command is refused.
+- **When.** The run that holds a `snapshot` workspace snapshots it at
+  its end, live, before its loop parks or ends, and lets the instance
+  go only once a snapshot holds it. The next run starts from the latest
+  snapshot, unless something touched the workspace after it: a person's
+  work by hand, or a run lost before its end, leaves it to be prepared
+  as it stands. A workspace no run holds has no instance, and refuses a
+  snapshot.
 - **Who can.** A provider says whether it can. A directory on a host
   cannot, since its commands write outside it, and neither can an
   account's. A spec may ask for a workspace that can be snapshotted. A
@@ -947,16 +958,21 @@ Platform](#next-the-platform)).
   hash, its size, and the workspace it came from. The history is the
   source of truth for which snapshots a session holds.
 - **Restore.** A prepare may start from a snapshot the history names,
-  and the workspace is replaced whole. Its bytes are trusted only once
-  they match its hash. One that is gone, erased, or altered loses the
-  workspace before it starts, and the loop parks for a person.
+  and the workspace is replaced whole, on its image, pulled by its
+  digest where the host lacks it. Its bytes are trusted only once they
+  match its hash. One that is gone, erased, or altered loses the
+  workspace before it starts, and the loop parks for a person, once:
+  the person's unlock goes on from the workspace as it stands, and an
+  `environment_changed` step records the restore lost and tells the
+  model.
 - **Rewind.** A principal's `restore` control names an earlier
   snapshot. The next loop's prepare starts from it, and an
   `environment_changed` step that references the control records the
   restore and tells the model. Nothing is deleted.
 - **Fork.** A sub-agent spawned with `fork` starts from a copy of its
   parent's latest snapshot, sealed under its own key. What it writes
-  never reaches its parent's workspace.
+  never reaches its parent's workspace. A fork whose parent holds no
+  snapshot is refused before anything of the tree is spent.
 - **Bases.** A spec may name a **base**: an image, the commands that
   set it up, and the egress the setup may use, such as a package
   registry's. The setup runs once, in a workspace of its own, and the
@@ -975,7 +991,7 @@ Platform](#next-the-platform)).
   snapshots, and revoking its key erases them.
 
 *Example:* the checkout session's workspace holds a test database it
-seeded. The platform snapshots it at each release, and the review
+seeded. Its run snapshots it as the loop parks, and the review
 comment's loop a week later starts on the same database.
 
 *Example:* the checkout kind's base installs the test runner from the
