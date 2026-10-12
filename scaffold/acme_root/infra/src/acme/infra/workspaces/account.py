@@ -23,6 +23,11 @@ It runs under a hardened unit, which hides `/proc/sys` (`ProcSubset=pid`)
 and refuses a setuid or setgid bit (`RestrictSUIDSGID=yes`): the host's
 setting it needs is declared where it cannot be read, and a workspace is
 shared with the account's group by a default ACL, never by a setgid bit.
+A unit that filters the privileged system calls
+(`SystemCallFilter=~@privileged`) allows three sets of them back: `@setuid`
+and `capset`, which the switch takes, and `@chown`, which the share takes.
+A prepare tries each before it makes anything, and a filter that refuses
+one is named in its refusal.
 
 What stays a product's: which account its host gives its agents, the
 grants it adds to that account, and how its host image makes it."""
@@ -295,6 +300,51 @@ def switch_to(account: str) -> Switch:
     return Switch(account, entry.pw_uid, entry.pw_gid, setpriv, prlimit)
 
 
+async def filter_refusal(switch: Switch) -> str | None:
+    """Why a system call filter on this process keeps the mode from running,
+    as a unit's `SystemCallFilter=~@privileged` does unless it allows the
+    sets the mode takes; None when it refuses none of them. The switch,
+    which takes `@setuid` and `capset`, is tried as a command of the account
+    that does nothing. The share of a workspace with the account's group,
+    which takes `@chown`, is tried as a chown that changes nothing, of a
+    pipe. Neither makes anything."""
+    refused: list[str] = []
+    trying = await asyncio.create_subprocess_exec(
+        *switch.argv("exit 0"),
+        cwd="/",
+        env={},
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,
+    )
+    _, said = await trying.communicate()
+    code = trying.returncode or 0
+    if code != 0:
+        why = " ".join(said.decode(errors="replace").split())
+        why = why or (f"ended by signal {-code}" if code < 0 else f"exit {code}")
+        refused.append(
+            f"the switch to {switch.account!r} fails here ({why}): it takes @setuid and capset"
+        )
+    read, write = os.pipe()
+    try:
+        os.fchown(read, -1, -1)
+    except PermissionError:
+        refused.append(
+            "a chown fails here: the share of a workspace with the account's group takes @chown"
+        )
+    finally:
+        os.close(read)
+        os.close(write)
+    if not refused:
+        return None
+    return (
+        "; ".join(refused)
+        + ". A unit whose SystemCallFilter refuses @privileged allows @setuid, capset, and"
+        " @chown beside it"
+    )
+
+
 async def end_account(switch: Switch, seconds: float = ENDING_SECONDS) -> None:
     """Ends every process of the account, whatever its directory, as the
     account (`END`), again until the account's own view of `/proc` shows
@@ -359,7 +409,8 @@ class WorkspaceAccountImpl(WorkspaceProviderInterface):
     shares the root: a prepare while it serves another is refused, and a
     purge then removes only what this process can. A host that lets an
     account link a file it does not own is refused too: the link would
-    reach this process's files from the workspace. Where this process cannot
+    reach this process's files from the workspace. So is one whose system
+    call filter refuses the switch or the share. Where this process cannot
     read the host's setting, `protected_hardlinks` is the runner's word that
     it is on. Like any directory on a host, it never snapshots a workspace
     (`UNKEPT`)."""
@@ -393,6 +444,9 @@ class WorkspaceAccountImpl(WorkspaceProviderInterface):
         linking = await asyncio.to_thread(linking_refusal, self._protected_hardlinks)
         if linking is not None:
             raise IsolationRefused(linking)
+        filtered = await filter_refusal(switch)
+        if filtered is not None:
+            raise IsolationRefused(filtered)
         job = self._job(org_id, workspace_id)
         async with self._turn:
             fresh = self._held is None

@@ -8,9 +8,10 @@ An account workspace runs its commands as an account of the host, which the
 cases that need one name in TEST_WORKSPACE_ACCOUNT. They are skipped, with
 the reason, on a host that cannot switch to it: one not on Linux, or a
 process without the capabilities the switch takes, as in most CI. Their
-root's filesystem keeps ACLs. One more runs under a unit with
-`ProcSubset=pid` and `RestrictSUIDSGID=yes` alone, and is skipped, with the
-reason, anywhere else."""
+root's filesystem keeps ACLs. Two more run under a unit with
+`ProcSubset=pid`, `RestrictSUIDSGID=yes`, and a system call filter, and are
+skipped, with the reason, anywhere else: one where the filter allows what
+the mode takes, one where it refuses some of it."""
 
 import asyncio
 import contextlib
@@ -19,6 +20,7 @@ import re
 import shutil
 import signal
 import stat
+import subprocess
 import tempfile
 from collections.abc import Iterator
 from datetime import timedelta
@@ -827,12 +829,28 @@ async def test_the_account_serves_one_workspace_at_a_time_and_a_released_one_is_
         await provider.purge(first.org_id, first.id)
 
 
+def privileged_filtered() -> bool:
+    """Whether a filter refuses the privileged system calls here, as
+    `SystemCallFilter=~@privileged` does: a chroot to a missing path fails
+    as missing, unless a filter refuses the call first."""
+    try:
+        os.chroot(Path(tempfile.gettempdir()) / new_id().hex)
+    except PermissionError:
+        return True
+    except FileNotFoundError:
+        pass
+    return False
+
+
 def hardened() -> str | None:
     """Why this process runs under no unit that hides `/proc/sys`
-    (`ProcSubset=pid`) and refuses a setgid bit (`RestrictSUIDSGID=yes`);
+    (`ProcSubset=pid`), refuses a setgid bit (`RestrictSUIDSGID=yes`), and
+    filters the privileged system calls (`SystemCallFilter=~@privileged`);
     None when it does."""
     if not (accounts.PROC / "self").is_dir() or (accounts.PROC / "sys").exists():
         return "/proc/sys shows here: no unit with ProcSubset=pid"
+    if not privileged_filtered():
+        return "chroot runs here: no unit with SystemCallFilter=~@privileged"
     probe = Path(tempfile.mkdtemp(prefix="setgid-"))
     try:
         probe.chmod(0o2770)
@@ -841,6 +859,28 @@ def hardened() -> str | None:
     finally:
         probe.rmdir()
     return "a setgid bit is set here: no unit with RestrictSUIDSGID=yes"
+
+
+def refused_here() -> list[str]:
+    """The sets of system calls the mode takes that a filter on this process
+    refuses, as this test finds them apart from the provider: `@setuid` and
+    `capset` where the switch to the account fails, and `@chown` where a
+    chown that changes nothing does. Empty on a host that cannot switch."""
+    if cannot_switch() is not None:
+        return []
+    refused: list[str] = []
+    switch = switch_to(ACCOUNT).argv("exit 0")
+    if subprocess.run(switch, cwd="/", env={}, capture_output=True, check=False).returncode:
+        refused += ["@setuid", "capset"]
+    with tempfile.NamedTemporaryFile() as probe:
+        try:
+            os.chown(probe.name, -1, -1)
+        except PermissionError:
+            refused.append("@chown")
+    return refused
+
+
+REFUSED = refused_here()
 
 
 def processes_of(uid: int) -> list[int]:
@@ -861,11 +901,13 @@ def processes_of(uid: int) -> list[int]:
 
 @needs_an_account
 @pytest.mark.skipif(hardened() is not None, reason=f"{hardened()}")
+@pytest.mark.skipif(bool(REFUSED), reason=f"the filter here refuses {' '.join(REFUSED)}")
 async def test_under_a_hardened_unit_a_workspace_prepares_runs_as_the_account_releases_and_purges(
     account_root: Path, tmp_path: Path
 ) -> None:
-    """Under a unit that hides `/proc/sys` and refuses a setgid bit, with the
-    host's setting declared on: the home and the temporary directory carry
+    """Under a unit that hides `/proc/sys`, refuses a setgid bit, and filters
+    the privileged system calls but those the mode takes, with the host's
+    setting declared on: the home and the temporary directory carry
     no setgid bit, and the account writes both; a file this process writes
     there, the account reads, and one the account writes, this process
     reads. A release ends every process of the account and closes the
@@ -909,3 +951,19 @@ async def test_under_a_hardened_unit_a_workspace_prepares_runs_as_the_account_re
     assert not home.parent.exists()
     assert (outside / "kept.txt").read_text() == "the engine's"
     assert [path.name for path in outside.iterdir()] == ["kept.txt"]
+
+
+@needs_an_account
+@pytest.mark.skipif(hardened() is not None, reason=f"{hardened()}")
+@pytest.mark.skipif(not REFUSED, reason="no system call filter here refuses what the mode takes")
+async def test_under_a_unit_whose_filter_refuses_what_the_mode_takes_a_prepare_names_the_filter(
+    account_root: Path,
+) -> None:
+    """Under a unit whose system call filter refuses the switch's calls or
+    chown, a prepare is refused before it makes anything, and its refusal
+    names the filter and each set it refuses."""
+    provider = WorkspaceAccountImpl(account_root, ACCOUNT, protected_hardlinks=True)
+    with pytest.raises(IsolationRefused, match="SystemCallFilter") as refused:
+        await provider.prepare(new_id(), new_id(), spec(IsolationMode.ACCOUNT, processes=64))
+    assert [name for name in REFUSED if name not in refused.value.message] == []
+    assert await asyncio.to_thread(os.listdir, account_root) == []
