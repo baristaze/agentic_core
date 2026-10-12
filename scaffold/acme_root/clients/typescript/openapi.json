@@ -2313,8 +2313,19 @@
         "type": "string"
       },
       "ParkView": {
-        "description": "Why a parked loop waits, what clears it, and when it tries again by\nitself; a park only a person clears has no time, and neither has a park\nin line, which names where it stands.",
+        "description": "Why a parked loop waits, what clears it, and when it tries again by\nitself; a park only a person clears has no time, and neither has a park\nin line, which names where it stands. `cause` says why in words when the\nengine can name it, such as a workspace base still being built.",
         "properties": {
+          "cause": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cause"
+          },
           "line": {
             "anyOf": [
               {
@@ -2348,7 +2359,8 @@
         "required": [
           "reason",
           "unlock",
-          "retry_at"
+          "retry_at",
+          "cause"
         ],
         "title": "ParkView",
         "type": "object"
@@ -3189,10 +3201,21 @@
         "type": "object"
       },
       "StepView": {
-        "description": "One step of a session's history, in its order. `text` is what it\nsays: a message's words, a model's answer, a tool's result. The rest is\nits header's, by type: the tools a model response called, why it\nstopped, and what it used; a tool call's tool and the class of its\nfailure; a control's command; a park; a loop's outcome; the snapshot a\n`snapshotted` step names, or a restore starts from.",
+        "description": "One step of a session's history, in its order. `text` is what it\nsays: a message's words, a model's answer, a tool's result. The rest is\nits header's, by type: the tools a model response called, why it\nstopped, and what it used; a tool call's tool and the class of its\nfailure; a control's command; a park; a loop's outcome, and its cause\nwhen the engine names one, such as the setup command that failed and\nits exit code; the snapshot a `snapshotted` step names, or a restore\nstarts from.",
         "properties": {
           "actor": {
             "$ref": "#/components/schemas/Actor"
+          },
+          "cause": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cause"
           },
           "command": {
             "anyOf": [
@@ -3351,6 +3374,7 @@
           "command",
           "park",
           "outcome",
+          "cause",
           "snapshot"
         ],
         "title": "StepView",
