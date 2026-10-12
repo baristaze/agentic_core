@@ -30,7 +30,13 @@ from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKi
 from acme.om.base import Platform, derived_id, new_id, utcnow
 from acme.om.budgets import BudgetsManagerInterface
 from acme.om.context import Permission, TenantContext
-from acme.om.exceptions import NotAuthorized, NotFound, TreeBoundReached, ValidationFailed
+from acme.om.exceptions import (
+    KeyRevoked,
+    NotAuthorized,
+    NotFound,
+    TreeBoundReached,
+    ValidationFailed,
+)
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.types.row import OutboxRow, versioned_row
 from acme.om.steps import StepsManagerInterface
@@ -298,10 +304,17 @@ class AgentsManagerImpl(AgentsManagerInterface):
             untrusted=child.untrusted,
             holds_private=child.holds_private,
         )
-        bounded = await self._windows.bound_report(ctx, parent.id, step)
-        # Through the inbox: the projection that turns the parent pending
-        # asks for its loop's run.
-        (stored,), parent = await self._sessions.receive(ctx, parent.id, [bounded])
+        try:
+            # A report over the bound seals its whole under the parent's key.
+            bounded = await self._windows.bound_report(ctx, parent.id, step)
+            # Through the inbox: the projection that turns the parent pending
+            # asks for its loop's run.
+            (stored,), parent = await self._sessions.receive(ctx, parent.id, [bounded])
+        except KeyRevoked:
+            # The parent's content is past its life: it takes no content
+            # again, so the report has no reader, its artifact included, and
+            # the child's loop ends as under a parent gone.
+            return None
         if report_wakes(report) and parent.park == CHILDREN_PARK:
             # A parent that waits on its children waits for this report: it
             # clears the park, and the parent's gates run again as it resumes.
