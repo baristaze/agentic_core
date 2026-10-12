@@ -694,8 +694,8 @@ async def test_only_the_refusal_that_waits_for_the_other_workspace_clears(
     assert [refused.message for refused in never if refused.clears] == []
     spec_refused, host_refused = never[: len(ACCOUNT_REFUSES)], never[len(ACCOUNT_REFUSES) :]
     assert all(refused.cause == refused.message for refused in spec_refused)
-    assert [refused.cause for refused in (*host_refused, caught.value)] == [None, None, None], (
-        "the host's accounts, its kernel, and another workspace reach the log alone"
+    assert [refused.cause for refused in (*host_refused, caught.value)] == [None] * 4, (
+        "the host's accounts, its kernel, its filter, and another workspace reach the log alone"
     )
     assert not root.exists()
 
