@@ -22,6 +22,14 @@ class AuthorityMode(StrEnum):
     STEADY = "steady"  # one principal fixed when the session is made
 
 
+class Visibility(StrEnum):
+    """Who sees a session and opens its content. The org is the team: there
+    is no axis between the two."""
+
+    ORG_WIDE = "org_wide"  # every member of its org, who may join it
+    PRIVATE = "private"  # its creator, the participants it has, and `manage_sessions`
+
+
 class Trust(StrEnum):
     """What a step says to a model. Only a principal instructs; everything
     else is data, rendered quoted and labelled with its origin."""

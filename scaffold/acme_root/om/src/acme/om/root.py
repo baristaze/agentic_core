@@ -42,9 +42,10 @@ from acme.om.budgets.impl.manager import BudgetsManagerImpl, BudgetsOptions
 from acme.om.budgets.impl.operator import BudgetsOperatorManagerImpl, BudgetsOperatorOptions
 from acme.om.budgets.impl.pricing import PricingTableImpl
 from acme.om.budgets.pricing import PricingInterface
+from acme.om.context import TenantContext
 from acme.om.events import EventsManagerInterface
 from acme.om.events.impl.manager import EventsManagerImpl, EventsOptions
-from acme.om.exceptions import UnsafeConfiguration
+from acme.om.exceptions import NotFound, UnsafeConfiguration
 from acme.om.idempotency import IdempotencyManagerInterface
 from acme.om.idempotency.impl.manager import IdempotencyManagerImpl, IdempotencyOptions
 from acme.om.leases import LeasesManagerInterface
@@ -174,6 +175,13 @@ async def purge_held(
     await managers.attribution.purge_authority(org_id, session_id)
     if tree_id is not None:
         await managers.agents.purge_tree(org_id, tree_id)
+
+
+async def opens(managers: Managers, ctx: TenantContext, session_id: UUID) -> None:
+    """A history, or what its session keeps outside it, opens to whom the
+    session is visible: one it is not visible to finds nothing there."""
+    if not await managers.agent_sessions.is_visible(ctx, session_id):
+        raise NotFound(f"agent session {session_id} not found")
 
 
 def build_tenancy(
@@ -394,9 +402,12 @@ def build_managers(
         tenancy,
         steps_options or StepsOptions(),
         # Who may instruct a session is the agents' to answer, from its
-        # registry; they are built below on this manager, so the edge is
+        # registry; who steers it is attribution's, and who sees it the
+        # sessions'. Each is built below on this manager, so the edges are
         # bound at call time.
         instructs=lambda ctx, session_id: managers.agents.require_instructor(ctx, session_id),
+        steers=lambda ctx, session_id: managers.attribution.steers(ctx, session_id),
+        opens=lambda ctx, session_id: opens(managers, ctx, session_id),
     )
     agent_sessions = AgentSessionsManagerImpl(
         storage.get_agent_session_storage(),
@@ -488,6 +499,7 @@ def build_managers(
         artifact_seal or ArtifactSealKeysImpl(session_keys, storage.get_privacy_storage()),
         compaction_policy or CompactionPolicy(),
         WindowsOptions(),
+        opens=lambda ctx, session_id: opens(managers, ctx, session_id),
     )
     # The read tool pages through what windows keeps. The spawn tool starts
     # sub-agents through the agents manager, which is built below on this

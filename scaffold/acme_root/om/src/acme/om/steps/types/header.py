@@ -18,7 +18,7 @@ from uuid import UUID
 from pydantic import BeforeValidator, Field, model_validator
 
 from acme.integrations.model_providers.types import StopReason, Usage
-from acme.om.attribution.types.authority import AuthorityMode
+from acme.om.attribution.types.authority import AuthorityMode, Visibility
 from acme.om.attribution.types.principal import AgentRef, Principal
 from acme.om.base import Platform
 from acme.om.context import Role
@@ -225,7 +225,12 @@ class InputHeader(Platform):
     whether that agent's session holds private data, so a child's report
     makes its parent hold what the child held. `artifact` is the handle of a
     child's report above the size bound, whose head and tail are the step's
-    two text blocks."""
+    two text blocks.
+
+    `participant` is set by the history on a message from a person who
+    takes part in the session and does not steer it: it is data, labelled
+    with its author, and it never instructs, wakes, or pays
+    (`attribution.rules.principal_authored`)."""
 
     kind: Literal["input"] = "input"
     waking: bool | None = None
@@ -234,6 +239,7 @@ class InputHeader(Platform):
     untrusted: bool = False
     holds_private: bool = False
     artifact: ArtifactRef | None = None
+    participant: bool = False
 
 
 class DecidedCall(Platform):
@@ -422,23 +428,48 @@ class StandingSwitch(Platform):
     chars: int = Field(ge=0)
 
 
+class SteerSwitch(Platform):
+    """What a `switched` step says of the session's steer: the principal who
+    steers it from here, and who moved it there, the history's to write
+    (`attribution.rules.switched_by`): the steerer who handed it over, or a
+    holder of `manage_sessions` who took it."""
+
+    steerer: Principal
+    by: Principal
+
+
+class VisibilitySwitch(Platform):
+    """What a `switched` step says of who sees the session: org-wide or
+    private from here, and who switched it, the history's to write. Only
+    its creator's switch counts (`agent_sessions.rules.projected`)."""
+
+    visibility: Visibility
+    by: Principal
+
+
 class SwitchedHeader(Platform):
     """A switch, explicit: the fill set's new version and both fills it
     names, a toolset a load added to the session's registry, with the
-    tools it added, or the session's standing text. A switch is never
-    silent, so no fill changes, no tool joins a request, and no standing
-    text changes, without one."""
+    tools it added, the session's standing text, its steerer, or who sees
+    it. A switch is never silent, so no fill changes, no tool joins a
+    request, no standing text changes, and no steer or sight of the session
+    moves, without one."""
 
     kind: Literal["switched"] = "switched"
     fills: FillSwitch | None = None
     toolset: ToolsetSwitch | None = None
     standing: StandingSwitch | None = None
+    steer: SteerSwitch | None = None
+    visibility: VisibilitySwitch | None = None
 
     @model_validator(mode="after")
     def _one_switch(self) -> Self:
-        named = (self.fills, self.toolset, self.standing)
+        named = (self.fills, self.toolset, self.standing, self.steer, self.visibility)
         if sum(each is not None for each in named) != 1:
-            raise ValueError("a switch names one of a fill switch, a toolset, or standing text")
+            raise ValueError(
+                "a switch names one of a fill switch, a toolset, standing text, a steer, "
+                "or a visibility"
+            )
         return self
 
 

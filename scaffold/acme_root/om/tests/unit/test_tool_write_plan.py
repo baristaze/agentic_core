@@ -49,8 +49,11 @@ async def test_a_plan_is_kept_by_version_rendered_last_next_call_and_read_by_a_p
     for request, plan in ((refused, FIRST), (second, FIRST), (last, SECOND)):
         assert request.messages[-1].role == "user"
         assert request.messages[-1].blocks[-1] == data_block("plan", plan), "the plan, last"
-    # A person, a member who is not the session's owner, reads the history.
-    page = await loop.managers.steps.get_steps(loop.colleague(), session_id, 0, 200)
+    # A person, a participant who is not the session's owner, reads the
+    # history.
+    colleague = loop.colleague()
+    await loop.managers.agent_sessions.add_participant(loop.owner, session_id, colleague.user_id)
+    page = await loop.managers.steps.get_steps(colleague, session_id, 0, 200)
     steps = list(page.items)
     one, two = kept(steps)
     assert current_plan(steps) == Plan(version=2, text=SECOND, step_id=two.id)

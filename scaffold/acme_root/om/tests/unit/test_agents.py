@@ -267,8 +267,11 @@ async def test_a_child_holds_no_more_than_its_parent(managers: Managers) -> None
     on = managers.attribution.get_authority
     assert (await on(owner, child.id)).principal == (await on(owner, parent.id)).principal
     assert (child.parent_id, child.root_id, child.depth) == (parent.id, parent.id, 2)
-    # A delegated parent's child runs under whoever asked the parent.
+    # A delegated parent's child runs under whoever asked the parent: its
+    # steerer, here the teammate it was handed to.
     assistant = await start(managers, owner, "assistant")
+    await managers.agent_sessions.add_participant(owner, assistant.id, teammate.user_id)
+    await managers.attribution.assign_principal(owner, assistant.id, teammate.user_id)
     (said,) = await managers.steps.append_inputs(
         teammate, assistant.id, [make_message(assistant.id)]
     )
@@ -283,12 +286,15 @@ async def test_a_child_made_by_hand_is_held_to_its_parent_too(managers: Managers
     """The create is the one path every session takes, so a child sent with
     a tool its parent lacks, the wrong depth, and no mark is stored with its
     parent's; its authority names no principal its maker chose, only its
-    parent's, and it pays as its parent pays."""
+    parent's, and it pays as its parent pays: the parent's steer was handed
+    on after its maker last spoke, so the two differ."""
     org = make_org()
-    ctx, asker = context(Role.MEMBER, org), context(Role.MEMBER, org)
+    ctx, steerer = context(Role.MEMBER, org), context(Role.MEMBER, org)
     parent = await start(managers, ctx)
-    (said,) = await managers.steps.append_inputs(asker, parent.id, [make_message(parent.id)])
+    (said,) = await managers.steps.append_inputs(ctx, parent.id, [make_message(parent.id)])
     await model_request(managers, ctx, parent.id, [said])
+    await managers.agent_sessions.add_participant(ctx, parent.id, steerer.user_id)
+    await managers.attribution.assign_principal(ctx, parent.id, steerer.user_id)
     await managers.steps.append_inputs(
         ctx, parent.id, [make_message(parent.id).model_copy(update={"type": StepType.EVENT})]
     )
@@ -298,8 +304,8 @@ async def test_a_child_made_by_hand_is_held_to_its_parent_too(managers: Managers
     child = await managers.agent_sessions.create_session(ctx, sent)
     assert child.tools == ("read_log",) and child.depth == 2 and child.untrusted
     authority = await managers.attribution.open_authority(ctx, child.id, AuthorityMode.DELEGATED)
-    assert authority.principal == person_of(ctx), "the steady parent's principal"
-    assert authority.spender == person_of(asker)
+    assert authority.principal == person_of(steerer), "the steady parent's principal"
+    assert authority.spender == person_of(ctx), "who spoke last pays"
 
 
 async def test_a_child_draws_on_its_trees_budget_and_deadline(managers: Managers) -> None:
@@ -540,6 +546,8 @@ async def test_a_handoff_waits_for_its_principal_and_its_objective_is_data(
     owner, asker = context(Role.MEMBER, org), context(Role.MEMBER, org)
     agents, sessions = managers.agents, managers.agent_sessions
     source = await start(managers, owner, "assistant")
+    await sessions.add_participant(owner, source.id, asker.user_id)
+    await managers.attribution.assign_principal(owner, source.id, asker.user_id)
     (said,) = await managers.steps.append_inputs(asker, source.id, [make_message(source.id)])
     await model_request(managers, owner, source.id, [said])
     handoff = Handoff(id=new_id(), kind="delivery", title="fix it", objective="fix the total")

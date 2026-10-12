@@ -32,6 +32,8 @@ class AgentSessions(IdentifiableMixin, TrackableMixin, SoftDeletableMixin, Base)
     )
     title: Mapped[str]
     participants: Mapped[list[str]]
+    visibility: Mapped[str]
+    steerer: Mapped[UUID | None]
     kind: Mapped[str]
     kind_version: Mapped[int]
     tools: Mapped[list[str]]

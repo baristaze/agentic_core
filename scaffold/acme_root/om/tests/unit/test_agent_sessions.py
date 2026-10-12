@@ -27,6 +27,7 @@ from acme.om.agent_sessions.rules import Projection, after_step, announces, proj
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.storage.impl.memory import AgentSessionStorageMemoryImpl
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
+from acme.om.attribution.types.authority import Visibility
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
 from acme.om.context import AppContext, AppType, RequestContext, Role, TenantContext
@@ -34,7 +35,13 @@ from acme.om.exceptions import NotAuthorized, NotFound, PreconditionFailed, Vali
 from acme.om.outbox.storage.impl.memory import OutboxStorageMemoryImpl
 from acme.om.outbox.types.row import OutboxRow
 from acme.om.root import Managers, build_managers
-from acme.om.steps.impl.manager import StepsManagerImpl, StepsOptions, no_registry
+from acme.om.steps.impl.manager import (
+    StepsManagerImpl,
+    StepsOptions,
+    no_registry,
+    no_session,
+    no_steerer,
+)
 from acme.om.steps.types.header import (
     ControlCommand,
     ControlHeader,
@@ -540,7 +547,8 @@ async def test_only_an_idle_session_is_archived_and_a_message_brings_it_back(
 async def test_a_viewer_reads_and_writes_nothing(managers: Managers) -> None:
     org = make_org()
     member, viewer = context(Role.MEMBER, org), context(Role.VIEWER, org)
-    session = await managers.agent_sessions.create_session(member, make_session())
+    seen = make_session(visibility=Visibility.ORG_WIDE)
+    session = await managers.agent_sessions.create_session(member, seen)
     assert await managers.agent_sessions.get_session(viewer, session.id) == session
     with pytest.raises(NotAuthorized):
         await managers.agent_sessions.create_session(viewer, make_session())
@@ -666,6 +674,8 @@ def purging(
             managers.tenancy,
             StepsOptions(purge_batch=batch),
             instructs=no_registry,
+            steers=no_steerer,
+            opens=no_session,
         ),
         managers.tenancy,
         managers.outbox,

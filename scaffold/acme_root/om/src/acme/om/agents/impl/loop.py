@@ -1792,6 +1792,9 @@ class LoopManagerImpl(LoopManagerInterface):
         session = await self._sessions.project_status(ctx, session_id)
         if _held_by_another(session.park, ctx):
             raise Conflict(f"agent session {session_id} is held by another person")
+        # Only one who takes part takes the environment, its steerer or a
+        # participant, so the summary they give back is theirs to write.
+        await self._attribution.steers(ctx, session_id)
         epoch = await self._steps.begin_run(ctx, session_id)
         history = await self._history(ctx, session_id)
         loop = rules.open_loop(history)

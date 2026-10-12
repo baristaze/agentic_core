@@ -108,5 +108,6 @@ def build_services(
             managers.tools,
             managers.attribution,
             managers.loop,
+            managers.windows,
         ),
     )

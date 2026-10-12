@@ -25,6 +25,7 @@ from acme.om.privacy.impl.artifacts import ArtifactSealKeysImpl
 from acme.om.privacy.impl.keys import SessionKeysImpl
 from acme.om.privacy.types.session_privacy import StorageMode, StoragePolicy
 from acme.om.root import Managers, build_managers
+from acme.om.steps.impl.manager import no_session
 from acme.om.steps.types.header import ArtifactRef, ToolResponseHeader
 from acme.om.steps.types.step import Step
 from acme.om.storage.impl.memory import StorageMemoryImpl
@@ -207,6 +208,7 @@ async def test_a_deleted_tenants_artifacts_go_a_batch_a_pass(roots: Roots) -> No
         ArtifactSealKeysImpl(keys, roots.storage.get_privacy_storage()),
         CompactionPolicy(),
         WindowsOptions(purge_batch=2),
+        opens=no_session,
     )
     sessions = [await roots.session() for _ in range(3)]
     artifacts = [(session, (await kept(roots, session))[0]) for session in sessions]

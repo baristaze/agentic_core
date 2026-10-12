@@ -44,6 +44,7 @@ from acme.om.attribution.types.authority import (
     CallReach,
     SessionAuthority,
     Trust,
+    Visibility,
 )
 from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
@@ -505,8 +506,16 @@ async def test_the_person_who_asked_pays_and_nobody_else_ever_does(
     carried = await next_attribution(managers, owner, sid)
     assert carried.spender == person_of(owner), "the current spender carries over"
     await managers.agent_sessions.project_status(owner, sid)
+    await managers.agent_sessions.add_participant(teammate, sid, teammate.user_id)
+    await say(managers, teammate, sid)
+    assert (await next_attribution(managers, owner, sid)).spender == person_of(owner), (
+        "a participant who does not steer never pays"
+    )
+    await managers.attribution.assign_principal(owner, sid, teammate.user_id)
     await say(managers, teammate, sid)
     assert (await next_attribution(managers, owner, sid)).spender == (person_of(teammate))
+    await managers.agent_sessions.add_participant(automation, sid, automation.user_id)
+    await managers.attribution.assign_principal(teammate, sid, automation.user_id)
     trigger = await say(managers, automation, sid, from_a_program(sid, a_person()))
     assert (await next_attribution(managers, owner, sid)).spender == (person_of(automation)), (
         "an automation's trigger is paid by the automation's principal"
@@ -544,14 +553,16 @@ async def test_a_message_after_the_request_lends_its_authority_to_nothing(
     managers: Managers, transition: Transition
 ) -> None:
     """The calls and spawns a response leads to run under the speaker the
-    request recorded. An admin's message appended after the response is
-    no part of what the model read, and lends the admin's context to none
-    of them."""
+    request recorded. The steer is handed to an admin after the response,
+    and the admin's message appended then is no part of what the model
+    read, and lends the admin's context to none of them."""
     org = make_org()
     member, admin = context(Role.MEMBER, org), context(Role.ADMIN, org)
     sid = (await start(managers, member, ASSISTANT)).id
     asked = await say(managers, member, sid)
     await model_request(managers, member, sid, [asked])
+    await managers.agent_sessions.add_participant(member, sid, admin.user_id)
+    await managers.attribution.assign_principal(member, sid, admin.user_id)
     await say(managers, admin, sid)
     call = await managers.attribution.authorize_call(member, sid, OUTWARD)
     assert call.principal == person_of(member) and transition.asked == [person_of(member)]
@@ -567,20 +578,25 @@ async def test_a_message_after_the_request_lends_its_authority_to_nothing(
 async def test_a_child_pays_as_its_spawn_did_until_a_principal_speaks_to_it(
     managers: Managers,
 ) -> None:
+    """The parent's maker spoke last, and then handed its steer on: the
+    child runs under the new steerer and pays as its parent pays, until its
+    steerer speaks to it."""
     org = make_org()
-    owner, asker, steering = (context(Role.MEMBER, org) for _ in range(3))
+    owner, steering = (context(Role.MEMBER, org) for _ in range(2))
     parent = await start(managers, owner, DELIVERY)
-    asked = await say(managers, asker, parent.id)
+    asked = await say(managers, owner, parent.id)
     await model_request(managers, owner, parent.id, [asked])
+    await managers.agent_sessions.add_participant(steering, parent.id, steering.user_id)
+    await managers.attribution.assign_principal(owner, parent.id, steering.user_id)
     child = await managers.agents.spawn(
         owner,
         parent.id,
         Spawn(id=new_id(), kind="delivery", title="reproduce it", objective="run the tests"),
     )
     authority = await managers.attribution.get_authority(owner, child.id)
-    assert (authority.principal, authority.spender) == (person_of(owner), person_of(asker))
+    assert (authority.principal, authority.spender) == (person_of(steering), person_of(owner))
     paid = await next_attribution(managers, owner, child.id)
-    assert paid.spender == person_of(asker), "a parent's message never pays"
+    assert paid.spender == person_of(owner), "a parent's message never pays"
     await say(managers, steering, child.id)
     paid = await next_attribution(managers, owner, child.id)
     assert paid.spender == person_of(steering)
@@ -589,10 +605,11 @@ async def test_a_child_pays_as_its_spawn_did_until_a_principal_speaks_to_it(
 async def test_a_person_who_speaks_to_a_child_lends_it_no_authority(
     managers: Managers, transition: Transition
 ) -> None:
-    """A delegated child runs under the principal its spawn passed it. An
-    admin who messages it pays for what it reads next, and its calls still
-    run under the member its parent ran under: no child holds more than its
-    parent."""
+    """A delegated child runs under the principal its spawn passed it, and
+    is never taken over. The parent's steer moves to an admin after the
+    spawn: the admin's message to the child is a participant's, data, which
+    pays for nothing, and the child's calls still run under the member its
+    parent ran under: no child holds more than its parent."""
     org = make_org()
     member, admin = context(Role.MEMBER, org), context(Role.ADMIN, org)
     parent = await start(managers, member, ASSISTANT)
@@ -602,10 +619,12 @@ async def test_a_person_who_speaks_to_a_child_lends_it_no_authority(
         parent.id,
         Spawn(id=new_id(), kind="assistant", title="look", objective="read the records"),
     )
+    await managers.attribution.assign_principal(admin, parent.id)
     asked = await say(managers, admin, child.id)
+    assert trust_of(asked) is Trust.DATA
     request = await model_request(managers, member, child.id, [asked])
     assert isinstance(request.header, ModelRequestHeader)
-    assert request.header.spender == person_of(admin), "whoever speaks pays"
+    assert request.header.spender == person_of(member), "a participant's message never pays"
     call = await managers.attribution.authorize_call(member, child.id, OUTWARD)
     assert call.principal == person_of(member) and call.context.user_id == member.user_id
     assert await managers.attribution.call_principal(member, child.id) == person_of(member)
@@ -676,6 +695,9 @@ async def test_delegated_authority_asks_the_transition_again_on_every_call(
     owner, asker, other = (context(Role.MEMBER, org) for _ in range(3))
     attribution = managers.attribution
     sid = (await start(managers, owner, ASSISTANT)).id
+    for each in (asker, other):
+        await managers.agent_sessions.add_participant(owner, sid, each.user_id)
+    await attribution.assign_principal(owner, sid, asker.user_id)
     await model_request(managers, owner, sid, [await say(managers, asker, sid)])
     first = await attribution.authorize_call(owner, sid, OUTWARD)
     second = await attribution.authorize_call(owner, sid, OUTWARD)
@@ -686,6 +708,7 @@ async def test_delegated_authority_asks_the_transition_again_on_every_call(
     with pytest.raises(AuthorityRevoked):
         await attribution.authorize_call(owner, sid, OUTWARD)
     assert transition.asked == [person_of(asker)] * 3
+    await attribution.assign_principal(asker, sid, other.user_id)
     await model_request(managers, owner, sid, [await say(managers, other, sid)])
     assert (await attribution.authorize_call(owner, sid, OUTWARD)).principal == person_of(other)
 
@@ -693,21 +716,31 @@ async def test_delegated_authority_asks_the_transition_again_on_every_call(
 async def test_a_steady_session_runs_under_its_principal_and_parks_when_it_lapses(
     managers: Managers, transition: Transition
 ) -> None:
+    """A participant's message reaches the model and lends its calls
+    nothing. The steerer lapses, a member who does not hold
+    `manage_sessions` takes nothing, and an admin takes the steer."""
     org = make_org()
     owner_ctx, teammate_ctx = context(Role.MEMBER, org), context(Role.MEMBER, org)
-    owner, teammate = person_of(owner_ctx), person_of(teammate_ctx)
+    admin_ctx = context(Role.ADMIN, org)
+    owner, admin = person_of(owner_ctx), person_of(admin_ctx)
     attribution = managers.attribution
     sid = (await start(managers, owner_ctx, DELIVERY)).id
-    steered = await say(managers, teammate_ctx, sid)
-    await model_request(managers, owner_ctx, sid, [steered])
+    await managers.agent_sessions.add_participant(teammate_ctx, sid, teammate_ctx.user_id)
+    asked = await say(managers, owner_ctx, sid)
+    suggested = await say(managers, teammate_ctx, sid)
+    request = await model_request(managers, owner_ctx, sid, [asked, suggested])
+    assert isinstance(request.header, ModelRequestHeader)
+    assert request.header.speaker == owner, "a participant's suggestion is data"
     held = await attribution.authorize_call(teammate_ctx, sid, OUTWARD)
     assert held.principal == owner and held.context.user_id == owner.id
     transition.revoked.add(owner.id)
     with pytest.raises(PrincipalLapsed):
         await attribution.authorize_call(teammate_ctx, sid, OUTWARD)
-    taken = await attribution.assign_principal(teammate_ctx, sid)
-    assert (taken.mode, taken.principal, taken.version) == (AuthorityMode.STEADY, teammate, 2)
-    assert (await attribution.authorize_call(teammate_ctx, sid, OUTWARD)).principal == teammate
+    with pytest.raises(NotAuthorized):
+        await attribution.assign_principal(teammate_ctx, sid)
+    taken = await attribution.assign_principal(admin_ctx, sid)
+    assert (taken.mode, taken.principal, taken.version) == (AuthorityMode.STEADY, admin, 2)
+    assert (await attribution.authorize_call(teammate_ctx, sid, OUTWARD)).principal == admin
 
 
 async def test_a_transition_that_answers_for_someone_else_answers_nothing(
@@ -758,7 +791,8 @@ async def test_a_session_with_no_authority_runs_no_call_and_spends_nothing(
     one that holds none gets none, and only its maker opens one."""
     org = make_org()
     ctx, other = context(Role.MEMBER, org), context(Role.MEMBER, org)
-    bare = await managers.agent_sessions.create_session(ctx, make_session())
+    seen = make_session(visibility=Visibility.ORG_WIDE)
+    bare = await managers.agent_sessions.create_session(ctx, seen)
     await say(managers, ctx, bare.id)
     with pytest.raises(NotFound):
         await managers.attribution.authorize_call(ctx, bare.id, OUTWARD)

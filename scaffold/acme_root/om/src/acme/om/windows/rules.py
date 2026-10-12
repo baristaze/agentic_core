@@ -14,8 +14,9 @@ Two trust tiers stay apart. A principal's message, and the standing text
 a principal pinned, render as themselves; an event, a summary, the plan,
 and anyone else's words render as data: inside
 a `<data>` element labelled with its origin, with the characters that could
-close it escaped. A tool's result renders in the provider's own result
-block. The pinned zone quotes principals' messages alone."""
+close it escaped; a participant's message is labelled with its author too.
+A tool's result renders in the provider's own result block. The pinned
+zone quotes principals' messages alone."""
 
 import json
 import math
@@ -579,6 +580,7 @@ class _Walk:
             seq=step.seq,
             actor=step.actor.value,
             via=step.origin.value,
+            **_author(step),
         )
         return [quoted, *files]
 
@@ -596,6 +598,15 @@ class _Walk:
             parts = result.parts
         self.files_of(answer, parts)
         return ToolResultBlock(tool_use_id=use.id, parts=parts, is_error=result.is_error)
+
+
+def _author(step: Step) -> dict[str, object]:
+    """The label of who wrote a participant's message, which is data: the
+    person, by id, never their name."""
+    header = step.header
+    if isinstance(header, InputHeader) and header.participant:
+        return {"author": header.principal.id}
+    return {}
 
 
 def _stub(answer: Step, artifact: ArtifactRef | None) -> str:

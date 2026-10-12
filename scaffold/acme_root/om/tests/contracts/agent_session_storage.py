@@ -9,6 +9,7 @@ import pytest
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
+from acme.om.attribution.types.authority import Visibility
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
 from acme.om.exceptions import PreconditionFailed
@@ -31,7 +32,9 @@ CROSS_TENANT_CASES: frozenset[str] = frozenset(
 case in this module that presents another tenant's."""
 
 
-def make_session(*, parent: AgentSession | None = None) -> AgentSession:
+def make_session(
+    *, parent: AgentSession | None = None, visibility: Visibility = Visibility.PRIVATE
+) -> AgentSession:
     now = utcnow()
     actor = new_id()
     session_id = new_id()
@@ -49,6 +52,7 @@ def make_session(*, parent: AgentSession | None = None) -> AgentSession:
         parent_id=None if parent is None else parent.id,
         root_id=session_id if parent is None else parent.root_id,
         depth=1 if parent is None else parent.depth + 1,
+        visibility=visibility,
     )
 
 

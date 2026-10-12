@@ -289,6 +289,16 @@ def switches_standing(step: Step) -> bool:
     return isinstance(step.header, SwitchedHeader) and step.header.standing is not None
 
 
+def switches_session(step: Step) -> bool:
+    """Whether a step switches what a person sets on the session itself: its
+    standing text, its steerer, or who sees it. Each is sent through the
+    inbox, outside any run, so it says nothing of a run."""
+    header = step.header
+    return isinstance(header, SwitchedHeader) and (
+        header.standing is not None or header.steer is not None or header.visibility is not None
+    )
+
+
 def shape_refusal(step: Step) -> str | None:
     """Why a step breaks its type's shape, or None when it fits. Content that
     is sealed or absent holds nothing in the clear, so only its shape is

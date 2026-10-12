@@ -1,10 +1,12 @@
-"""Agent session routes: start a session on a kind, read it, send it a
-message or a control, decide a tool call it waits on, clear the park a
-person clears, and read its history a page at a time. Each function is
-one call into the agent sessions service; every create runs under the
-idempotency record, so a retried send is one step. The loop runs in the
-session runner: a route writes what a person said and answers once it is
-durable.
+"""Agent session routes: start a session on a kind, list the ones a
+person takes part in or sees, join one, switch who sees it, hand its steer
+on, send it a message or a control, decide a tool call it waits on, clear
+the park a person clears, and read its history and its artifacts a page at
+a time. Each function is one call into the agent sessions service; every
+create runs under the idempotency record, so a retried send is one step.
+The loop runs in the session runner: a route writes what a person said and
+answers once it is durable. A session the caller does not see answers 404,
+as one that never existed.
 
 Each park a person clears has its route, held to the permission its
 manager checks, and clearing it wakes the session: a message answers a
@@ -16,22 +18,27 @@ guard, a spender, a lost workspace, and a key or a price fixed outside."""
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, Body, Query, Response
 
+from acme.om.agent_sessions.types.agent_session import Among, SessionStatus
 from acme.services.api.gateway.auth import Ctx
 from acme.services.api.gateway.idempotency import Idem
 from acme.services.api.gateway.resolve import AgentSessionsService
 from acme.services.api.types.agent_sessions import (
+    AgentSessionPageView,
     AgentSessionView,
+    ArtifactPageView,
     ControlRequest,
     DeadlineRequest,
     DecisionRequest,
     GiveBackRequest,
     JobCompletionRequest,
     MessageRequest,
+    PrincipalRequest,
     StartSessionRequest,
     StepPageView,
     StepView,
+    VisibilityRequest,
 )
 from acme.services.api.types.common import LIMIT_DEFAULT
 
@@ -44,6 +51,20 @@ async def start_session(
 ) -> Response:
     """A session on the kind, idle until a message wakes it."""
     return await idem.run(201, lambda attempt: sessions.start_session(ctx, body, attempt.target_id))
+
+
+@router.get("", response_model=AgentSessionPageView)
+async def list_sessions(
+    ctx: Ctx,
+    sessions: AgentSessionsService,
+    among: Among = Among.VISIBLE,
+    status: SessionStatus | None = None,
+    after: UUID | None = None,
+    limit: int = LIMIT_DEFAULT,
+) -> AgentSessionPageView:
+    """The org's root sessions by id, after `after`: the ones the caller
+    made or takes part in (`mine`), or every one they see (`visible`)."""
+    return await sessions.list_sessions(ctx, among, status, after, limit)
 
 
 @router.get("/{session_id}", response_model=AgentSessionView)
@@ -107,14 +128,40 @@ async def set_deadline(
     return await sessions.set_deadline(ctx, session_id, body)
 
 
-# The caller becomes the principal, so a retry makes the same assignment.
+# Who takes part, who sees it, and who steers it are each set whole by a
+# PUT, so a retry after a lost answer sets the same again and the routes
+# take no Idempotency-Key.
+@router.put("/{session_id}/participants/{user_id}", response_model=AgentSessionView)
+async def add_participant(
+    ctx: Ctx, sessions: AgentSessionsService, session_id: UUID, user_id: UUID
+) -> AgentSessionView:
+    """`user_id` takes part in the session: the caller joins one they see,
+    and its creator adds anyone. 403 for anyone else."""
+    return await sessions.add_participant(ctx, session_id, user_id)
+
+
+@router.put("/{session_id}/visibility", response_model=AgentSessionView)
+async def switch_visibility(
+    ctx: Ctx, sessions: AgentSessionsService, session_id: UUID, body: VisibilityRequest
+) -> AgentSessionView:
+    """Its creator switches who sees the session, recorded as a step: 403
+    for anyone else."""
+    return await sessions.switch_visibility(ctx, session_id, body)
+
+
 @router.put("/{session_id}/principal", response_model=AgentSessionView)
 async def assign_principal(
-    ctx: Ctx, sessions: AgentSessionsService, session_id: UUID
+    ctx: Ctx,
+    sessions: AgentSessionsService,
+    session_id: UUID,
+    body: Annotated[PrincipalRequest | None, Body()] = None,
 ) -> AgentSessionView:
-    """The caller becomes the principal the session's tool calls run under,
-    and a loop parked on a principal who no longer holds goes on."""
-    return await sessions.assign_principal(ctx, session_id)
+    """The steer moves, recorded as a step: its steerer hands it to the
+    participant the body names, or with no body the caller takes it, for a
+    steerer who lapsed with `manage_sessions`. Its tool calls run under the
+    steerer, and a loop parked on a principal who no longer holds goes on.
+    403 for anyone else, 422 for one who takes no part in it."""
+    return await sessions.assign_principal(ctx, session_id, body)
 
 
 @router.post("/{session_id}/take-over", response_model=AgentSessionView)
@@ -161,3 +208,17 @@ async def get_steps(
 ) -> StepPageView:
     """The history in order, strictly after `after_seq`."""
     return await sessions.get_steps(ctx, session_id, after_seq, limit)
+
+
+@router.get("/{session_id}/artifacts/{artifact_id}", response_model=ArtifactPageView)
+async def get_artifact(
+    ctx: Ctx,
+    sessions: AgentSessionsService,
+    session_id: UUID,
+    artifact_id: UUID,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1)] = 10_000,
+) -> ArtifactPageView:
+    """A page of what the session keeps whole outside its window, from
+    `offset`; the policy's page bounds `limit`."""
+    return await sessions.get_artifact(ctx, session_id, artifact_id, offset, limit)

@@ -1,3 +1,4 @@
+import contextlib
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from uuid import UUID
@@ -23,7 +24,7 @@ from acme.om.attribution.types.authority import (
     SessionAuthority,
 )
 from acme.om.attribution.types.principal import Principal, PrincipalKind
-from acme.om.base import Platform, utcnow
+from acme.om.base import Platform, derived_id, utcnow
 from acme.om.context import Permission, RequestContext, TenantContext
 from acme.om.exceptions import (
     AuthorityRevoked,
@@ -38,6 +39,7 @@ from acme.om.exceptions import (
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.types.row import OutboxRow, versioned_row
 from acme.om.steps import StepsManagerInterface
+from acme.om.steps.rules import steer_step
 from acme.om.steps.types.header import ModelRequestHeader
 from acme.om.steps.types.step import Step
 from acme.om.tenancy import TenancyManagerInterface
@@ -146,13 +148,31 @@ class AttributionManagerImpl(AttributionManagerInterface):
         ctx.require(Permission.READ)
         return await self._authority(ctx, session_id)
 
-    async def assign_principal(self, ctx: TenantContext, session_id: UUID) -> SessionAuthority:
+    async def assign_principal(
+        self, ctx: TenantContext, session_id: UUID, steerer: UUID | None = None
+    ) -> SessionAuthority:
         ctx.require(Permission.WRITE)
         session = await self._sessions.get_session(ctx, session_id)
         if session.parent_id is not None:
             raise ValidationFailed(f"agent session {session_id} runs under its parent's principal")
         authority = await self._authority(ctx, session_id)
-        principal = principal_of(ctx)
+        steering = _is_person(authority.principal, ctx.user_id)
+        if steerer is None or steerer == ctx.user_id:
+            principal = principal_of(ctx)
+            if not steering:
+                # A steer taken, never given by the one who held it: for a
+                # steerer who lapsed, by one who holds `manage_sessions`,
+                # who takes part from here.
+                ctx.require(Permission.MANAGE_SESSIONS)
+                await self._sessions.add_participant(ctx, session_id, ctx.user_id)
+        else:
+            if not steering:
+                raise NotAuthorized(f"only the steerer of agent session {session_id} hands it over")
+            if steerer != session.created_by and steerer not in session.participants:
+                raise ValidationFailed(
+                    f"user {steerer} takes no part in agent session {session_id}"
+                )
+            principal = Principal(kind=PrincipalKind.PERSON, id=steerer)
         if authority.principal != principal:
             taken = SessionAuthority.model_validate(
                 {
@@ -167,10 +187,41 @@ class AttributionManagerImpl(AttributionManagerInterface):
             await self._storage.write_authority(ctx.org_id, taken, authority.version, rows)
             await self._relay_all(ctx, rows)
             authority = taken
+        if authority.version > 1:
+            # The record of the latest move, under an id the move derives,
+            # so a retry after a lost answer records it once.
+            step_id = derived_id(session_id, authority.updated_at, "steer")
+            moved = steer_step(step_id, authority.updated_at, session_id, ctx, authority.principal)
+            await self._sessions.receive(ctx, session_id, [moved])
         # The assignment is the principal park's unlock: a loop that waits on
         # it goes on, and its gates ask the new principal again.
         await self._sessions.wake_session(ctx, session_id, PRINCIPAL_PARK)
         return authority
+
+    async def steers(self, ctx: TenantContext, session_id: UUID) -> bool:
+        ctx.require(Permission.WRITE)
+        try:
+            session = await self._sessions.get_session(ctx, session_id)
+        except NotFound:
+            if await self._sessions.is_visible(ctx, session_id):
+                return True  # no session stands over the history: whoever writes it steers it
+            raise
+        authority = await self._storage.read_authority(ctx.org_id, session_id)
+        if authority is None:
+            # Not opened yet: its maker, who opens it, steers it.
+            authority_principal = Principal(kind=PrincipalKind.PERSON, id=session.created_by)
+        else:
+            authority_principal = authority.principal
+        if _is_person(authority_principal, ctx.user_id):
+            return True
+        root = session
+        if session.root_id != session.id:
+            with contextlib.suppress(NotFound):
+                # A root marked deleted, or purged, leaves the sub-agent its own.
+                root = await self._sessions.get_session(ctx, session.root_id)
+        if ctx.user_id == root.created_by or ctx.user_id in root.participants:
+            return False
+        raise NotAuthorized(f"join agent session {session_id} to speak in it")
 
     async def attribute_request(
         self, ctx: TenantContext, session_id: UUID, after_seq: int, delivered: Mapping[UUID, int]
@@ -283,6 +334,11 @@ class AttributionManagerImpl(AttributionManagerInterface):
         """The write has committed; a relay that fails is left to the sweep."""
         if rows:
             await self._relay.relay_all(ctx.org_id, rows)
+
+
+def _is_person(principal: Principal, user_id: UUID) -> bool:
+    """Whether `principal` is the person `user_id`, through any key."""
+    return principal.kind is PrincipalKind.PERSON and principal.id == user_id
 
 
 def _refusal(mode: AuthorityMode, principal: Principal) -> AuthorityRevoked | PrincipalLapsed:

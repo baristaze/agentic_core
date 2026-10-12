@@ -56,6 +56,7 @@ from acme.om.privacy.impl.artifacts import ArtifactSealKeysImpl
 from acme.om.privacy.impl.keys import SessionKeysImpl
 from acme.om.root import Managers, build_managers
 from acme.om.steps import StepsManagerInterface
+from acme.om.steps.impl.manager import no_session
 from acme.om.steps.types.content import Content, TextBlock, ToolResultBlock
 from acme.om.steps.types.header import (
     ArtifactRef,
@@ -261,6 +262,7 @@ def an_engine(
         CompactionPolicy(),
         WindowsOptions(page=7),
         **clocked,
+        opens=no_session,
     )
     return Engine(
         managers.steps,

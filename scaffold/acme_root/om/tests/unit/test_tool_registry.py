@@ -73,8 +73,9 @@ async def test_a_message_buys_no_call_its_sender_may_not_make(tmp_path: Path) ->
     """A message enqueues its session's loop, so a principal starts or
     instructs a session only if it may make every kind of call the registry
     offers. A member may not change the tenant's configuration: they start
-    no session that may, and their message to one an admin started lands
-    nowhere, while the admin's does."""
+    no session that may, and once the admin hands them the steer of one
+    the admin started, their message lands nowhere, while the admin's
+    did."""
     catalog = (
         Command("set_flag", authorization_class=ToolClass.CONFIGURATION),
         Command("read_log", authorization_class=ToolClass.READ),
@@ -94,11 +95,13 @@ async def test_a_message_buys_no_call_its_sender_may_not_make(tmp_path: Path) ->
         await managers.agent_sessions.get_session(admin, start.id)
     session = await managers.agents.start_session(admin, start)
     await managers.steps.append_inputs(admin, session.id, [make_message(session.id)])
+    await managers.agent_sessions.add_participant(admin, session.id, member.user_id)
+    await managers.attribution.assign_principal(admin, session.id, member.user_id)
     with pytest.raises(NotAuthorized, match="manage_members"):
         await managers.steps.append_inputs(member, session.id, [make_message(session.id)])
     await managers.steps.append_inputs(member, session.id, [make_event(session.id)])
     held = (await managers.steps.get_steps(admin, session.id, 0, 10)).items
-    assert [step.type for step in held] == [StepType.MESSAGE, StepType.EVENT]
+    assert [step.type for step in held] == [StepType.MESSAGE, StepType.SWITCHED, StepType.EVENT]
 
 
 FLAGGER = AgentKind(

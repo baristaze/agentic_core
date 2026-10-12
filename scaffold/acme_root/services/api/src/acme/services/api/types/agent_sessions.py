@@ -1,8 +1,8 @@
 """The wire types of agent sessions: a session, one step of its history,
-and what a person sends it. A step's view is flat: what it is, who wrote
-it, what it says as text, and the few fields of its header a reader acts
-on. Its content is the session's, so a reader of the org reads it as the
-session's own reader does."""
+an artifact it keeps, and what a person sends it. A step's view is flat:
+what it is, who wrote it, what it says as text, and the few fields of its
+header a reader acts on. Its content is the session's, so whoever the
+session is visible to reads it as the session's own reader does."""
 
 from datetime import datetime
 from enum import StrEnum
@@ -14,6 +14,7 @@ from pydantic import Field, model_validator
 from acme.integrations.model_providers.types import StopReason
 from acme.om.agent_sessions.types.agent_session import SessionStatus
 from acme.om.agents.types.request import MAX_TITLE
+from acme.om.attribution.types.authority import Visibility
 from acme.om.attribution.types.principal import MAX_KIND
 from acme.om.steps.types.content import MAX_NAME
 from acme.om.steps.types.header import ControlCommand, LoopOutcome, ParkReason, ToolFailure
@@ -57,7 +58,11 @@ class AgentSessionView(View):
     """A session: its kind, its title, and its status, which follows its
     steps. `pending` while an input waits for a run, `running` while a run
     holds its loop, `parked` while the loop waits, `idle` when no loop is
-    open."""
+    open. `visibility` says who sees it: every member of the org, who may
+    join it, or its creator and its `participants` alone. `steerer` is the
+    person whose messages instruct it, its creator until a hand-off; a
+    participant's message is data. A sub-agent names none: its parent
+    steers it, and it is seen as its root is."""
 
     id: UUID
     title: str
@@ -68,6 +73,18 @@ class AgentSessionView(View):
     created_at: datetime
     created_by: UUID
     archived_at: datetime | None
+    visibility: Visibility
+    participants: list[UUID]
+    steerer: UUID | None
+    parent_id: UUID | None
+
+
+class AgentSessionPageView(View):
+    """One page of root sessions by id. With `has_more`, the next page
+    starts after the last one's id."""
+
+    items: list[AgentSessionView]
+    has_more: bool
 
 
 class StepUsageView(View):
@@ -100,7 +117,10 @@ class StepView(View):
     failure; a control's command; a park; a loop's outcome, and its cause
     when the engine names one, such as the setup command that failed and
     its exit code; the snapshot a `snapshotted` step names, or a restore
-    starts from."""
+    starts from. A message names its `author`, and `participant` says it is
+    a participant's, data, never an instruction. A `switched` step that
+    moved the steer names the new `steerer`, and one that switched who sees
+    the session its `visibility`."""
 
     id: UUID
     seq: int
@@ -122,6 +142,10 @@ class StepView(View):
     outcome: LoopOutcome | None
     cause: str | None
     snapshot: SnapshotView | None
+    author: UUID | None
+    participant: bool
+    steerer: UUID | None
+    visibility: Visibility | None
 
 
 class StepPageView(View):
@@ -129,6 +153,18 @@ class StepPageView(View):
     With `has_more`, the next page starts after the last step's seq."""
 
     items: list[StepView]
+    has_more: bool
+
+
+class ArtifactPageView(View):
+    """A page of what a session keeps whole outside its window, such as a
+    long tool result: its characters from `offset`, the whole artifact's
+    length, and whether more follow."""
+
+    artifact_id: UUID
+    offset: int
+    text: str
+    characters: int
     has_more: bool
 
 
@@ -194,6 +230,20 @@ class DeadlineRequest(RequestBody):
     the tree parked on the deadline."""
 
     deadline: datetime | None
+
+
+class VisibilityRequest(RequestBody):
+    """Who sees the session from here: every member of the org, or its
+    creator and its participants alone."""
+
+    visibility: Visibility
+
+
+class PrincipalRequest(RequestBody):
+    """Who steers the session from here: a participant its steerer hands it
+    to. Left out, the caller takes it."""
+
+    steerer: UUID | None = None
 
 
 class GiveBackRequest(RequestBody):
