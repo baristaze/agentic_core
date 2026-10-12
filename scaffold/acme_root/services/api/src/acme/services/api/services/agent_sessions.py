@@ -144,7 +144,8 @@ class AgentSessionsServiceInterface(ABC):
 
     @abstractmethod
     async def get_artifact(
-        self, ctx: TenantContext, session_id: UUID, artifact_id: UUID, offset: int, limit: int
+        self, ctx: TenantContext, session_id: UUID, artifact_id: UUID, start: int, limit: int
     ) -> ArtifactPageView:
-        """A page of an artifact the session keeps, read as its steps are."""
+        """A page of an artifact the session keeps, from the character at
+        `start`, read as its steps are."""
         ...

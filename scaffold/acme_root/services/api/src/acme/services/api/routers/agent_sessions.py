@@ -216,9 +216,10 @@ async def get_artifact(
     sessions: AgentSessionsService,
     session_id: UUID,
     artifact_id: UUID,
-    offset: Annotated[int, Query(ge=0)] = 0,
+    start: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1)] = 10_000,
 ) -> ArtifactPageView:
-    """A page of what the session keeps whole outside its window, from
-    `offset`; the policy's page bounds `limit`."""
-    return await sessions.get_artifact(ctx, session_id, artifact_id, offset, limit)
+    """A page of what the session keeps whole outside its window, from the
+    character at `start`: an artifact is written once, so no character's
+    place moves between pages. The policy's page bounds `limit`."""
+    return await sessions.get_artifact(ctx, session_id, artifact_id, start, limit)

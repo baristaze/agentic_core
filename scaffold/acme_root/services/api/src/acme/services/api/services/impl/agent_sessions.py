@@ -269,10 +269,16 @@ class AgentSessionsServiceImpl(AgentSessionsServiceInterface):
         return StepPageView(items=[step_view(step) for step in page.items], has_more=page.has_more)
 
     async def get_artifact(
-        self, ctx: TenantContext, session_id: UUID, artifact_id: UUID, offset: int, limit: int
+        self, ctx: TenantContext, session_id: UUID, artifact_id: UUID, start: int, limit: int
     ) -> ArtifactPageView:
         # The session first, so one marked deleted keeps its artifacts closed
         # as it keeps its history.
         await self._sessions.get_session(ctx, session_id)
-        page = await self._windows.get_artifact(ctx, session_id, artifact_id, offset, limit)
-        return ArtifactPageView.model_validate(page.model_dump())
+        page = await self._windows.get_artifact(ctx, session_id, artifact_id, start, limit)
+        return ArtifactPageView(
+            artifact_id=page.artifact_id,
+            start=page.offset,
+            text=page.text,
+            characters=page.characters,
+            has_more=page.has_more,
+        )

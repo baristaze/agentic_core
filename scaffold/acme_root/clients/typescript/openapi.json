@@ -322,7 +322,7 @@
         "type": "object"
       },
       "ArtifactPageView": {
-        "description": "A page of what a session keeps whole outside its window, such as a\nlong tool result: its characters from `offset`, the whole artifact's\nlength, and whether more follow.",
+        "description": "A page of what a session keeps whole outside its window, such as a\nlong tool result: its characters from `start`, the whole artifact's\nlength, and whether more follow.",
         "properties": {
           "artifact_id": {
             "format": "uuid",
@@ -337,8 +337,8 @@
             "title": "Has More",
             "type": "boolean"
           },
-          "offset": {
-            "title": "Offset",
+          "start": {
+            "title": "Start",
             "type": "integer"
           },
           "text": {
@@ -348,7 +348,7 @@
         },
         "required": [
           "artifact_id",
-          "offset",
+          "start",
           "text",
           "characters",
           "has_more"
@@ -6418,7 +6418,7 @@
     },
     "/v1/agent-sessions/{session_id}/artifacts/{artifact_id}": {
       "get": {
-        "description": "A page of what the session keeps whole outside its window, from\n`offset`; the policy's page bounds `limit`.",
+        "description": "A page of what the session keeps whole outside its window, from the\ncharacter at `start`: an artifact is written once, so no character's\nplace moves between pages. The policy's page bounds `limit`.",
         "operationId": "get_artifact_v1_agent_sessions__session_id__artifacts__artifact_id__get",
         "parameters": [
           {
@@ -6443,12 +6443,12 @@
           },
           {
             "in": "query",
-            "name": "offset",
+            "name": "start",
             "required": false,
             "schema": {
               "default": 0,
               "minimum": 0,
-              "title": "Offset",
+              "title": "Start",
               "type": "integer"
             }
           },

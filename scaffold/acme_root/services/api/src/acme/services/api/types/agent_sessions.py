@@ -158,11 +158,11 @@ class StepPageView(View):
 
 class ArtifactPageView(View):
     """A page of what a session keeps whole outside its window, such as a
-    long tool result: its characters from `offset`, the whole artifact's
+    long tool result: its characters from `start`, the whole artifact's
     length, and whether more follow."""
 
     artifact_id: UUID
-    offset: int
+    start: int
     text: str
     characters: int
     has_more: bool

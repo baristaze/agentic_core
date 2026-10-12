@@ -47,13 +47,13 @@ class Among(StrEnum):
 class ArtifactPageView(BaseModel):
     """
     A page of what a session keeps whole outside its window, such as a
-    long tool result: its characters from `offset`, the whole artifact's
+    long tool result: its characters from `start`, the whole artifact's
     length, and whether more follow.
     """
     artifact_id: Annotated[UUID, Field(title='Artifact Id')]
     characters: Annotated[int, Field(title='Characters')]
     has_more: Annotated[bool, Field(title='Has More')]
-    offset: Annotated[int, Field(title='Offset')]
+    start: Annotated[int, Field(title='Start')]
     text: Annotated[str, Field(title='Text')]
 
 

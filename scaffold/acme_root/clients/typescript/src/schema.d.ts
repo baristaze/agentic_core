@@ -360,8 +360,9 @@ export interface paths {
         };
         /**
          * Get Artifact
-         * @description A page of what the session keeps whole outside its window, from
-         *     `offset`; the policy's page bounds `limit`.
+         * @description A page of what the session keeps whole outside its window, from the
+         *     character at `start`: an artifact is written once, so no character's
+         *     place moves between pages. The policy's page bounds `limit`.
          */
         get: operations["get_artifact_v1_agent_sessions__session_id__artifacts__artifact_id__get"];
         put?: never;
@@ -1620,7 +1621,7 @@ export interface components {
         /**
          * ArtifactPageView
          * @description A page of what a session keeps whole outside its window, such as a
-         *     long tool result: its characters from `offset`, the whole artifact's
+         *     long tool result: its characters from `start`, the whole artifact's
          *     length, and whether more follow.
          */
         ArtifactPageView: {
@@ -1633,8 +1634,8 @@ export interface components {
             characters: number;
             /** Has More */
             has_more: boolean;
-            /** Offset */
-            offset: number;
+            /** Start */
+            start: number;
             /** Text */
             text: string;
         };
@@ -4275,7 +4276,7 @@ export interface operations {
     get_artifact_v1_agent_sessions__session_id__artifacts__artifact_id__get: {
         parameters: {
             query?: {
-                offset?: number;
+                start?: number;
                 limit?: number;
             };
             header?: {
