@@ -176,9 +176,7 @@ class BaseSetupFailed(IsolationRefused):
         ended = "ran out of time" if exit_code is None else f"exited {exit_code}"
         why = f"the base's setup command {index + 1}, {command!r}, {ended}"
         shown = command if len(command) <= _CAUSE_COMMAND else command[: _CAUSE_COMMAND - 1] + "…"
-        super().__init__(
-            why, cause=f"the base's setup command {index + 1}, {shown!r}, {ended}"
-        )
+        super().__init__(why, cause=f"the base's setup command {index + 1}, {shown!r}, {ended}")
         self.command = command
         self.exit_code = exit_code
 
