@@ -4,7 +4,8 @@ how its loop stands and what it said last, carries its mark and the
 private data it holds, and is data in its parent's next request. Every
 report wakes the parent but the note of a cancel the parent sent down, and
 asks for the parent's run by itself; being no principal's message, it
-answers no question the parent asked and brings back no archived parent."""
+answers no question the parent asked and brings back no archived parent.
+A parent whose key is revoked takes no report, and its child's loop ends."""
 
 from pathlib import Path
 from uuid import UUID
@@ -34,6 +35,7 @@ from acme.om.steps.types.header import (
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.tools.rules import DEFAULT_CEILINGS
 from acme.om.tools.types.policy import PolicyLayer
+from acme.om.windows.types.policy import CompactionPolicy
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
 from acme.om.work.types.work_item import WorkKind
 
@@ -330,6 +332,31 @@ async def test_a_parent_holds_what_its_child_held_private_once_the_report_arrive
         assert loop.tools["send"].ran_as == [], "it holds its child's records"
     else:
         assert run.end is RunEnd.ENDED and loop.tools["send"].ran_as == [loop.owner.user_id]
+
+
+@pytest.mark.parametrize("over_the_bound", [False, True])
+async def test_a_child_whose_parents_key_is_revoked_ends_its_loop_and_its_report_is_dropped(
+    tmp_path: Path, over_the_bound: bool
+) -> None:
+    """A parent whose content is past its life has its key revoked, and
+    takes no content again. Its child's report has no reader: a report over
+    the bound, whose whole is sealed under the parent's key, included. The
+    report is dropped, and the child's loop ends as under a parent gone."""
+    loop = loop_over(tmp_path, kinds=KINDS)
+    parent_id = await a_lead(loop)
+    before = len(await loop.history(parent_id))
+    child_id = await a_child(loop, parent_id)
+    (objective,) = await loop.history(child_id)
+    words = "x" * (CompactionPolicy().result_bound + 1) if over_the_bound else "It is 12."
+    loop.anthropic.add(reply(said(words), submit(objective)))
+    await loop.managers.privacy.revoke_key(loop.owner, parent_id)
+
+    run = await loop.loops.run(loop.owner, child_id)
+
+    assert (run.end, run.outcome) == (RunEnd.ENDED, LoopOutcome.SUCCEEDED)
+    assert await cached(loop, child_id) is SessionStatus.IDLE, "its loop ended"
+    assert len(await loop.history(parent_id)) == before, "no report reached it"
+    assert await cached(loop, parent_id) is SessionStatus.IDLE
 
 
 @pytest.mark.parametrize(

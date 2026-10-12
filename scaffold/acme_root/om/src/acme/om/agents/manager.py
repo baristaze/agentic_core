@@ -126,8 +126,9 @@ class AgentsManagerInterface(ABC):
         (`rules.CHILDREN_PARK`).
         The report of a loop's end has an id derived from the loop, so a
         run that ends the loop again writes it once. None, with nothing
-        written, for a session with no parent, a parent that is gone, and
-        a park the parent is not told of (`rules.notes_parent`)."""
+        written, for a session with no parent, a parent that is gone, a
+        parent whose key is revoked, which takes no content again, and a
+        park the parent is not told of (`rules.notes_parent`)."""
         ...
 
     @abstractmethod

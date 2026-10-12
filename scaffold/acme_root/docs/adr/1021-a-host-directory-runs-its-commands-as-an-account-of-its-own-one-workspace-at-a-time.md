@@ -20,8 +20,10 @@ account's processes are no tree: one a command left in a session of its
 own outlives the command's process group.
 
 The process that runs untrusted code runs under a hardened unit, too. It
-hides the host's settings in `/proc/sys` (`ProcSubset=pid`) and refuses
-every setuid and setgid bit (`RestrictSUIDSGID=yes`).
+hides the host's settings in `/proc/sys` (`ProcSubset=pid`), refuses
+every setuid and setgid bit (`RestrictSUIDSGID=yes`), and refuses the
+system calls that take a privilege (`SystemCallFilter=~@privileged`). The
+switch and the share of a workspace take some of those calls.
 
 ## Decision
 
@@ -52,7 +54,15 @@ directory are the account's group's, with no setgid bit. A default ACL on
 each shares what is made below them with that group, whoever makes it,
 so this process reads what the account writes there, and the account
 reads what this process writes. A root on a filesystem that keeps no ACL
-is refused.
+is refused. A unit that refuses the privileged system calls allows three
+sets of them back: `@setuid` and `capset`, which the switch takes, and
+`@chown`, which the share with the account's group takes
+(`SystemCallFilter=@setuid capset @chown` after
+`SystemCallFilter=~@privileged`). It answers a refused call with an error
+(`SystemCallErrorNumber=EPERM`). Before it makes anything, prepare tries
+the switch, as a command that does nothing, to this process's own ids, so
+it starts no process of the account, and a chown that changes nothing. A host whose filter refuses either is refused, and
+the refusal names the filter and the sets it allows.
 
 **Nothing privileged sees the command's environment.** The programs
 that switch run with an empty environment, since a variable such as
@@ -115,6 +125,10 @@ ended as a leftover.
   `fs.protected_hardlinks` on (`ACME_WORKSPACE_PROTECTED_HARDLINKS`). A
   product uses the provider whole there: the workspace's directories, its
   records, and its clearing.
+- Under a unit with `SystemCallFilter=~@privileged`, the unit allows
+  `@setuid`, `capset`, and `@chown` beside it, or prepare refuses the
+  host. A unit that ends a process at a refused call, as one without
+  `SystemCallErrorNumber=` does, ends this one at the prepare instead.
 - A deployed environment refuses the backend, as it refuses the host
   one: a deployed process runs tools in containers, or none.
 - What the account closed even to itself stays until a purge holds the
