@@ -55,7 +55,8 @@ class WakeSessionHandlerImpl(WorkHandlerInterface):
 
 class WakeSessionsHandlerImpl(WorkHandlerInterface):
     """The reason the org's sessions parked for is gone: every one of them is
-    unlocked, and its gates run again when it resumes."""
+    unlocked, or each whose park names the item's unlock, and its gates run
+    again when it resumes."""
 
     REQUIRES: ClassVar[tuple[Permission, ...]] = (Permission.WRITE,)
     """`wake_parked` writes."""
@@ -64,9 +65,9 @@ class WakeSessionsHandlerImpl(WorkHandlerInterface):
         self._sessions = sessions
 
     async def handle(self, ctx: TenantContext, item: WorkItem) -> None:
-        reason = WakeSessionsPayload.model_validate(dict(item.payload)).reason
-        woken = await self._sessions.wake_parked(ctx, reason)
-        log.info("woke %d sessions parked for %s in org %s", woken, reason.value, ctx.org_id)
+        wake = WakeSessionsPayload.model_validate(dict(item.payload))
+        woken = await self._sessions.wake_parked(ctx, wake.reason, wake.unlock)
+        log.info("woke %d sessions parked for %s in org %s", woken, wake.reason.value, ctx.org_id)
 
 
 class LeaseNoticeHandlerImpl(WorkHandlerInterface):

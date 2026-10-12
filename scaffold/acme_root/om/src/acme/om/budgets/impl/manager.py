@@ -2,6 +2,8 @@ from collections.abc import Callable
 from datetime import datetime
 from uuid import UUID
 
+from pydantic import Field
+
 from acme.om.base import Platform, utcnow
 from acme.om.budgets.manager import BudgetsManagerInterface
 from acme.om.budgets.rules import raises, window_bounds
@@ -11,7 +13,7 @@ from acme.om.budgets.types.budget import Budget, BudgetPage, BudgetScopeKind, Wi
 from acme.om.budgets.types.hold import Tally
 from acme.om.budgets.types.usage import UsageRecord
 from acme.om.context import Permission, TenantContext
-from acme.om.exceptions import NotFound, TenantMismatch
+from acme.om.exceptions import NotFound, PreconditionFailed, TenantMismatch
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.types.row import OutboxRow, outbox_row, versioned_row
 from acme.om.steps.types.header import ParkReason
@@ -29,6 +31,9 @@ the permission that governs members."""
 class BudgetsOptions(Platform):
     max_limit: int = 50  # budgets one page holds at most
     purge_batch: int = 1000  # the sweep's batch, which a report of what is left stays under
+    # A close is a compare-and-set, tried again when an amount moved the
+    # version between its read and its write.
+    close_attempts: int = Field(default=3, ge=1)
 
 
 class BudgetsManagerImpl(BudgetsManagerInterface):
@@ -81,6 +86,7 @@ class BudgetsManagerImpl(BudgetsManagerInterface):
                 "created_by": ctx.user_id,
                 "updated_by": ctx.user_id,
                 "version": 1,
+                "closed_at": None,  # only a close sets it
             }
         )
         rows = (versioned_row(ctx, CREATED, created.id, created.version),)
@@ -129,12 +135,53 @@ class BudgetsManagerImpl(BudgetsManagerInterface):
                     ctx,
                     work_row_kind(WorkKind.WAKE_SESSIONS),
                     ctx.org_id,
-                    wake.model_dump(mode="json"),
+                    wake.model_dump(mode="json", exclude_none=True),
                 ),
             )
         await self._storage.write_budget(ctx.org_id, changed, expected_version, rows)
         await self._relay_all(ctx, rows)
         return changed
+
+    async def close_budget(self, ctx: TenantContext, budget_id: UUID) -> Budget:
+        ctx.require(SETS_BUDGETS)
+        for _ in range(self._options.close_attempts - 1):
+            try:
+                return await self._close(ctx, budget_id)
+            except PreconditionFailed:
+                # An amount changed between the read and the write: close the
+                # budget as it stands now, so the change never reopens it.
+                continue
+        return await self._close(ctx, budget_id)
+
+    async def _close(self, ctx: TenantContext, budget_id: UUID) -> Budget:
+        stored = await self._read(ctx, budget_id)
+        if stored.closed_at is not None:
+            return stored  # closed once: the first close stands
+        now = self._clock()
+        closed = Budget.model_validate(
+            {
+                **stored.model_dump(),
+                "closed_at": now,
+                "version": stored.version + 1,
+                "updated_at": now,
+                "updated_by": ctx.user_id,
+            }
+        )
+        # A closed budget binds nothing, so a session it parked can go on:
+        # the ones whose park names it are woken, and ask again.
+        wake = WakeSessionsPayload(reason=ParkReason.BUDGET, unlock=str(closed.id))
+        rows = (
+            versioned_row(ctx, UPDATED, closed.id, closed.version),
+            outbox_row(
+                ctx,
+                work_row_kind(WorkKind.WAKE_SESSIONS),
+                ctx.org_id,
+                wake.model_dump(mode="json"),
+            ),
+        )
+        await self._storage.write_budget(ctx.org_id, closed, stored.version, rows)
+        await self._relay_all(ctx, rows)
+        return closed
 
     async def get_spend(self, ctx: TenantContext, budget_id: UUID) -> Tally:
         ctx.require(Permission.READ)

@@ -135,9 +135,12 @@ class WakeSessionPayload(ScheduledPayload):
 class WakeSessionsPayload(Platform):
     """The reason the org's sessions parked for is gone (a raised budget
     clears `budget`); the item's target is the org. Every session parked for
-    it is unlocked when the item runs, and its gates run again."""
+    it is unlocked when the item runs, and its gates run again. With an
+    `unlock`, only the sessions whose park names it are: a closed budget
+    clears the parks that name its id, and no other."""
 
     reason: LoopParkReason
+    unlock: str | None = None
 
 
 class LoopPayload(Platform):
