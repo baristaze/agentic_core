@@ -24,6 +24,8 @@ from acme.om.steps.types.content import (
 )
 from acme.om.steps.types.header import (
     InputHeader,
+    LoopEndedHeader,
+    LoopOutcome,
     ModelRequestHeader,
     ModelResponseHeader,
     Park,
@@ -278,6 +280,40 @@ class StepStorageContract:
             step.model_copy(update={"seq": n}) for n, step in enumerate(loop, start=1)
         ]
         assert await storage.read_steps(org, session, 0, 10) == list(appended)
+
+    async def test_a_cause_comes_back_as_it_was_appended(
+        self, storage: StepStorageInterface
+    ) -> None:
+        """The cause a park or a loop's end names is header: it survives the
+        round trip as it was written."""
+        org, session = new_id(), new_id()
+        message = make_message(session)
+        waits = Park(
+            reason=ParkReason.RESOURCE,
+            unlock="workspace",
+            retry_at=utcnow(),
+            cause="the workspace base is being built",
+        )
+        parked = make_parked(session, message.id).model_copy(
+            update={"header": ParkedHeader(park=waits)}
+        )
+        failed = "the base's setup command 1, 'pip install acme-tools', exited 2"
+        ended = parked.model_copy(
+            update={
+                "id": new_id(),
+                "type": StepType.LOOP_ENDED,
+                "header": LoopEndedHeader(outcome=LoopOutcome.ERRORED, cause=failed),
+            }
+        )
+        epoch = await storage.begin_run(org, session)
+        appended = await storage.append_steps(org, session, epoch, [message, parked, ended])
+        read = await storage.read_steps(org, session, 0, 10)
+
+        assert read == list(appended)
+        assert isinstance(read[1].header, ParkedHeader) and isinstance(
+            read[2].header, LoopEndedHeader
+        )
+        assert (read[1].header.park.cause, read[2].header.cause) == (waits.cause, failed)
 
     async def test_a_loop_keeps_who_acted_on_whose_authority_and_who_paid(
         self, storage: StepStorageInterface

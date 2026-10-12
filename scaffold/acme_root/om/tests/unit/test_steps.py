@@ -26,7 +26,14 @@ from acme.om.exceptions import NotAuthorized, StaleWriter, ValidationFailed
 from acme.om.root import build_managers
 from acme.om.steps import StepsManagerInterface
 from acme.om.steps.types.content import MAX_NAME, ToolResultBlock, ToolUseBlock
-from acme.om.steps.types.header import InputHeader
+from acme.om.steps.types.header import (
+    MAX_CAUSE,
+    InputHeader,
+    LoopEndedHeader,
+    LoopOutcome,
+    Park,
+    ParkReason,
+)
 from acme.om.steps.types.page import StepCursor
 from acme.om.steps.types.step import (
     BLOCK_KINDS,
@@ -213,6 +220,20 @@ def test_a_tool_result_holds_text_and_files_alone() -> None:
             {"tool_use_id": "a", "parts": [{"kind": "tool_use", "id": "b", "name": "n"}]}
         )
     assert ToolUseBlock(id="a", name="n").input == {}
+
+
+def test_a_cause_past_its_bound_is_cut_never_refused() -> None:
+    """A long setup command still ends its loop: the cause is cut to its
+    bound, its last character an ellipsis, and a NUL is stored as Postgres
+    keeps it."""
+    long = "the base's setup command 1, '" + "x" * MAX_CAUSE + "', exited 2"
+    ended = LoopEndedHeader(outcome=LoopOutcome.ERRORED, cause=long)
+    parked = Park(reason=ParkReason.PERSON, unlock="workspace", cause="gone\x00")
+
+    assert ended.cause is not None and len(ended.cause) == MAX_CAUSE
+    assert ended.cause == long[: MAX_CAUSE - 1] + "\u2026"
+    assert parked.cause == "gone\ufffd"
+    assert LoopEndedHeader(outcome=LoopOutcome.SUCCEEDED).cause is None
 
 
 # The manager, over the memory storage.
