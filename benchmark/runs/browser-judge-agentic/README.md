@@ -48,6 +48,7 @@ run does not record.
 
 | Run | Started (UTC) | Head | Sizes | chatgpt.com | claude.ai | gemini.google.com | grok.com | Set | Note |
 |---|---|---|---|---|---|---|---|---|---|
+| [20261012-002612](20261012-002612/results.json) | 2026-10-12 00:26 | `4e90bff` | m, m | [83](20261012-002612/chatgpt.com.md) GPT-6, High | [77](20261012-002612/claude.ai.md) Opus 5.5, High | — | [86](20261012-002612/grok.com.md) Expert | C | a session read the earlier scores; claude.ai: read earlier runs; gemini.google.com: declined to read the repository |
 | [20261008-045555](20261008-045555/results.json) | 2026-10-08 04:55 | `3922410` | m, m | — | [76](20261008-045555/claude.ai.md) Opus 5.5, High | — | — | B | — |
 | [20261007-145103](20261007-145103/results.json) | 2026-10-07 14:51 | `a5ad9cc` | m, m | — | [77](20261007-145103/claude.ai.md) Opus 5.5, High | — | — | B | — |
 | [20261007-074959](20261007-074959/results.json) | 2026-10-07 07:49 | `3929a0c` | m, m | [89](20261007-074959/chatgpt.com.md) Latest, High | [not-run](20261007-074959/claude.ai.md) | [refused](20261007-074959/gemini.google.com.md) 3.1 Pro | [86](20261007-074959/grok.com.md) Expert | B | the sizes and the prompt differ from every other run's; claude.ai: the conversation page said "Computer actions available"; gemini.google.com: it declined, saying it has no live internet access to read the GitHub URL |
