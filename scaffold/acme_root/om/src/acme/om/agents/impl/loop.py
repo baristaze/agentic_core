@@ -122,9 +122,15 @@ Sleep = Callable[[float], Awaitable[None]]
 
 HANDOVER_UNLOCK = "give_back"
 WORKSPACE_UNLOCK = "workspace"
+LOST_SNAPSHOT = "the snapshot the workspace starts from is gone, or no longer matches what was kept"
+LOST_SOURCE = "what the workspace is rebuilt from is gone, or cannot be brought in"
+"""The causes a park on a lost workspace names, the engine's own words: the
+provider's message may hold what a command wrote, and reaches the log
+alone."""
 PERMISSION = "permission"
-"""The cause a park names for a credential error that is no refusal of the
-key: a permission, a region, or a model the key cannot reach."""
+"""What a provider park's unlock names for a credential error that is no
+refusal of the key: a permission, a region, or a model the key cannot
+reach."""
 NOT_OFFERED = "unknown"
 """The class a call's request records when the registry held no tool of its
 name as the model made it. A tool a load in the same turn adds is never
@@ -366,7 +372,7 @@ class LoopManagerImpl(LoopManagerInterface):
                 lost = rules.lost_step(new_id(), self._clock(), run.session_id, run.loop_id, start)
                 await self._steps.append_steps(run.ctx, run.session_id, run.epoch, [lost])
                 return await self._prepare(run, None, unlocked=unlocked)
-            return await self._unprepared(run, refused)
+            return await self._unprepared(run, refused, restoring=start is not None)
         if start is not None and start.type is StepType.CONTROL:
             # The record that the restore was done, and the model's notice: it
             # is delivered with the next model request. A run lost before it
@@ -375,8 +381,11 @@ class LoopManagerImpl(LoopManagerInterface):
             await self._steps.append_steps(run.ctx, run.session_id, run.epoch, [done])
         return None
 
-    async def _unprepared(self, run: _Run, refused: InfraException) -> LoopRun:
-        """How a run stops when its workspace cannot be prepared."""
+    async def _unprepared(self, run: _Run, refused: InfraException, *, restoring: bool) -> LoopRun:
+        """How a run stops when its workspace cannot be prepared: its end or
+        its park names the refusal's cause, so a person reads why without the
+        log. `restoring` when the workspace was to start from a snapshot."""
+        cause = refused.cause if isinstance(refused, IsolationRefused) else None
         if isinstance(refused, IsolationRefused) and refused.clears:
             # No host can give it the workspace yet: no weaker one, and
             # no call spent. It waits on the resource and asks again.
@@ -387,20 +396,26 @@ class LoopManagerImpl(LoopManagerInterface):
                 unlock=WORKSPACE_UNLOCK,
                 retry_at=retry_at,
                 unsettled=not run.resumed,
+                cause=cause,
             )
             return await self._park(run, park)
         if refused.code == ISOLATION_REFUSED:
             # A provider that cannot meet the spec refuses it whole: no
             # weaker workspace, and no call spent on a loop that cannot run.
             log.warning("session %s has no workspace: %s", run.session_id, refused)
-            return await self._end(run, LoopOutcome.ERRORED)
+            return await self._end(run, LoopOutcome.ERRORED, cause=cause)
         if refused.code != WorkspaceLost.code:
             raise refused
         # What the workspace is rebuilt from is gone: nothing restarts
         # from scratch in its stead, and a person says what comes next.
         # The loop parks with everything it reached kept.
         log.error("session %s lost its workspace: %s", run.session_id, refused)
-        park = Park(reason=ParkReason.PERSON, unlock=WORKSPACE_UNLOCK, unsettled=not run.resumed)
+        park = Park(
+            reason=ParkReason.PERSON,
+            unlock=WORKSPACE_UNLOCK,
+            unsettled=not run.resumed,
+            cause=LOST_SNAPSHOT if restoring else LOST_SOURCE,
+        )
         return await self._park(run, park)
 
     async def _drive(self, run: _Run, history: Sequence[Step]) -> LoopRun:
@@ -1489,7 +1504,7 @@ class LoopManagerImpl(LoopManagerInterface):
             return self._stopped(request, text, ToolFailure.INTERRUPTED)
         return self._lost(request)
 
-    async def _end(self, run: _Run, outcome: LoopOutcome) -> LoopRun:
+    async def _end(self, run: _Run, outcome: LoopOutcome, *, cause: str | None = None) -> LoopRun:
         if run.jobs:
             why = f"the loop ended {outcome.value}; the job was cancelled"
             await self._stop_jobs(run, list(run.jobs.values()), why)
@@ -1502,7 +1517,9 @@ class LoopManagerImpl(LoopManagerInterface):
         # before the loop is closed, and a run that ends it again leaves
         # again, finding nothing.
         await self._leases.leave(run.ctx, WaiterKind.SESSION, run.session_id)
-        step = rules.ended_step(new_id(), self._clock(), run.session_id, run.loop_id, outcome)
+        step = rules.ended_step(
+            new_id(), self._clock(), run.session_id, run.loop_id, outcome, cause=cause
+        )
         await self._steps.append_steps(run.ctx, run.session_id, run.epoch, [step])
         await self._sessions.project_status(run.ctx, run.session_id)
         if outcome is LoopOutcome.CANCELLED:
