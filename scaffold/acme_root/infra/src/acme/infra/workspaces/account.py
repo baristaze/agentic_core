@@ -43,7 +43,7 @@ import struct
 import sys
 import time
 from collections.abc import AsyncIterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from uuid import UUID
 
@@ -304,13 +304,16 @@ async def filter_refusal(switch: Switch) -> str | None:
     """Why a system call filter on this process keeps the mode from running,
     as a unit's `SystemCallFilter=~@privileged` does unless it allows the
     sets the mode takes; None when it refuses none of them. The switch,
-    which takes `@setuid` and `capset`, is tried as a command of the account
-    that does nothing. The share of a workspace with the account's group,
-    which takes `@chown`, is tried as a chown that changes nothing, of a
-    pipe. Neither makes anything."""
+    which takes `@setuid` and `capset`, is tried to this process's own ids,
+    as a command that does nothing: it starts no process of the account,
+    which another workspace may hold, and which its end would reach. The
+    share of a workspace with the account's group, which takes `@chown`, is
+    tried as a chown that changes nothing, of a pipe. Neither makes
+    anything."""
     refused: list[str] = []
+    own = replace(switch, uid=os.getuid(), gid=os.getgid())
     trying = await asyncio.create_subprocess_exec(
-        *switch.argv("exit 0"),
+        *own.argv("exit 0"),
         cwd="/",
         env={},
         stdin=asyncio.subprocess.DEVNULL,
