@@ -357,6 +357,11 @@ stops it. A parked loop has not ended; it is suspended
 | `cancelled` | A principal cancelled it |
 | `errored` | The engine met an error no park can clear |
 
+The `loop_ended` step carries the outcome, and its cause when the engine
+can name one, so a person reads why a loop stopped without the
+operator's logs. A workspace refused for good is the common case ([The
+Runtime](#the-runtime)).
+
 ### A Session Never Ends
 
 `core`
@@ -979,9 +984,13 @@ never falls back to something weaker. A refusal says whether it can
 clear. One that cannot, such as a spec the provider does not support,
 ends the loop `errored`. One that waits for a workspace that may come
 parks the loop on the resource, and the loop asks again after a wait.
-What a workspace is rebuilt from may be gone for good, such as the branch
-it tracks; the loop then parks for a person, and nothing is rebuilt from
-something else in its stead.
+Either step names the refusal's cause, for a person to read: what the
+spec asks that the provider cannot meet, or the setup command that
+failed and its exit code. A cause never holds a command's output, an
+environment, or the host's own state; those reach the operator's log
+alone. What a workspace is rebuilt from may be gone for good, such as
+the branch it tracks; the loop then parks for a person, its park saying
+what is gone, and nothing is rebuilt from something else in its stead.
 
 A directory confines files alone. Its commands can run as an account of
 the host, apart from the engine's, one workspace at a time: they reach
@@ -1080,8 +1089,9 @@ platform's ([Next: The Platform](#next-the-platform)).
   tenant's purge. It is keyed by a hash of its mode, its image, its
   commands, and its egress, so a changed base is built again, never
   served stale. Two prepares racing on one base build it once. A setup
-  command that fails keeps nothing, and names the command and how it
-  ended. A base with no setup is the image alone. A provider that cannot
+  command that fails keeps nothing, and the loop's end names the command
+  and how it ended, never what it wrote. A base with no setup is the
+  image alone. A provider that cannot
   snapshot refuses a base.
 - **Purge.** A snapshot is content. A session's purge removes its
   snapshots, a VM's disks included. Revoking its key erases every
@@ -1546,11 +1556,12 @@ memory-only session's runtime, a resource lease's hold time).
 | `pause` | A principal paused | Resume | No |
 
 A `parked` step writes no outcome. It carries its reason, its unlock,
-and its retry time; no retry time means only a person can unblock it. A
-gate supplied from outside may name a reason and an unlock of its own. A
-park on the workspace comes before its run has settled a lost run's
-calls, so it says so, and the run that resumes it settles them by their
-effect.
+its retry time, and its cause when the engine can name one, such as a
+workspace base still being built; no retry time means only a person can
+unblock it. A gate supplied from outside may name a reason and an unlock
+of its own. A park on the workspace comes before its run has settled a
+lost run's calls, so it says so, and the run that resumes it settles
+them by their effect.
 When the unlock happens, a `resumed` step starts a new run. Raising a
 budget is the instruction to continue.
 

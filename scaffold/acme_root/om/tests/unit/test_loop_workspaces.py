@@ -31,7 +31,13 @@ from acme.om.agents.impl.loop import LoopOptions
 from acme.om.agents.rules import CHILDREN_PARK
 from acme.om.agents.types.run import RunEnd
 from acme.om.context import TenantContext
-from acme.om.steps.types.header import LoopOutcome, ParkedHeader, ParkReason, ToolRequestHeader
+from acme.om.steps.types.header import (
+    LoopEndedHeader,
+    LoopOutcome,
+    ParkedHeader,
+    ParkReason,
+    ToolRequestHeader,
+)
 from acme.om.steps.types.step import StepType
 from acme.om.tools.native.wait_for_sub_agents import WAIT_FOR_SUB_AGENTS
 
@@ -62,6 +68,11 @@ async def test_a_refusal_that_cannot_clear_ends_the_loop_errored_and_wakes_its_w
     run = await loop.loops.run(loop.owner, child.id)
 
     assert (run.end, run.outcome, run.park) == (RunEnd.ENDED, LoopOutcome.ERRORED, None)
+    with pytest.raises(IsolationRefused) as expected:
+        await provider.prepare(loop.owner.org_id, child.id, CONTAINER)
+    ended = (await loop.history(child.id))[-1]
+    assert isinstance(ended.header, LoopEndedHeader) and expected.value.cause is not None
+    assert ended.header.cause == expected.value.cause, "its end says what the spec asks"
     assert len(loop.anthropic.calls) == calls, "no call was made"
     woken = await loop.managers.agent_sessions.get_session(loop.owner, root)
     assert (woken.status, woken.park) == (SessionStatus.PENDING, None), "its report woke it"
@@ -76,7 +87,9 @@ async def test_a_refusal_that_clears_parks_on_the_resource_and_asks_again_after_
     prepare = loop.managers.tools.prepare_workspace
 
     async def refused(*args: object, **kwargs: object) -> Workspace:
-        raise IsolationRefused("no workspace is free yet", clears=True)
+        raise IsolationRefused(
+            "host-7 holds every workspace", clears=True, cause="no workspace is free yet"
+        )
 
     monkeypatch.setattr(loop.managers.tools, "prepare_workspace", refused)
     waiting = await loop.loops.run(loop.owner, session_id)
@@ -87,6 +100,7 @@ async def test_a_refusal_that_clears_parks_on_the_resource_and_asks_again_after_
         "workspace",
         loop.clock() + LoopOptions().workspace_wait,
     )
+    assert waiting.park.cause == "no workspace is free yet", "its cause, never its message"
     assert loop.anthropic.calls == [], "no call was made"
 
     monkeypatch.setattr(loop.managers.tools, "prepare_workspace", prepare)

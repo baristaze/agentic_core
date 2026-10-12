@@ -153,7 +153,7 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
         if why is None and built and base is None:
             why = "a workspace on a base with setup starts from the base's snapshot alone"
         if why is not None:
-            raise IsolationRefused(why)
+            raise IsolationRefused(why, cause=why)
         reachable = await docker("version", "--format", "{{.Server.Version}}", bound=self._timeout)
         if not reachable.ok:
             raise IsolationRefused(f"a container workspace needs Docker: {reachable.reason()}")

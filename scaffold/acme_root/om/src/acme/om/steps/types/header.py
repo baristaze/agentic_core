@@ -1,7 +1,9 @@
 """A step's header: its shape, typed per type, readable while its content is
 sealed. Each header names its `kind`, and a step holds the one its type
 fixes (`steps.types.step.HEADER_KINDS`). A header carries ids, names,
-counts, and flags, never what a person typed or a tool returned.
+counts, flags, and the cause of a loop's end or park, which names what a
+kind declares; never what a person typed into a session or a tool
+returned.
 
 An input and a tool request name their principal, and a model request its
 spender: the attribution the audit reads, typed where the step is made, so
@@ -13,7 +15,7 @@ from enum import StrEnum
 from typing import Annotated, Literal, Self
 from uuid import UUID
 
-from pydantic import Field, model_validator
+from pydantic import BeforeValidator, Field, model_validator
 
 from acme.integrations.model_providers.types import StopReason, Usage
 from acme.om.attribution.types.authority import AuthorityMode
@@ -36,6 +38,26 @@ class ControlCommand(StrEnum):
     DENY = "deny"
     UNLOCK = "unlock"  # clears any park, such as by a raised budget
     RESTORE = "restore"  # the workspace's next prepare starts from a snapshot the history names
+
+
+MAX_CAUSE = 500
+"""The most characters of a cause: a longer one, such as a long setup
+command, is cut to it, never refused, so the step that ends or parks a loop
+is always written."""
+
+
+def _clipped(value: object) -> object:
+    """A cause past `MAX_CAUSE` cut to it, its last character an ellipsis."""
+    if isinstance(value, str) and len(value) > MAX_CAUSE:
+        return value[: MAX_CAUSE - 1] + "…"
+    return value
+
+
+Cause = Annotated[Stored, BeforeValidator(_clipped), Field(min_length=1, max_length=MAX_CAUSE)]
+"""Why a loop ended or parked, as a person reads it: composed from what the
+kind declares, such as a setup command and its exit code, or what a
+provider cannot meet. Never a command's output, a process's environment, or
+the host's state, which reach the log alone."""
 
 
 class ParkReason(StrEnum):
@@ -124,6 +146,9 @@ class Park(Platform):
     by its effect."""
     job: JobPark | None = None
     line: LinePark | None = None
+    cause: Cause | None = None
+    """Why it waits, when the engine can name it: a workspace's refusal,
+    such as a base still being built. None says no more than its reason."""
 
     @model_validator(mode="after")
     def _a_person_sets_no_clock(self) -> Self:
@@ -361,8 +386,13 @@ class ParkedHeader(Platform):
 
 
 class LoopEndedHeader(Platform):
+    """A loop's outcome, and its cause when the engine can name it, such as
+    the setup command that failed and its exit code. None says no more than
+    the outcome."""
+
     kind: Literal["loop_ended"] = "loop_ended"
     outcome: LoopOutcome
+    cause: Cause | None = None
 
 
 class ToolsetSwitch(Platform):

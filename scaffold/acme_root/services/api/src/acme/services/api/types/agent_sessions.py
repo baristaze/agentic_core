@@ -38,12 +38,14 @@ class LineParkView(View):
 class ParkView(View):
     """Why a parked loop waits, what clears it, and when it tries again by
     itself; a park only a person clears has no time, and neither has a park
-    in line, which names where it stands."""
+    in line, which names where it stands. `cause` says why in words when the
+    engine can name it, such as a workspace base still being built."""
 
     reason: ParkReason
     unlock: str
     retry_at: datetime | None
     line: LineParkView | None = None
+    cause: str | None
 
 
 class AgentSessionView(View):
@@ -90,8 +92,10 @@ class StepView(View):
     says: a message's words, a model's answer, a tool's result. The rest is
     its header's, by type: the tools a model response called, why it
     stopped, and what it used; a tool call's tool and the class of its
-    failure; a control's command; a park; a loop's outcome; the snapshot a
-    `snapshotted` step names, or a restore starts from."""
+    failure; a control's command; a park; a loop's outcome, and its cause
+    when the engine names one, such as the setup command that failed and
+    its exit code; the snapshot a `snapshotted` step names, or a restore
+    starts from."""
 
     id: UUID
     seq: int
@@ -111,6 +115,7 @@ class StepView(View):
     command: ControlCommand | None
     park: ParkView | None
     outcome: LoopOutcome | None
+    cause: str | None
     snapshot: SnapshotView | None
 
 

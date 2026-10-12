@@ -203,7 +203,9 @@ of five outcomes: `succeeded`, when the kind's done rule was met and its
 result gate accepted the result; `failed`, a conclusion with evidence
 that the objective cannot be met as asked; `inconclusive`, a stop
 without a conclusion; `cancelled`, by a principal; or `errored`, an
-error no park can clear. A parked loop has not ended; it is suspended.
+error no park can clear. The `loop_ended` step carries the outcome, and
+its cause when the engine can name one. A parked loop has not ended; it
+is suspended.
 
 **Source.** Loops, Runs, and Sessions, Loops and Their Outcomes.
 

@@ -142,23 +142,41 @@ class IsolationRefused(InfraValidationFailed):
     never met with something weaker. A refusal that `clears` waits for a
     workspace that may come, and the loop that asked parks on the resource
     and asks again. Any other, such as a spec the provider does not
-    support, never clears, and the loop that asked ends `errored`."""
+    support, never clears, and the loop that asked ends `errored`.
+
+    The message is the log's. `cause` is what a person reads on the step
+    that ends or parks the loop: text composed from what the spec declares,
+    such as a mode or a limit the provider cannot meet, or a setup command
+    and how it ended. It never holds a command's output, an environment, or
+    the host's own state, so a refusal whose why is the host's names
+    none."""
 
     code = "isolation_refused"
 
-    def __init__(self, message: str | None = None, *, clears: bool = False) -> None:
+    def __init__(
+        self, message: str | None = None, *, clears: bool = False, cause: str | None = None
+    ) -> None:
         super().__init__(message)
         self.clears = clears
+        self.cause = cause
+
+
+_CAUSE_COMMAND = 300
+"""The most characters of a setup command in a cause, so that how it ended
+always fits the bound a cause is stored within."""
 
 
 class BaseSetupFailed(IsolationRefused):
     """A command of a base's setup ended without success: the workspace on
-    the base is refused, named by the command and how it ended, and nothing
-    of the build is kept, so the next prepare builds it again."""
+    the base is refused, named by the command and how it ended, its cause
+    for a person too, and nothing of the build is kept, so the next prepare
+    builds it again. Nothing the command wrote is named."""
 
     def __init__(self, index: int, command: str, exit_code: int | None) -> None:
         ended = "ran out of time" if exit_code is None else f"exited {exit_code}"
-        super().__init__(f"the base's setup command {index + 1}, {command!r}, {ended}")
+        why = f"the base's setup command {index + 1}, {command!r}, {ended}"
+        shown = command if len(command) <= _CAUSE_COMMAND else command[: _CAUSE_COMMAND - 1] + "…"
+        super().__init__(why, cause=f"the base's setup command {index + 1}, {shown!r}, {ended}")
         self.command = command
         self.exit_code = exit_code
 

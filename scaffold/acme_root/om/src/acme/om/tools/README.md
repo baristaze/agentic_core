@@ -123,7 +123,8 @@ thing [Acme is made of](../../../../README.md).
   setup runs once per tenant, in a workspace of its own, given no
   secret, and is kept as a snapshot every workspace on the base starts
   from, with its own egress. A changed base is built again; a setup
-  command that fails keeps nothing and says which (ADR 1028).
+  command that fails keeps nothing, and its refusal's cause names the
+  command and how it ended, never what it wrote (ADR 1028, ADR 1035).
 - **Restore, rewind, fork.** A restore names a snapshot the history
   holds, and the next loop starts from it, its bytes trusted only by
   their hash; one that does not match loses the workspace before it

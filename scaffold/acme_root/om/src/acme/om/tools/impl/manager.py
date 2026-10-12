@@ -227,7 +227,8 @@ class ToolsManagerImpl(ToolsManagerInterface):
         if spec.mode is IsolationMode.NONE:
             if restore is not None:
                 raise IsolationRefused(
-                    f"agent session {session_id} has no workspace to start from a snapshot"
+                    f"agent session {session_id} has no workspace to start from a snapshot",
+                    cause="a session with no workspace starts from no snapshot",
                 )
             return Workspace.absent(ctx.org_id, session_id)
         # Its bytes are trusted by their hash before the provider sees them:
@@ -250,7 +251,9 @@ class ToolsManagerImpl(ToolsManagerInterface):
             # again, and the loop asks again once it is.
             await self._bases.drop(ctx, spec)
             raise IsolationRefused(
-                f"the workspace base is built again: {lost.message}", clears=True
+                f"the workspace base is built again: {lost.message}",
+                clears=True,
+                cause="the workspace base is built again",
             ) from lost
 
     async def release_workspace(self, ctx: TenantContext, workspace: Workspace) -> None:

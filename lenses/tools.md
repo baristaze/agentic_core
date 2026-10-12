@@ -401,23 +401,27 @@ workspace provider that cannot meet a session's isolation spec refuses
 before the first model call; it never falls back to something weaker.
 A refusal that cannot clear ends the loop `errored`. One that waits for
 a workspace that may come parks the loop on the resource, and the loop
-asks again after a wait. A workspace whose durable state is gone parks
-it for a person. An
-environment may vanish between loops: an instance is released, and a
-session is not. The next loop prepares another, and an
-`environment_changed` step tells the model what changed under it.
+asks again after a wait. Either step names the refusal's cause, never a
+command's output or the host's state. A workspace whose durable state
+is gone parks it for a person. An environment may vanish between loops:
+an instance is released, and a session is not. The next loop prepares
+another, and an `environment_changed` step tells the model what changed
+under it.
 
 **Source.** The Runtime.
 
 **Look for.** What a workspace provider does when it cannot meet a spec;
-when that check runs against the first model call; how a new environment
-is announced.
+when that check runs against the first model call; what a refusal's
+cause is composed from, and the step that carries it; how a new
+environment is announced.
 
 **Violation.** A fallback from a VM to a container, or from a container
 to a directory on the host, when the stronger mode is unavailable; a
 refusal found after the model has been called; a refusal that may clear
-ending the loop, or one that cannot clear parking it; a workspace rebuilt
-from something else when what it is rebuilt from is gone; a new
+ending the loop, or one that cannot clear parking it; a refusal's cause
+that holds a command's output, an environment, or the host's own state,
+or one the refusal names that its loop's end or park drops; a workspace
+rebuilt from something else when what it is rebuilt from is gone; a new
 environment with no
 `environment_changed` step.
 
@@ -479,9 +483,10 @@ session's content. Its snapshot is kept under the tenant alone, keyed
 by a hash of the mode, the image, the commands, and the egress, so a
 changed base is built again. Every workspace on it starts from that
 snapshot and runs with its own egress. Two prepares racing on a base
-build it once; a setup command that fails keeps nothing and names the
-command and how it ended. A provider that cannot snapshot refuses a
-base, and one never starts a based workspace on the bare image.
+build it once; a setup command that fails keeps nothing, and the loop's
+end names the command and how it ended, never what it wrote. A provider
+that cannot snapshot refuses a base, and one never starts a based
+workspace on the bare image.
 
 **Source.** Workspace Snapshots.
 

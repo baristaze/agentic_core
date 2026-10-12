@@ -52,6 +52,7 @@ from acme.infra.workspaces import (
 from acme.infra.workspaces.host import UNKEPT, WorkspaceHostImpl
 from acme.infra.workspaces.twin import WorkspaceTwinImpl
 from acme.om.agent_sessions.rules import QUESTION
+from acme.om.agents.impl.loop import LOST_SNAPSHOT
 from acme.om.agents.loop_rules import FORKED, LOST, REWOUND, pending_restore
 from acme.om.agents.types.request import Spawn
 from acme.om.agents.types.run import RunEnd
@@ -518,6 +519,7 @@ async def test_a_restore_whose_bytes_are_gone_parks_once_and_the_unlock_goes_on_
 
     assert parked.park is not None
     assert (parked.park.reason, parked.park.unlock) == (ParkReason.PERSON, "workspace")
+    assert parked.park.cause == LOST_SNAPSHOT, "a person reads why it waits"
     assert len(loop.anthropic.calls) == calls, "no model call on a lost restore"
 
     unlock = control_step(new_id(), utcnow(), session_id, loop.owner, ControlCommand.UNLOCK)

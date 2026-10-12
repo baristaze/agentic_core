@@ -246,17 +246,17 @@ it.
 **Principle.** A loop parks when it cannot continue yet. A park names
 its reason (a person, a provider, a budget, a resource, a job, children,
 a hand-over, or a pause) and the one action that clears it. A parked
-step writes no outcome; it carries its reason, its unlock, and its
-retry time, and no retry time means only a person can unblock it. A
-workspace that cannot be had yet parks on the resource, and one whose
-durable state is gone parks for a person. Treating "cannot continue
-right now" as "this did not work" throws away a long conversation and
-its evidence.
+step writes no outcome; it carries its reason, its unlock, its retry
+time, and its cause when the engine can name one, and no retry time
+means only a person can unblock it. A workspace that cannot be had yet
+parks on the resource, and one whose durable state is gone parks for a
+person. Treating "cannot continue right now" as "this did not work"
+throws away a long conversation and its evidence.
 
 **Source.** Parking.
 
 **Look for.** Every path that stops a loop for something it waits on;
-the reason, the unlock, and the retry time a park records.
+the reason, the unlock, the retry time, and the cause a park records.
 
 **Violation.** An outage, a budget refusal, a missing key, a workspace
 that cannot be had yet, or a missing answer that ends the loop `errored` or

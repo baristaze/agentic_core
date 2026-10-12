@@ -681,9 +681,16 @@ def nudge_text(kind: AgentKind) -> str:
 
 
 def ended_step(
-    step_id: UUID, at: datetime, session_id: UUID, loop_id: UUID, outcome: LoopOutcome
+    step_id: UUID,
+    at: datetime,
+    session_id: UUID,
+    loop_id: UUID,
+    outcome: LoopOutcome,
+    *,
+    cause: str | None = None,
 ) -> Step:
-    """The step that closes a loop with its outcome."""
+    """The step that closes a loop with its outcome, and its cause when the
+    engine names one."""
     return Step(
         id=step_id,
         created_at=at,
@@ -692,7 +699,7 @@ def ended_step(
         type=StepType.LOOP_ENDED,
         actor=Actor.ENGINE,
         origin=Origin.ENGINE,
-        header=LoopEndedHeader(outcome=outcome),
+        header=LoopEndedHeader(outcome=outcome, cause=cause),
     )
 
 

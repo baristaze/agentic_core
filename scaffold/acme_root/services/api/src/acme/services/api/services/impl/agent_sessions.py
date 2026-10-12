@@ -97,6 +97,7 @@ def step_view(step: Step) -> StepView:
         command=header.command if isinstance(header, ControlHeader) else None,
         park=park_view(header.park) if isinstance(header, ParkedHeader) else None,
         outcome=header.outcome if isinstance(header, LoopEndedHeader) else None,
+        cause=header.cause if isinstance(header, LoopEndedHeader) else None,
         snapshot=snapshot_view(named_snapshot(step)),
     )
 

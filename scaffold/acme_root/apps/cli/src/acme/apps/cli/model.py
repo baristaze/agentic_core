@@ -70,12 +70,17 @@ LINE_TEXT = 120
 """The most characters of a step's text one line shows."""
 
 
+def one_line(text: str) -> str:
+    """`text` on one line, cut to `LINE_TEXT`."""
+    said = " ".join(text.split())
+    return said if len(said) <= LINE_TEXT else said[: LINE_TEXT - 1] + "…"
+
+
 def step_line(step: StepView) -> str:
     """One line for a step of a session's history: its seq, its type, and
-    what it says or did, the text cut to one line."""
-    said = " ".join(step.text.split())
-    if len(said) > LINE_TEXT:
-        said = said[: LINE_TEXT - 1] + "…"
+    what it says or did, the text cut to one line. A park and a loop's end
+    say their cause after a colon, when the engine names one."""
+    said = one_line(step.text)
     detail = said
     if step.type is StepType.model_response and step.tools:
         detail = f"{said} [calls {', '.join(step.tools)}]".strip()
@@ -87,8 +92,12 @@ def step_line(step: StepView) -> str:
         detail = step.command.value
     elif step.park is not None:
         detail = f"{step.park.reason.value}, until {step.park.unlock}"
+        if step.park.cause:
+            detail += f": {one_line(step.park.cause)}"
     elif step.outcome is not None:
         detail = step.outcome.value
+        if step.cause:
+            detail += f": {one_line(step.cause)}"
     return f"{step.seq:>5}  {step.type.value:<15} {detail}".rstrip()
 
 
