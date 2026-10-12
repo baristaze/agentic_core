@@ -230,3 +230,29 @@ async def test_one_steerer_at_a_time_hands_the_steer_on_and_an_admin_takes_a_lap
     assert str(org.ids["ada"]) in taken.json()["participants"], "who takes it takes part"
     moves = [s["steerer"] for s in await org.steps(sid) if s["type"] == "switched"]
     assert moves == [mia, str(org.ids["ada"])], "each move recorded once"
+
+
+async def test_an_admin_takes_no_steer_from_a_steerer_who_still_holds_it(org: Org) -> None:
+    """A holder of `manage_sessions` takes over only a steerer who lapsed.
+    While the member the steer was handed to still holds it, an admin's
+    take is refused and moves nothing: the admin takes no part, and the
+    member's next message still instructs."""
+    sid = await org.start("steward")
+    path = f"/v1/agent-sessions/{sid}"
+    mia = str(org.ids["mia"])
+    await org.put("mia", f"{path}/participants/{mia}")
+    handed = await org.put("ann", f"{path}/principal", {"steerer": mia})
+    assert handed.status_code == 200, handed.text
+
+    taken = await org.put("ada", f"{path}/principal")
+    hers = await org.client.post(
+        f"{path}/messages", headers=created(org.headers["mia"]), json={"text": "Check refunds."}
+    )
+
+    assert taken.status_code == 403, taken.text
+    held = (await org.client.get(path, headers=org.headers["ada"])).json()
+    assert held["steerer"] == mia
+    assert str(org.ids["ada"]) not in held["participants"], "a refused take joins nothing"
+    assert (hers.status_code, hers.json()["participant"]) == (201, False), "hers instructs"
+    moves = [s["steerer"] for s in await org.steps(sid) if s["type"] == "switched"]
+    assert moves == [mia]

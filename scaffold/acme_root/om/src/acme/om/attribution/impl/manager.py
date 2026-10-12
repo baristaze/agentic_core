@@ -165,6 +165,8 @@ class AttributionManagerImpl(AttributionManagerInterface):
                 # steerer who lapsed, by one who holds `manage_sessions`,
                 # who takes part from here.
                 ctx.require(Permission.MANAGE_SESSIONS)
+                if await self._live(ctx, authority.principal) is not None:
+                    raise NotAuthorized(f"the steerer of agent session {session_id} still holds it")
                 await self._sessions.add_participant(ctx, session_id, ctx.user_id)
         else:
             if not steering:
@@ -282,12 +284,8 @@ class AttributionManagerImpl(AttributionManagerInterface):
         principal = call_principal(authority, session.speaker, child=session.parent_id is not None)
         # Asked on every call: a permission taken away between two calls of
         # one loop stops the second (ADR 1007).
-        try:
-            live = await self._principal_context(ctx, ctx.org_id, principal)
-        except (NotAuthorized, NotFound, NotAuthenticated) as refused:
-            raise _refusal(authority.mode, principal) from refused
-        if live.org_id != ctx.org_id or live.user_id != principal.id:
-            # A transition that answers for someone else answers nothing.
+        live = await self._live(ctx, principal)
+        if live is None:
             raise _refusal(authority.mode, principal)
         return CallAuthority(
             principal=principal,
@@ -319,6 +317,19 @@ class AttributionManagerImpl(AttributionManagerInterface):
                 break
             after_seq = page.items[-1].seq
         return found
+
+    async def _live(self, ctx: TenantContext, principal: Principal) -> TenantContext | None:
+        """`principal`'s live context in the tenant, asked of the transition
+        as every tool call asks it, or None once they no longer hold:
+        refused, gone, or answered for by someone else."""
+        try:
+            live = await self._principal_context(ctx, ctx.org_id, principal)
+        except NotAuthorized, NotFound, NotAuthenticated:
+            return None
+        if live.org_id != ctx.org_id or live.user_id != principal.id:
+            # A transition that answers for someone else answers nothing.
+            return None
+        return live
 
     async def _held_by(
         self, ctx: TenantContext, authority: SessionAuthority, principal: Principal
