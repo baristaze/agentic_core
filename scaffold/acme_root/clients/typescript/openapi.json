@@ -98,8 +98,30 @@
         "title": "AddMemberRequest",
         "type": "object"
       },
+      "AgentSessionPageView": {
+        "description": "One page of root sessions by id. With `has_more`, the next page\nstarts after the last one's id.",
+        "properties": {
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentSessionView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "title": "AgentSessionPageView",
+        "type": "object"
+      },
       "AgentSessionView": {
-        "description": "A session: its kind, its title, and its status, which follows its\nsteps. `pending` while an input waits for a run, `running` while a run\nholds its loop, `parked` while the loop waits, `idle` when no loop is\nopen.",
+        "description": "A session: its kind, its title, and its status, which follows its\nsteps. `pending` while an input waits for a run, `running` while a run\nholds its loop, `parked` while the loop waits, `idle` when no loop is\nopen. `visibility` says who sees it: every member of the org, who may\njoin it, or its creator and its `participants` alone. `steerer` is the\nperson whose messages instruct it, its creator until a hand-off; a\nparticipant's message is data. A sub-agent names none: its parent\nsteers it, and it is seen as its root is.",
         "properties": {
           "archived_at": {
             "anyOf": [
@@ -136,6 +158,18 @@
             "title": "Kind Version",
             "type": "integer"
           },
+          "parent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
           "park": {
             "anyOf": [
               {
@@ -146,12 +180,35 @@
               }
             ]
           },
+          "participants": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Participants",
+            "type": "array"
+          },
           "status": {
             "$ref": "#/components/schemas/SessionStatus"
+          },
+          "steerer": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steerer"
           },
           "title": {
             "title": "Title",
             "type": "string"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/Visibility"
           }
         },
         "required": [
@@ -163,10 +220,23 @@
           "park",
           "created_at",
           "created_by",
-          "archived_at"
+          "archived_at",
+          "visibility",
+          "participants",
+          "steerer",
+          "parent_id"
         ],
         "title": "AgentSessionView",
         "type": "object"
+      },
+      "Among": {
+        "description": "Which root sessions a person's list holds: sub-agents are read\nthrough their tree.",
+        "enum": [
+          "mine",
+          "visible"
+        ],
+        "title": "Among",
+        "type": "string"
       },
       "ApiKeyPageView": {
         "description": "One page of the api key list, newest first; `next_cursor` as on\n`UserPageView`.",
@@ -249,6 +319,41 @@
           "deleted_at"
         ],
         "title": "ApiKeyView",
+        "type": "object"
+      },
+      "ArtifactPageView": {
+        "description": "A page of what a session keeps whole outside its window, such as a\nlong tool result: its characters from `offset`, the whole artifact's\nlength, and whether more follow.",
+        "properties": {
+          "artifact_id": {
+            "format": "uuid",
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "characters": {
+            "title": "Characters",
+            "type": "integer"
+          },
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "offset",
+          "text",
+          "characters",
+          "has_more"
+        ],
+        "title": "ArtifactPageView",
         "type": "object"
       },
       "AskRequest": {
@@ -2455,7 +2560,8 @@
           "read",
           "write",
           "manage_members",
-          "manage_keys"
+          "manage_keys",
+          "manage_sessions"
         ],
         "title": "Permission",
         "type": "string"
@@ -2533,6 +2639,26 @@
           "counted_at"
         ],
         "title": "PlatformSizeView",
+        "type": "object"
+      },
+      "PrincipalRequest": {
+        "additionalProperties": false,
+        "description": "Who steers the session from here: a participant its steerer hands it\nto. Left out, the caller takes it.",
+        "properties": {
+          "steerer": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steerer"
+          }
+        },
+        "title": "PrincipalRequest",
         "type": "object"
       },
       "PurposeUsageView": {
@@ -3286,10 +3412,22 @@
         "type": "object"
       },
       "StepView": {
-        "description": "One step of a session's history, in its order. `text` is what it\nsays: a message's words, a model's answer, a tool's result. The rest is\nits header's, by type: the tools a model response called, why it\nstopped, and what it used; a tool call's tool and the class of its\nfailure; a control's command; a park; a loop's outcome, and its cause\nwhen the engine names one, such as the setup command that failed and\nits exit code; the snapshot a `snapshotted` step names, or a restore\nstarts from.",
+        "description": "One step of a session's history, in its order. `text` is what it\nsays: a message's words, a model's answer, a tool's result. The rest is\nits header's, by type: the tools a model response called, why it\nstopped, and what it used; a tool call's tool and the class of its\nfailure; a control's command; a park; a loop's outcome, and its cause\nwhen the engine names one, such as the setup command that failed and\nits exit code; the snapshot a `snapshotted` step names, or a restore\nstarts from. A message names its `author`, and `participant` says it is\na participant's, data, never an instruction. A `switched` step that\nmoved the steer names the new `steerer`, and one that switched who sees\nthe session its `visibility`.",
         "properties": {
           "actor": {
             "$ref": "#/components/schemas/Actor"
+          },
+          "author": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author"
           },
           "cause": {
             "anyOf": [
@@ -3360,6 +3498,10 @@
               }
             ]
           },
+          "participant": {
+            "title": "Participant",
+            "type": "boolean"
+          },
           "refs": {
             "items": {
               "format": "uuid",
@@ -3393,6 +3535,18 @@
                 "type": "null"
               }
             ]
+          },
+          "steerer": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steerer"
           },
           "stop_reason": {
             "anyOf": [
@@ -3438,6 +3592,16 @@
                 "type": "null"
               }
             ]
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Visibility"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -3460,7 +3624,11 @@
           "park",
           "outcome",
           "cause",
-          "snapshot"
+          "snapshot",
+          "author",
+          "participant",
+          "steerer",
+          "visibility"
         ],
         "title": "StepView",
         "type": "object"
@@ -3937,6 +4105,29 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "Visibility": {
+        "description": "Who sees a session and opens its content. The org is the team: there\nis no axis between the two.",
+        "enum": [
+          "org_wide",
+          "private"
+        ],
+        "title": "Visibility",
+        "type": "string"
+      },
+      "VisibilityRequest": {
+        "additionalProperties": false,
+        "description": "Who sees the session from here: every member of the org, or its\ncreator and its participants alone.",
+        "properties": {
+          "visibility": {
+            "$ref": "#/components/schemas/Visibility"
+          }
+        },
+        "required": [
+          "visibility"
+        ],
+        "title": "VisibilityRequest",
         "type": "object"
       },
       "WaiterKind": {
@@ -5893,6 +6084,138 @@
       }
     },
     "/v1/agent-sessions": {
+      "get": {
+        "description": "The org's root sessions by id, after `after`: the ones the caller\nmade or takes part in (`mine`), or every one they see (`visible`).",
+        "operationId": "list_sessions_v1_agent_sessions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "among",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Among",
+              "default": "visible"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/SessionStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionPageView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Sessions",
+        "tags": [
+          "agent_sessions"
+        ]
+      },
       "post": {
         "description": "A session on the kind, idle until a message wakes it.",
         "operationId": "start_session_v1_agent_sessions_post",
@@ -6088,6 +6411,130 @@
           }
         },
         "summary": "Get Session",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/{session_id}/artifacts/{artifact_id}": {
+      "get": {
+        "description": "A page of what the session keeps whole outside its window, from\n`offset`; the policy's page bounds `limit`.",
+        "operationId": "get_artifact_v1_agent_sessions__session_id__artifacts__artifact_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactPageView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Artifact",
         "tags": [
           "agent_sessions"
         ]
@@ -6814,9 +7261,111 @@
         ]
       }
     },
+    "/v1/agent-sessions/{session_id}/participants/{user_id}": {
+      "put": {
+        "description": "`user_id` takes part in the session: the caller joins one they see,\nand its creator adds anyone. 403 for anyone else.",
+        "operationId": "add_participant_v1_agent_sessions__session_id__participants__user_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Participant",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
     "/v1/agent-sessions/{session_id}/principal": {
       "put": {
-        "description": "The caller becomes the principal the session's tool calls run under,\nand a loop parked on a principal who no longer holds goes on.",
+        "description": "The steer moves, recorded as a step: its steerer hands it to the\nparticipant the body names, or with no body the caller takes it, for a\nsteerer who lapsed with `manage_sessions`. Its tool calls run under the\nsteerer, and a loop parked on a principal who no longer holds goes on.\n403 for anyone else, 422 for one who takes no part in it.",
         "operationId": "assign_principal_v1_agent_sessions__session_id__principal_put",
         "parameters": [
           {
@@ -6878,6 +7427,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PrincipalRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -7106,6 +7672,108 @@
           }
         },
         "summary": "Take Over",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/{session_id}/visibility": {
+      "put": {
+        "description": "Its creator switches who sees the session, recorded as a step: 403\nfor anyone else.",
+        "operationId": "switch_visibility_v1_agent_sessions__session_id__visibility_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisibilityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Switch Visibility",
         "tags": [
           "agent_sessions"
         ]
