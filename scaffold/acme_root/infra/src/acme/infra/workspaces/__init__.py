@@ -161,6 +161,11 @@ class IsolationRefused(InfraValidationFailed):
         self.cause = cause
 
 
+_CAUSE_COMMAND = 300
+"""The most characters of a setup command in a cause, so that how it ended
+always fits the bound a cause is stored within."""
+
+
 class BaseSetupFailed(IsolationRefused):
     """A command of a base's setup ended without success: the workspace on
     the base is refused, named by the command and how it ended, its cause
@@ -170,7 +175,10 @@ class BaseSetupFailed(IsolationRefused):
     def __init__(self, index: int, command: str, exit_code: int | None) -> None:
         ended = "ran out of time" if exit_code is None else f"exited {exit_code}"
         why = f"the base's setup command {index + 1}, {command!r}, {ended}"
-        super().__init__(why, cause=why)
+        shown = command if len(command) <= _CAUSE_COMMAND else command[: _CAUSE_COMMAND - 1] + "…"
+        super().__init__(
+            why, cause=f"the base's setup command {index + 1}, {shown!r}, {ended}"
+        )
         self.command = command
         self.exit_code = exit_code
 

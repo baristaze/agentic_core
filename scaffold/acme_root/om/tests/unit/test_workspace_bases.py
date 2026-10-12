@@ -365,3 +365,20 @@ async def test_the_tenants_purge_removes_its_bases(tmp_path: Path) -> None:
 
     assert await bases.kept() == []
     assert await bases.kept(other) == [base_key(ON_BASE)], "another tenant's stay"
+
+
+@pytest.mark.parametrize(("exit_code", "ended"), [(100, "exited 100"), (None, "ran out of time")])
+def test_a_long_setup_command_keeps_how_it_ended_in_its_cause(
+    exit_code: int | None, ended: str
+) -> None:
+    from acme.om.steps.types.header import MAX_CAUSE, LoopEndedHeader
+
+    failed = BaseSetupFailed(0, "x" * 600, exit_code)
+    assert failed.cause is not None
+    assert failed.cause.endswith(f", {ended}")
+    assert len(failed.cause) <= MAX_CAUSE
+    assert ended in str(failed)
+    header = LoopEndedHeader.model_validate(
+        {"outcome": "errored", "cause": failed.cause}, strict=False
+    )
+    assert header.cause == failed.cause
