@@ -259,6 +259,24 @@ async def test_a_passed_deadline_is_cleared_by_a_later_one(case: Case) -> None:
     await case.runs_again(session_id, moved, runs)
 
 
+async def test_a_deadline_with_no_offset_is_refused_and_the_one_set_stays(case: Case) -> None:
+    """An instant with no offset names no moment: the route refuses it
+    before anything is written, and the tree keeps the deadline it had."""
+    session_id = await case.started(case.owner)
+    path = f"/v1/agent-sessions/{session_id}/deadline"
+    later = utcnow() + timedelta(hours=1)
+    kept = await case.client.put(path, headers=case.owner, json={"deadline": later.isoformat()})
+    assert kept.status_code == 200, kept.text
+
+    naive = await case.client.put(
+        path, headers=case.owner, json={"deadline": "2099-01-01T09:00:00"}
+    )
+
+    assert naive.status_code == 422, naive.text
+    tree = await case.container.managers.agents.tree_of(await case.ctx(), UUID(session_id))
+    assert tree.deadline == later
+
+
 async def test_a_principal_who_no_longer_holds_is_replaced_by_the_person_who_assigns_themselves(
     case: Case,
 ) -> None:
