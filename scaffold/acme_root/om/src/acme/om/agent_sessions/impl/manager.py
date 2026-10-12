@@ -238,7 +238,9 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
             return session
         return await self._unlock(ctx, session)
 
-    async def wake_parked(self, ctx: TenantContext, reason: ParkReason) -> int:
+    async def wake_parked(
+        self, ctx: TenantContext, reason: ParkReason, unlock: str | None = None
+    ) -> int:
         ctx.require(Permission.WRITE)
         woken = 0
         after: UUID | None = None
@@ -246,7 +248,10 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
             batch = self._options.wake_batch
             page = await self._storage.read_sessions(ctx.org_id, SessionStatus.PARKED, after, batch)
             for session in page:
-                if session.park is None or session.park.reason is not reason:
+                park = session.park
+                if park is None or park.reason is not reason:
+                    continue
+                if unlock is not None and park.unlock != unlock:
                     continue
                 try:
                     await self._unlock(ctx, session)

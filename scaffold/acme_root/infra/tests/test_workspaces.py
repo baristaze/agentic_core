@@ -8,9 +8,10 @@ An account workspace runs its commands as an account of the host, which the
 cases that need one name in TEST_WORKSPACE_ACCOUNT. They are skipped, with
 the reason, on a host that cannot switch to it: one not on Linux, or a
 process without the capabilities the switch takes, as in most CI. Their
-root's filesystem keeps ACLs. One more runs under a unit with
-`ProcSubset=pid` and `RestrictSUIDSGID=yes` alone, and is skipped, with the
-reason, anywhere else."""
+root's filesystem keeps ACLs. Two more run under a unit with
+`ProcSubset=pid`, `RestrictSUIDSGID=yes`, and a system call filter, and are
+skipped, with the reason, anywhere else: one where the filter allows what
+the mode takes, one where it refuses some of it."""
 
 import asyncio
 import contextlib
@@ -19,6 +20,7 @@ import re
 import shutil
 import signal
 import stat
+import subprocess
 import tempfile
 from collections.abc import Iterator
 from datetime import timedelta
@@ -445,6 +447,12 @@ def cannot_switch() -> str | None:
 needs_an_account = pytest.mark.skipif(cannot_switch() is not None, reason=f"{cannot_switch()}")
 
 
+async def unfiltered(_: Switch) -> None:
+    """A host whose system call filter refuses nothing the mode takes, where
+    a test stands a switch in for the host's."""
+    return None
+
+
 def proc_hides_others() -> bool:
     """Whether `/proc` hides another account's processes from this one, as a
     unit with `ProtectProc=invisible` sees it: mounted with `hidepid`, and
@@ -612,6 +620,7 @@ async def test_the_hosts_hard_link_setting_is_read_where_it_shows_and_declared_w
         return False
 
     monkeypatch.setattr(accounts, "switch_to", switched)
+    monkeypatch.setattr(accounts, "filter_refusal", unfiltered)
     monkeypatch.setattr(WorkspaceAccountImpl, "_took", serves_another)
     root = tmp_path / "workspaces"
     infra = InfraConfiguredImpl(
@@ -639,8 +648,9 @@ async def test_only_the_refusal_that_waits_for_the_other_workspace_clears(
 ) -> None:
     """A prepare refused while the account serves another workspace clears
     once that one is released, so the loop that asked parks and asks again.
-    A spec the mode cannot hold, a host that cannot switch, and a host that
-    lets an account link another's file never clear: that loop ends."""
+    A spec the mode cannot hold, a host that cannot switch, a host that lets
+    an account link another's file, and one whose system call filter
+    refuses what the mode takes never clear: that loop ends."""
     root = tmp_path / "workspaces"
     asked = spec(IsolationMode.ACCOUNT, processes=64)
     never: list[IsolationRefused] = []
@@ -667,6 +677,16 @@ async def test_only_the_refusal_that_waits_for_the_other_workspace_clears(
     never.append(caught.value)
 
     setting.write_text("1\n")
+
+    async def filtered(_: Switch) -> str:
+        return "a chown fails here"
+
+    monkeypatch.setattr(accounts, "filter_refusal", filtered)
+    with pytest.raises(IsolationRefused, match="a chown fails here") as caught:
+        await WorkspaceAccountImpl(root, "acme-agent").prepare(new_id(), new_id(), asked)
+    never.append(caught.value)
+
+    monkeypatch.setattr(accounts, "filter_refusal", unfiltered)
     monkeypatch.setattr(WorkspaceAccountImpl, "_took", serves_another)
     with pytest.raises(IsolationRefused, match="one at a time") as caught:
         await WorkspaceAccountImpl(root, "acme-agent").prepare(new_id(), new_id(), asked)
@@ -674,8 +694,8 @@ async def test_only_the_refusal_that_waits_for_the_other_workspace_clears(
     assert [refused.message for refused in never if refused.clears] == []
     spec_refused, host_refused = never[: len(ACCOUNT_REFUSES)], never[len(ACCOUNT_REFUSES) :]
     assert all(refused.cause == refused.message for refused in spec_refused)
-    assert [refused.cause for refused in (*host_refused, caught.value)] == [None, None, None], (
-        "the host's accounts, its kernel, and another workspace reach the log alone"
+    assert [refused.cause for refused in (*host_refused, caught.value)] == [None] * 4, (
+        "the host's accounts, its kernel, its filter, and another workspace reach the log alone"
     )
     assert not root.exists()
 
@@ -834,12 +854,28 @@ async def test_the_account_serves_one_workspace_at_a_time_and_a_released_one_is_
         await provider.purge(first.org_id, first.id)
 
 
+def privileged_filtered() -> bool:
+    """Whether a filter refuses the privileged system calls here, as
+    `SystemCallFilter=~@privileged` does: a chroot to a missing path fails
+    as missing, unless a filter refuses the call first."""
+    try:
+        os.chroot(Path(tempfile.gettempdir()) / new_id().hex)
+    except PermissionError:
+        return True
+    except FileNotFoundError:
+        pass
+    return False
+
+
 def hardened() -> str | None:
     """Why this process runs under no unit that hides `/proc/sys`
-    (`ProcSubset=pid`) and refuses a setgid bit (`RestrictSUIDSGID=yes`);
+    (`ProcSubset=pid`), refuses a setgid bit (`RestrictSUIDSGID=yes`), and
+    filters the privileged system calls (`SystemCallFilter=~@privileged`);
     None when it does."""
     if not (accounts.PROC / "self").is_dir() or (accounts.PROC / "sys").exists():
         return "/proc/sys shows here: no unit with ProcSubset=pid"
+    if not privileged_filtered():
+        return "chroot runs here: no unit with SystemCallFilter=~@privileged"
     probe = Path(tempfile.mkdtemp(prefix="setgid-"))
     try:
         probe.chmod(0o2770)
@@ -848,6 +884,28 @@ def hardened() -> str | None:
     finally:
         probe.rmdir()
     return "a setgid bit is set here: no unit with RestrictSUIDSGID=yes"
+
+
+def refused_here() -> list[str]:
+    """The sets of system calls the mode takes that a filter on this process
+    refuses, as this test finds them apart from the provider: `@setuid` and
+    `capset` where the switch to the account fails, and `@chown` where a
+    chown that changes nothing does. Empty on a host that cannot switch."""
+    if cannot_switch() is not None:
+        return []
+    refused: list[str] = []
+    switch = switch_to(ACCOUNT).argv("exit 0")
+    if subprocess.run(switch, cwd="/", env={}, capture_output=True, check=False).returncode:
+        refused += ["@setuid", "capset"]
+    with tempfile.NamedTemporaryFile() as probe:
+        try:
+            os.chown(probe.name, -1, -1)
+        except PermissionError:
+            refused.append("@chown")
+    return refused
+
+
+REFUSED = refused_here()
 
 
 def processes_of(uid: int) -> list[int]:
@@ -868,11 +926,13 @@ def processes_of(uid: int) -> list[int]:
 
 @needs_an_account
 @pytest.mark.skipif(hardened() is not None, reason=f"{hardened()}")
+@pytest.mark.skipif(bool(REFUSED), reason=f"the filter here refuses {' '.join(REFUSED)}")
 async def test_under_a_hardened_unit_a_workspace_prepares_runs_as_the_account_releases_and_purges(
     account_root: Path, tmp_path: Path
 ) -> None:
-    """Under a unit that hides `/proc/sys` and refuses a setgid bit, with the
-    host's setting declared on: the home and the temporary directory carry
+    """Under a unit that hides `/proc/sys`, refuses a setgid bit, and filters
+    the privileged system calls but those the mode takes, with the host's
+    setting declared on: the home and the temporary directory carry
     no setgid bit, and the account writes both; a file this process writes
     there, the account reads, and one the account writes, this process
     reads. A release ends every process of the account and closes the
@@ -916,3 +976,19 @@ async def test_under_a_hardened_unit_a_workspace_prepares_runs_as_the_account_re
     assert not home.parent.exists()
     assert (outside / "kept.txt").read_text() == "the engine's"
     assert [path.name for path in outside.iterdir()] == ["kept.txt"]
+
+
+@needs_an_account
+@pytest.mark.skipif(hardened() is not None, reason=f"{hardened()}")
+@pytest.mark.skipif(not REFUSED, reason="no system call filter here refuses what the mode takes")
+async def test_under_a_unit_whose_filter_refuses_what_the_mode_takes_a_prepare_names_the_filter(
+    account_root: Path,
+) -> None:
+    """Under a unit whose system call filter refuses the switch's calls or
+    chown, a prepare is refused before it makes anything, and its refusal
+    names the filter and each set it refuses."""
+    provider = WorkspaceAccountImpl(account_root, ACCOUNT, protected_hardlinks=True)
+    with pytest.raises(IsolationRefused, match="SystemCallFilter") as refused:
+        await provider.prepare(new_id(), new_id(), spec(IsolationMode.ACCOUNT, processes=64))
+    assert [name for name in REFUSED if name not in refused.value.message] == []
+    assert await asyncio.to_thread(os.listdir, account_root) == []

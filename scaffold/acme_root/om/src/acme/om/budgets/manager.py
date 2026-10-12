@@ -61,6 +61,18 @@ class BudgetsManagerInterface(ABC):
         ...
 
     @abstractmethod
+    async def close_budget(self, ctx: TenantContext, budget_id: UUID) -> Budget:
+        """Closes the budget for good: from then on the gate never reads it,
+        so it binds no call and counts none it holds afterwards, and what it
+        counted stays readable. Made on a session's scope before a run and
+        closed when the run ends, it bounds that run alone, counted from its
+        creation. It takes the permission that sets budgets, since it lifts a
+        cap. A close lands whatever amount is stored, and a closed budget
+        answers as stored. Its commit asks for the org's sessions parked on
+        it to be woken, and each one's gate runs again."""
+        ...
+
+    @abstractmethod
     async def get_spend(self, ctx: TenantContext, budget_id: UUID) -> Tally:
         """What the budget's current window spent and holds; nothing yet is a
         tally of zeros."""

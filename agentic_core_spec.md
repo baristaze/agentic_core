@@ -94,6 +94,7 @@ These are the invariants. Each links the section that states it.
 - [The Object Model](#the-object-model)
 - [Deviations from the Guideline](#deviations-from-the-guideline)
 - [The Repository](#the-repository)
+- [Always in a Known State](#always-in-a-known-state)
 - [What This Spec Does Not Cover](#what-this-spec-does-not-cover)
 - [Next: The Platform](#next-the-platform)
 
@@ -1397,6 +1398,12 @@ A **budget** has a scope, a window, and an amount:
 - **Amount:** in reference cost, in native tokens, or both. A token
   budget still binds when a price is unknown or a model is free.
 
+A budget can be **closed**, once. From then on it binds no call, and
+what it counted stays. A run's budget is one: made on a session's scope
+just before the run and closed when the run ends, it counts from its
+creation, so it caps that run alone and no later loop of the session
+meets it.
+
 ### One Gate, Before the Call
 
 `core`
@@ -1505,7 +1512,7 @@ or a region the key lacks is the call's alone.
 
 | Limit | Measures | Kind | When it trips |
 |---|---|---|---|
-| Budget | Spend in a scope and window | Guard | Parks until it is raised or its window resets |
+| Budget | Spend in a scope and window | Guard | Parks until it is raised, closed, or its window resets |
 | Deadline | One instant the tree shares | Guard | No model call or job starts after it, a tool's timeout is cut to it, and the loop parks for a person |
 | Step guard | Model calls in one loop | Guard | Parks so a person looks. On by default and never disabled: it is the one backstop a free model or a missing price cannot switch off. Every loop starts it afresh. |
 | Error streak | Consecutive tool errors, or repeated identical calls | Bound | Ends the loop `inconclusive` |
@@ -1538,7 +1545,7 @@ memory-only session's runtime, a resource lease's hold time).
 |---|---|---|---|
 | `person` | A question, an approval, a passed deadline, the step guard, a principal to reassign, a lost workspace | An answer, a decision, an extension, an assignment, an unlock | No |
 | `provider` | An outage, a rate limit, a billing or credential error, a missing key | The provider recovers; a key or account is fixed | At the retry time: an outage's or a rate limit's end, or the next try after a key or an account error, which finds the fix |
-| `budget` | The gate refused | A raise, or the window resets | At the reset |
+| `budget` | The gate refused | A raise, a close, or the window resets | At the reset |
 | `resource` | Waiting in line for a scarce resource ([Leases on a Resource][g-leases]), or for a workspace | A grant, or the request's end without one | On the grant or the end; for a workspace, at the retry time; for a job in line, at its deadline |
 | `job` | A long-running tool job is working | The job's completion | On completion |
 | `children` | Waiting for sub-agents' reports | A report; the tree's deadline ends the wait | On the report; past the deadline it parks on `person` |
@@ -1916,6 +1923,54 @@ the guideline's at that pinned release. A platform moves by
 `agentic-upgrade-scaffold`, which runs the guideline's
 `arch-upgrade-scaffold` from the source its base records, the engine, so
 one move upgrades both foundations.
+
+## Always in a Known State
+
+Never losing track of where a session stands is what the core rules add
+up to. Whatever happens, a failure, a crash, or a wait, the session is
+left in a state the record names, that still keeps every rule, and that
+has a way out.
+
+- **Named.** A session's status is read from its steps, and every value
+  it takes is in the diagram of [A Session Never
+  Ends](#a-session-never-ends). A loop ends in one of five outcomes; until then it runs, waits for its
+  next run, or parks. Every provider error has a kind, every tool
+  failure a class, and every park a reason, so nothing the world does
+  falls between them.
+- **Still valid.** A run writes its steps once, in order, only while it
+  holds the writer epoch; inputs and controls arrive through the inbox. Nothing spends without the gate, no tool runs
+  without the policy, and no workspace is weaker than its spec. So a
+  failure leaves the record keeping every rule, as a success does.
+- **Recoverable.** Every step is durable before the engine acts on it.
+  A crash leaves at most one unanswered request per call, and the next
+  run settles each by its effect ([Durable by
+  Default](#durable-by-default)).
+- **A way out.** Every park names the action that clears it, and a
+  principal's cancel ends any loop, parked or running. A wait on
+  something that cannot come is refused before it starts, such as a
+  parent's wait with no child running.
+
+What the engine cannot know, it records. An `unsafe` tool call lost in
+a crash may or may not have acted. The engine never guesses: it asks
+the transport, and with no answer it records `interrupted`, outcome
+unknown, and the model verifies before it retries. A model call lost
+the same way is usually billed, so its hold settles in full. An unknown
+outcome is still a known state: the record says what is open and who
+resolves it. What the engine never allows is a call it does not know it
+made. Every model call and every tool call is a request step first, so
+no call reaches the world unrecorded.
+
+Knowing where it stands is not the same as moving on, and the engine
+promises only the first. Whether a park clears depends on its unlock: a
+provider recovers, a window resets, a person answers. What the engine
+promises is that no wait is silent. Each names what ends it, a park
+only a person can clear carries no retry time, and a loop that cannot
+progress ends `inconclusive` instead of spinning. Keeping a run going,
+its lease and the sweep that requeues a lost one, is the adopter's.
+
+> **Principle:** The engine always knows where a session stands. Every
+> state it can reach has a name and a way out, and an outcome it cannot
+> know is recorded as unknown, never left out of the record.
 
 ## What This Spec Does Not Cover
 

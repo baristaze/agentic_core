@@ -50,7 +50,9 @@ class BudgetStorageMemoryImpl(MemoryStorageBase, BudgetStorageInterface):
     ) -> list[Budget]:
         wanted = {(scope.kind, scope.key) for scope in scopes}
         return [
-            b for b in self._rows(self._budgets, org_id) if (b.scope_kind, b.scope_key) in wanted
+            b
+            for b in self._rows(self._budgets, org_id)
+            if (b.scope_kind, b.scope_key) in wanted and b.closed_at is None
         ][:limit]
 
     async def write_budget(

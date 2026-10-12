@@ -144,10 +144,13 @@ class AgentSessionsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def wake_parked(self, ctx: TenantContext, reason: ParkReason) -> int:
+    async def wake_parked(
+        self, ctx: TenantContext, reason: ParkReason, unlock: str | None = None
+    ) -> int:
         """The reason the org's sessions parked for is gone, as when a budget
         is raised: every session parked for it is unlocked, and each one's
-        gates run again when it resumes. Returns how many."""
+        gates run again when it resumes. With `unlock`, only the sessions
+        whose park names it, as a closed budget's id. Returns how many."""
         ...
 
     @abstractmethod

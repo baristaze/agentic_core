@@ -18,16 +18,19 @@ engine treats scopes as keys the platform defines. The window is the
 scope's whole life, an hour, a day, a week, a month, or a custom span
 down to the second, and a single request may carry its own. The amount
 is in reference cost, in native tokens, or both. A token budget still
-binds when a price is unknown or a model is free.
+binds when a price is unknown or a model is free. A budget closes once:
+from then on it binds no call, and what it counted stays.
 
 **Source.** Bounds and Budgets, Budgets.
 
 **Look for.** The budget type; how scopes are keyed; the window
-arithmetic; how a token amount binds.
+arithmetic; how a token amount binds; how a closed budget leaves the
+gate's read.
 
 **Violation.** A scope the engine interprets beyond a key; a window that
 cannot express a custom span; a token budget skipped when a price is
-missing.
+missing; a closed budget the gate still reads, or counts toward the
+budgets one call may read; a close that reopens.
 
 **Severity.** medium
 
@@ -190,9 +193,9 @@ them.
 ## BND-07 A guard parks, a bound ends the loop, a yield hands it on
 
 **Principle.** Each limit is a guard, a bound, or a yield. A budget is a
-guard: it parks until it is raised or its window resets. The deadline,
-one instant the tree shares, is a guard: no model call or job starts
-after it, a tool's timeout is cut to it, and the loop parks for a
+guard: it parks until it is raised, closed, or its window resets. The
+deadline, one instant the tree shares, is a guard: no model call or job
+starts after it, a tool's timeout is cut to it, and the loop parks for a
 person. An error streak, of consecutive tool errors or repeated
 identical calls, and repeated nudges are bounds that end the loop
 `inconclusive`, never `failed`, and never end the session. Run time is a
