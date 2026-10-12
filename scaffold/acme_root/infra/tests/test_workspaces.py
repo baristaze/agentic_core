@@ -445,6 +445,12 @@ def cannot_switch() -> str | None:
 needs_an_account = pytest.mark.skipif(cannot_switch() is not None, reason=f"{cannot_switch()}")
 
 
+async def unfiltered(_: Switch) -> None:
+    """A host whose system call filter refuses nothing the mode takes, where
+    a test stands a switch in for the host's."""
+    return None
+
+
 def proc_hides_others() -> bool:
     """Whether `/proc` hides another account's processes from this one, as a
     unit with `ProtectProc=invisible` sees it: mounted with `hidepid`, and
@@ -612,6 +618,7 @@ async def test_the_hosts_hard_link_setting_is_read_where_it_shows_and_declared_w
         return False
 
     monkeypatch.setattr(accounts, "switch_to", switched)
+    monkeypatch.setattr(accounts, "filter_refusal", unfiltered)
     monkeypatch.setattr(WorkspaceAccountImpl, "_took", serves_another)
     root = tmp_path / "workspaces"
     infra = InfraConfiguredImpl(
@@ -639,8 +646,9 @@ async def test_only_the_refusal_that_waits_for_the_other_workspace_clears(
 ) -> None:
     """A prepare refused while the account serves another workspace clears
     once that one is released, so the loop that asked parks and asks again.
-    A spec the mode cannot hold, a host that cannot switch, and a host that
-    lets an account link another's file never clear: that loop ends."""
+    A spec the mode cannot hold, a host that cannot switch, a host that lets
+    an account link another's file, and one whose system call filter
+    refuses what the mode takes never clear: that loop ends."""
     root = tmp_path / "workspaces"
     asked = spec(IsolationMode.ACCOUNT, processes=64)
     never: list[IsolationRefused] = []
@@ -667,6 +675,16 @@ async def test_only_the_refusal_that_waits_for_the_other_workspace_clears(
     never.append(caught.value)
 
     setting.write_text("1\n")
+
+    async def filtered(_: Switch) -> str:
+        return "a chown fails here"
+
+    monkeypatch.setattr(accounts, "filter_refusal", filtered)
+    with pytest.raises(IsolationRefused, match="a chown fails here") as caught:
+        await WorkspaceAccountImpl(root, "acme-agent").prepare(new_id(), new_id(), asked)
+    never.append(caught.value)
+
+    monkeypatch.setattr(accounts, "filter_refusal", unfiltered)
     monkeypatch.setattr(WorkspaceAccountImpl, "_took", serves_another)
     with pytest.raises(IsolationRefused, match="one at a time") as caught:
         await WorkspaceAccountImpl(root, "acme-agent").prepare(new_id(), new_id(), asked)
