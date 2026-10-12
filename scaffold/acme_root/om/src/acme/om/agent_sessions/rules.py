@@ -15,7 +15,10 @@ The status moves on the steps alone:
   the next request delivers it with whatever wakes the session next;
 - a control that clears the park makes a parked session pending, for a
   run to take up: `unlock` and `cancel` clear any park, `resume` a pause,
-  and `approve` or `deny` a person's;
+  and `approve` or `deny` a person's. A hand-over a person holds is the
+  exception: an unlock clears it only when its holder sends it in person
+  (`clears`), so neither another member, nor a program on an API key, nor
+  the engine takes the environment from them; a cancel still ends it;
 - a principal's message clears a park on a question (`QUESTION`): it is
   the answer the park waits for, and the resumed loop delivers it.
 
@@ -67,7 +70,8 @@ UNPARKS: dict[ControlCommand, frozenset[ParkReason]] = {
     ControlCommand.APPROVE: frozenset({ParkReason.PERSON}),
     ControlCommand.DENY: frozenset({ParkReason.PERSON}),
 }
-"""The parks each control clears. A control not named here clears none."""
+"""The parks each control clears. A control not named here clears none,
+and a hand-over its holder holds clears only as `clears` says."""
 
 QUESTION = Park(reason=ParkReason.PERSON, unlock="answer")
 """The park of a loop whose agent asked its person a question, or stood
@@ -81,6 +85,30 @@ STOPPED = frozenset({LoopOutcome.ERRORED, LoopOutcome.CANCELLED})
 """The outcomes after which a loop wakes on nothing it already held: an
 error no park can clear would meet the same input again, and a principal
 who cancelled did not ask for another run."""
+
+
+def clears(park: Park, control: Step) -> bool:
+    """Whether a control clears `park`: its command clears the park's reason
+    (`UNPARKS`), and a hand-over that names its holder is unlocked by that
+    holder alone, in person, never on an API key: the engine's own unlock,
+    another member's, and a program's clear nothing. A cancel ends any
+    park, a held hand-over too."""
+    header = control.header
+    if not isinstance(header, ControlHeader):
+        return False
+    if park.reason not in UNPARKS.get(header.command, frozenset()):
+        return False
+    if park.reason is not ParkReason.HANDOVER or park.holder is None:
+        return True
+    if header.command is ControlCommand.CANCEL:
+        return True
+    sender = header.principal
+    return (
+        control.actor is Actor.PERSON
+        and sender is not None
+        and sender.key_id is None
+        and sender.id == park.holder
+    )
 
 
 @dataclass(frozen=True)
@@ -115,9 +143,7 @@ def after_step(state: Projection, step: Step) -> Projection:
             delivering_request=None,
         )
     if isinstance(header, ControlHeader):
-        cleared = state.park is not None and state.park.reason in UNPARKS.get(
-            header.command, frozenset()
-        )
+        cleared = state.park is not None and clears(state.park, step)
         if cleared:
             return replace(state, status=SessionStatus.PENDING, park=None)
         return state

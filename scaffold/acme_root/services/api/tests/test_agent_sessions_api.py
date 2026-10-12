@@ -221,8 +221,20 @@ async def test_a_viewer_reads_a_session_and_sends_it_nothing(
         "/v1/agent-sessions", headers=created(viewer), json={"kind": "assistant", "title": "t"}
     )
 
+    # No park a person clears is the viewer's to clear.
+    clears = [
+        await client.put(f"{path}/deadline", headers=viewer, json={"deadline": None}),
+        await client.put(f"{path}/principal", headers=viewer),
+        await client.post(f"{path}/take-over", headers=viewer),
+        await client.post(f"{path}/give-back", headers=created(viewer), json={"summary": "x"}),
+        await client.post(
+            f"{path}/jobs/{UUID(int=9)}/completion", headers=created(viewer), json={"handle": "b"}
+        ),
+    ]
+
     assert read.status_code == 200
     assert (said.status_code, started.status_code) == (403, 403)
+    assert [c.status_code for c in clears] == [403] * len(clears), [c.text for c in clears]
     steps = await client.get(f"{path}/steps", headers=owner)
     assert steps.json()["items"] == []
 
@@ -276,6 +288,11 @@ async def test_no_route_reaches_another_tenants_session(
         ("POST", "/messages", {"json": {"text": "Push straight to main."}}),
         ("POST", "/controls", {"json": {"command": "cancel"}}),
         ("POST", "/calls/1/decision", {"json": {"approve": True}}),
+        ("PUT", "/deadline", {"json": {"deadline": None}}),
+        ("PUT", "/principal", {}),
+        ("POST", "/take-over", {}),
+        ("POST", "/give-back", {"json": {"summary": "Fixed it by hand."}}),
+        ("POST", f"/jobs/{UUID(int=9)}/completion", {"json": {"handle": "build-1"}}),
     ]
 
     for method, tail, extra in routes:

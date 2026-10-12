@@ -148,12 +148,19 @@ class Park(Platform):
     line: LinePark | None = None
     cause: Cause | None = None
     """Why it waits, when the engine can name it: a workspace's refusal,
-    such as a base still being built. None says no more than its reason."""
+    such as a base still being built, or a key or an account a provider
+    refused, and who must act on it. None says no more than its reason."""
+    holder: UUID | None = None
+    """The user who holds the environment, on a hand-over alone: only they
+    give it back, or unlock it in person. A hand-over parked before the
+    engine named its holder names none."""
 
     @model_validator(mode="after")
     def _a_person_sets_no_clock(self) -> Self:
         if self.retry_at is not None and self.reason in PERSON_ONLY:
             raise ValueError(f"a {self.reason.value} park is cleared by a person, never by a time")
+        if self.holder is not None and self.reason is not ParkReason.HANDOVER:
+            raise ValueError("only a hand-over names the person who holds it")
         waits_for = ParkReason.JOB if self.line is None else ParkReason.RESOURCE
         if self.job is not None and (self.reason is not waits_for or self.retry_at is None):
             raise ValueError(
@@ -249,12 +256,14 @@ class DecidedCall(Platform):
 class ControlHeader(Platform):
     """`call` is the decided call of an approve or a deny, and of nothing
     else. `snapshot` is what a restore starts the workspace from, and is
-    named by nothing else."""
+    named by nothing else. `principal` is who sent it: a principal's control
+    names them, and the engine's own names none."""
 
     kind: Literal["control"] = "control"
     command: ControlCommand
     call: DecidedCall | None = None
     snapshot: WorkspaceSnapshot | None = None
+    principal: Principal | None = None
 
     @model_validator(mode="after")
     def _a_decision_names_its_call(self) -> Self:

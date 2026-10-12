@@ -27,12 +27,22 @@ from acme.om.attribution.types.authority import (
 )
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.context import CredentialKind, Role, TenantContext
-from acme.om.steps.types.header import ControlHeader, InputHeader, ModelRequestHeader
+from acme.om.steps.types.header import (
+    ControlHeader,
+    InputHeader,
+    ModelRequestHeader,
+    Park,
+    ParkReason,
+)
 from acme.om.steps.types.step import Actor, Origin, Step, StepType, switches_standing
 
 PRINCIPAL_ACTORS = frozenset({Actor.PERSON, Actor.PROGRAM})
 """The actors that speak for a principal: a person, or a program a person or
 a service principal runs."""
+
+PRINCIPAL_PARK = Park(reason=ParkReason.PERSON, unlock="principal")
+"""The park of a loop whose tool calls run under a principal who no longer
+holds: a person who assigns themselves clears it (`assign_principal`)."""
 
 DATA_TYPES = frozenset({StepType.EVENT, StepType.TOOL_RESPONSE, StepType.SUMMARY})
 """What a model reads as data whoever wrote it: an event from outside, a
@@ -88,6 +98,13 @@ def marks(step: Step) -> bool:
     it."""
     carried = isinstance(step.header, InputHeader) and step.header.untrusted
     return carried or trust_of(step) is Trust.DATA
+
+
+def in_person(ctx: TenantContext) -> bool:
+    """Whether a person acts themselves, signed in on a session of their
+    own: a program on an API key, and an agent's call on a principal's
+    live context, are no person in person."""
+    return ctx.credential_kind is CredentialKind.SESSION_TOKEN
 
 
 def principal_of(ctx: TenantContext) -> Principal:

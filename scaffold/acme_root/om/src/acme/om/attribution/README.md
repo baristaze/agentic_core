@@ -53,7 +53,8 @@ authority. The rest is read off the session and its
   read. A person who spoke through an API key acts no higher than the
   key, and only while it holds. A delegated call whose person left is
   refused. A steady session whose person left waits until someone takes
-  it over.
+  it over: the assignment wakes the loop parked on them, and on its
+  root it reaches the sub-agents that still hold them (ADR 1039).
 - **Mark.** The first outside data a session reads marks it, for good.
   Its sub-agents and the work it hands over carry the mark too, and hold
   private data where it holds any.

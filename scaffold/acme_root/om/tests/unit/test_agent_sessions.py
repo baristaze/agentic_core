@@ -27,6 +27,7 @@ from acme.om.agent_sessions.rules import Projection, after_step, announces, proj
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.storage.impl.memory import AgentSessionStorageMemoryImpl
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
+from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
 from acme.om.context import AppContext, AppType, RequestContext, Role, TenantContext
 from acme.om.exceptions import NotAuthorized, NotFound, PreconditionFailed, ValidationFailed
@@ -196,6 +197,34 @@ def test_a_control_clears_the_parks_it_names_and_no_other(
         expected = PENDING if reason in cleared else parked_state(reason)
         assert after == expected, (command, reason)
     assert after_step(IDLE, control(command)) == IDLE
+
+
+def test_a_held_hand_over_is_cleared_by_its_holders_own_unlock_in_person_or_a_cancel() -> None:
+    """In history order, so a control that lands after a take-over is read
+    against the hand-over whatever its sender saw: the engine's unlock,
+    another member's, and the holder's on an API key clear nothing."""
+    holder, other = new_id(), new_id()
+    held = Projection(
+        SessionStatus.PARKED,
+        Park(reason=ParkReason.HANDOVER, unlock="give_back", holder=holder),
+        archived=False,
+    )
+
+    def sent(by: UUID, actor: Actor = Actor.PERSON, key: UUID | None = None) -> Step:
+        sender = Principal(kind=PrincipalKind.PERSON, id=by, key_id=key)
+        header = ControlHeader(command=ControlCommand.UNLOCK, principal=sender)
+        return a_step(StepType.CONTROL, header).model_copy(update={"actor": actor})
+
+    for step in (
+        control(ControlCommand.UNLOCK),
+        sent(other),
+        sent(holder, Actor.PROGRAM, key=new_id()),
+    ):
+        assert after_step(held, step) == held, step.actor
+    assert after_step(held, sent(holder)) == PENDING
+    assert after_step(held, control(ControlCommand.CANCEL)) == PENDING
+    unheld = parked_state(ParkReason.HANDOVER)
+    assert after_step(unheld, control(ControlCommand.UNLOCK)) == PENDING, "one parked before"
 
 
 def test_an_archived_session_records_events_and_a_message_unarchives_it() -> None:

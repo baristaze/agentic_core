@@ -709,7 +709,7 @@ the status, because providers disagree on codes:
 | `transient`, `overloaded`, `rate_limited` | Retries in process while that is cheaper than parking, then falls back if a fallback is declared, else parks on the provider with a retry time |
 | `context_overflow` | Compacts once and retries ([Compaction](#compaction)); a second overflow ends the loop `errored` |
 | `model_unavailable` | Re-resolves the model role and switches ([Fill Sets and Switches](#fill-sets-and-switches)) |
-| `billing`, `credential` | Never waits: parks at once, naming the unlock |
+| `billing`, `credential` | Never waits in process: parks at once, naming the unlock and who must fix the key or the account, and tries again after a wait, so a fix made at the provider wakes it |
 | `invalid_request`, `permanent` | Ends the loop `errored`, with the evidence |
 
 Retries follow the guideline's [Direction of Calls][g-calls], never
@@ -1175,9 +1175,12 @@ message next.
 ### Taking Over
 
 When a person takes over the agent's environment to work by hand, the
-agent stands down: its loop parks on a hand-over. When they give it
-back, their summary arrives as a message, and an `environment_changed`
-step says that a person acted there and what they did.
+agent stands down: its loop parks on a hand-over, which names them as
+its holder. When they give it back, their summary arrives as a message,
+and an `environment_changed` step says that a person acted there and
+what they did. Only the holder gives it back, or unlocks it, and only in
+person: an unlock from another member, from a program on an API key, or
+from the engine clears nothing. A cancel still ends the loop.
 
 *Example:* the teammate's warning arrives mid-tool-call. It is persisted
 at once and delivered with the very next model call.
@@ -1216,7 +1219,7 @@ Each agent kind picks its **authority mode** for tool calls:
   creation: its creator, or a service principal the tenant grants. For a
   delivery agent gated by policy, which behaves the same for whoever
   resumes it. When that principal is no longer valid, its tool calls park
-  until a person assigns another.
+  until a person assigns themselves, which wakes the loop.
 
 > **Principle:** Actor, principal, and spender are three answers. The
 > agent acts and holds no authority of its own.
@@ -1546,19 +1549,22 @@ memory-only session's runtime, a resource lease's hold time).
 
 | Reason | Examples | Unlock | Unlocks without a person |
 |---|---|---|---|
-| `person` | A question, an approval, a passed deadline, the step guard, a principal to reassign, a lost workspace | An answer, a decision, an extension | No |
-| `provider` | An outage, a rate limit, a billing or credential error, a missing key | The provider recovers; a key or account is fixed | At the retry time, for outages and rate limits |
+| `person` | A question, an approval, a passed deadline, the step guard, a principal to reassign, a lost workspace | An answer, a decision, an extension, an assignment, an unlock | No |
+| `provider` | An outage, a rate limit, a billing or credential error, a missing key | The provider recovers; a key or account is fixed | At the retry time: an outage's or a rate limit's end, or the next try after a key or an account error, which finds the fix |
 | `budget` | The gate refused | A raise, a close, or the window resets | At the reset |
 | `resource` | Waiting in line for a scarce resource ([Leases on a Resource][g-leases]), or for a workspace | A grant, or the request's end without one | On the grant or the end; for a workspace, at the retry time; for a job in line, at its deadline |
 | `job` | A long-running tool job is working | The job's completion | On completion |
 | `children` | Waiting for sub-agents' reports | A report; the tree's deadline ends the wait | On the report; past the deadline it parks on `person` |
-| `handover` | A person holds the environment | They give it back | No |
+| `handover` | A person holds the environment | Its holder gives it back | No |
 | `pause` | A principal paused | Resume | No |
 
 A `parked` step writes no outcome. It carries its reason, its unlock,
 its retry time, and its cause when the engine can name one, such as a
-workspace base still being built; no retry time means only a person can
-unblock it. A gate supplied from outside may name a reason and an unlock
+workspace base still being built, or a key a provider refused and who
+must fix it; no retry time means only a person can unblock it. Each park
+a person clears has a route that clears it, held to the permission its
+operation checks, and clearing it wakes the session: no park waits for a
+cancel alone. A gate supplied from outside may name a reason and an unlock
 of its own. A park on the workspace comes before its run has settled a
 lost run's calls, so it says so, and the run that resumes it settles
 them by their effect.

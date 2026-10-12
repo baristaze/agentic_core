@@ -120,7 +120,7 @@ def control_step(
     snapshot: WorkspaceSnapshot | None = None,
 ) -> Step:
     """A principal's control, out of band, through the surface `ctx` arrived
-    on. An interrupt names the request of the one call it stops, `call`, and
+    on, naming who sent it. An interrupt names the request of the one call it stops, `call`, and
     no other control names one; a restore names the snapshot of the
     session's that its workspace's next prepare starts from, and no other
     control names one. A decision on a tool call is the tools manager's to
@@ -139,7 +139,7 @@ def control_step(
         actor=actor_of(ctx.credential_kind),
         origin=origin_of(ctx.app.type),
         refs=() if call is None else (call,),
-        header=ControlHeader(command=command, snapshot=snapshot),
+        header=ControlHeader(command=command, snapshot=snapshot, principal=principal_of(ctx)),
     )
 
 

@@ -89,10 +89,16 @@ of](../../../../README.md).
 - **Steer.** A message that lands while the loop runs is delivered by its
   next request. A cancel or a pause cuts in between steps, and a cancel
   or an interrupt stops a running tool.
-- **Take over.** A person takes the session's environment to work by
-  hand: the running run is fenced, and the loop parks. Giving it back
-  tells the model a person worked there, and their account arrives as
-  their message.
+- **Take over.** A person, in person, takes the session's environment to
+  work by hand: the running run is fenced, and the loop parks on a
+  hand-over that names them. Only they give it back, which tells the
+  model a person worked there, and their account arrives as their
+  message. No one else's unlock clears it, nor a program's on an API key;
+  a cancel ends the loop (ADR 1039).
+- **Clear a park.** Each park a person clears has an operation that
+  clears it and wakes the session: a moved deadline, an assigned
+  principal, a hand-over given back, a job's completion. The API routes
+  each (ADR 1039).
 
 ## The rules
 
@@ -140,7 +146,10 @@ of](../../../../README.md).
 - **Each call runs on the key it resolves.** The key is asked for before
   every call, and a call whose key cannot be had parks on its provider
   until one is saved. A key the provider refuses is that key's alone: it
-  is offered to no call again, and no outage is marked.
+  is offered to no call again, and no outage is marked. A park on a key
+  or an account error says who must fix it, an operator for the
+  platform's key or an admin for the org's, and tries again after a
+  wait, so the fix wakes it (ADR 1039).
 - **A provider error is handled by its kind.** One worth retrying is
   retried in the process, after a wait that grows and is partly random,
   never sooner than the provider asks. Then the loop marks the provider

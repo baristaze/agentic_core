@@ -261,7 +261,8 @@ the reason, the unlock, the retry time, and the cause a park records.
 **Violation.** An outage, a budget refusal, a missing key, a workspace
 that cannot be had yet, or a missing answer that ends the loop `errored` or
 `failed`; a park with no reason or no unlock; a retry time on a park
-only a person can clear.
+only a person can clear; a park on a key or an account error with no
+retry time, which a fix made at the provider never wakes.
 
 **Severity.** medium
 
@@ -274,7 +275,9 @@ only a person can clear.
 **Principle.** A park holds no runtime and no work lease while it waits,
 beyond what it declares, such as a memory-only session's runtime. When
 the unlock happens, a resumed step starts a new run, by itself where the
-reason unlocks without a person. Raising a budget is the instruction to
+reason unlocks without a person. Each park a person clears has a route
+that clears it, held to the permission its operation checks, and
+clearing it wakes the session. Raising a budget is the instruction to
 continue. A woken loop is not trusted: its gates run again. A loop in
 line for a resource makes no model call until the grant or the
 request's end, reads its asks again once it has parked, and leaves
@@ -288,7 +291,9 @@ ask and its grant, and when it ends.
 
 **Violation.** A parked loop that keeps its runtime or its lease without
 declaring it; a park that waits for someone to restart it after its
-unlock happened; a resumed run that skips its gates. A loop in line that
+unlock happened; a park a person clears that no route clears, so only a
+cancel ends it; an operation that clears a park and wakes nothing; a
+resumed run that skips its gates. A loop in line that
 calls the model or polls before its grant; a grant that lands before
 the park and never wakes it; a loop that ends still standing in a line.
 (A model call it makes without the budget gate is BND-02.)

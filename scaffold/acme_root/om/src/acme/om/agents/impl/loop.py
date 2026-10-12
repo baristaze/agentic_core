@@ -35,6 +35,7 @@ from acme.om.agents.types.line import InLine
 from acme.om.agents.types.result import Result, Turn
 from acme.om.agents.types.run import LoopRun, RunEnd
 from acme.om.attribution import AttributionManagerInterface
+from acme.om.attribution.rules import PRINCIPAL_PARK, in_person
 from acme.om.attribution.types.authority import CallReach
 from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
 from acme.om.base import Platform, new_id, thaw_mapping, utcnow
@@ -44,6 +45,7 @@ from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import (
     BudgetRefused,
     CompactionFailed,
+    Conflict,
     ContextOverflow,
     GateParked,
     LeaseEnded,
@@ -68,7 +70,7 @@ from acme.om.models.credentials import CallClient, CallCredentialsInterface
 from acme.om.models.manager import ModelsManagerInterface
 from acme.om.models.types.fill import MAIN, SUMMARIZER, Eligibility, Fill
 from acme.om.steps import StepsManagerInterface
-from acme.om.steps.rules import completion_step, origin_of
+from acme.om.steps.rules import completion_step, control_step, origin_of
 from acme.om.steps.types.content import Content, TextBlock, ToolUseBlock
 from acme.om.steps.types.header import (
     AcceptedResult,
@@ -150,6 +152,10 @@ class LoopOptions(Platform):
     retry_cap: timedelta = timedelta(seconds=30)
     # The least time an outage is marked for when the loop parks on it.
     outage_wait: timedelta = timedelta(seconds=30)
+    # How long a park on a key or an account a provider refused waits before
+    # it tries again by itself: a person fixes it at the provider, or in the
+    # platform's own settings, and nothing tells the engine.
+    fix_wait: timedelta = timedelta(minutes=5)
     # How often a running tool's controls are read: a cancel or an interrupt
     # stops it within this.
     control_poll: timedelta = timedelta(milliseconds=500)
@@ -643,7 +649,12 @@ class LoopManagerImpl(LoopManagerInterface):
                 # The tenant's key for the provider is missing or refused:
                 # nothing runs on another, and a key saved unlocks it.
                 log.info("session %s: %s", run.session_id, refused.message)
-                park = Park(reason=ParkReason.PROVIDER, unlock=refused.unlock)
+                provider, _, cause = refused.unlock.partition(":")
+                park = Park(
+                    reason=ParkReason.PROVIDER,
+                    unlock=refused.unlock,
+                    cause=rules.fix_cause(provider, cause, tenants=True),
+                )
                 return await self._park(run, park)
             case CompactionFailed() | ContextOverflow() | Unavailable():
                 log.warning("session %s: %s", run.session_id, refused.message)
@@ -814,8 +825,17 @@ class LoopManagerImpl(LoopManagerInterface):
                 # A permission the key lacks, a region it refuses, a model it
                 # cannot reach: this call's alone, so this session alone waits.
                 cause = PERMISSION
-            unlock = f"{fill.provider.value}:{cause}"
-            return await self._park(run, Park(reason=ParkReason.PROVIDER, unlock=unlock))
+            # Whoever holds the key fixes it at the provider, or saves a new
+            # one, and nothing tells the engine: the park tries again by
+            # itself, so a fix wakes it, and says who must act.
+            tenants = credential is not None and credential != self._options.credential
+            park = Park(
+                reason=ParkReason.PROVIDER,
+                unlock=f"{fill.provider.value}:{cause}",
+                retry_at=now + self._options.fix_wait,
+                cause=rules.fix_cause(fill.provider.value, cause, tenants),
+            )
+            return await self._park(run, park)
         log.warning("session %s: %s", run.session_id, failed)
         return await self._end(run, LoopOutcome.ERRORED)
 
@@ -1002,7 +1022,7 @@ class LoopManagerImpl(LoopManagerInterface):
             if not fresh:
                 await self._answer(run, request, self._lost(request))
                 return _Settled()
-            return _Settled(park=Park(reason=ParkReason.PERSON, unlock=rules.PRINCIPAL_UNLOCK))
+            return _Settled(park=PRINCIPAL_PARK)
         if gate.outcome is GateOutcome.REFUSE and gate.response is not None:
             await self._answer(run, request, gate.response)
             return _Settled()
@@ -1768,19 +1788,24 @@ class LoopManagerImpl(LoopManagerInterface):
     # Taking over.
 
     async def take_over(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
-        ctx.require(Permission.WRITE)
+        _by_hand(ctx)
+        session = await self._sessions.project_status(ctx, session_id)
+        if _held_by_another(session.park, ctx):
+            raise Conflict(f"agent session {session_id} is held by another person")
         epoch = await self._steps.begin_run(ctx, session_id)
         history = await self._history(ctx, session_id)
         loop = rules.open_loop(history)
         loop_id = new_id() if loop is None else loop.loop_id
-        park = Park(reason=ParkReason.HANDOVER, unlock=HANDOVER_UNLOCK)
+        park = Park(reason=ParkReason.HANDOVER, unlock=HANDOVER_UNLOCK, holder=ctx.user_id)
         return await self._sessions.park(ctx, session_id, epoch, loop_id, park)
 
     async def give_back(self, ctx: TenantContext, session_id: UUID, summary: str) -> AgentSession:
-        ctx.require(Permission.WRITE)
+        _by_hand(ctx)
         session = await self._sessions.project_status(ctx, session_id)
         if session.park is None or session.park.reason is not ParkReason.HANDOVER:
             raise ValidationFailed(f"agent session {session_id} is not handed over")
+        if _held_by_another(session.park, ctx):
+            raise NotAuthorized(f"agent session {session_id} is held by another person")
         epoch = await self._steps.begin_run(ctx, session_id)
         loop = rules.open_loop(await self._history(ctx, session_id))
         if loop is None:
@@ -1802,7 +1827,9 @@ class LoopManagerImpl(LoopManagerInterface):
             ),
             content=Content(blocks=(TextBlock(text=summary),)),
         )
-        unlock = unlock_step(new_id(), session_id, now)
+        # The holder's own unlock, in their name: the one a held hand-over
+        # takes (`agent_sessions.rules.clears`).
+        unlock = control_step(new_id(), now, session_id, ctx, ControlCommand.UNLOCK)
         await self._steps.append_inputs(ctx, session_id, [message, unlock])
         return await self._sessions.project_status(ctx, session_id)
 
@@ -1858,6 +1885,24 @@ class LoopManagerImpl(LoopManagerInterface):
     async def _since(self, run: _Run, seq: int) -> list[Step]:
         page = await self._steps.get_steps(run.ctx, run.session_id, seq, self._options.page)
         return list(page.items)
+
+
+def _by_hand(ctx: TenantContext) -> None:
+    """A person who may write, acting themselves: the environment is taken
+    and given back by hand, never by a program on an API key."""
+    ctx.require(Permission.WRITE)
+    if not in_person(ctx):
+        raise NotAuthorized("the environment is taken over and given back by a person, in person")
+
+
+def _held_by_another(park: Park | None, ctx: TenantContext) -> bool:
+    """Whether a hand-over names a holder other than the caller."""
+    return (
+        park is not None
+        and park.reason is ParkReason.HANDOVER
+        and park.holder is not None
+        and park.holder != ctx.user_id
+    )
 
 
 def lost_workspace(park: Park) -> bool:

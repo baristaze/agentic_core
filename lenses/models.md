@@ -168,8 +168,9 @@ fall back if a fallback is declared, else park on the provider with a
 retry time. `context_overflow` compacts once and retries, and a second
 ends the loop `errored`. `model_unavailable` re-resolves the model role
 and switches. `billing` and `credential` park at once, naming the
-unlock. `invalid_request` and `permanent` end the loop `errored`, with
-the evidence.
+unlock and who must fix the key or the account, and try again after a
+wait, so a fix wakes the park. `invalid_request`
+and `permanent` end the loop `errored`, with the evidence.
 
 **Source.** Models, Provider Errors.
 
@@ -177,8 +178,10 @@ the evidence.
 each kind.
 
 **Violation.** A kind read from the status code alone; a billing or a
-credential error retried or waited out; a transient error that ends the
-loop; a provider error handed to the model as a tool failure.
+credential error retried or waited out in process; a park on one that
+never tries again, so a fixed key or account never wakes it; a transient
+error that ends the loop; a provider error handed to the model as a tool
+failure.
 
 **Severity.** medium
 

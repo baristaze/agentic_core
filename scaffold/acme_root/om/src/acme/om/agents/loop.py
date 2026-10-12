@@ -45,16 +45,22 @@ class LoopManagerInterface(ABC):
     async def take_over(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
         """The caller takes the session's environment to work by hand: a new
         epoch fences the run that holds the loop, and the loop parks on a
-        hand-over that only the giving back clears."""
+        hand-over that names the caller as its holder, which only their
+        giving back clears, or their own unlock, and a cancel ends. A person
+        in person who may write takes it, never a program on an API key
+        (`NotAuthorized`), and never from another person who holds it
+        (`Conflict`)."""
         ...
 
     @abstractmethod
     async def give_back(self, ctx: TenantContext, session_id: UUID, summary: str) -> AgentSession:
         """The caller gives the environment back: an `environment_changed`
         step tells the model a person acted there, the summary arrives as
-        the caller's message, and the hand-over park is unlocked, so the
-        next run continues the loop and its first request delivers both. A
-        session not parked on a hand-over is `ValidationFailed`."""
+        the caller's message, and the hand-over park is unlocked by the
+        caller's own control, so the next run continues the loop and its
+        first request delivers both. Only the holder gives it back, in
+        person (`NotAuthorized`); a session not parked on a hand-over is
+        `ValidationFailed`."""
         ...
 
     @abstractmethod
