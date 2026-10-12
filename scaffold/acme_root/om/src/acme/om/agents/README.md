@@ -200,7 +200,10 @@ of](../../../../README.md).
   that cannot clear ends the loop before its first model call. One that
   waits for a workspace that may come parks the loop on `resource`, and
   it asks again after a wait. A workspace whose durable state is gone
-  parks the loop, loudly, for a person.
+  parks the loop, loudly, for a person. The step that ends or parks the
+  loop names its cause for a person: what the spec asks that the
+  provider cannot meet, a setup command and how it ended, or what was
+  lost, never what a command wrote (ADR 1035).
 - **Emission never waits.** A part is handed to the carrier, and the
   loop goes on. The carrier is told when a stream opens and when it
   completes, also when its call fails.

@@ -44,6 +44,7 @@ from acme.integrations.model_providers.scripted import ScriptedFailure
 from acme.integrations.model_providers.types import Effort, ErrorKind, StopReason
 from acme.om.agent_sessions.limits import Limit, Limits, tally_loop, tripped
 from acme.om.agent_sessions.types.agent_session import SessionStatus
+from acme.om.agents.impl.loop import LOST_SOURCE
 from acme.om.agents.impl.sink import StreamSinkMemoryImpl
 from acme.om.agents.loop_rules import REPEATED, kind_prompts, retry_wait
 from acme.om.agents.types.request import Handoff, Spawn
@@ -523,6 +524,7 @@ async def test_a_lost_workspace_parks_the_loop_for_a_person_before_any_call(
         "workspace",
         None,
     ), "a person clears it, never a clock"
+    assert run.park.cause == LOST_SOURCE, "the engine's words, never the provider's message"
     assert loop.anthropic.calls == [] and loop.anthropic.remaining == 1, "no call was made"
 
 

@@ -29,9 +29,20 @@ def started(stack: Stack) -> str:
     return result.output.split()[1]
 
 
-def a_loop_ran(stack: Stack, session_id: str, outcome: LoopOutcome | None) -> None:
+APPROVAL = Park(reason=ParkReason.PERSON, unlock="approval")
+
+
+def a_loop_ran(
+    stack: Stack,
+    session_id: str,
+    outcome: LoopOutcome | None,
+    *,
+    park: Park = APPROVAL,
+    cause: str | None = None,
+) -> None:
     """A run's steps: its request delivered the message and was answered,
-    then the loop ended with `outcome`, or parked for a person with None."""
+    then the loop ended with `outcome` and `cause`, or parked on `park` with
+    None."""
     ctx = owner_context(stack)
     sid = UUID(session_id)
     managers = stack.container.managers
@@ -43,10 +54,9 @@ def a_loop_ran(stack: Stack, session_id: str, outcome: LoopOutcome | None) -> No
         response = make_response(sid, message.loop_id, request.id)
         await managers.steps.append_steps(ctx, sid, epoch, [request, response])
         if outcome is None:
-            park = Park(reason=ParkReason.PERSON, unlock="approval")
             await managers.agent_sessions.park(ctx, sid, epoch, message.loop_id, park)
             return
-        ended = ended_step(new_id(), utcnow(), sid, message.loop_id, outcome)
+        ended = ended_step(new_id(), utcnow(), sid, message.loop_id, outcome, cause=cause)
         await managers.steps.append_steps(ctx, sid, epoch, [ended])
         await managers.agent_sessions.project_status(ctx, sid)
 
@@ -103,3 +113,23 @@ def test_following_a_loop_that_parked_exits_by_it(stack: Stack) -> None:
 
     assert followed.exit_code == main.EXIT_UNSUCCESSFUL, followed.output
     assert followed.output.split() == ["4", "parked", "person,", "until", "approval"]
+
+
+def test_a_loops_end_and_its_park_say_their_cause_on_their_line(stack: Stack) -> None:
+    ended, parked = started(stack), started(stack)
+    for session_id in (ended, parked):
+        stack.acme("session", "say", session_id, "Run the tests.")
+    failed = "the base's setup command 1, 'pip install acme-tools', exited 2"
+    a_loop_ran(stack, ended, LoopOutcome.ERRORED, cause=failed)
+    lost = Park(reason=ParkReason.PERSON, unlock="workspace", cause="the snapshot is gone")
+    a_loop_ran(stack, parked, None, park=lost)
+
+    end = stack.acme("session", "steps", ended, "--after", "3")
+    park = stack.acme("session", "steps", parked, "--after", "3")
+
+    assert end.output.strip().split(maxsplit=2) == ["4", "loop_ended", f"errored: {failed}"]
+    assert park.output.strip().split(maxsplit=2) == [
+        "4",
+        "parked",
+        "person, until workspace: the snapshot is gone",
+    ]

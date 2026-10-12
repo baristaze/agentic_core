@@ -93,8 +93,9 @@ async def test_a_host_directory_refuses_what_it_cannot_hold_and_makes_nothing(
     tmp_path: Path, asked: IsolationSpec
 ) -> None:
     root = tmp_path / "workspaces"
-    with pytest.raises(IsolationRefused):
+    with pytest.raises(IsolationRefused) as refused:
         await WorkspaceHostImpl(root).prepare(new_id(), new_id(), asked)
+    assert refused.value.cause == refused.value.message, "what the spec asks, a person reads"
     assert not root.exists(), "nothing is made for a spec that is refused"
 
 
@@ -376,10 +377,11 @@ async def test_a_container_spec_with_no_docker_is_refused_and_never_swapped_for_
             }
         )
     )
-    with pytest.raises(IsolationRefused, match="needs Docker"):
+    with pytest.raises(IsolationRefused, match="needs Docker") as refused:
         await infra.get_workspaces().prepare(
             new_id(), new_id(), spec(IsolationMode.CONTAINER, NONE)
         )
+    assert refused.value.cause is None, "what docker answered reaches the log alone"
     assert not root.exists()
 
 
@@ -690,6 +692,11 @@ async def test_only_the_refusal_that_waits_for_the_other_workspace_clears(
         await WorkspaceAccountImpl(root, "acme-agent").prepare(new_id(), new_id(), asked)
     assert caught.value.clears
     assert [refused.message for refused in never if refused.clears] == []
+    spec_refused, host_refused = never[: len(ACCOUNT_REFUSES)], never[len(ACCOUNT_REFUSES) :]
+    assert all(refused.cause == refused.message for refused in spec_refused)
+    assert [refused.cause for refused in (*host_refused, caught.value)] == [None] * 4, (
+        "the host's accounts, its kernel, its filter, and another workspace reach the log alone"
+    )
     assert not root.exists()
 
 
