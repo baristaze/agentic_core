@@ -224,9 +224,10 @@ PARTIAL_INDEXES = {
     "ix_users_deleted_at": "deleted_at IS NOT NULL",
     "ix_memberships_deleted_at": "deleted_at IS NOT NULL",
     "ix_api_keys_deleted_at": "deleted_at IS NOT NULL",
+    "ix_budgets_org_id_scope_kind_scope_key": "closed_at IS NULL",
 }
-"""The partial indexes the fence and the purges across tenants read, with
-their predicates."""
+"""The partial indexes the fence, the purges across tenants, and the budget
+gate read, with their predicates."""
 
 
 @pytest.mark.parametrize(("name", "predicate"), sorted(PARTIAL_INDEXES.items()))

@@ -1384,6 +1384,12 @@ A **budget** has a scope, a window, and an amount:
 - **Amount:** in reference cost, in native tokens, or both. A token
   budget still binds when a price is unknown or a model is free.
 
+A budget can be **closed**, once. From then on it binds no call, and
+what it counted stays. A run's budget is one: made on a session's scope
+just before the run and closed when the run ends, it counts from its
+creation, so it caps that run alone and no later loop of the session
+meets it.
+
 ### One Gate, Before the Call
 
 `core`
@@ -1492,7 +1498,7 @@ or a region the key lacks is the call's alone.
 
 | Limit | Measures | Kind | When it trips |
 |---|---|---|---|
-| Budget | Spend in a scope and window | Guard | Parks until it is raised or its window resets |
+| Budget | Spend in a scope and window | Guard | Parks until it is raised, closed, or its window resets |
 | Deadline | One instant the tree shares | Guard | No model call or job starts after it, a tool's timeout is cut to it, and the loop parks for a person |
 | Step guard | Model calls in one loop | Guard | Parks so a person looks. On by default and never disabled: it is the one backstop a free model or a missing price cannot switch off. Every loop starts it afresh. |
 | Error streak | Consecutive tool errors, or repeated identical calls | Bound | Ends the loop `inconclusive` |
@@ -1525,7 +1531,7 @@ memory-only session's runtime, a resource lease's hold time).
 |---|---|---|---|
 | `person` | A question, an approval, a passed deadline, the step guard, a principal to reassign, a lost workspace | An answer, a decision, an extension | No |
 | `provider` | An outage, a rate limit, a billing or credential error, a missing key | The provider recovers; a key or account is fixed | At the retry time, for outages and rate limits |
-| `budget` | The gate refused | A raise, or the window resets | At the reset |
+| `budget` | The gate refused | A raise, a close, or the window resets | At the reset |
 | `resource` | Waiting in line for a scarce resource ([Leases on a Resource][g-leases]), or for a workspace | A grant, or the request's end without one | On the grant or the end; for a workspace, at the retry time; for a job in line, at its deadline |
 | `job` | A long-running tool job is working | The job's completion | On completion |
 | `children` | Waiting for sub-agents' reports | A report; the tree's deadline ends the wait | On the report; past the deadline it parks on `person` |

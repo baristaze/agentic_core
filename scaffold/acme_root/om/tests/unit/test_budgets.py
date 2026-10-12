@@ -63,6 +63,7 @@ from acme.om.exceptions import (
     SpenderUnknown,
     ValidationFailed,
 )
+from acme.om.outbox.types.row import OutboxRow
 from acme.om.root import Managers, build_managers
 from acme.om.steps.types.header import ParkReason
 from acme.om.storage.impl.memory import StorageMemoryImpl
@@ -690,6 +691,65 @@ async def test_a_raise_asks_to_wake_the_sessions_parked_on_a_budget(tmp_path: Pa
     with pytest.raises(PreconditionFailed):
         await managers.budgets.change_amount(ctx, budget.id, Amount(cost_micros=1), 2)
     assert (await managers.budgets.get_budget(ctx, budget.id)).version == 3
+
+
+async def test_a_close_is_final_and_wakes_the_sessions_parked_on_it(tmp_path: Path) -> None:
+    """Closing lifts a cap, so it takes the permission that sets budgets. It
+    lands once: a second close answers the first and asks for nothing more,
+    and a change read before it is refused, so nothing reopens it. A budget
+    is made open, whatever its writer sends."""
+    storage = StorageMemoryImpl()
+    managers = build_managers(storage, InfraLocalImpl(tmp_path))
+    org = make_org()
+    owner, member = context(Role.OWNER, org), context(Role.MEMBER, org)
+    sent = make_budget(cost_micros=1_000).model_copy(update={"closed_at": utcnow()})
+    budget = await made(managers, owner, sent)
+    assert budget.closed_at is None, "only a close closes a budget"
+    with pytest.raises(NotAuthorized):
+        await managers.budgets.close_budget(member, budget.id)
+    with pytest.raises(NotFound):
+        await managers.budgets.close_budget(context(Role.OWNER), budget.id)
+    closed = await managers.budgets.close_budget(owner, budget.id)
+    assert closed.closed_at is not None and closed.version == 2
+    (wake,) = queued(storage)
+    assert (wake.kind, wake.target_id, dict(wake.payload)) == (
+        WorkKind.WAKE_SESSIONS,
+        org.id,
+        {"reason": "budget", "unlock": str(budget.id)},
+    )
+    assert await managers.budgets.close_budget(owner, budget.id) == closed
+    assert len(queued(storage)) == 1, "a second close asks for nothing"
+    with pytest.raises(PreconditionFailed):
+        await managers.budgets.change_amount(owner, budget.id, Amount(cost_micros=9), 1)
+    assert await managers.budgets.get_budget(owner, budget.id) == closed
+
+
+async def test_a_close_lands_on_an_amount_changed_meanwhile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A person changes the amount between the close's read and its write:
+    the close reads the budget again and closes it as it stands."""
+    storage = StorageMemoryImpl()
+    managers = build_managers(storage, InfraLocalImpl(tmp_path))
+    owner = context(Role.OWNER)
+    budget = await made(managers, owner, make_budget(cost_micros=1_000))
+    budgets = storage.get_budget_storage()
+    write = budgets.write_budget
+    raced: list[int] = []
+
+    async def racing(
+        org_id: UUID, changed: Budget, expected: int, rows: tuple[OutboxRow, ...]
+    ) -> None:
+        if not raced:
+            raced.append(expected)
+            await managers.budgets.change_amount(owner, budget.id, Amount(cost_micros=5), 1)
+        await write(org_id, changed, expected, rows)
+
+    monkeypatch.setattr(budgets, "write_budget", racing)
+    closed = await managers.budgets.close_budget(owner, budget.id)
+    assert raced == [1]
+    assert (closed.cost_micros, closed.version) == (5, 3) and closed.closed_at is not None
+    assert await managers.budgets.get_budget(owner, budget.id) == closed
 
 
 def test_a_raise_is_more_room_in_some_unit() -> None:
