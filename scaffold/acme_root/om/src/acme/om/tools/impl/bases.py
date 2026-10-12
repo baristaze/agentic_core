@@ -116,7 +116,11 @@ class WorkspaceBases:
         # second build of the same base keeps the same base again.
         count, _ = await self._claims.increment(ctx.org_id, key, self._build_limit)
         if count > 1:
-            raise IsolationRefused(f"the workspace base {key} is being built", clears=True)
+            raise IsolationRefused(
+                f"the workspace base {key} is being built",
+                clears=True,
+                cause="the workspace base is being built",
+            )
         try:
             # One kept between the read and the claim is the one it takes.
             kept = await self._read(ctx, key)
@@ -191,7 +195,8 @@ class WorkspaceBases:
             if refused.code != SnapshotRefused.code:
                 raise
             raise IsolationRefused(
-                f"the workspace base is not kept: {refused.message}"
+                f"the workspace base is not kept: {refused.message}",
+                cause="the workspace base is not kept: it holds a secret's value",
             ) from refused
         return archive
 

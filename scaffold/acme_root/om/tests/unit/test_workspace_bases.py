@@ -230,6 +230,7 @@ async def test_a_failed_setup_keeps_nothing_and_the_next_prepare_builds_again(
 
     assert failed.value.command == SETUP[0] and failed.value.exit_code == 3
     assert "command 1, 'pip install acme-tools', exited 3" in failed.value.message
+    assert failed.value.cause == "the base's setup command 1, 'pip install acme-tools', exited 3"
     assert not failed.value.clears, "a setup that fails ends the loop, and says why"
     assert bases.setup.commands() == [SETUP[0]], "nothing runs past a failed command"
     assert await bases.kept() == [], "no half-built base"
@@ -264,6 +265,7 @@ async def test_two_prepares_racing_on_one_base_build_it_once(tmp_path: Path) -> 
     with pytest.raises(IsolationRefused, match="is being built") as waiting:
         await bases.prepare()
     assert waiting.value.clears
+    assert waiting.value.cause == "the workspace base is being built"
 
     bases.setup.gate.set()
     first = await building
@@ -319,6 +321,7 @@ async def test_a_base_the_provider_cannot_bring_in_is_built_again(tmp_path: Path
         await bases.prepare()
 
     assert refused.value.clears
+    assert refused.value.cause == "the workspace base is built again", "never the host's message"
     assert await bases.kept() == []
     bases.provider.lost = False
     await bases.prepare()
@@ -336,6 +339,7 @@ async def test_a_base_that_holds_a_secrets_value_is_not_kept(tmp_path: Path) -> 
         await bases.prepare(leaky)
 
     assert TOKEN not in refused.value.message
+    assert refused.value.cause == "the workspace base is not kept: it holds a secret's value"
     assert await bases.kept() == []
 
 

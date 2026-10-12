@@ -121,7 +121,7 @@ class WorkspaceVmImpl(WorkspaceProviderInterface):
         if why is None and built and base is None:
             why = "a workspace on a base with setup starts from the base's snapshot alone"
         if why is not None:
-            raise IsolationRefused(why)
+            raise IsolationRefused(why, cause=why)
         missing = await self._machines.probe(longest_name(self._prefix))
         if missing is not None:
             raise IsolationRefused(f"a vm workspace needs a machine: {missing}")

@@ -48,7 +48,7 @@ class WorkspaceTwinImpl(WorkspaceProviderInterface):
         if why is None and built and base is None:
             why = "a workspace on a base with setup starts from the base's snapshot alone"
         if why is not None:
-            raise IsolationRefused(why)
+            raise IsolationRefused(why, cause=why)
         self.live.add(workspace_id)
         if snapshot is not None:
             self.files[workspace_id] = snapshot
@@ -108,9 +108,8 @@ class WorkspaceNullImpl(WorkspaceProviderInterface):
         *,
         building: bool = False,
     ) -> Workspace:
-        raise IsolationRefused(
-            f"this process prepares no workspace; a {spec.mode.value} workspace is refused"
-        )
+        why = f"this process prepares no workspace; a {spec.mode.value} workspace is refused"
+        raise IsolationRefused(why, cause=why)
 
     async def snapshot(self, workspace: Workspace) -> bytes:
         raise SnapshotRefused("this process prepares no workspace, so it snapshots none")

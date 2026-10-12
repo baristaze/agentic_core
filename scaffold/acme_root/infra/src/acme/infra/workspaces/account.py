@@ -388,7 +388,7 @@ class WorkspaceAccountImpl(WorkspaceProviderInterface):
         if why is None and (snapshot is not None or base is not None):
             why = f"an account workspace cannot start from a snapshot: {UNKEPT}"
         if why is not None:
-            raise IsolationRefused(why)
+            raise IsolationRefused(why, cause=why)
         switch = await asyncio.to_thread(switch_to, self._account)
         linking = await asyncio.to_thread(linking_refusal, self._protected_hardlinks)
         if linking is not None:
