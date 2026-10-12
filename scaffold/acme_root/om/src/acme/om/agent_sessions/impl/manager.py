@@ -7,6 +7,7 @@ from acme.om.agent_sessions.manager import AgentSessionsManagerInterface, Sessio
 from acme.om.agent_sessions.rules import (
     announces,
     asks_for_run,
+    clears,
     held_private,
     lineage,
     parked_step,
@@ -26,12 +27,18 @@ from acme.om.attribution.rules import fold
 from acme.om.attribution.types.principal import AgentRef
 from acme.om.base import EMPTY_UUID, Platform, new_id, utcnow
 from acme.om.context import Permission, TenantContext
-from acme.om.exceptions import NotFound, PreconditionFailed, TenantMismatch, ValidationFailed
+from acme.om.exceptions import (
+    NotAuthorized,
+    NotFound,
+    PreconditionFailed,
+    TenantMismatch,
+    ValidationFailed,
+)
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.types.row import OutboxRow, outbox_row, versioned_row
 from acme.om.steps import StepsManagerInterface
-from acme.om.steps.types.header import Park, ParkReason
-from acme.om.steps.types.step import Step
+from acme.om.steps.types.header import ControlCommand, ControlHeader, Park, ParkReason
+from acme.om.steps.types.step import Actor, Step
 from acme.om.tenancy import TenancyManagerInterface
 from acme.om.work.types.work_item import (
     LoopPayload,
@@ -203,7 +210,8 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         self, ctx: TenantContext, session_id: UUID, inputs: Sequence[Step]
     ) -> tuple[tuple[Step, ...], AgentSession]:
         ctx.require(Permission.WRITE)
-        await self._read(ctx, session_id)
+        session = await self._read(ctx, session_id)
+        _unlocks_held(session.park, inputs)
         stored = await self._steps.append_inputs(ctx, session_id, inputs)
         return stored, await self.project_status(ctx, session_id)
 
@@ -478,3 +486,24 @@ def wake_row(ctx: TenantContext, session: AgentSession, park: Park) -> OutboxRow
         session.id,
         payload.model_dump(mode="json"),
     ).model_copy(update={"actor_id": session.created_by})
+
+
+def _unlocks_held(park: Park | None, inputs: Sequence[Step]) -> None:
+    """A principal's unlock of a hand-over someone else holds is refused
+    before anything lands (`NotAuthorized`), so the sender learns it, where
+    the projection would only ignore it. The engine's own unlock is not a
+    principal's, and the projection alone answers it."""
+    if park is None or park.reason is not ParkReason.HANDOVER or park.holder is None:
+        return
+    for step in inputs:
+        header = step.header
+        if (
+            isinstance(header, ControlHeader)
+            and header.command is ControlCommand.UNLOCK
+            and step.actor is not Actor.ENGINE
+            and not clears(park, step)
+        ):
+            raise NotAuthorized(
+                "the environment is held by the person who took it over: only they "
+                + "give it back or unlock it, in person; a cancel ends the loop"
+            )

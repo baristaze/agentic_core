@@ -6,6 +6,7 @@ from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.attribution.manager import AttributionManagerInterface, PrincipalContext
 from acme.om.attribution.rules import (
+    PRINCIPAL_PARK,
     call_principal,
     inherited,
     needs_person,
@@ -152,21 +153,24 @@ class AttributionManagerImpl(AttributionManagerInterface):
             raise ValidationFailed(f"agent session {session_id} runs under its parent's principal")
         authority = await self._authority(ctx, session_id)
         principal = principal_of(ctx)
-        if authority.principal == principal:
-            return authority
-        taken = SessionAuthority.model_validate(
-            {
-                **authority.model_dump(),
-                "principal": principal,
-                "version": authority.version + 1,
-                "updated_at": self._clock(),
-                "updated_by": ctx.user_id,
-            }
-        )
-        rows = (versioned_row(ctx, UPDATED, taken.id, taken.version),)
-        await self._storage.write_authority(ctx.org_id, taken, authority.version, rows)
-        await self._relay_all(ctx, rows)
-        return taken
+        if authority.principal != principal:
+            taken = SessionAuthority.model_validate(
+                {
+                    **authority.model_dump(),
+                    "principal": principal,
+                    "version": authority.version + 1,
+                    "updated_at": self._clock(),
+                    "updated_by": ctx.user_id,
+                }
+            )
+            rows = (versioned_row(ctx, UPDATED, taken.id, taken.version),)
+            await self._storage.write_authority(ctx.org_id, taken, authority.version, rows)
+            await self._relay_all(ctx, rows)
+            authority = taken
+        # The assignment is the principal park's unlock: a loop that waits on
+        # it goes on, and its gates ask the new principal again.
+        await self._sessions.wake_session(ctx, session_id, PRINCIPAL_PARK)
+        return authority
 
     async def attribute_request(
         self, ctx: TenantContext, session_id: UUID, after_seq: int, delivered: Mapping[UUID, int]
