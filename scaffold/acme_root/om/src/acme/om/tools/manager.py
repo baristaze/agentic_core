@@ -62,7 +62,8 @@ class ToolsManagerInterface(ABC):
     ) -> Workspace:
         """The session's workspace, prepared to its spec, before its loop's
         first model call. `IsolationRefused` when the provider cannot meet
-        the spec: never a weaker workspace. A spec of no workspace answers
+        the spec: never a weaker workspace. Its `cause` is what a person
+        reads of it, when it names one. A spec of no workspace answers
         the absent one, which every transport refuses, loudly.
 
         With `restore`, a snapshot the session's history names, the
@@ -77,8 +78,9 @@ class ToolsManagerInterface(ABC):
         in a workspace of its own with the setup's egress, given no secret
         and no session's content. A build another prepare is making now
         refuses this one, and it clears once that build is kept. A setup
-        command that fails refuses it with the command and how it ended
-        (`BaseSetupFailed`), and nothing of the build is kept."""
+        command that fails refuses it with the command and how it ended,
+        its cause too (`BaseSetupFailed`), and nothing of the build is
+        kept."""
         ...
 
     @abstractmethod
