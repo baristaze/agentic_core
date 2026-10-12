@@ -1914,8 +1914,8 @@ has a way out.
   next run, or parks. Every provider error has a kind, every tool
   failure a class, and every park a reason, so nothing the world does
   falls between them.
-- **Still valid.** A step is written once, in order, by the one run that
-  holds the writer epoch. Nothing spends without the gate, no tool runs
+- **Still valid.** A run writes its steps once, in order, only while it
+  holds the writer epoch; inputs and controls arrive through the inbox. Nothing spends without the gate, no tool runs
   without the policy, and no workspace is weaker than its spec. So a
   failure leaves the record keeping every rule, as a success does.
 - **Recoverable.** Every step is durable before the engine acts on it.
@@ -1941,7 +1941,7 @@ Knowing where it stands is not the same as moving on, and the engine
 promises only the first. Whether a park clears depends on its unlock: a
 provider recovers, a window resets, a person answers. What the engine
 promises is that no wait is silent. Each names what ends it, a park
-with no retry time says only a person can, and a loop that cannot
+only a person can clear carries no retry time, and a loop that cannot
 progress ends `inconclusive` instead of spinning. Keeping a run going,
 its lease and the sweep that requeues a lost one, is the adopter's.
 
