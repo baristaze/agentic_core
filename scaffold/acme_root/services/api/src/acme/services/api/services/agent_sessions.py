@@ -9,7 +9,10 @@ from acme.om.context import TenantContext
 from acme.services.api.types.agent_sessions import (
     AgentSessionView,
     ControlRequest,
+    DeadlineRequest,
     DecisionRequest,
+    GiveBackRequest,
+    JobCompletionRequest,
     MessageRequest,
     StartSessionRequest,
     StepPageView,
@@ -53,6 +56,45 @@ class AgentSessionsServiceInterface(ABC):
     ) -> StepView:
         """A person's decision on the tool request at `request_seq`, bound to
         its tool and its input; the session's status follows it."""
+        ...
+
+    @abstractmethod
+    async def set_deadline(
+        self, ctx: TenantContext, session_id: UUID, body: DeadlineRequest
+    ) -> AgentSessionView:
+        """The deadline of the session's tree, moved for every session of
+        it; one past now, or none, unlocks each session parked on it. The
+        session as it stands after."""
+        ...
+
+    @abstractmethod
+    async def assign_principal(self, ctx: TenantContext, session_id: UUID) -> AgentSessionView:
+        """The caller becomes the principal the session's tool calls run
+        under, and a loop parked on a principal who no longer holds is
+        unlocked. The session as it stands after."""
+        ...
+
+    @abstractmethod
+    async def take_over(self, ctx: TenantContext, session_id: UUID) -> AgentSessionView:
+        """The caller, in person, takes the session's environment to work by
+        hand: its loop parks on a hand-over the caller holds."""
+        ...
+
+    @abstractmethod
+    async def give_back(
+        self, ctx: TenantContext, session_id: UUID, body: GiveBackRequest
+    ) -> AgentSessionView:
+        """The holder, in person, gives the environment back with what they
+        did, and the loop goes on."""
+        ...
+
+    @abstractmethod
+    async def complete_job(
+        self, ctx: TenantContext, session_id: UUID, key: UUID, body: JobCompletionRequest
+    ) -> AgentSessionView:
+        """A job's completion, from the system it ran on: kept only for a job
+        of that key and handle the session's open loop waits on, and its
+        park is unlocked; anything else is `NotFound`."""
         ...
 
     @abstractmethod

@@ -477,6 +477,29 @@
         "title": "CredentialKind",
         "type": "string"
       },
+      "DeadlineRequest": {
+        "additionalProperties": false,
+        "description": "The deadline the session's tree shares, set whole: an instant, or\nnull to take it away. One past now, or none, unlocks every session of\nthe tree parked on the deadline.",
+        "properties": {
+          "deadline": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline"
+          }
+        },
+        "required": [
+          "deadline"
+        ],
+        "title": "DeadlineRequest",
+        "type": "object"
+      },
       "DecisionRequest": {
         "additionalProperties": false,
         "description": "A person's decision on the tool call at a seq. A denial's note is what\nthe model reads.",
@@ -902,6 +925,23 @@
         "title": "FlagsView",
         "type": "object"
       },
+      "GiveBackRequest": {
+        "additionalProperties": false,
+        "description": "What the person who held the environment did there, which the model\nreads as their message when the loop goes on.",
+        "properties": {
+          "summary": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary"
+        ],
+        "title": "GiveBackRequest",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1289,6 +1329,39 @@
           "expires_at"
         ],
         "title": "IssuedUploadView",
+        "type": "object"
+      },
+      "JobCompletionRequest": {
+        "additionalProperties": false,
+        "description": "How a job ended, from the system it ran on: the tool's handle for\nthe work, its result as text, and the class of its failure when it\nfailed. A job that spends is counted at its whole hold: no cost is\ntaken over the wire.",
+        "properties": {
+          "failure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolFailure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "handle": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Handle",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "maxLength": 1000000,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "handle"
+        ],
+        "title": "JobCompletionRequest",
         "type": "object"
       },
       "LastOwnerDetail": {
@@ -2313,7 +2386,7 @@
         "type": "string"
       },
       "ParkView": {
-        "description": "Why a parked loop waits, what clears it, and when it tries again by\nitself; a park only a person clears has no time, and neither has a park\nin line, which names where it stands. `cause` says why in words when the\nengine can name it, such as a workspace base still being built.",
+        "description": "Why a parked loop waits, what clears it, and when it tries again by\nitself; a park only a person clears has no time, and neither has a park\nin line, which names where it stands. `cause` says why in words when the\nengine can name it, such as a workspace base still being built, or a\nkey a provider refused and who must act. A hand-over names `holder`,\nthe user who holds the environment and alone gives it back.",
         "properties": {
           "cause": {
             "anyOf": [
@@ -2325,6 +2398,18 @@
               }
             ],
             "title": "Cause"
+          },
+          "holder": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holder"
           },
           "line": {
             "anyOf": [
@@ -6257,6 +6342,358 @@
         ]
       }
     },
+    "/v1/agent-sessions/{session_id}/deadline": {
+      "put": {
+        "description": "The deadline of the session's tree, moved for every session of it.\nOne past now, or null, unlocks each session parked on the deadline.",
+        "operationId": "set_deadline_v1_agent_sessions__session_id__deadline_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeadlineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Deadline",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/{session_id}/give-back": {
+      "post": {
+        "description": "The holder, in person, gives the environment back with what they\ndid there, and the loop goes on: 403 for anyone else.",
+        "operationId": "give_back_v1_agent_sessions__session_id__give_back_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          },
+          {
+            "in": "header",
+            "name": "idempotency-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GiveBackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Give Back",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/{session_id}/jobs/{key}/completion": {
+      "post": {
+        "description": "How the job of `key` ended, from the system it ran on: the loop that\nwaits on it goes on. 404 for a job the session does not wait on.",
+        "operationId": "complete_job_v1_agent_sessions__session_id__jobs__key__completion_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          },
+          {
+            "in": "header",
+            "name": "idempotency-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobCompletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Job",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
     "/v1/agent-sessions/{session_id}/messages": {
       "post": {
         "description": "The message as stored, durable when this answers.",
@@ -6377,6 +6814,98 @@
         ]
       }
     },
+    "/v1/agent-sessions/{session_id}/principal": {
+      "put": {
+        "description": "The caller becomes the principal the session's tool calls run under,\nand a loop parked on a principal who no longer holds goes on.",
+        "operationId": "assign_principal_v1_agent_sessions__session_id__principal_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assign Principal",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
     "/v1/agent-sessions/{session_id}/steps": {
       "get": {
         "description": "The history in order, strictly after `after_seq`.",
@@ -6485,6 +7014,98 @@
           }
         },
         "summary": "Get Steps",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/{session_id}/take-over": {
+      "post": {
+        "description": "The caller, in person, takes the environment to work by hand: the\nloop parks on a hand-over they hold. 409 when another person holds it.",
+        "operationId": "take_over_v1_agent_sessions__session_id__take_over_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Take Over",
         "tags": [
           "agent_sessions"
         ]

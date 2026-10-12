@@ -102,6 +102,11 @@ def build_services(
         webhooks=WebhooksServiceImpl(integrations.get_identity_provider(), infra.get_queues()),
         leases=LeasesServiceImpl(managers.leases),
         agent_sessions=AgentSessionsServiceImpl(
-            managers.agent_sessions, managers.agents, managers.steps, managers.tools
+            managers.agent_sessions,
+            managers.agents,
+            managers.steps,
+            managers.tools,
+            managers.attribution,
+            managers.loop,
         ),
     )

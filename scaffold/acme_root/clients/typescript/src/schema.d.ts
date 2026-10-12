@@ -386,6 +386,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agent-sessions/{session_id}/deadline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Deadline
+         * @description The deadline of the session's tree, moved for every session of it.
+         *     One past now, or null, unlocks each session parked on the deadline.
+         */
+        put: operations["set_deadline_v1_agent_sessions__session_id__deadline_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agent-sessions/{session_id}/give-back": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Give Back
+         * @description The holder, in person, gives the environment back with what they
+         *     did there, and the loop goes on: 403 for anyone else.
+         */
+        post: operations["give_back_v1_agent_sessions__session_id__give_back_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agent-sessions/{session_id}/jobs/{key}/completion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete Job
+         * @description How the job of `key` ended, from the system it ran on: the loop that
+         *     waits on it goes on. 404 for a job the session does not wait on.
+         */
+        post: operations["complete_job_v1_agent_sessions__session_id__jobs__key__completion_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agent-sessions/{session_id}/messages": {
         parameters: {
             query?: never;
@@ -406,6 +469,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/agent-sessions/{session_id}/principal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Assign Principal
+         * @description The caller becomes the principal the session's tool calls run under,
+         *     and a loop parked on a principal who no longer holds goes on.
+         */
+        put: operations["assign_principal_v1_agent_sessions__session_id__principal_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/agent-sessions/{session_id}/steps": {
         parameters: {
             query?: never;
@@ -420,6 +504,27 @@ export interface paths {
         get: operations["get_steps_v1_agent_sessions__session_id__steps_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agent-sessions/{session_id}/take-over": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Take Over
+         * @description The caller, in person, takes the environment to work by hand: the
+         *     loop parks on a hand-over they hold. 409 when another person holds it.
+         */
+        post: operations["take_over_v1_agent_sessions__session_id__take_over_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1506,6 +1611,16 @@ export interface components {
          */
         CredentialKind: "api_key" | "session_token" | "login" | "socket_ticket" | "operator_token" | "internal";
         /**
+         * DeadlineRequest
+         * @description The deadline the session's tree shares, set whole: an instant, or
+         *     null to take it away. One past now, or none, unlocks every session of
+         *     the tree parked on the deadline.
+         */
+        DeadlineRequest: {
+            /** Deadline */
+            deadline: string | null;
+        };
+        /**
          * DecisionRequest
          * @description A person's decision on the tool call at a seq. A denial's note is what
          *     the model reads.
@@ -1737,6 +1852,15 @@ export interface components {
                 [key: string]: boolean;
             };
         };
+        /**
+         * GiveBackRequest
+         * @description What the person who held the environment did there, which the model
+         *     reads as their message when the loop goes on.
+         */
+        GiveBackRequest: {
+            /** Summary */
+            summary: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1938,6 +2062,23 @@ export interface components {
             fields: components["schemas"]["UploadFieldView"][];
             /** Url */
             url: string | null;
+        };
+        /**
+         * JobCompletionRequest
+         * @description How a job ended, from the system it ran on: the tool's handle for
+         *     the work, its result as text, and the class of its failure when it
+         *     failed. A job that spends is counted at its whole hold: no cost is
+         *     taken over the wire.
+         */
+        JobCompletionRequest: {
+            failure?: components["schemas"]["ToolFailure"] | null;
+            /** Handle */
+            handle: string;
+            /**
+             * Text
+             * @default
+             */
+            text: string;
         };
         /**
          * LastOwnerDetail
@@ -2415,11 +2556,15 @@ export interface components {
          * @description Why a parked loop waits, what clears it, and when it tries again by
          *     itself; a park only a person clears has no time, and neither has a park
          *     in line, which names where it stands. `cause` says why in words when the
-         *     engine can name it, such as a workspace base still being built.
+         *     engine can name it, such as a workspace base still being built, or a
+         *     key a provider refused and who must act. A hand-over names `holder`,
+         *     the user who holds the environment and alone gives it back.
          */
         ParkView: {
             /** Cause */
             cause: string | null;
+            /** Holder */
+            holder?: string | null;
             line?: components["schemas"]["LineParkView"] | null;
             reason: components["schemas"]["ParkReason"];
             /** Retry At */
@@ -4014,6 +4159,126 @@ export interface operations {
             };
         };
     };
+    set_deadline_v1_agent_sessions__session_id__deadline_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-app"?: string | null;
+                "x-app-version"?: string | null;
+            };
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeadlineRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentSessionView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    give_back_v1_agent_sessions__session_id__give_back_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-app"?: string | null;
+                "x-app-version"?: string | null;
+                "idempotency-key"?: string | null;
+            };
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GiveBackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentSessionView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_job_v1_agent_sessions__session_id__jobs__key__completion_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-app"?: string | null;
+                "x-app-version"?: string | null;
+                "idempotency-key"?: string | null;
+            };
+            path: {
+                session_id: string;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JobCompletionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentSessionView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     send_message_v1_agent_sessions__session_id__messages_post: {
         parameters: {
             query?: never;
@@ -4054,6 +4319,41 @@ export interface operations {
             };
         };
     };
+    assign_principal_v1_agent_sessions__session_id__principal_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-app"?: string | null;
+                "x-app-version"?: string | null;
+            };
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentSessionView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_steps_v1_agent_sessions__session_id__steps_get: {
         parameters: {
             query?: {
@@ -4079,6 +4379,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StepPageView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    take_over_v1_agent_sessions__session_id__take_over_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-app"?: string | null;
+                "x-app-version"?: string | null;
+            };
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentSessionView"];
                 };
             };
             /** @description Validation Error */

@@ -15,8 +15,10 @@ from acme.integrations.model_providers.types import StopReason
 from acme.om.agent_sessions.types.agent_session import SessionStatus
 from acme.om.agents.types.request import MAX_TITLE
 from acme.om.attribution.types.principal import MAX_KIND
+from acme.om.steps.types.content import MAX_NAME
 from acme.om.steps.types.header import ControlCommand, LoopOutcome, ParkReason, ToolFailure
 from acme.om.steps.types.step import Actor, Origin, StepType
+from acme.om.tools.types.call import MAX_REPORT
 from acme.services.api.types.common import RequestBody, View
 
 MAX_MESSAGE = 100_000
@@ -39,13 +41,16 @@ class ParkView(View):
     """Why a parked loop waits, what clears it, and when it tries again by
     itself; a park only a person clears has no time, and neither has a park
     in line, which names where it stands. `cause` says why in words when the
-    engine can name it, such as a workspace base still being built."""
+    engine can name it, such as a workspace base still being built, or a
+    key a provider refused and who must act. A hand-over names `holder`,
+    the user who holds the environment and alone gives it back."""
 
     reason: ParkReason
     unlock: str
     retry_at: datetime | None
     line: LineParkView | None = None
     cause: str | None
+    holder: UUID | None = None
 
 
 class AgentSessionView(View):
@@ -181,3 +186,29 @@ class DecisionRequest(RequestBody):
 
     approve: bool
     note: str = Field(default="", max_length=MAX_MESSAGE)
+
+
+class DeadlineRequest(RequestBody):
+    """The deadline the session's tree shares, set whole: an instant, or
+    null to take it away. One past now, or none, unlocks every session of
+    the tree parked on the deadline."""
+
+    deadline: datetime | None
+
+
+class GiveBackRequest(RequestBody):
+    """What the person who held the environment did there, which the model
+    reads as their message when the loop goes on."""
+
+    summary: str = Field(min_length=1, max_length=MAX_MESSAGE)
+
+
+class JobCompletionRequest(RequestBody):
+    """How a job ended, from the system it ran on: the tool's handle for
+    the work, its result as text, and the class of its failure when it
+    failed. A job that spends is counted at its whole hold: no cost is
+    taken over the wire."""
+
+    handle: str = Field(min_length=1, max_length=MAX_NAME)
+    text: str = Field(default="", max_length=MAX_REPORT)
+    failure: ToolFailure | None = None

@@ -117,6 +117,18 @@ class CredentialKind(StrEnum):
     internal = 'internal'
 
 
+class DeadlineRequest(BaseModel):
+    """
+    The deadline the session's tree shares, set whole: an instant, or
+    null to take it away. One past now, or none, unlocks every session of
+    the tree parked on the deadline.
+    """
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    deadline: Annotated[AwareDatetime | None, Field(title='Deadline')]
+
+
 class DecisionRequest(BaseModel):
     """
     A person's decision on the tool call at a seq. A denial's note is what
@@ -282,6 +294,17 @@ class FlagsView(BaseModel):
     its user. A flag read on the server alone is never in it.
     """
     flags: Annotated[dict[str, bool], Field(description="Each flag marked for clients, by name, and its value for the session's org and user.", title='Flags')]
+
+
+class GiveBackRequest(BaseModel):
+    """
+    What the person who held the environment did there, which the model
+    reads as their message when the loop goes on.
+    """
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    summary: Annotated[str, Field(max_length=100000, min_length=1, title='Summary')]
 
 
 class InvitationState(StrEnum):
@@ -509,9 +532,12 @@ class ParkView(BaseModel):
     Why a parked loop waits, what clears it, and when it tries again by
     itself; a park only a person clears has no time, and neither has a park
     in line, which names where it stands. `cause` says why in words when the
-    engine can name it, such as a workspace base still being built.
+    engine can name it, such as a workspace base still being built, or a
+    key a provider refused and who must act. A hand-over names `holder`,
+    the user who holds the environment and alone gives it back.
     """
     cause: Annotated[str | None, Field(title='Cause')]
+    holder: Annotated[UUID | None, Field(title='Holder')] = None
     line: LineParkView | None = None
     reason: ParkReason
     retry_at: Annotated[AwareDatetime | None, Field(title='Retry At')]
@@ -1221,6 +1247,21 @@ class IssuedUploadView(BaseModel):
     expires_at: Annotated[AwareDatetime, Field(title='Expires At')]
     fields: Annotated[list[UploadFieldView], Field(title='Fields')]
     url: Annotated[str | None, Field(title='Url')]
+
+
+class JobCompletionRequest(BaseModel):
+    """
+    How a job ended, from the system it ran on: the tool's handle for
+    the work, its result as text, and the class of its failure when it
+    failed. A job that spends is counted at its whole hold: no cost is
+    taken over the wire.
+    """
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    failure: ToolFailure | None = None
+    handle: Annotated[str, Field(max_length=200, min_length=1, title='Handle')]
+    text: Annotated[str | None, Field(max_length=1000000, title='Text')] = ''
 
 
 class LastOwnerDetail(BaseModel):

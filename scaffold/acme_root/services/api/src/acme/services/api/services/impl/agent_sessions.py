@@ -4,7 +4,9 @@ from acme.integrations.model_providers.types import Usage
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.agents import AgentsManagerInterface
+from acme.om.agents.loop import LoopManagerInterface
 from acme.om.agents.types.request import Start
+from acme.om.attribution import AttributionManagerInterface
 from acme.om.base import utcnow
 from acme.om.context import TenantContext
 from acme.om.exceptions import NotFound
@@ -25,11 +27,15 @@ from acme.om.steps.types.header import (
 from acme.om.steps.types.step import Step, StepType
 from acme.om.tools import ToolsManagerInterface
 from acme.om.tools.rules import named_snapshot
+from acme.om.tools.types.call import JobCompletion
 from acme.services.api.services.agent_sessions import AgentSessionsServiceInterface
 from acme.services.api.types.agent_sessions import (
     AgentSessionView,
     ControlRequest,
+    DeadlineRequest,
     DecisionRequest,
+    GiveBackRequest,
+    JobCompletionRequest,
     MessageRequest,
     ParkView,
     SnapshotView,
@@ -113,11 +119,15 @@ class AgentSessionsServiceImpl(AgentSessionsServiceInterface):
         agents: AgentsManagerInterface,
         steps: StepsManagerInterface,
         tools: ToolsManagerInterface,
+        attribution: AttributionManagerInterface,
+        loop: LoopManagerInterface,
     ) -> None:
         self._sessions = sessions
         self._agents = agents
         self._steps = steps
         self._tools = tools
+        self._attribution = attribution
+        self._loop = loop
 
     async def start_session(
         self, ctx: TenantContext, body: StartSessionRequest, session_id: UUID
@@ -175,6 +185,32 @@ class AgentSessionsServiceImpl(AgentSessionsServiceInterface):
         )
         await self._sessions.project_status(ctx, session_id)
         return step_view(decided)
+
+    async def set_deadline(
+        self, ctx: TenantContext, session_id: UUID, body: DeadlineRequest
+    ) -> AgentSessionView:
+        await self._agents.set_deadline(ctx, session_id, body.deadline)
+        return session_view(await self._sessions.get_session(ctx, session_id))
+
+    async def assign_principal(self, ctx: TenantContext, session_id: UUID) -> AgentSessionView:
+        await self._attribution.assign_principal(ctx, session_id)
+        return session_view(await self._sessions.get_session(ctx, session_id))
+
+    async def take_over(self, ctx: TenantContext, session_id: UUID) -> AgentSessionView:
+        return session_view(await self._loop.take_over(ctx, session_id))
+
+    async def give_back(
+        self, ctx: TenantContext, session_id: UUID, body: GiveBackRequest
+    ) -> AgentSessionView:
+        return session_view(await self._loop.give_back(ctx, session_id, body.summary))
+
+    async def complete_job(
+        self, ctx: TenantContext, session_id: UUID, key: UUID, body: JobCompletionRequest
+    ) -> AgentSessionView:
+        completion = JobCompletion(
+            key=key, handle=body.handle, text=body.text, failure=body.failure
+        )
+        return session_view(await self._loop.complete_job(ctx, session_id, completion))
 
     async def get_steps(
         self, ctx: TenantContext, session_id: UUID, after_seq: int, limit: int
