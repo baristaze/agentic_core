@@ -2,11 +2,12 @@ from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Update, delete, exists, select, update
+from sqlalchemy import Update, delete, exists, or_, select, update
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.storage.tables.agent_sessions import AgentSessions
-from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
+from acme.om.agent_sessions.types.agent_session import AgentSession, Among, SessionStatus
+from acme.om.attribution.types.authority import Visibility
 from acme.om.base import EMPTY_UUID
 from acme.om.exceptions import PreconditionFailed
 from acme.om.outbox.storage.tables.outbox_rows import OutboxRows
@@ -59,13 +60,30 @@ class AgentSessionStoragePostgresImpl(PgStorageBase, AgentSessionStorageInterfac
             return [to_model(row, AgentSession) for row in (await session.execute(stmt)).scalars()]
 
     async def read_sessions(
-        self, org_id: UUID, status: SessionStatus | None, after: UUID | None, limit: int
+        self,
+        org_id: UUID,
+        status: SessionStatus | None,
+        after: UUID | None,
+        limit: int,
+        *,
+        among: Among | None = None,
+        person: UUID | None = None,
     ) -> list[AgentSession]:
         stmt = select(AgentSessions).where(
             AgentSessions.org_id == org_id, AgentSessions.deleted_at.is_(None)
         )
         if status is not None:
             stmt = stmt.where(AgentSessions.status == status.value)
+        if among is not None:
+            stmt = stmt.where(AgentSessions.root_id == AgentSessions.id)
+        if among is not None and person is not None:
+            mine = [
+                AgentSessions.created_by == person,
+                AgentSessions.participants.contains([str(person)]),
+            ]
+            if among is Among.VISIBLE:
+                mine.append(AgentSessions.visibility == Visibility.ORG_WIDE.value)
+            stmt = stmt.where(or_(*mine))
         if after is not None:
             stmt = stmt.where(AgentSessions.id > after)
         stmt = stmt.order_by(AgentSessions.id).limit(limit)

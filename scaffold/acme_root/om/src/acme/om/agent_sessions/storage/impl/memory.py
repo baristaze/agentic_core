@@ -3,7 +3,8 @@ from datetime import datetime
 from uuid import UUID
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
-from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
+from acme.om.agent_sessions.types.agent_session import AgentSession, Among, SessionStatus
+from acme.om.attribution.types.authority import Visibility
 from acme.om.exceptions import PreconditionFailed
 from acme.om.outbox.storage import OutboxLandingInterface
 from acme.om.outbox.types.row import OutboxRow
@@ -34,7 +35,14 @@ class AgentSessionStorageMemoryImpl(MemoryStorageBase, AgentSessionStorageInterf
         ][:limit]
 
     async def read_sessions(
-        self, org_id: UUID, status: SessionStatus | None, after: UUID | None, limit: int
+        self,
+        org_id: UUID,
+        status: SessionStatus | None,
+        after: UUID | None,
+        limit: int,
+        *,
+        among: Among | None = None,
+        person: UUID | None = None,
     ) -> list[AgentSession]:
         return [
             s
@@ -42,6 +50,7 @@ class AgentSessionStorageMemoryImpl(MemoryStorageBase, AgentSessionStorageInterf
             if s.deleted_at is None
             and (status is None or s.status is status)
             and (after is None or s.id > after)
+            and (among is None or _listed(s, among, person))
         ][:limit]
 
     async def write_session(
@@ -96,3 +105,14 @@ class AgentSessionStorageMemoryImpl(MemoryStorageBase, AgentSessionStorageInterf
             for session_id in gone:
                 del self._sessions[session_id]
             return len(gone)
+
+
+def _listed(session: AgentSession, among: Among, person: UUID | None) -> bool:
+    """Whether a root is on a person's list, as the Postgres statement
+    filters it."""
+    if session.root_id != session.id:
+        return False
+    if person is None:
+        return True
+    mine = session.created_by == person or person in session.participants
+    return mine or (among is Among.VISIBLE and session.visibility is Visibility.ORG_WIDE)

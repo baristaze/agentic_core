@@ -14,6 +14,7 @@ from acme.om.agent_sessions.rules import (
     projected,
     purge_due,
     resumed_step,
+    sees,
     unlock_step,
     wakes_at,
 )
@@ -21,9 +22,11 @@ from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.types.agent_session import (
     AgentSession,
     AgentSessionPage,
+    Among,
     SessionStatus,
 )
 from acme.om.attribution.rules import fold
+from acme.om.attribution.types.authority import Visibility
 from acme.om.attribution.types.principal import AgentRef
 from acme.om.base import EMPTY_UUID, Platform, new_id, utcnow
 from acme.om.context import Permission, TenantContext
@@ -37,6 +40,7 @@ from acme.om.exceptions import (
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.types.row import OutboxRow, outbox_row, versioned_row
 from acme.om.steps import StepsManagerInterface
+from acme.om.steps.rules import visibility_step
 from acme.om.steps.types.header import ControlCommand, ControlHeader, Park, ParkReason
 from acme.om.steps.types.step import Actor, Step
 from acme.om.tenancy import TenancyManagerInterface
@@ -133,6 +137,11 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         ctx.require(Permission.READ)
         return await self._read(ctx, session_id)
 
+    async def is_visible(self, ctx: TenantContext, session_id: UUID) -> bool:
+        ctx.require(Permission.READ)
+        session = await self._storage.read_session(ctx.org_id, session_id)
+        return session is None or await self._seen(ctx, session)
+
     async def get_session_at_head(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
         ctx.require(Permission.READ)
         return await self._at_head(ctx, await self._read(ctx, session_id))
@@ -141,6 +150,8 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         self, ctx: TenantContext, parent_id: UUID, after: UUID | None, limit: int
     ) -> AgentSessionPage:
         ctx.require(Permission.READ)
+        if not await self.is_visible(ctx, parent_id):
+            raise NotFound(f"agent session {parent_id} not found")
         limit = max(1, min(limit, self._options.max_limit))
         rows = await self._storage.read_children(ctx.org_id, parent_id, after, limit + 1)
         return AgentSessionPage(items=tuple(rows[:limit]), has_more=len(rows) > limit)
@@ -166,11 +177,57 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         status: SessionStatus | None,
         after: UUID | None,
         limit: int,
+        among: Among = Among.VISIBLE,
     ) -> AgentSessionPage:
         ctx.require(Permission.READ)
         limit = max(1, min(limit, self._options.max_limit))
-        rows = await self._storage.read_sessions(ctx.org_id, status, after, limit + 1)
+        everyone = among is Among.VISIBLE and ctx.has(Permission.MANAGE_SESSIONS)
+        person = None if everyone else ctx.user_id
+        rows = await self._storage.read_sessions(
+            ctx.org_id, status, after, limit + 1, among=among, person=person
+        )
         return AgentSessionPage(items=tuple(rows[:limit]), has_more=len(rows) > limit)
+
+    async def add_participant(
+        self, ctx: TenantContext, session_id: UUID, user_id: UUID
+    ) -> AgentSession:
+        ctx.require(Permission.WRITE)
+        session = await self._read(ctx, session_id)
+        if session.root_id != session.id:
+            raise ValidationFailed(f"agent session {session_id} is joined through its root")
+        if user_id in session.participants:
+            return session
+        if user_id != ctx.user_id and ctx.user_id != session.created_by:
+            raise NotAuthorized(f"only the creator of agent session {session_id} adds others")
+        now = self._clock()
+        joined = AgentSession.model_validate(
+            {
+                **session.model_dump(),
+                "participants": (*session.participants, user_id),
+                "version": session.version + 1,
+                "updated_at": now,
+                "updated_by": ctx.user_id,
+            }
+        )
+        rows = (versioned_row(ctx, UPDATED, joined.id, joined.version),)
+        await self._storage.write_session(ctx.org_id, joined, session.version, rows)
+        await self._relay_all(ctx, rows)
+        return joined
+
+    async def switch_visibility(
+        self, ctx: TenantContext, session_id: UUID, visibility: Visibility
+    ) -> AgentSession:
+        ctx.require(Permission.WRITE)
+        session = await self._read(ctx, session_id)
+        if session.root_id != session.id:
+            raise ValidationFailed(f"agent session {session_id} is seen as its root is")
+        if ctx.user_id != session.created_by:
+            raise NotAuthorized(f"only the creator of agent session {session_id} switches it")
+        if session.visibility is visibility:
+            return session
+        switch = visibility_step(new_id(), self._clock(), session_id, ctx, visibility)
+        _, switched = await self.receive(ctx, session_id, [switch])
+        return switched
 
     async def project_status(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
         ctx.require(Permission.WRITE)
@@ -322,7 +379,11 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
     async def restore_session(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
         ctx.require(Permission.WRITE)
         session = await self._storage.read_session(ctx.org_id, session_id)
-        if session is None or session.purge_started_at is not None:
+        if (
+            session is None
+            or session.purge_started_at is not None
+            or not await self._seen(ctx, session)
+        ):
             raise NotFound(f"agent session {session_id} not found")
         if session.deleted_at is None:
             return session
@@ -443,11 +504,25 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
 
     async def _read(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
         """A session every read may answer: one marked deleted is hidden, as
-        one that never existed is."""
+        one that never existed is, and so is one the person does not see
+        (`agent_sessions.rules.sees`): a sub-agent is seen as its root is,
+        read as stored."""
         session = await self._storage.read_session(ctx.org_id, session_id)
-        if session is None or session.deleted_at is not None:
+        if session is None or session.deleted_at is not None or not await self._seen(ctx, session):
             raise NotFound(f"agent session {session_id} not found")
         return session
+
+    async def _seen(self, ctx: TenantContext, session: AgentSession) -> bool:
+        """Whether the person sees `session`, read off its tree's root as
+        stored, or off itself once the root is purged
+        (`agent_sessions.rules.sees`); a holder of `manage_sessions` reads
+        nothing more."""
+        if ctx.has(Permission.MANAGE_SESSIONS):
+            return True
+        root = session
+        if session.root_id != session.id:
+            root = await self._storage.read_session(ctx.org_id, session.root_id) or session
+        return sees(ctx, root)
 
     async def _at_head(self, ctx: TenantContext, session: AgentSession) -> AgentSession:
         """`session` with its speaker, its mark, and whether it holds private

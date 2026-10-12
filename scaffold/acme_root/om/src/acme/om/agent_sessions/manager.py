@@ -13,8 +13,10 @@ from uuid import UUID
 from acme.om.agent_sessions.types.agent_session import (
     AgentSession,
     AgentSessionPage,
+    Among,
     SessionStatus,
 )
+from acme.om.attribution.types.authority import Visibility
 from acme.om.attribution.types.principal import AgentRef
 from acme.om.context import TenantContext
 from acme.om.steps.types.header import Park, ParkReason
@@ -45,8 +47,20 @@ class AgentSessionsManagerInterface(ABC):
 
     @abstractmethod
     async def get_session(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
-        """A session of the tenant; one another tenant holds, or one marked
-        deleted, is `NotFound`, as one that never existed is."""
+        """A session of the tenant; one another tenant holds, one marked
+        deleted, and one the person does not see, is `NotFound`, as one that
+        never existed is. Every operation here that names a session reads it
+        so: an org-wide session is seen by every member of the org, a
+        private one by its creator and its participants, and every one by a
+        holder of `manage_sessions`. A sub-agent is seen as its root is
+        (`agent_sessions.rules.sees`)."""
+        ...
+
+    @abstractmethod
+    async def is_visible(self, ctx: TenantContext, session_id: UUID) -> bool:
+        """Whether the person sees the session, as `get_session` reads it,
+        whether or not it is marked deleted: a history no session of the
+        tenant stands over is seen by whoever may read it."""
         ...
 
     @abstractmethod
@@ -62,7 +76,8 @@ class AgentSessionsManagerInterface(ABC):
         self, ctx: TenantContext, parent_id: UUID, after: UUID | None, limit: int
     ) -> AgentSessionPage:
         """One page of the sessions `parent_id` spawned, by id, strictly
-        after `after`; `limit` is clamped."""
+        after `after`; `limit` is clamped. A parent the person does not see
+        is `NotFound`; one marked deleted still answers its children."""
         ...
 
     @abstractmethod
@@ -83,10 +98,37 @@ class AgentSessionsManagerInterface(ABC):
         status: SessionStatus | None,
         after: UUID | None,
         limit: int,
+        among: Among = Among.VISIBLE,
     ) -> AgentSessionPage:
-        """One page of the tenant's sessions in a status, or in any, by id,
-        strictly after `after`; `limit` is clamped. A session marked deleted
-        is on no page."""
+        """One page of the tenant's root sessions in a status, or in any, by
+        id, strictly after `after`; `limit` is clamped. `among` says which:
+        the ones the person made or takes part in, or every one they see,
+        each org-wide one included, and with `manage_sessions` every one. A
+        session marked deleted is on no page."""
+        ...
+
+    @abstractmethod
+    async def add_participant(
+        self, ctx: TenantContext, session_id: UUID, user_id: UUID
+    ) -> AgentSession:
+        """`user_id` takes part in the session from here: the caller joins a
+        session they see, any member an org-wide one, and its creator adds
+        another; nobody else adds another (`NotAuthorized`). One who is no
+        member of the org sees nothing by it. A participant sees it whatever
+        its visibility, and speaks in it as data while another steers it. A
+        sub-agent is joined through its root (`ValidationFailed`). One who
+        takes part already answers the session as it is."""
+        ...
+
+    @abstractmethod
+    async def switch_visibility(
+        self, ctx: TenantContext, session_id: UUID, visibility: Visibility
+    ) -> AgentSession:
+        """Its creator switches who sees the session, org-wide or private,
+        recorded as a `switched` step through the inbox, which the status's
+        projection folds; anyone else is `NotAuthorized`. A sub-agent is seen
+        as its root is (`ValidationFailed`). A session that holds
+        `visibility` already is answered as it is."""
         ...
 
     @abstractmethod
@@ -175,8 +217,9 @@ class AgentSessionsManagerInterface(ABC):
     async def restore_session(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
         """Unmarks a session marked deleted: it comes back as it was, with
         its history, and is announced. One not marked is answered as it is.
-        One the sweep has claimed for its purge is `NotFound`, as one gone
-        or another tenant's is: past its retention, the delete is final."""
+        One the sweep has claimed for its purge is `NotFound`, as one gone,
+        another tenant's, or one the person does not see is: past its
+        retention, the delete is final."""
         ...
 
     @abstractmethod

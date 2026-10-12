@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
-from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
+from acme.om.agent_sessions.types.agent_session import AgentSession, Among, SessionStatus
 from acme.om.outbox.types.row import OutboxRow
 
 
@@ -35,11 +35,20 @@ class AgentSessionStorageInterface(ABC):
 
     @abstractmethod
     async def read_sessions(
-        self, org_id: UUID, status: SessionStatus | None, after: UUID | None, limit: int
+        self,
+        org_id: UUID,
+        status: SessionStatus | None,
+        after: UUID | None,
+        limit: int,
+        *,
+        among: Among | None = None,
+        person: UUID | None = None,
     ) -> list[AgentSession]:
         """The tenant's sessions in a status, or in any, by id, strictly
         after `after`, at most `limit` of them; a session marked deleted is
-        none of them."""
+        none of them. With `among`, only roots: the ones `person` made or
+        takes part in (`MINE`), and with them every org-wide one
+        (`VISIBLE`), or every root when `person` is None."""
         ...
 
     @abstractmethod

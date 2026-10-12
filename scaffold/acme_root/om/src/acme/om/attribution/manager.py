@@ -53,14 +53,35 @@ class AttributionManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def assign_principal(self, ctx: TenantContext, session_id: UUID) -> SessionAuthority:
-        """The caller takes a session over: its tool calls run under them
-        from here. A steady session whose principal no longer holds waits
-        until a person does this, and a loop parked on it is unlocked, so its
-        gates ask the new principal when it resumes. A child's principal is
-        its parent's, and a child is never taken over (`ValidationFailed`):
-        each sub-agent below that holds the principal replaced takes the new
-        one with the root, and a loop of theirs parked on it is unlocked."""
+    async def assign_principal(
+        self, ctx: TenantContext, session_id: UUID, steerer: UUID | None = None
+    ) -> SessionAuthority:
+        """The session's principal, its steerer, moves: only their messages
+        instruct it, and its tool calls run under them from here. With no
+        `steerer`, or the caller named, the caller takes it: its steerer
+        already, or for a steerer who lapsed, one who holds
+        `manage_sessions`, who joins it as they take it; anyone else is
+        `NotAuthorized`. With another named, its steerer hands it to them:
+        anyone else is `NotAuthorized`, and one who takes no part in the
+        session is `ValidationFailed`; one who left the org since lapses as
+        a steerer does. Each move is recorded as a `switched` step, once
+        however often it is asked. A steady session whose principal no
+        longer holds waits until a person takes it, and a loop parked on it
+        is unlocked, so its gates ask the new principal when it resumes. A
+        child's principal is its parent's, and a child is never taken over
+        (`ValidationFailed`): each sub-agent below that holds the principal
+        replaced takes the new one with the root, and a loop of theirs
+        parked on it is unlocked."""
+        ...
+
+    @abstractmethod
+    async def steers(self, ctx: TenantContext, session_id: UUID) -> bool:
+        """Whether the caller steers the session: True for its principal, a
+        person through any key, or before its authority is opened its
+        creator; False for one who takes part in it and does not, its
+        creator or a participant, whose messages are data. Anyone else is
+        `NotAuthorized`: they join it first. A sub-agent's part is its
+        root's. A session the caller does not see is `NotFound`."""
         ...
 
     @abstractmethod

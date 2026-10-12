@@ -3,7 +3,9 @@ ends, and an input that wakes the session starts the next one.
 
 The entity holds what no step does: who made it, its title, its
 participants, its agent kind and version and the tools it may call, its
-parent and its root, and the session that handed it over.
+parent and its root, and the session that handed it over. It also caches
+who sees it, org-wide or private, which its creator's switches set, and
+who steers it, which attribution holds and each recorded move names.
 Its status is a projection of its steps, cached here for queries; the
 steps are the truth, and the cache is rebuilt from them
 (`agent_sessions.rules.projected`). The cache also holds two answers of
@@ -19,6 +21,7 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
+from acme.om.attribution.types.authority import Visibility
 from acme.om.attribution.types.principal import MAX_KIND, Principal
 from acme.om.base import Identifiable, Platform, SoftDeletable, Trackable
 from acme.om.steps.types.content import Stored
@@ -30,6 +33,14 @@ class SessionStatus(StrEnum):
     RUNNING = "running"  # a run holds its loop
     PARKED = "parked"  # its loop waits on an unlock
     IDLE = "idle"  # no loop is open: none began, or the last one ended
+
+
+class Among(StrEnum):
+    """Which root sessions a person's list holds: sub-agents are read
+    through their tree."""
+
+    MINE = "mine"  # the ones they made or take part in
+    VISIBLE = "visible"  # every one they see: the org-wide ones and theirs
 
 
 class AgentSession(Identifiable, Trackable, SoftDeletable):
@@ -46,14 +57,29 @@ class AgentSession(Identifiable, Trackable, SoftDeletable):
         "speaker",
         "untrusted",
         "purge_started_at",
+        "visibility",
+        "steerer",
+        "participants",
     )
     """The root and the depth follow where the session came from, the purge
-    claim is the sweep's, and the rest is the projection's; a session also
-    takes its mark from where it came and, for a child, the cut of its tools
+    claim is the sweep's, who takes part is who joined, and the rest is the
+    projection's; a session also takes its mark and, when that is private,
+    who sees it from where it came and, for a child, the cut of its tools
     (`agent_sessions.rules.lineage`)."""
 
     title: Stored = Field(min_length=1, max_length=200)
-    participants: tuple[UUID, ...] = ()  # the users the session is shared with
+    # The members who take part in it: each sees it whatever its
+    # visibility, and speaks in it as data while another steers it. One
+    # joins an org-wide session, and its creator adds them to a private one.
+    participants: tuple[UUID, ...] = ()
+    # Who sees it and opens its content: its kind's mode sets it when it is
+    # made, and its creator switches it, a `switched` step each time. A
+    # sub-agent is seen as its tree's root is (`agent_sessions.rules.sees`).
+    visibility: Visibility = Visibility.PRIVATE
+    # The person who steers it, as its latest recorded move of the steer
+    # names it; None while its creator does. Attribution's authority is the
+    # truth its calls run under; this is kept for reading and listing.
+    steerer: UUID | None = None
     kind: str = Field(min_length=1, max_length=MAX_KIND)  # its agent kind, pinned
     kind_version: int = Field(ge=1)
     # Its registry: the tools it may call, by name, its kind's, cut to its

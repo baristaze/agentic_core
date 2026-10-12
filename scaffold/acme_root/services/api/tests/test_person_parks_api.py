@@ -325,9 +325,9 @@ async def test_an_assignment_on_the_root_reaches_the_sub_agent_that_held_the_sam
     case: Case,
 ) -> None:
     """A steady session Mia made starts a steady sub-agent, whose calls run
-    under her too, and asks a question. She leaves the org: the sub-agent's
-    call parks for a person, and so does the root's once the question is
-    answered. The owner assigns herself on the root, and both run under her."""
+    under her too, and asks a question, which she answers. She leaves the
+    org: the sub-agent's call parks for a person, and so does the root's.
+    The owner assigns herself on the root, and both run under her."""
     mia, as_mia = await member(case)
     root_id = await case.started(as_mia, kind="lead")
     case.say(
@@ -339,16 +339,16 @@ async def test_an_assignment_on_the_root_reaches_the_sub_agent_that_held_the_sam
         await case.ctx(), UUID(root_id), None, 10
     )
     child_id = str(page.items[0].id)
+    answered = await case.client.post(
+        f"/v1/agent-sessions/{root_id}/messages",
+        headers=created(as_mia),
+        json={"text": "The second shelf."},
+    )
+    assert answered.status_code == 201, answered.text
     gone = await case.client.delete(f"/v1/memberships/{mia}", headers=case.owner)
     assert gone.status_code == 200, gone.text
     case.say(reply(use("lookup")))
     await case.run(child_id)
-    answered = await case.client.post(
-        f"/v1/agent-sessions/{root_id}/messages",
-        headers=created(case.owner),
-        json={"text": "The second shelf."},
-    )
-    assert answered.status_code == 201, answered.text
     case.say(reply(use("lookup")))
     await case.run(root_id)
     tree = (child_id, root_id)

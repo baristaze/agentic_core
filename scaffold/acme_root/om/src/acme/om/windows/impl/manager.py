@@ -26,6 +26,7 @@ from acme.om.models.credentials import CallCredentialsInterface
 from acme.om.models.manager import ModelsManagerInterface
 from acme.om.models.types.fill import MAIN, SUMMARIZER, Fill, FillSet, ModelRole
 from acme.om.steps import StepsManagerInterface
+from acme.om.steps.manager import OpenCheck
 from acme.om.steps.types.content import Block, Children, Content, TextBlock, ToolResultBlock
 from acme.om.steps.types.header import (
     ArtifactRef,
@@ -75,9 +76,13 @@ class WindowsManagerImpl(WindowsManagerInterface):
         policy: CompactionPolicy,
         options: WindowsOptions,
         clock: Callable[[], datetime] = utcnow,
+        *,
+        opens: OpenCheck,
     ) -> None:
         """`credentials` answers the client a compaction's call runs on: the
-        platform's key, or a tenant's."""
+        platform's key, or a tenant's. `opens` refuses a person a session
+        not visible to them, as the history does."""
+        self._opens = opens
         self._storage = storage
         self._steps = steps
         self._tenancy = tenancy
@@ -241,6 +246,8 @@ class WindowsManagerImpl(WindowsManagerInterface):
         self, ctx: TenantContext, session_id: UUID, artifact_id: UUID, offset: int, limit: int
     ) -> ArtifactPage:
         ctx.require(Permission.READ)
+        if not ctx.has(Permission.MANAGE_SESSIONS):
+            await self._opens(ctx, session_id)
         text = await self._kept(ctx, session_id, artifact_id)
         page, more = rules.artifact_page(text, offset, limit, self._policy)
         return ArtifactPage(

@@ -1,22 +1,29 @@
 """The agent sessions service: what the wire can do with a session, in
-views. A session is started, spoken to, steered, and read; its loop runs in
-the session runner, never here."""
+views. A session is started, listed, joined, spoken to, steered, and read;
+its loop runs in the session runner, never here. Each one is read as the
+person sees it: one not visible to them answers as one that never
+existed."""
 
 from abc import ABC, abstractmethod
 from uuid import UUID
 
+from acme.om.agent_sessions.types.agent_session import Among, SessionStatus
 from acme.om.context import TenantContext
 from acme.services.api.types.agent_sessions import (
+    AgentSessionPageView,
     AgentSessionView,
+    ArtifactPageView,
     ControlRequest,
     DeadlineRequest,
     DecisionRequest,
     GiveBackRequest,
     JobCompletionRequest,
     MessageRequest,
+    PrincipalRequest,
     StartSessionRequest,
     StepPageView,
     StepView,
+    VisibilityRequest,
 )
 
 
@@ -32,6 +39,34 @@ class AgentSessionsServiceInterface(ABC):
 
     @abstractmethod
     async def get_session(self, ctx: TenantContext, session_id: UUID) -> AgentSessionView: ...
+
+    @abstractmethod
+    async def list_sessions(
+        self,
+        ctx: TenantContext,
+        among: Among,
+        status: SessionStatus | None,
+        after: UUID | None,
+        limit: int,
+    ) -> AgentSessionPageView:
+        """A page of the org's root sessions: the ones the caller made or
+        takes part in, or every one they see."""
+        ...
+
+    @abstractmethod
+    async def add_participant(
+        self, ctx: TenantContext, session_id: UUID, user_id: UUID
+    ) -> AgentSessionView:
+        """`user_id` takes part in the session: the caller joining one they
+        see, or anyone its creator adds."""
+        ...
+
+    @abstractmethod
+    async def switch_visibility(
+        self, ctx: TenantContext, session_id: UUID, body: VisibilityRequest
+    ) -> AgentSessionView:
+        """Its creator switches who sees the session, recorded as a step."""
+        ...
 
     @abstractmethod
     async def send_message(
@@ -68,10 +103,15 @@ class AgentSessionsServiceInterface(ABC):
         ...
 
     @abstractmethod
-    async def assign_principal(self, ctx: TenantContext, session_id: UUID) -> AgentSessionView:
-        """The caller becomes the principal the session's tool calls run
-        under, and a loop parked on a principal who no longer holds is
-        unlocked. The session as it stands after."""
+    async def assign_principal(
+        self, ctx: TenantContext, session_id: UUID, body: PrincipalRequest | None
+    ) -> AgentSessionView:
+        """The steer moves, recorded as a step: its steerer hands it to the
+        participant the body names, or with none the caller takes it, its
+        steerer already or, for a steerer who lapsed, one who holds
+        `manage_sessions`. The steerer is the principal the session's tool
+        calls run under, and a loop parked on a principal who no longer
+        holds is unlocked. The session as it stands after."""
         ...
 
     @abstractmethod
@@ -101,3 +141,11 @@ class AgentSessionsServiceInterface(ABC):
     async def get_steps(
         self, ctx: TenantContext, session_id: UUID, after_seq: int, limit: int
     ) -> StepPageView: ...
+
+    @abstractmethod
+    async def get_artifact(
+        self, ctx: TenantContext, session_id: UUID, artifact_id: UUID, start: int, limit: int
+    ) -> ArtifactPageView:
+        """A page of an artifact the session keeps, from the character at
+        `start`, read as its steps are."""
+        ...

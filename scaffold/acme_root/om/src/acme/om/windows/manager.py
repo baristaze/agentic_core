@@ -102,8 +102,9 @@ class WindowsManagerInterface(ABC):
     ) -> ArtifactPage:
         """A page of an artifact: its characters from `offset`, at most
         `limit` and the policy's page. An artifact the tenant's session does
-        not hold is `NotFound`; one whose session's key is revoked is
-        `KeyRevoked`: its content is erased, and its record stays."""
+        not hold, and one of a session not visible to the person, is
+        `NotFound`; one whose session's key is revoked is `KeyRevoked`: its
+        content is erased, and its record stays."""
         ...
 
     @abstractmethod

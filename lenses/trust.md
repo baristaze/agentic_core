@@ -95,8 +95,10 @@ re-checked on every call by a transition of the adopter's tenancy
 manager, never the system's, and the engine records the re-check as a
 decision. Steady: tools run under one principal fixed at the session's
 creation, its creator or a service principal the tenant grants; when
-that principal is no longer valid, its tool calls park until a person
-assigns themselves, which wakes the loop.
+that principal is no longer valid, its tool calls park until someone who
+holds `manage_sessions` takes the session over, which wakes the loop. A
+session's principal is its one steerer: its creator until it hands the
+session to a participant, a recorded step.
 
 **Source.** Identity, Trust, and Attribution, Who Is Who.
 
@@ -107,7 +109,9 @@ principal and what happens when it lapses.
 **Violation.** A delegated call checked once per session or per loop; a
 re-check run under the system's context; a steady session that keeps
 running tools under a principal that lost its access; an assignment
-that leaves the loop parked on the principal it replaced.
+that leaves the loop parked on the principal it replaced; a steer that
+moves unrecorded, by anyone but its steerer, or to someone who takes no
+part in the session.
 
 **Severity.** medium
 
@@ -120,15 +124,16 @@ and `scaffold/acme_root/om/src/acme/om/attribution/impl/manager.py`
 
 **Principle.** Content has two trust tiers, and the renderer keeps them
 apart. Instructions are the agent kind's prompts and the engine's
-notices; a principal's messages through a product surface, and the
-standing text a principal pins on a session; and, for a child, its
+notices; the steerer's messages through a product surface, and the
+standing text the steerer pins on a session; and, for a child, its
 parent's objective and messages, under the authority its spawn was
 granted. Everything else is data: tool output, external
 events, documents, attachments, recalled knowledge, third-party tool
-descriptions, summaries of the window, and a child's report to its
-parent. Data renders in the provider's native result blocks, quoted,
-with delimiters escaped, labelled with its origin, and explicitly not an
-instruction. Text never grants power.
+descriptions, summaries of the window, a child's report to its parent,
+and a participant's message, labelled with its author, which never
+wakes the session or pays. Data renders in the provider's native result
+blocks, quoted, with delimiters escaped, labelled with its origin, and
+explicitly not an instruction. Text never grants power.
 
 **Source.** Identity, Trust, and Attribution, Only a Principal
 Instructs; Context, Rendering.
@@ -137,8 +142,9 @@ Instructs; Context, Rendering.
 and the origin label on data; any path where content changes what may
 run.
 
-**Violation.** A tool result, an event, or a child's report rendered as
-an instruction; data with unescaped delimiters or no origin label;
+**Violation.** A tool result, an event, a child's report, or the
+message of a participant who does not steer rendered as an instruction;
+data with unescaped delimiters or no origin label;
 content that raises a permission, extends an approval, or sets a tool's
 class.
 
@@ -183,18 +189,19 @@ past its allowlist unattended.
 ## TRU-07 The person who asked pays
 
 **Principle.** The spender of a model call is the principal behind the
-latest principal-authored input the model received. An input from an
-agent, the engine, or an external event never becomes the payer; the
-current spender carries over. A child inherits its spender from its
-spawn, and an automation's trigger is paid by the automation's
-principal.
+latest principal-authored input the model received: the steerer's. An
+input from a participant, an agent, the engine, or an external event
+never becomes the payer; the current spender carries over. A child
+inherits its spender from its spawn, and an automation's trigger is paid
+by the automation's principal.
 
 **Source.** Identity, Trust, and Attribution, The Person Who Asked Pays.
 
 **Look for.** Where a model request's spender is set, and what it reads.
 
 **Violation.** A spender taken from the latest input whoever wrote it;
-an external event or an agent's message that becomes the payer; a child
+an external event, an agent's message, or a participant's message that
+becomes the payer; a child
 that pays as anyone but its spawn's spender. (A call made when no one
 can be told to pay is BND-02.)
 
