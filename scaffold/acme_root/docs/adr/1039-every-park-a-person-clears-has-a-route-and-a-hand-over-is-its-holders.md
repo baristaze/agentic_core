@@ -38,6 +38,10 @@ decision, and the step guard, a spender, and a lost workspace the
 parked on a principal who no longer holds, as `set_deadline` unlocks a
 loop parked on the deadline. The route takes no body: the caller
 becomes the principal. A hand-off that names another person can add one.
+A sub-agent runs under the principal it took at its spawn and is never
+assigned itself, so an assignment on the root reaches each sub-agent that
+holds the principal it replaces: they take the root's new one, never
+more, and their parked loops wake too.
 
 **A job's cost is not taken over the wire.** A job that spends settles
 at the cost its runner reports, or at its whole hold. A caller who may

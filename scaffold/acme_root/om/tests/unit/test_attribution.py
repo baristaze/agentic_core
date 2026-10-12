@@ -605,11 +605,11 @@ async def test_a_child_pays_as_its_spawn_did_until_a_principal_speaks_to_it(
 async def test_a_person_who_speaks_to_a_child_lends_it_no_authority(
     managers: Managers, transition: Transition
 ) -> None:
-    """A delegated child runs under the principal its spawn passed it, and
-    is never taken over. The parent's steer moves to an admin after the
-    spawn: the admin's message to the child is a participant's, data, which
-    pays for nothing, and the child's calls still run under the member its
-    parent ran under: no child holds more than its parent."""
+    """A delegated child runs under the principal its spawn passed it. An
+    admin who takes part in its parent and does not steer it messages the
+    child: the message is a participant's, data, which pays for nothing,
+    and the child's calls still run under the member its parent ran under:
+    no child holds more than its parent."""
     org = make_org()
     member, admin = context(Role.MEMBER, org), context(Role.ADMIN, org)
     parent = await start(managers, member, ASSISTANT)
@@ -619,7 +619,7 @@ async def test_a_person_who_speaks_to_a_child_lends_it_no_authority(
         parent.id,
         Spawn(id=new_id(), kind="assistant", title="look", objective="read the records"),
     )
-    await managers.attribution.assign_principal(admin, parent.id)
+    await managers.agent_sessions.add_participant(member, parent.id, admin.user_id)
     asked = await say(managers, admin, child.id)
     assert trust_of(asked) is Trust.DATA
     request = await model_request(managers, member, child.id, [asked])

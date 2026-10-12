@@ -9,7 +9,7 @@ from enum import StrEnum
 from typing import Self
 from uuid import UUID
 
-from pydantic import Field, model_validator
+from pydantic import AwareDatetime, Field, model_validator
 
 from acme.integrations.model_providers.types import StopReason
 from acme.om.agent_sessions.types.agent_session import SessionStatus
@@ -227,9 +227,10 @@ class DecisionRequest(RequestBody):
 class DeadlineRequest(RequestBody):
     """The deadline the session's tree shares, set whole: an instant, or
     null to take it away. One past now, or none, unlocks every session of
-    the tree parked on the deadline."""
+    the tree parked on the deadline. An instant with no offset names no
+    moment, so it is refused."""
 
-    deadline: datetime | None
+    deadline: AwareDatetime | None
 
 
 class VisibilityRequest(RequestBody):

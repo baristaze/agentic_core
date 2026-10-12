@@ -64,12 +64,14 @@ class AttributionManagerInterface(ABC):
         `NotAuthorized`. With another named, its steerer hands it to them:
         anyone else is `NotAuthorized`, and one who takes no part in the
         session is `ValidationFailed`; one who left the org since lapses as
-        a steerer does. Each
-        move is recorded as a `switched` step, once however often it is
-        asked. A steady session whose principal no longer holds waits until
-        a person takes it, and a loop parked on it is unlocked, so its gates
-        ask the new principal when it resumes. A child's principal is its
-        parent's, and a child is never taken over (`ValidationFailed`)."""
+        a steerer does. Each move is recorded as a `switched` step, once
+        however often it is asked. A steady session whose principal no
+        longer holds waits until a person takes it, and a loop parked on it
+        is unlocked, so its gates ask the new principal when it resumes. A
+        child's principal is its parent's, and a child is never taken over
+        (`ValidationFailed`): each sub-agent below that holds the principal
+        replaced takes the new one with the root, and a loop of theirs
+        parked on it is unlocked."""
         ...
 
     @abstractmethod

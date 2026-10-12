@@ -1735,7 +1735,8 @@ export interface components {
          * DeadlineRequest
          * @description The deadline the session's tree shares, set whole: an instant, or
          *     null to take it away. One past now, or none, unlocks every session of
-         *     the tree parked on the deadline.
+         *     the tree parked on the deadline. An instant with no offset names no
+         *     moment, so it is refused.
          */
         DeadlineRequest: {
             /** Deadline */

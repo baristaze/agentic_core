@@ -584,7 +584,7 @@
       },
       "DeadlineRequest": {
         "additionalProperties": false,
-        "description": "The deadline the session's tree shares, set whole: an instant, or\nnull to take it away. One past now, or none, unlocks every session of\nthe tree parked on the deadline.",
+        "description": "The deadline the session's tree shares, set whole: an instant, or\nnull to take it away. One past now, or none, unlocks every session of\nthe tree parked on the deadline. An instant with no offset names no\nmoment, so it is refused.",
         "properties": {
           "deadline": {
             "anyOf": [
