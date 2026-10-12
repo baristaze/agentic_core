@@ -376,6 +376,12 @@ flags that can be undone, except the deletes in [Three
 Deletes](#three-deletes) that are final. An archived session records
 arriving events without waking; a principal's message unarchives it.
 
+A second start leaves an open session as it is. A start under a new id
+is another session beside it, with its own history and tree. A start
+under an id already written answers that session as stored. An input
+that wakes a session whose loop is still open starts no second loop:
+the open loop takes it ([The Inbox](#the-inbox)).
+
 ```mermaid
 stateDiagram-v2
     [*] --> pending: first input
