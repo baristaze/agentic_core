@@ -55,6 +55,10 @@ def raised(budget: Budget, cost_micros: int, version: int) -> Budget:
     )
 
 
+def closed(budget: Budget) -> Budget:
+    return budget.model_copy(update={"closed_at": utcnow(), "version": budget.version + 1})
+
+
 class BudgetStorageContract:
     @pytest.fixture
     def storage(self) -> BudgetStorageInterface:
@@ -122,6 +126,29 @@ class BudgetStorageContract:
         assert len(await storage.read_budgets_for(org, scopes, 2)) == 2
         assert await storage.read_budgets_for(org, [], 10) == []
         assert await storage.read_budgets_for(new_id(), scopes, 10) == []
+
+    async def test_read_budgets_for_reads_open_budgets_alone(
+        self, storage: BudgetStorageInterface
+    ) -> None:
+        """A closed budget binds nothing: the gate's read passes it by, and it
+        never counts toward the bound on the budgets one call reads, however
+        many a scope's runs closed."""
+        org = new_id()
+        session = str(new_id())
+        scopes = [BudgetScope(kind=BudgetScopeKind.SESSION, key=session)]
+        ended = []
+        for _ in range(3):
+            run = make_budget(BudgetScopeKind.SESSION, session, window=WindowKind.LIFE)
+            assert await storage.create_budget(org, run, ())
+            ended.append(closed(run))
+            await storage.write_budget(org, ended[-1], 1, ())
+        open_ = make_budget(BudgetScopeKind.SESSION, session)
+        assert await storage.create_budget(org, open_, ())
+        assert await storage.read_budgets_for(org, scopes, 1) == [open_]
+        assert await storage.read_budgets_for(org, scopes, 10) == [open_]
+        # The closed ones are still the tenant's, as they were closed.
+        assert await storage.read_budget(org, ended[0].id) == ended[0]
+        assert len(await storage.read_budgets(org, None, 10)) == 4
 
     async def test_write_is_a_compare_and_set_on_the_version(
         self, storage: BudgetStorageInterface

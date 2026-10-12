@@ -42,8 +42,9 @@ class BudgetStorageInterface(ABC):
     async def read_budgets_for(
         self, org_id: UUID, scopes: Sequence[BudgetScope], limit: int
     ) -> list[Budget]:
-        """The tenant's budgets whose scope is one of `scopes`, by id, at most
-        `limit`: what binds a call charged to them."""
+        """The tenant's open budgets whose scope is one of `scopes`, by id, at
+        most `limit`: what binds a call charged to them. A closed budget binds
+        nothing, so it is neither read nor counted toward `limit`."""
         ...
 
     @abstractmethod
