@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
-from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
+from acme.om.agent_sessions.types.agent_session import AgentSession, Among, SessionStatus
 from acme.om.attribution.types.authority import Visibility
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
@@ -168,6 +168,34 @@ class AgentSessionStorageContract:
         assert await storage.read_sessions(gone, None, None, 10) == [left]
         assert await storage.read_tenant_sessions(gone, 10) == [left.id]
         assert await storage.read_sessions(kept, None, None, 10) == [stays]
+
+    async def test_a_persons_page_holds_their_roots_and_the_org_wide_ones(
+        self, storage: AgentSessionStorageInterface
+    ) -> None:
+        """With `among`, a page holds roots alone: the ones a person made or
+        takes part in, and with `VISIBLE` the org-wide ones too, or every
+        root when it names no person. A sub-agent is on no such page. Who
+        sees a session, and who steers it, read back as written."""
+        org, person = new_id(), new_id()
+        made = make_session().model_copy(update={"created_by": person})
+        joined = make_session().model_copy(
+            update={"participants": (new_id(), person), "steerer": person}
+        )
+        seen, closed = make_session(visibility=Visibility.ORG_WIDE), make_session()
+        child = make_session(parent=made, visibility=Visibility.ORG_WIDE)
+        for session in (made, joined, seen, closed, child):
+            assert await storage.create_session(org, session, ())
+        mine = await storage.read_sessions(org, None, None, 10, among=Among.MINE, person=person)
+        visible = await storage.read_sessions(
+            org, None, None, 10, among=Among.VISIBLE, person=person
+        )
+        every = await storage.read_sessions(org, None, None, 10, among=Among.VISIBLE)
+        assert [s.id for s in mine] == sorted([made.id, joined.id])
+        assert [s.id for s in visible] == sorted([made.id, joined.id, seen.id])
+        assert [s.id for s in every] == sorted([made.id, joined.id, seen.id, closed.id])
+        assert len(await storage.read_sessions(org, None, None, 10)) == 5
+        assert await storage.read_session(org, joined.id) == joined
+        assert await storage.read_session(org, seen.id) == seen
 
     async def test_a_deleted_session_is_on_no_page_and_still_read_by_id(
         self, storage: AgentSessionStorageInterface

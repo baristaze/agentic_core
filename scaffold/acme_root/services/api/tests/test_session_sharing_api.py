@@ -126,9 +126,7 @@ def created(headers: dict[str, str]) -> dict[str, str]:
 
 
 @pytest.fixture
-async def org(
-    client: httpx.AsyncClient, container: AppContainer, owner: dict[str, str]
-) -> Org:
+async def org(client: httpx.AsyncClient, container: AppContainer, owner: dict[str, str]) -> Org:
     seated = Org(client, container)
     await seated.seat(owner)
     return seated
