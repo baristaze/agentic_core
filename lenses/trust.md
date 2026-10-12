@@ -96,7 +96,7 @@ manager, never the system's, and the engine records the re-check as a
 decision. Steady: tools run under one principal fixed at the session's
 creation, its creator or a service principal the tenant grants; when
 that principal is no longer valid, its tool calls park until a person
-assigns another.
+assigns themselves, which wakes the loop.
 
 **Source.** Identity, Trust, and Attribution, Who Is Who.
 
@@ -106,7 +106,8 @@ principal and what happens when it lapses.
 
 **Violation.** A delegated call checked once per session or per loop; a
 re-check run under the system's context; a steady session that keeps
-running tools under a principal that lost its access.
+running tools under a principal that lost its access; an assignment
+that leaves the loop parked on the principal it replaced.
 
 **Severity.** medium
 
