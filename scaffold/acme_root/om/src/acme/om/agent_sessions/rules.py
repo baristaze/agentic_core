@@ -281,12 +281,12 @@ def held_private(held: bool, steps: Iterable[Step]) -> bool:
 
 
 def announces(before: AgentSession, after: AgentSession, steps: Sequence[Step]) -> bool:
-    """Whether a projection is announced: its status, its park, or its
-    archive flag changed, or a loop ended among the steps it read. A step
-    is never announced on its own."""
+    """Whether a projection is announced: its status, its park, its
+    archive flag, its visibility, or its steerer changed, or a loop ended
+    among the steps it read. A step is never announced on its own."""
     return (
-        (before.status, before.park, before.archived_at)
-        != (after.status, after.park, after.archived_at)
+        (before.status, before.park, before.archived_at, before.visibility, before.steerer)
+        != (after.status, after.park, after.archived_at, after.visibility, after.steerer)
     ) or any(step.type is StepType.LOOP_ENDED and step.seq > before.status_seq for step in steps)
 
 

@@ -95,8 +95,8 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
   person's look after it parks starts it again.
 - **The status follows the steps.** It is read off the history, can be
   rebuilt from it at any time, and is never set by hand.
-- **A change of status, and the end of a loop, are announced.** A step
-  on its own is not.
+- **A change of status, of who sees it or who steers it, and the end
+  of a loop, are announced.** A step on its own is not.
 - **Two writers never both land.** Each write of a session names the
   version it read.
 - **A session takes what it must from where it came.** A sub-agent or

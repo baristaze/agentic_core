@@ -22,12 +22,16 @@ from contracts.step_storage import (
 from contracts.tools import stand_ins
 
 from acme.infra.impl.local import InfraLocalImpl
-from acme.om.agent_sessions.impl.manager import AgentSessionsManagerImpl, AgentSessionsOptions
+from acme.om.agent_sessions.impl.manager import (
+    UPDATED,
+    AgentSessionsManagerImpl,
+    AgentSessionsOptions,
+)
 from acme.om.agent_sessions.rules import Projection, after_step, announces, projected
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.storage.impl.memory import AgentSessionStorageMemoryImpl
 from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
-from acme.om.attribution.types.authority import Visibility
+from acme.om.attribution.types.authority import AuthorityMode, Visibility
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
 from acme.om.context import AppContext, AppType, RequestContext, Role, TenantContext
@@ -612,6 +616,35 @@ async def test_a_deleted_session_comes_back_only_for_one_who_sees_it(managers: M
         await sessions.get_session(ctx, sid)
     assert (await sessions.restore_session(ctx, sid)).deleted_at is None
     assert await kinds(managers, ctx, sid) == ["created", "deleted", "updated"]
+
+
+async def test_a_switch_of_visibility_and_a_move_of_the_steer_are_each_announced(
+    managers: Managers,
+) -> None:
+    """Who sees a session and who steers it are on its view, so a switch by
+    its creator and a hand-off to a participant each announce its new
+    version."""
+    org = make_org()
+    ctx, mia = context(Role.MEMBER, org), context(Role.MEMBER, org)
+    sessions = managers.agent_sessions
+    sid = (await sessions.create_session(ctx, make_session())).id
+    await managers.attribution.open_authority(ctx, sid, AuthorityMode.STEADY)
+    await sessions.add_participant(ctx, sid, mia.user_id)
+
+    async def updates() -> int:
+        events = await managers.events.get_events(ctx, 0, 100)
+        return sum(e.kind == UPDATED and e.target_id == sid for e in events)
+
+    joined = await updates()
+    switched = await sessions.switch_visibility(ctx, sid, Visibility.ORG_WIDE)
+    after_switch = await updates()
+    await managers.attribution.assign_principal(ctx, sid, mia.user_id)
+    handed = await sessions.get_session(ctx, sid)
+
+    assert switched.visibility is Visibility.ORG_WIDE
+    assert after_switch == joined + 1, "the switch is announced"
+    assert handed.steerer == mia.user_id
+    assert await updates() == joined + 2, "the hand-off is announced"
 
 
 async def test_only_an_idle_session_is_deleted(managers: Managers) -> None:
