@@ -60,8 +60,8 @@ sets of them back: `@setuid` and `capset`, which the switch takes, and
 (`SystemCallFilter=@setuid capset @chown` after
 `SystemCallFilter=~@privileged`). It answers a refused call with an error
 (`SystemCallErrorNumber=EPERM`). Before it makes anything, prepare tries
-the switch, as a command of the account that does nothing, and a chown
-that changes nothing. A host whose filter refuses either is refused, and
+the switch, as a command that does nothing, to this process's own ids, so
+it starts no process of the account, and a chown that changes nothing. A host whose filter refuses either is refused, and
 the refusal names the filter and the sets it allows.
 
 **Nothing privileged sees the command's environment.** The programs
