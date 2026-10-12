@@ -235,7 +235,7 @@ async def test_a_call_no_window_holds_parks_for_a_raise_which_wakes_it(engine: E
 async def test_a_runs_budget_caps_the_run_alone_and_its_close_lets_the_session_go_on(
     engine: Engine,
 ) -> None:
-    """A standing session spent before the run. A budget opened on its tree
+    """A session that outlives the run spent before it. A budget opened on its tree
     just before the run counts from its creation, so it caps the run's calls
     alone: they fit up to it, and the next one parks the loop on it. The run
     ends and closes it: the session parked on it is woken and its gate holds

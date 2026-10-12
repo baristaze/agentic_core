@@ -4,9 +4,8 @@
 
 ## Context
 
-A platform wakes a standing session for a bounded run, such as a
-scheduled message to a triage session, and holds the run to a cap of its
-own. The budgets ([ADR 1006](1006-a-hold-is-held-before-the-call-and-written-once.md))
+A session outlives its runs: an input that wakes it on a schedule starts
+a bounded run, and the run is held to a cap of its own. The budgets ([ADR 1006](1006-a-hold-is-held-before-the-call-and-written-once.md))
 have no end: a budget is created, its amount changes, and it goes only
 with its tenant. A cap left on the session's tree after the run counts
 every later loop and parks the session once that spend passes it. A cap
