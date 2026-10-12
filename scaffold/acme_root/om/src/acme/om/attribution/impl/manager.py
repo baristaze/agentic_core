@@ -1,3 +1,4 @@
+import contextlib
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from uuid import UUID
@@ -49,6 +50,7 @@ UPDATED = "attribution.session_authority.updated"
 class AttributionOptions(Platform):
     purge_batch: int = 1000  # authorities one purge statement deletes at most
     read_batch: int = 200  # steps one read of a request's range holds
+    children_batch: int = 50  # children one read of a tree's walk holds
 
 
 async def no_principal_context(
@@ -153,23 +155,24 @@ class AttributionManagerImpl(AttributionManagerInterface):
             raise ValidationFailed(f"agent session {session_id} runs under its parent's principal")
         authority = await self._authority(ctx, session_id)
         principal = principal_of(ctx)
-        if authority.principal != principal:
-            taken = SessionAuthority.model_validate(
-                {
-                    **authority.model_dump(),
-                    "principal": principal,
-                    "version": authority.version + 1,
-                    "updated_at": self._clock(),
-                    "updated_by": ctx.user_id,
-                }
-            )
-            rows = (versioned_row(ctx, UPDATED, taken.id, taken.version),)
-            await self._storage.write_authority(ctx.org_id, taken, authority.version, rows)
-            await self._relay_all(ctx, rows)
-            authority = taken
-        # The assignment is the principal park's unlock: a loop that waits on
-        # it goes on, and its gates ask the new principal again.
+        # A sub-agent runs under the principal it took at its spawn, so each
+        # one below that holds the principal replaced here takes the new one:
+        # its parent's, so none holds more than its parent. They move before
+        # the root, so a retry after a lost write still finds what it held.
+        below: list[UUID] = []
+        for child_id in await self._below(ctx, session_id):
+            held = await self._storage.read_authority(ctx.org_id, child_id)
+            if held is not None and held.principal in (authority.principal, principal):
+                await self._held_by(ctx, held, principal)
+                below.append(child_id)
+        authority = await self._held_by(ctx, authority, principal)
+        # The assignment is the principal park's unlock: a loop of the tree
+        # that waits on it goes on, and its gates ask the new principal
+        # again. A sub-agent marked deleted waits on nothing.
         await self._sessions.wake_session(ctx, session_id, PRINCIPAL_PARK)
+        for child_id in below:
+            with contextlib.suppress(NotFound):
+                await self._sessions.wake_session(ctx, child_id, PRINCIPAL_PARK)
         return authority
 
     async def attribute_request(
@@ -266,6 +269,47 @@ class AttributionManagerImpl(AttributionManagerInterface):
                 break
             after_seq = page.items[-1].seq
         return found
+
+    async def _held_by(
+        self, ctx: TenantContext, authority: SessionAuthority, principal: Principal
+    ) -> SessionAuthority:
+        """`authority` with its calls run under `principal`, written when
+        that moves it."""
+        if authority.principal == principal:
+            return authority
+        taken = SessionAuthority.model_validate(
+            {
+                **authority.model_dump(),
+                "principal": principal,
+                "version": authority.version + 1,
+                "updated_at": self._clock(),
+                "updated_by": ctx.user_id,
+            }
+        )
+        rows = (versioned_row(ctx, UPDATED, taken.id, taken.version),)
+        await self._storage.write_authority(ctx.org_id, taken, authority.version, rows)
+        await self._relay_all(ctx, rows)
+        return taken
+
+    async def _below(self, ctx: TenantContext, session_id: UUID) -> list[UUID]:
+        """Every session below `session_id`, children and theirs, a level at
+        a time; the tree's count bounds the walk."""
+        below: list[UUID] = []
+        parents = [session_id]
+        while parents:
+            parent_id = parents.pop(0)
+            after: UUID | None = None
+            while True:
+                page = await self._sessions.get_children(
+                    ctx, parent_id, after, self._options.children_batch
+                )
+                for child in page.items:
+                    parents.append(child.id)
+                    below.append(child.id)
+                if not page.has_more or not page.items:
+                    break
+                after = page.items[-1].id
+        return below
 
     async def _authority(self, ctx: TenantContext, session_id: UUID) -> SessionAuthority:
         """A session with no authority runs no call and spends nothing."""

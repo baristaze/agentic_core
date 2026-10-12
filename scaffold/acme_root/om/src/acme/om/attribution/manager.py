@@ -58,7 +58,9 @@ class AttributionManagerInterface(ABC):
         from here. A steady session whose principal no longer holds waits
         until a person does this, and a loop parked on it is unlocked, so its
         gates ask the new principal when it resumes. A child's principal is
-        its parent's, and a child is never taken over (`ValidationFailed`)."""
+        its parent's, and a child is never taken over (`ValidationFailed`):
+        each sub-agent below that holds the principal replaced takes the new
+        one with the root, and a loop of theirs parked on it is unlocked."""
         ...
 
     @abstractmethod

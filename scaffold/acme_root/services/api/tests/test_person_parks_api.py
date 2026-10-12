@@ -22,6 +22,7 @@ import httpx
 import pytest
 from api_support import add_member, build_container, seed_request, sign_in_as
 from contracts.loops import Build, Lookup, call, reply, said, use
+from contracts.sub_agents import spawn
 
 from acme.integrations.identity.absent import IdentityProviderAbsentImpl
 from acme.integrations.impl.configured import IntegrationsOverImpl
@@ -35,8 +36,10 @@ from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
 from acme.om.agents.types.run import RunEnd
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.base import new_id, utcnow
+from acme.om.budgets.types.amount import Amount
 from acme.om.context import Role, TenantContext
 from acme.om.steps.types.header import LoopOutcome, Park, ParkReason
+from acme.om.tools.native.spawn_sub_agent import SPAWN_SUB_AGENT
 from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule
 from acme.om.tools.types.tool import ToolClass
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
@@ -63,6 +66,22 @@ STEWARD = AgentKind(
 replace; `note` waits for a person's approval, and `build` is a job."""
 GUARDED = STEWARD.model_copy(update={"name": "guarded", "limits": Limits(step_guard=1)})
 """A kind whose step guard trips at its second model call in a loop."""
+HAND = STEWARD.model_copy(update={"name": "hand", "share": Amount(cost_micros=50_000_000)})
+"""A steady kind a spawn may start, so it runs under its parent's principal."""
+LEAD = STEWARD.model_copy(
+    update={
+        "name": "lead",
+        "tools": (*STEWARD.tools, SPAWN_SUB_AGENT),
+        "tree": TreeLimits(height=2, count=1),
+        "policy": PolicyLayer(
+            rules=(
+                *POLICY.rules,
+                PolicyRule(authorization_class=ToolClass.SPAWN, decision=Decision.ALLOW),
+            )
+        ),
+    }
+)
+"""A steady kind that starts one sub-agent of its own."""
 
 
 class Case:
@@ -159,7 +178,7 @@ def container(tmp_path: Path, providers: ModelProvidersInterface, build: Build) 
     return build_container(
         tmp_path,
         integrations=integrations,
-        agent_kinds=(STEWARD, GUARDED),
+        agent_kinds=(STEWARD, GUARDED, HAND, LEAD),
         tool_catalog=(Lookup(), Lookup("note", authorization_class=ToolClass.WRITE), build),
     )
 
@@ -300,6 +319,58 @@ async def test_a_principal_who_no_longer_holds_is_replaced_by_the_person_who_ass
     await case.runs_again(session_id, assigned, runs)
     responses = [s for s in await case.steps(session_id) if s["type"] == "tool_response"]
     assert [s["failure"] for s in responses] == [None], "the call ran under the new principal"
+
+
+async def test_an_assignment_on_the_root_reaches_the_sub_agent_that_held_the_same_principal(
+    case: Case,
+) -> None:
+    """A steady session Mia made starts a steady sub-agent, whose calls run
+    under her too, and asks a question. She leaves the org: the sub-agent's
+    call parks for a person, and so does the root's once the question is
+    answered. The owner assigns herself on the root, and both run under her."""
+    mia, as_mia = await member(case)
+    root_id = await case.started(as_mia, kind="lead")
+    case.say(
+        reply(spawn("the shelf", kind="hand")),
+        reply(call("ask_person", question="Which shelf?")),
+    )
+    await case.run(root_id)
+    page = await case.container.managers.agent_sessions.get_children(
+        await case.ctx(), UUID(root_id), None, 10
+    )
+    child_id = str(page.items[0].id)
+    gone = await case.client.delete(f"/v1/memberships/{mia}", headers=case.owner)
+    assert gone.status_code == 200, gone.text
+    case.say(reply(use("lookup")))
+    await case.run(child_id)
+    answered = await case.client.post(
+        f"/v1/agent-sessions/{root_id}/messages",
+        headers=created(case.owner),
+        json={"text": "The second shelf."},
+    )
+    assert answered.status_code == 201, answered.text
+    case.say(reply(use("lookup")))
+    await case.run(root_id)
+    tree = (child_id, root_id)
+    assert [(await case.parked_on(s))["unlock"] for s in tree] == ["principal"] * 2
+    runs = [case.runs_of(s) for s in tree]
+
+    assigned = await case.client.put(f"/v1/agent-sessions/{root_id}/principal", headers=case.owner)
+
+    assert assigned.status_code == 200, assigned.text
+    for session_id, before in zip(tree, runs, strict=True):
+        read = await case.client.get(f"/v1/agent-sessions/{session_id}", headers=case.owner)
+        assert (read.json()["status"], read.json()["park"]) == ("pending", None), read.text
+        assert case.runs_of(session_id) == before + 1, "the work that runs it is queued"
+    for session_id, last in zip(tree, ("Two on it.", "Three dropped."), strict=True):
+        case.say(reply(said(last)))
+        run = await case.run(session_id)
+        assert (run.end, run.outcome) == (RunEnd.ENDED, LoopOutcome.SUCCEEDED), run
+        steps = await case.steps(session_id)
+        asked = {s["id"] for s in steps if s["type"] == "tool_request" and s["tool"] == "lookup"}
+        answers = [s["failure"] for s in steps if s["responds_to"] in asked]
+        assert answers == [None], "the call ran under the new principal"
+    assert case.model.remaining == 0
 
 
 async def test_a_hand_over_is_cleared_by_its_holder_giving_it_back(case: Case) -> None:
