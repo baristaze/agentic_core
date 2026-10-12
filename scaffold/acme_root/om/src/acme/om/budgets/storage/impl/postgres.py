@@ -74,6 +74,8 @@ class BudgetStoragePostgresImpl(PgStorageBase, BudgetStorageInterface):
             .where(
                 Budgets.org_id == org_id,
                 tuple_(Budgets.scope_kind, Budgets.scope_key).in_(pairs),
+                # A literal test, so a generic plan proves the partial index.
+                Budgets.closed_at.is_(None),
             )
             .order_by(Budgets.id)
             .limit(limit)

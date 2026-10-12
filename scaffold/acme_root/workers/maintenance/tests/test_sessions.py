@@ -162,6 +162,33 @@ async def test_a_raised_budget_wakes_the_sessions_parked_on_a_budget(tmp_path: P
     assert await status_of(container, ctx, on_person.id) is SessionStatus.PARKED
 
 
+async def test_a_closed_budget_wakes_the_sessions_parked_on_it_alone(tmp_path: Path) -> None:
+    container = build_container(tmp_path)
+    ctx = await sign_in(container)
+    now = utcnow()
+    budget = await container.managers.budgets.create_budget(
+        ctx,
+        Budget(
+            id=new_id(),
+            created_at=now,
+            updated_at=now,
+            created_by=ctx.user_id,
+            updated_by=ctx.user_id,
+            scope_kind=BudgetScopeKind.TREE,
+            scope_key=str(new_id()),
+            window_kind=WindowKind.LIFE,
+            cost_micros=1_000,
+        ),
+    )
+    on_it = await parked(container, ctx, Park(reason=ParkReason.BUDGET, unlock=str(budget.id)))
+    on_another = await parked(container, ctx, Park(reason=ParkReason.BUDGET, unlock="b"))
+    await container.managers.budgets.close_budget(ctx, budget.id)
+    ran = await drain(container)
+    assert [(item.kind, item.target_id) for item in ran] == [(WorkKind.WAKE_SESSIONS, ctx.org_id)]
+    assert await status_of(container, ctx, on_it.id) is SessionStatus.PENDING
+    assert await status_of(container, ctx, on_another.id) is SessionStatus.PARKED
+
+
 def an_ask(ctx: TenantContext, resource_id: UUID) -> LeaseRequest:
     now = utcnow()
     return LeaseRequest(

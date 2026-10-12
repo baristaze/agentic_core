@@ -1,4 +1,6 @@
-from sqlalchemy import BigInteger, Index
+from datetime import datetime
+
+from sqlalchemy import BigInteger, Index, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from acme.om.storage.tables.base import Base, IdentifiableMixin, TrackableMixin
@@ -9,10 +11,18 @@ class Budgets(IdentifiableMixin, TrackableMixin, Base):
     # org_id leads both indexes, so it gets none of its own.
     __org_id_index__ = False
     __table_args__ = (
-        # The tenant's budgets by id, and the budgets of the scopes one call
-        # is charged to, which the gate reads before every call.
+        # The tenant's budgets by id, and the open budgets of the scopes one
+        # call is charged to, which the gate reads before every call. A closed
+        # budget binds nothing, so the gate's index holds none: a scope's
+        # closed run budgets pile up outside the read every call makes.
         Index("ix_budgets_org_id_id", "org_id", "id"),
-        Index("ix_budgets_org_id_scope_kind_scope_key", "org_id", "scope_kind", "scope_key"),
+        Index(
+            "ix_budgets_org_id_scope_kind_scope_key",
+            "org_id",
+            "scope_kind",
+            "scope_key",
+            postgresql_where=text("closed_at IS NULL"),
+        ),
     )
     scope_kind: Mapped[str]
     scope_key: Mapped[str]
@@ -23,3 +33,4 @@ class Budgets(IdentifiableMixin, TrackableMixin, Base):
     cost_micros: Mapped[int | None] = mapped_column(BigInteger)
     tokens: Mapped[int | None] = mapped_column(BigInteger)
     version: Mapped[int]
+    closed_at: Mapped[datetime | None]

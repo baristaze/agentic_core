@@ -5,8 +5,13 @@ project, a team, a tenant); the engine compares keys and reads nothing into
 them. The window is the scope's whole life, an hour, a day, a week, a month,
 or a span of whole seconds, each counted in UTC. The amount is reference
 cost, native tokens, or both. Each part is a column of its own, so the gate
-finds a scope's budgets by its key in the statement."""
+finds a scope's budgets by its key in the statement.
 
+A budget may be closed, once and for good: from then on it binds no call,
+and what it counted stays. So a budget made on a session's scope just before
+a run and closed when the run ends counts that run alone (ADR 1036)."""
+
+from datetime import datetime
 from enum import StrEnum
 from typing import ClassVar, Self
 
@@ -57,8 +62,9 @@ class BudgetWindow(Platform):
 
 
 class Budget(Identifiable, Trackable):
-    MANAGER_OWNED_FIELDS: ClassVar[tuple[str, ...]] = ("version",)
-    """Every change of the amount is a compare-and-set on it."""
+    MANAGER_OWNED_FIELDS: ClassVar[tuple[str, ...]] = ("version", "closed_at")
+    """Every change of the amount, and the close, is a compare-and-set on the
+    version. Only `close_budget` sets `closed_at`."""
 
     scope_kind: BudgetScopeKind
     scope_key: Stored = Field(min_length=1, max_length=MAX_KEY)
@@ -67,6 +73,7 @@ class Budget(Identifiable, Trackable):
     cost_micros: int | None = Field(default=None, ge=0)
     tokens: int | None = Field(default=None, ge=0)
     version: int = Field(default=1, ge=1)
+    closed_at: datetime | None = None  # set once by its close; a closed budget binds no call
 
     @model_validator(mode="after")
     def _a_window_and_an_amount(self) -> Self:

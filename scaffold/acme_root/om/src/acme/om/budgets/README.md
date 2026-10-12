@@ -42,6 +42,12 @@ thing [Acme is made of](../../../../README.md).
   gives its child its share. It takes only the permission to write: it
   narrows what the session may spend, and every other budget of its
   calls still binds.
+- **Close a budget.** Once and for good: from then on it binds no call,
+  and what it counted stays readable. It takes the permission that sets
+  budgets, since it lifts a cap. A budget made on a session's scope just
+  before a run, and closed when the run ends, bounds that run alone: it
+  counts from its creation, and a later run of the session meets no
+  stale cap. The sessions parked on it are woken, and ask again.
 - **Authorize a call.** The gate holds its worst case on every budget at
   once, or refuses it and holds nothing.
 - **Settle a hold.** It is released only when the provider provably did
