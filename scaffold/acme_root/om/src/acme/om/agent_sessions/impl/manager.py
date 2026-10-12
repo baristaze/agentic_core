@@ -379,7 +379,11 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
     async def restore_session(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
         ctx.require(Permission.WRITE)
         session = await self._storage.read_session(ctx.org_id, session_id)
-        if session is None or session.purge_started_at is not None:
+        if (
+            session is None
+            or session.purge_started_at is not None
+            or not await self._seen(ctx, session)
+        ):
             raise NotFound(f"agent session {session_id} not found")
         if session.deleted_at is None:
             return session

@@ -597,6 +597,23 @@ async def test_a_deleted_session_is_hidden_from_every_read_and_comes_back_whole(
     assert await kinds(managers, ctx, sid) == ["created", "deleted", "updated"]
 
 
+async def test_a_deleted_session_comes_back_only_for_one_who_sees_it(managers: Managers) -> None:
+    """A member who does not see a private session finds none to restore, as
+    they find none to read, and it stays deleted; its creator restores it."""
+    org = make_org()
+    ctx, other = context(Role.MEMBER, org), context(Role.MEMBER, org)
+    sessions = managers.agent_sessions
+    sid = (await sessions.create_session(ctx, make_session())).id
+    await sessions.delete_session(ctx, sid)
+
+    with pytest.raises(NotFound):
+        await sessions.restore_session(other, sid)
+    with pytest.raises(NotFound):
+        await sessions.get_session(ctx, sid)
+    assert (await sessions.restore_session(ctx, sid)).deleted_at is None
+    assert await kinds(managers, ctx, sid) == ["created", "deleted", "updated"]
+
+
 async def test_only_an_idle_session_is_deleted(managers: Managers) -> None:
     ctx = context(Role.MEMBER)
     sid = (await managers.agent_sessions.create_session(ctx, make_session())).id

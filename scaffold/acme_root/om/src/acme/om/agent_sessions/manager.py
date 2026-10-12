@@ -217,8 +217,9 @@ class AgentSessionsManagerInterface(ABC):
     async def restore_session(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
         """Unmarks a session marked deleted: it comes back as it was, with
         its history, and is announced. One not marked is answered as it is.
-        One the sweep has claimed for its purge is `NotFound`, as one gone
-        or another tenant's is: past its retention, the delete is final."""
+        One the sweep has claimed for its purge is `NotFound`, as one gone,
+        another tenant's, or one the person does not see is: past its
+        retention, the delete is final."""
         ...
 
     @abstractmethod
