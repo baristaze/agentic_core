@@ -89,7 +89,8 @@ of](../../../../README.md).
 - **Steer.** A message that lands while the loop runs is delivered by its
   next request. A cancel or a pause cuts in between steps, and a cancel
   or an interrupt stops a running tool.
-- **Take over.** A person, in person, takes the session's environment to
+- **Take over.** A person who takes part in the session, its steerer or
+  a participant, in person, takes the session's environment to
   work by hand: the running run is fenced, and the loop parks on a
   hand-over that names them. Only they give it back, which tells the
   model a person worked there, and their account arrives as their

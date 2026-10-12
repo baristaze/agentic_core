@@ -26,6 +26,12 @@ authority. The rest is read off the session and its
   sub-agent's calls run under the person its parent's ran under when it
   started, whoever talks to it later, so it never holds more than its
   parent. It also says who pays for it until someone speaks to it.
+- **Steerer**: the one person whose messages instruct a session: its
+  principal, its creator until they hand it to a participant. Anyone
+  else who takes part speaks as data.
+- **Visibility by mode**: a steady kind's sessions start org-wide, and a
+  delegated kind's private, since their results may hold what only one
+  person may fetch.
 - **Untrusted mark**: a flag a session carries from the first outside
   data it reads.
 
@@ -35,11 +41,18 @@ authority. The rest is read off the session and its
   nobody chooses its person: a new session runs under whoever started
   it, and a sub-agent or a handed-over session under the person the
   session it came from runs under.
-- **Take over.** A person takes over a session that is no sub-agent: its
-  calls run under them from then on.
+- **Hand off.** The steerer hands a session that is no sub-agent to a
+  participant: their messages instruct it, and its calls run under them,
+  from then on. The move is a recorded step.
+- **Take over.** For a steerer who lapsed, someone who holds
+  `manage_sessions` takes the steer, and takes part from then on, a
+  recorded step too.
 - **Speak.** A message is written in the name of whoever appends it;
-  nobody writes one in another's name.
-- **Pay.** A model call is paid by the person behind the latest message
+  nobody writes one in another's name. The steerer's is an instruction;
+  a participant's is data, labelled with its author, which wakes and
+  pays for nothing; and someone who takes no part is refused until they
+  join (ADR 1038).
+- **Pay.** A model call is paid by the steerer behind the latest message
   a person or a program sent that the model reads in it, read from
   exactly the messages the call delivers: one that lands after it was
   rendered lends it nothing. Anything else
@@ -52,8 +65,9 @@ authority. The rest is read off the session and its
   the call; a message that lands later changes nothing until it is
   read. A person who spoke through an API key acts no higher than the
   key, and only while it holds. A delegated call whose person left is
-  refused. A steady session whose person left waits until someone takes
-  it over: the assignment wakes the loop parked on them (ADR 1039).
+  refused. A steady session whose person left waits until someone who
+  holds `manage_sessions` takes it over: the assignment wakes the loop
+  parked on them (ADR 1039).
 - **Mark.** The first outside data a session reads marks it, for good.
   Its sub-agents and the work it hands over carry the mark too, and hold
   private data where it holds any.
@@ -65,9 +79,9 @@ authority. The rest is read off the session and its
 
 - **Actor, principal, and spender are three answers.** No field stands
   for two of them.
-- **Only a principal instructs.** A person's message, a parent agent's
-  message to its own sub-agent, and the standing text a session's maker
-  pins on it through the inbox are instructions, and so are the engine's
+- **Only a principal instructs.** The steerer's message, a parent
+  agent's message to its own sub-agent, and the standing text the
+  steerer pins on it through the inbox are instructions, and so are the engine's
   own notices, such as a nudge, which only the loop writes. Everything
   else is data: read, quoted, and never obeyed.
 - **The person who asked pays.**

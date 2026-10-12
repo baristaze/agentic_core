@@ -6,7 +6,7 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
 ## What it holds
 
 - **Agent session**: one conversation with an agent: who started it,
-  its title, the people it is shared with, its [agent
+  its title, the people who take part in it, who sees it, its [agent
   kind](../agents/README.md) and the tools it may call, the session that
   spawned it or handed it the work, the root of its tree, and a status it
   keeps up to date from its [steps](../steps/README.md). The steps are
@@ -26,13 +26,26 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
   loop, park it for a person; a streak of tool errors or of identical
   calls, and too many turns that neither go on nor finish, end it
   `inconclusive`; a run that has run long hands its loop to the next run.
+- **Visibility**: org-wide, seen by every member of the org, or
+  private, seen by its creator and its participants. A steady kind's
+  sessions start org-wide and a delegated kind's private
+  ([attribution](../attribution/README.md)).
+- **Participant**: a member who takes part in a session. They see it
+  whatever its visibility, and speak in it as data while someone else
+  steers it.
 - **Archived**: a flag a person sets on an idle session.
 - **Deleted**: a mark a person sets on an idle session, which hides it
   and can be undone until its retention ends.
 
 ## What can happen
 
-- **Start** a session. It begins idle, with no history.
+- **Start** a session. It begins idle, with no history, seen as its
+  kind's mode says.
+- **Join.** A member joins a session they see, and becomes a
+  participant; its creator adds anyone. A sub-agent is joined through
+  its root.
+- **Switch who sees it.** Its creator makes it org-wide or private, a
+  recorded step.
 - **Receive.** A person's message or control lands in the history at
   once, whether or not the agent is working, and the status follows it.
 - **Wake.** An input that wakes an idle session makes it pending, and a
@@ -54,7 +67,8 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
   waits for whatever wakes the session next.
 - **Archive.** An archived session keeps what arrives and wakes for
   nothing, until a person's message brings it back.
-- **List** the sessions in a status, a page at a time.
+- **List** the root sessions a person made or takes part in, or every
+  one they see, in a status, a page at a time.
 - **Delete.** A deleted session is hidden from every read and list. Its
   history and everything about it stay as they were. A session with a
   sub-agent at work below it is not deleted, and the refusal names the
@@ -92,6 +106,13 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
   cannot choose otherwise.
 - **Every session belongs to one org.** Another org's session answers as
   one that never existed, and a session's parent is in its own org.
+- **A session opens to whom it is visible.** Every operation that names
+  a session, its history, and its artifacts reads it as the person sees
+  it: an org-wide one by every member, a private one by its creator and
+  its participants, and every one by `manage_sessions`, an admin's, for
+  audit. To anyone else it answers as one that never existed. A sub-agent
+  is seen as its root is, and a session made from a private one is
+  private (ADR 1038).
 - **A deleted session answers as one that never existed,** until it is
   restored. Its kind alone is still read, for the sub-agents below it,
   whose calls are decided under it.

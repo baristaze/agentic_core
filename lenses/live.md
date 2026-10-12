@@ -147,10 +147,11 @@ child running; a control applied with no step.
 
 ## LIV-06 Taking over parks the agent
 
-**Principle.** When a person takes over the agent's environment to work
-by hand, the agent stands down: its loop parks on a hand-over, which
-names them as its holder. When they give it back, their summary arrives
-as a message, and an `environment_changed` step says that a person acted
+**Principle.** When a person who takes part in the session, its steerer
+or a participant, takes over the agent's environment to work by hand,
+the agent stands down: its loop parks on a hand-over, which names them
+as its holder. When they give it back, their summary arrives as their
+message, and an `environment_changed` step says that a person acted
 there and what they did. Only the holder gives it back, or unlocks it,
 in person; a cancel still ends the loop.
 
@@ -161,8 +162,9 @@ hand-back writes; who may clear the hand-over, by each control, and in
 history order.
 
 **Violation.** A loop that keeps running tools while a person holds the
-environment; a hand-back with no `environment_changed` step, so the
-model acts on a stale view; a hand-over that another member, a program
+environment; a take-over by someone who takes no part in the session;
+a hand-back with no `environment_changed` step, so the model acts on a
+stale view; a hand-over that another member, a program
 on an API key, or the engine's own unlock clears, so the environment is
 taken from the person who holds it.
 

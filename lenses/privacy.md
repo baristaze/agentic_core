@@ -16,21 +16,26 @@ the shape a span carries to `trust`.
 session's key, by envelope: a data key per session, wrapped by a key the
 tenant's key service holds. A key per tenant or per user is too coarse;
 a session is the unit people share, export, and delete. In memory,
-content is plain. A decorator over step storage, behind the same
-interface, seals content on its way in and opens it on its way out, and
-the rest of the engine never sees it. A database reader sees
-ciphertext. Opening content takes the session's key, which takes a
-permission of its own.
+content is plain. A decorator over step storage seals content on its
+way in and opens it on its way out, unseen by the rest of the engine. A
+database reader sees ciphertext. Opening content takes the session's
+key, which opens to whom the session is visible: its org when it is
+org-wide, its creator and participants when private, and
+`manage_sessions`, an admin's permission of its own, for audit.
 
-**Source.** Privacy, A Key per Session.
+**Source.** Privacy, A Key per Session; Identity, Trust, and
+Attribution, Who Is Who.
 
 **Look for.** The sealing decorator and where it is wired; the key a
-step is sealed under; the permission that opens a session's key.
+step is sealed under; the check that opens a session's history and its
+artifacts to whom it is visible, and the permission that opens every
+one.
 
 **Violation.** Content written in the clear, or sealed under a key per
 tenant; sealing done in the engine's own code instead of a decorator
-over step storage; a read that opens content without the key's
-permission.
+over step storage; a read of a session's history or artifacts that does
+not ask whom the session is visible to, or serves a private one to a
+member who is neither its creator nor a participant.
 
 **Severity.** medium
 
