@@ -94,6 +94,7 @@ These are the invariants. Each links the section that states it.
 - [The Object Model](#the-object-model)
 - [Deviations from the Guideline](#deviations-from-the-guideline)
 - [The Repository](#the-repository)
+- [Always in a Known State](#always-in-a-known-state)
 - [What This Spec Does Not Cover](#what-this-spec-does-not-cover)
 - [Next: The Platform](#next-the-platform)
 
@@ -1905,6 +1906,54 @@ the guideline's at that pinned release. A platform moves by
 `agentic-upgrade-scaffold`, which runs the guideline's
 `arch-upgrade-scaffold` from the source its base records, the engine, so
 one move upgrades both foundations.
+
+## Always in a Known State
+
+Never losing track of where a session stands is what the core rules add
+up to. Whatever happens, a failure, a crash, or a wait, the session is
+left in a state the record names, that still keeps every rule, and that
+has a way out.
+
+- **Named.** A session's status is read from its steps, and every value
+  it takes is in the diagram of [A Session Never
+  Ends](#a-session-never-ends). A loop ends in one of five outcomes; until then it runs, waits for its
+  next run, or parks. Every provider error has a kind, every tool
+  failure a class, and every park a reason, so nothing the world does
+  falls between them.
+- **Still valid.** A run writes its steps once, in order, only while it
+  holds the writer epoch; inputs and controls arrive through the inbox. Nothing spends without the gate, no tool runs
+  without the policy, and no workspace is weaker than its spec. So a
+  failure leaves the record keeping every rule, as a success does.
+- **Recoverable.** Every step is durable before the engine acts on it.
+  A crash leaves at most one unanswered request per call, and the next
+  run settles each by its effect ([Durable by
+  Default](#durable-by-default)).
+- **A way out.** Every park names the action that clears it, and a
+  principal's cancel ends any loop, parked or running. A wait on
+  something that cannot come is refused before it starts, such as a
+  parent's wait with no child running.
+
+What the engine cannot know, it records. An `unsafe` tool call lost in
+a crash may or may not have acted. The engine never guesses: it asks
+the transport, and with no answer it records `interrupted`, outcome
+unknown, and the model verifies before it retries. A model call lost
+the same way is usually billed, so its hold settles in full. An unknown
+outcome is still a known state: the record says what is open and who
+resolves it. What the engine never allows is a call it does not know it
+made. Every model call and every tool call is a request step first, so
+no call reaches the world unrecorded.
+
+Knowing where it stands is not the same as moving on, and the engine
+promises only the first. Whether a park clears depends on its unlock: a
+provider recovers, a window resets, a person answers. What the engine
+promises is that no wait is silent. Each names what ends it, a park
+only a person can clear carries no retry time, and a loop that cannot
+progress ends `inconclusive` instead of spinning. Keeping a run going,
+its lease and the sweep that requeues a lost one, is the adopter's.
+
+> **Principle:** The engine always knows where a session stands. Every
+> state it can reach has a name and a way out, and an outcome it cannot
+> know is recorded as unknown, never left out of the record.
 
 ## What This Spec Does Not Cover
 
