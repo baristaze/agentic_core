@@ -20,9 +20,8 @@ content is plain. A decorator over step storage seals content on its
 way in and opens it on its way out, unseen by the rest of the engine. A
 database reader sees ciphertext. Opening content takes the session's
 key, which opens to whom the session is visible: its org when it is
-org-wide, its creator and the participants its creator adds when
-private, and `manage_sessions`, an admin's permission of its own, for
-audit. An audit read is not a membership.
+org-wide, its creator and participants when private, and
+`manage_sessions`, an admin's permission of its own, for audit.
 
 **Source.** Privacy, A Key per Session; Identity, Trust, and
 Attribution, Who Is Who.
