@@ -57,8 +57,16 @@ class AgentSessionsServiceInterface(ABC):
     async def add_participant(
         self, ctx: TenantContext, session_id: UUID, user_id: UUID
     ) -> AgentSessionView:
-        """`user_id` takes part in the session: the caller joining one they
-        see, or anyone its creator adds."""
+        """`user_id` takes part in the session: the caller joining an
+        org-wide one, or anyone its creator adds."""
+        ...
+
+    @abstractmethod
+    async def remove_participant(
+        self, ctx: TenantContext, session_id: UUID, user_id: UUID
+    ) -> AgentSessionView:
+        """`user_id` takes no part in the session: its creator removing
+        them, or they leaving on their own, never while they steer it."""
         ...
 
     @abstractmethod

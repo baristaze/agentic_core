@@ -111,13 +111,32 @@ class AgentSessionsManagerInterface(ABC):
     async def add_participant(
         self, ctx: TenantContext, session_id: UUID, user_id: UUID
     ) -> AgentSession:
-        """`user_id` takes part in the session from here: the caller joins a
-        session they see, any member an org-wide one, and its creator adds
-        another; nobody else adds another (`NotAuthorized`). One who is no
-        member of the org sees nothing by it. A participant sees it whatever
-        its visibility, and speaks in it as data while another steers it. A
-        sub-agent is joined through its root (`ValidationFailed`). One who
-        takes part already answers the session as it is."""
+        """`user_id` takes part in the session from here. Any member joins
+        an org-wide session, and its creator adds anyone. A private one's
+        participants are the ones its creator adds: a self-join is refused
+        (`NotAuthorized`), a holder of `manage_sessions` included, since an
+        audit read is not a membership. Its steerer alone joins it on their
+        own, as one who takes a lapsed steer does (`attribution`). Nobody
+        else adds another (`NotAuthorized`). One who is no member of the org
+        sees nothing by it. A participant sees it whatever its visibility,
+        and speaks in it as data while another steers it. A sub-agent is
+        joined through its root (`ValidationFailed`). One who takes part
+        already answers the session as it is."""
+        ...
+
+    @abstractmethod
+    async def remove_participant(
+        self, ctx: TenantContext, session_id: UUID, user_id: UUID
+    ) -> AgentSession:
+        """`user_id` takes no part in the session from here: its creator
+        removes any participant, and a participant leaves on their own;
+        nobody else removes one (`NotAuthorized`). The steerer is not
+        removed while they steer (`Conflict`): the steer is handed on first,
+        so a session never has a steerer who takes no part in it. Removed
+        from a private session, a person who holds no `manage_sessions` no
+        longer sees it. A sub-agent's participants are its root's
+        (`ValidationFailed`). One who takes no part answers the session as
+        it is."""
         ...
 
     @abstractmethod

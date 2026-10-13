@@ -1230,20 +1230,26 @@ no axis between the two. An org-wide session is seen by every member of
 its org, and any member may join it, since a session may be revived
 months later; joining makes them a **participant**. A private session is
 seen by its creator, the participants its creator adds, and
-`manage_sessions`, an admin's permission, for audit. The default follows
-the kind's authority mode: a steady kind's sessions are org-wide, and a
-delegated kind's private, since its tools run with one person's own
-permissions and its results may hold what other members cannot fetch.
-Its creator switches it either way, and the switch is a recorded step. A
-sub-agent is seen as its root is.
+`manage_sessions`, an admin's permission, for audit. An audit read is
+not a membership: a member joins only an org-wide session on their own,
+and a private one's participants are its creator's to add. Its creator
+removes a participant, and a participant leaves on their own. Removed
+from a private session, a person without `manage_sessions` no longer
+sees it. The default follows the kind's authority mode: a steady kind's
+sessions are org-wide, and a delegated kind's private, since its tools
+run with one person's own permissions and its results may hold what
+other members cannot fetch. Its creator switches it either way, and the
+switch is a recorded step. A sub-agent is seen as its root is.
 
 One **steerer** at a time instructs a session: its principal, its
 creator until a hand-off. The steerer hands it to a participant
 explicitly, and the hand-off is a recorded step. When the steerer lapses,
 gone from the org or in a role too low, someone who holds
 `manage_sessions` takes it over through the route that assigns a
-principal, and takes part from then on. A participant who does not steer
-speaks in the session as data ([Only a Principal
+principal, and takes part from then on: the one way into a private
+session its creator did not give. The steerer is removed only once they
+hand the steer on, so a session's steerer always sees it. A participant
+who does not steer speaks in the session as data ([Only a Principal
 Instructs](#only-a-principal-instructs)).
 
 *Example:* the teammate joins the org-wide investigation and suggests a

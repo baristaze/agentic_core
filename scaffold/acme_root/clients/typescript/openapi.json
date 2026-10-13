@@ -7262,8 +7262,108 @@
       }
     },
     "/v1/agent-sessions/{session_id}/participants/{user_id}": {
+      "delete": {
+        "description": "`user_id` takes no part in the session: its creator removes anyone,\nand a participant leaves on their own. 403 for anyone else, 409 for\nits steerer until the steer is handed on.",
+        "operationId": "remove_participant_v1_agent_sessions__session_id__participants__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Participant",
+        "tags": [
+          "agent_sessions"
+        ]
+      },
       "put": {
-        "description": "`user_id` takes part in the session: the caller joins one they see,\nand its creator adds anyone. 403 for anyone else.",
+        "description": "`user_id` takes part in the session: any member joins an org-wide\none, and its creator adds anyone. A private one is joined only by whom\nits creator adds and by its steerer: 403 for any other self-join,\n`manage_sessions` included, and for anyone else's add.",
         "operationId": "add_participant_v1_agent_sessions__session_id__participants__user_id__put",
         "parameters": [
           {

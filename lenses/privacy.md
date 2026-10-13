@@ -20,8 +20,9 @@ content is plain. A decorator over step storage seals content on its
 way in and opens it on its way out, unseen by the rest of the engine. A
 database reader sees ciphertext. Opening content takes the session's
 key, which opens to whom the session is visible: its org when it is
-org-wide, its creator and participants when private, and
-`manage_sessions`, an admin's permission of its own, for audit.
+org-wide, its creator and the participants its creator adds when
+private, and `manage_sessions`, an admin's permission of its own, for
+audit. An audit read is not a membership.
 
 **Source.** Privacy, A Key per Session; Identity, Trust, and
 Attribution, Who Is Who.
@@ -29,13 +30,16 @@ Attribution, Who Is Who.
 **Look for.** The sealing decorator and where it is wired; the key a
 step is sealed under; the check that opens a session's history and its
 artifacts to whom it is visible, and the permission that opens every
-one.
+one; the checks that add and remove a participant.
 
 **Violation.** Content written in the clear, or sealed under a key per
 tenant; sealing done in the engine's own code instead of a decorator
 over step storage; a read of a session's history or artifacts that does
 not ask whom the session is visible to, or serves a private one to a
-member who is neither its creator nor a participant.
+member who is neither its creator nor a participant; a member who makes
+themselves a participant of a private session, `manage_sessions`
+included, other than by taking a lapsed steer; a participant no route
+removes.
 
 **Severity.** medium
 
