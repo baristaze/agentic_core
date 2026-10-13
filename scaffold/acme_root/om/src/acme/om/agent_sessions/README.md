@@ -53,7 +53,7 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
   Removed from a private session, a person without `manage_sessions` no
   longer sees it.
 - **Switch who sees it.** Its creator makes it org-wide or private, a
-  recorded step.
+  recorded step. A switch to private keeps who takes part.
 - **Receive.** A person's message or control lands in the history at
   once, whether or not the agent is working, and the status follows it.
 - **Wake.** An input that wakes an idle session makes it pending, and a

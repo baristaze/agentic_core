@@ -145,9 +145,10 @@ class AgentSessionsManagerInterface(ABC):
     ) -> AgentSession:
         """Its creator switches who sees the session, org-wide or private,
         recorded as a `switched` step through the inbox, which the status's
-        projection folds; anyone else is `NotAuthorized`. A sub-agent is seen
-        as its root is (`ValidationFailed`). A session that holds
-        `visibility` already is answered as it is."""
+        projection folds; anyone else is `NotAuthorized`. Who takes part
+        stays, for its creator to remove. A sub-agent is seen as its root is
+        (`ValidationFailed`). A session that holds `visibility` already is
+        answered as it is."""
         ...
 
     @abstractmethod

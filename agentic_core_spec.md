@@ -1239,7 +1239,9 @@ sees it. The default follows the kind's authority mode: a steady kind's
 sessions are org-wide, and a delegated kind's private, since its tools
 run with one person's own permissions and its results may hold what
 other members cannot fetch. Its creator switches it either way, and the
-switch is a recorded step. A sub-agent is seen as its root is.
+switch is a recorded step; a switch to private keeps who takes part, and
+its creator removes whom they choose. A sub-agent is seen as its root
+is.
 
 One **steerer** at a time instructs a session: its principal, its
 creator until a hand-off. The steerer hands it to a participant
