@@ -178,6 +178,11 @@ class AgentSessionsServiceImpl(AgentSessionsServiceInterface):
     ) -> AgentSessionView:
         return session_view(await self._sessions.add_participant(ctx, session_id, user_id))
 
+    async def remove_participant(
+        self, ctx: TenantContext, session_id: UUID, user_id: UUID
+    ) -> AgentSessionView:
+        return session_view(await self._sessions.remove_participant(ctx, session_id, user_id))
+
     async def switch_visibility(
         self, ctx: TenantContext, session_id: UUID, body: VisibilityRequest
     ) -> AgentSessionView:

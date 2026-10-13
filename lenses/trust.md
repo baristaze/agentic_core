@@ -111,7 +111,8 @@ re-check run under the system's context; a steady session that keeps
 running tools under a principal that lost its access; an assignment
 that leaves the loop parked on the principal it replaced; a steer that
 moves unrecorded, by anyone but its steerer, or to someone who takes no
-part in the session.
+part in the session; a steerer removed from the session while they steer
+it.
 
 **Severity.** medium
 

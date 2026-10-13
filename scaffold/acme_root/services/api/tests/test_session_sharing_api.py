@@ -62,17 +62,17 @@ class Org:
             self.ids[name] = (await add_member(self.container, org_id, email, role)).id
             self.headers[name] = await sign_in_as(self.client, email, org_id)
 
-    async def start(self, kind: str) -> str:
+    async def start(self, kind: str, by: str = "ann") -> str:
         made = await self.client.post(
             "/v1/agent-sessions",
-            headers=created(self.headers["ann"]),
+            headers=created(self.headers[by]),
             json={"kind": kind, "title": "the dropped order"},
         )
         assert made.status_code == 201, made.text
         session_id = made.json()["id"]
         said = await self.client.post(
             f"/v1/agent-sessions/{session_id}/messages",
-            headers=created(self.headers["ann"]),
+            headers=created(self.headers[by]),
             json={"text": "Find out why an order drops."},
         )
         assert said.status_code == 201, said.text
@@ -105,6 +105,17 @@ class Org:
 
     async def put(self, who: str, path: str, body: dict[str, Any] | None = None) -> httpx.Response:
         return await self.client.put(path, headers=self.headers[who], json=body)
+
+    async def delete(self, who: str, path: str) -> httpx.Response:
+        return await self.client.delete(path, headers=self.headers[who])
+
+    async def participants(self, session_id: str) -> list[str]:
+        """Who takes part in the session, as its creator reads it."""
+        read = await self.client.get(
+            f"/v1/agent-sessions/{session_id}", headers=self.headers["ann"]
+        )
+        assert read.status_code == 200, read.text
+        return read.json()["participants"]
 
     async def listed(self, who: str, among: str) -> list[str]:
         page = await self.client.get(
@@ -256,3 +267,83 @@ async def test_an_admin_takes_no_steer_from_a_steerer_who_still_holds_it(org: Or
     assert (hers.status_code, hers.json()["participant"]) == (201, False), "hers instructs"
     moves = [s["steerer"] for s in await org.steps(sid) if s["type"] == "switched"]
     assert moves == [mia]
+
+
+async def test_a_private_sessions_participants_are_the_ones_its_creator_adds(org: Org) -> None:
+    """An admin sees a member's private session for audit, and an audit read
+    is not a membership: the admin's self-join is refused and adds no one.
+    The creator adds the admin, who takes part from then on, and the
+    creator's removal through the participants route takes them out: the
+    session leaves the admin's own list. A member removed from it, who
+    holds no `manage_sessions`, no longer sees it."""
+    sid = await org.start("assistant", by="mia")
+    path = f"/v1/agent-sessions/{sid}/participants"
+    ada, noa = str(org.ids["ada"]), str(org.ids["noa"])
+
+    joined = await org.put("ada", f"{path}/{ada}")
+    assert joined.status_code == 403, joined.text
+    assert await org.participants(sid) == [], "a refused self-join adds no one"
+    assert await org.listed("ada", "mine") == []
+
+    added = await org.put("mia", f"{path}/{ada}")
+    assert (added.status_code, added.json()["participants"]) == (200, [ada])
+    assert await org.listed("ada", "mine") == [sid]
+    removed = await org.delete("mia", f"{path}/{ada}")
+    assert (removed.status_code, removed.json()["participants"]) == (200, [])
+    assert await org.listed("ada", "mine") == [], "the session leaves the admin's own list"
+
+    await org.put("mia", f"{path}/{noa}")
+    seen = await org.client.get(f"/v1/agent-sessions/{sid}", headers=org.headers["noa"])
+    await org.delete("mia", f"{path}/{noa}")
+    gone = await org.client.get(f"/v1/agent-sessions/{sid}", headers=org.headers["noa"])
+    assert (seen.status_code, gone.status_code) == (200, 404)
+
+
+async def test_a_participant_leaves_on_their_own_and_a_steerer_once_the_steer_is_handed_on(
+    org: Org,
+) -> None:
+    """Any member joins an org-wide session. A participant leaves on their
+    own, and nobody but its creator removes another, an admin included. The
+    steerer is not removed while they steer: once the steer is handed back,
+    they leave, and the session is never left with a steerer who takes no
+    part in it."""
+    sid = await org.start("steward")
+    path = f"/v1/agent-sessions/{sid}"
+    mia, noa, ann = str(org.ids["mia"]), str(org.ids["noa"]), str(org.ids["ann"])
+    await org.put("mia", f"{path}/participants/{mia}")
+    await org.put("noa", f"{path}/participants/{noa}")
+
+    by_a_member = await org.delete("mia", f"{path}/participants/{noa}")
+    by_an_admin = await org.delete("ada", f"{path}/participants/{noa}")
+    left = await org.delete("noa", f"{path}/participants/{noa}")
+    assert (by_a_member.status_code, by_an_admin.status_code) == (403, 403)
+    assert (left.status_code, left.json()["participants"]) == (200, [mia])
+
+    await org.put("ann", f"{path}/principal", {"steerer": mia})
+    while_steering = await org.delete("mia", f"{path}/participants/{mia}")
+    by_the_creator = await org.delete("ann", f"{path}/participants/{mia}")
+    assert (while_steering.status_code, by_the_creator.status_code) == (409, 409)
+    assert await org.participants(sid) == [mia]
+
+    handed_back = await org.put("mia", f"{path}/principal", {"steerer": ann})
+    after = await org.delete("mia", f"{path}/participants/{mia}")
+    assert (handed_back.status_code, handed_back.json()["steerer"]) == (200, ann)
+    assert (after.status_code, after.json()["participants"]) == (200, [])
+
+
+async def test_an_admin_who_takes_a_lapsed_private_steer_takes_part_in_it(org: Org) -> None:
+    """A private session's steerer leaves the org, and an admin takes the
+    steer through the route that assigns a principal: the admin joins it as
+    its steerer, the one self-join a private session takes besides its
+    creator's adds."""
+    sid = await org.start("assistant", by="mia")
+    path = f"/v1/agent-sessions/{sid}"
+    left = await org.client.delete(f"/v1/memberships/{org.ids['mia']}", headers=org.headers["ann"])
+    assert left.status_code == 200, left.text
+
+    taken = await org.put("ada", f"{path}/principal")
+
+    ada = str(org.ids["ada"])
+    assert (taken.status_code, taken.json()["steerer"]) == (200, ada), taken.text
+    assert taken.json()["participants"] == [ada]
+    assert await org.listed("ada", "mine") == [sid]

@@ -102,21 +102,23 @@ app, and `main.py` is the `acme-api` command: `serve`, `migrate`,
   ADRs 0086, 0094, and 0098)
 - **Agent sessions.** Start a session on an agent kind the product runs,
   under an Idempotency-Key; list the ones a person made or takes part
-  in, or every one they see; read it; join it, or as its creator add
-  someone; switch who sees it, org-wide or private, as its creator; hand
-  its steer to a participant, or take a lapsed one with
-  `manage_sessions`; send it a message or a control (pause, resume,
-  cancel, an interrupt of the call it names, compact, unlock), each kept
-  when the answer comes and kept once under a retried key; decide a tool
-  call its loop waits on; clear the park a person clears (move the
-  tree's deadline, take its steer, take its environment over and give it
-  back in person, complete a job it waits on); and read its history and
-  its artifacts a page at a time. A message, or a park cleared, asks for
-  a run of its loop, which the session runner claims; the API never runs
-  a loop. Only the steerer's message instructs; a participant's is data
-  and asks for no run. A hand-over is its holder's: no one else unlocks
-  it or gives it back. A session the caller does not see, another org's
-  included, answers as one that never existed. (`/v1/agent-sessions`,
+  in, or every one they see; read it; join an org-wide one, or as its
+  creator add someone, the one way into a private one; leave it, or as
+  its creator remove someone, never its steerer; switch who sees it,
+  org-wide or private, as its creator; hand its steer to a participant,
+  or take a lapsed one with `manage_sessions`; send it a message or a
+  control (pause, resume, cancel, an interrupt of the call it names,
+  compact, unlock), each kept when the answer comes and kept once under
+  a retried key; decide a tool call its loop waits on; clear the park a
+  person clears (move the tree's deadline, take its steer, take its
+  environment over and give it back in person, complete a job it waits
+  on); and read its history and its artifacts a page at a time. A
+  message, or a park cleared, asks for a run of its loop, which the
+  session runner claims; the API never runs a loop. Only the steerer's
+  message instructs; a participant's is data and asks for no run. A
+  hand-over is its holder's: no one else unlocks it or gives it back. A
+  session the caller does not see, another org's included, answers as
+  one that never existed. (`/v1/agent-sessions`,
   `/v1/agent-sessions/{session_id}`, `.../participants/{user_id}`,
   `.../visibility`, `.../messages`, `.../controls`,
   `.../calls/{request_seq}/decision`, `.../deadline`, `.../principal`,

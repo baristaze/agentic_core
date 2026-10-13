@@ -27,8 +27,9 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
   calls, and too many turns that neither go on nor finish, end it
   `inconclusive`; a run that has run long hands its loop to the next run.
 - **Visibility**: org-wide, seen by every member of the org, or
-  private, seen by its creator and its participants. A steady kind's
-  sessions start org-wide and a delegated kind's private
+  private, seen by its creator and the participants its creator adds,
+  and by `manage_sessions` for audit. A steady kind's sessions start
+  org-wide and a delegated kind's private
   ([attribution](../attribution/README.md)).
 - **Participant**: a member who takes part in a session. They see it
   whatever its visibility, and speak in it as data while someone else
@@ -41,11 +42,18 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
 
 - **Start** a session. It begins idle, with no history, seen as its
   kind's mode says.
-- **Join.** A member joins a session they see, and becomes a
-  participant; its creator adds anyone. A sub-agent is joined through
-  its root.
+- **Join.** A member joins an org-wide session, and becomes a
+  participant; its creator adds anyone. A private session's participants
+  are the ones its creator adds: an audit read is not a membership, so
+  a holder of `manage_sessions` who joins one on their own is refused.
+  Its steerer alone joins it on their own, as one who takes a lapsed
+  steer does. A sub-agent is joined through its root.
+- **Leave.** Its creator removes a participant, and a participant
+  leaves on their own. The steerer stays until they hand the steer on.
+  Removed from a private session, a person without `manage_sessions` no
+  longer sees it.
 - **Switch who sees it.** Its creator makes it org-wide or private, a
-  recorded step.
+  recorded step. A switch to private keeps who takes part.
 - **Receive.** A person's message or control lands in the history at
   once, whether or not the agent is working, and the status follows it.
 - **Wake.** An input that wakes an idle session makes it pending, and a

@@ -167,7 +167,6 @@ class AttributionManagerImpl(AttributionManagerInterface):
                 ctx.require(Permission.MANAGE_SESSIONS)
                 if await self._live(ctx, authority.principal) is not None:
                     raise NotAuthorized(f"the steerer of agent session {session_id} still holds it")
-                await self._sessions.add_participant(ctx, session_id, ctx.user_id)
         else:
             if not steering:
                 raise NotAuthorized(f"only the steerer of agent session {session_id} hands it over")
@@ -193,6 +192,12 @@ class AttributionManagerImpl(AttributionManagerInterface):
             step_id = derived_id(session_id, authority.updated_at, "steer")
             moved = steer_step(step_id, authority.updated_at, session_id, ctx, authority.principal)
             await self._sessions.receive(ctx, session_id, [moved])
+        took = principal.id == ctx.user_id
+        if took and ctx.user_id != session.created_by and ctx.user_id not in session.participants:
+            # Who took the steer joins once the move is recorded: a private
+            # session is joined by its steerer, never by an audit read, and
+            # a retry after a lost write joins them then.
+            await self._sessions.add_participant(ctx, session_id, ctx.user_id)
         # The assignment is the principal park's unlock: a loop of the tree
         # that waits on it goes on, and its gates ask the new principal
         # again. A sub-agent marked deleted waits on nothing.

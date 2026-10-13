@@ -70,7 +70,8 @@ class AgentSession(Identifiable, Trackable, SoftDeletable):
     title: Stored = Field(min_length=1, max_length=200)
     # The members who take part in it: each sees it whatever its
     # visibility, and speaks in it as data while another steers it. One
-    # joins an org-wide session, and its creator adds them to a private one.
+    # joins an org-wide session, and its creator adds them to a private one;
+    # its creator removes one, and one leaves, never while they steer it.
     participants: tuple[UUID, ...] = ()
     # Who sees it and opens its content: its kind's mode sets it when it is
     # made, and its creator switches it, a `switched` step each time. A

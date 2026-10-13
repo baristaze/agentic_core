@@ -31,6 +31,7 @@ from acme.om.attribution.types.principal import AgentRef
 from acme.om.base import EMPTY_UUID, Platform, new_id, utcnow
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import (
+    Conflict,
     NotAuthorized,
     NotFound,
     PreconditionFailed,
@@ -197,22 +198,57 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
             raise ValidationFailed(f"agent session {session_id} is joined through its root")
         if user_id in session.participants:
             return session
-        if user_id != ctx.user_id and ctx.user_id != session.created_by:
-            raise NotAuthorized(f"only the creator of agent session {session_id} adds others")
+        if ctx.user_id != session.created_by:
+            if user_id != ctx.user_id:
+                raise NotAuthorized(f"only the creator of agent session {session_id} adds others")
+            # An audit read is not a membership: a private session is joined
+            # only by whom its creator adds, and by its steerer, who took a
+            # lapsed steer and takes part from then on.
+            if session.visibility is not Visibility.ORG_WIDE and ctx.user_id != session.steerer:
+                raise NotAuthorized(
+                    f"agent session {session_id} is private: its creator adds who takes part"
+                )
+        return await self._write_participants(ctx, session, (*session.participants, user_id))
+
+    async def remove_participant(
+        self, ctx: TenantContext, session_id: UUID, user_id: UUID
+    ) -> AgentSession:
+        ctx.require(Permission.WRITE)
+        session = await self._read(ctx, session_id)
+        if session.root_id != session.id:
+            raise ValidationFailed(f"agent session {session_id} is left through its root")
+        if ctx.user_id not in (session.created_by, user_id):
+            raise NotAuthorized(f"only the creator of agent session {session_id} removes others")
+        if user_id not in session.participants:
+            return session
+        # Read off the cache the steer's recorded move projects; the write is
+        # conditioned on the version read, so a move recorded since refuses it.
+        if user_id == session.steerer:
+            raise Conflict(
+                f"user {user_id} steers agent session {session_id}: hand the steer on first"
+            )
+        kept = tuple(each for each in session.participants if each != user_id)
+        return await self._write_participants(ctx, session, kept)
+
+    async def _write_participants(
+        self, ctx: TenantContext, session: AgentSession, participants: tuple[UUID, ...]
+    ) -> AgentSession:
+        """The session with `participants`, written conditioned on the
+        version read and announced."""
         now = self._clock()
-        joined = AgentSession.model_validate(
+        written = AgentSession.model_validate(
             {
                 **session.model_dump(),
-                "participants": (*session.participants, user_id),
+                "participants": participants,
                 "version": session.version + 1,
                 "updated_at": now,
                 "updated_by": ctx.user_id,
             }
         )
-        rows = (versioned_row(ctx, UPDATED, joined.id, joined.version),)
-        await self._storage.write_session(ctx.org_id, joined, session.version, rows)
+        rows = (versioned_row(ctx, UPDATED, written.id, written.version),)
+        await self._storage.write_session(ctx.org_id, written, session.version, rows)
         await self._relay_all(ctx, rows)
-        return joined
+        return written
 
     async def switch_visibility(
         self, ctx: TenantContext, session_id: UUID, visibility: Visibility

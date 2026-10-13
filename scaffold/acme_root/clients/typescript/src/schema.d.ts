@@ -506,12 +506,20 @@ export interface paths {
         get?: never;
         /**
          * Add Participant
-         * @description `user_id` takes part in the session: the caller joins one they see,
-         *     and its creator adds anyone. 403 for anyone else.
+         * @description `user_id` takes part in the session: any member joins an org-wide
+         *     one, and its creator adds anyone. A private one is joined only by whom
+         *     its creator adds and by its steerer: 403 for any other self-join,
+         *     `manage_sessions` included, and for anyone else's add.
          */
         put: operations["add_participant_v1_agent_sessions__session_id__participants__user_id__put"];
         post?: never;
-        delete?: never;
+        /**
+         * Remove Participant
+         * @description `user_id` takes no part in the session: its creator removes anyone,
+         *     and a participant leaves on their own. 403 for anyone else, 409 for
+         *     its steerer until the steer is handed on.
+         */
+        delete: operations["remove_participant_v1_agent_sessions__session_id__participants__user_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -4554,6 +4562,42 @@ export interface operations {
         };
     };
     add_participant_v1_agent_sessions__session_id__participants__user_id__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "x-app"?: string | null;
+                "x-app-version"?: string | null;
+            };
+            path: {
+                session_id: string;
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentSessionView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_participant_v1_agent_sessions__session_id__participants__user_id__delete: {
         parameters: {
             query?: never;
             header?: {
