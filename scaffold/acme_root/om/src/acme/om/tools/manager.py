@@ -30,7 +30,7 @@ from acme.om.steps.types.step import Step
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.tool import TakenSnapshot
 from acme.om.tools.types.call import Gate, JobHandle, JobNotStarted
-from acme.om.tools.types.policy import PolicyLayer, ToolPolicy
+from acme.om.tools.types.policy import ToolPolicy, ToolPolicyLayer
 
 KeyedHash = Callable[[TenantContext, UUID, bytes], Awaitable[str]]
 """A hash of a value keyed by its session: the privacy namespace's, which the
@@ -149,14 +149,14 @@ class ToolsManagerInterface(ABC):
         self,
         ctx: TenantContext,
         registry: ToolRegistry,
-        defaults: PolicyLayer,
+        defaults: ToolPolicyLayer,
         request: Step,
         call_input: Mapping[str, Any],
         workspace: Workspace,
         *,
         holds_private: bool = True,
         tree_deadline: datetime | None = None,
-        above: Sequence[PolicyLayer] = (),
+        above: Sequence[ToolPolicyLayer] = (),
     ) -> Gate:
         """Where a call stands before it runs. A tool the registry does not
         hold, an input its schema refuses, and a preflight that refuses are

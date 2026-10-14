@@ -47,7 +47,7 @@ from acme.om.tools.impl.attachments import AttachmentReaderNullImpl
 from acme.om.tools.impl.manager import ToolsOptions
 from acme.om.tools.tool import JobToolInterface, ToolInterface, ToolRuntime
 from acme.om.tools.types.call import JobHandle, JobStarted
-from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule, Target
+from acme.om.tools.types.policy import Decision, Target, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolMode, ToolSpec
 from acme.om.windows.gate import CallGateInterface
 from acme.om.windows.impl.gate import CallGateBudgetImpl
@@ -58,11 +58,11 @@ from contracts.step_storage import make_message
 SONNET = "claude-sonnet-5-5"
 """The main role's model in the resolver's default table."""
 
-ALLOWED = PolicyLayer(
+ALLOWED = ToolPolicyLayer(
     rules=(
-        PolicyRule(authorization_class=ToolClass.READ, decision=Decision.ALLOW),
-        PolicyRule(authorization_class=ToolClass.WRITE, decision=Decision.ALLOW),
-        PolicyRule(authorization_class=ToolClass.INTEGRATION, decision=Decision.ALLOW),
+        ToolPolicyRule(authorization_class=ToolClass.READ, decision=Decision.ALLOW),
+        ToolPolicyRule(authorization_class=ToolClass.WRITE, decision=Decision.ALLOW),
+        ToolPolicyRule(authorization_class=ToolClass.INTEGRATION, decision=Decision.ALLOW),
     )
 )
 
@@ -362,7 +362,7 @@ def loop_over(
     models_layer: ModelsLayer | None = None,
     reader: AttachmentReaderInterface | None = None,
     extra: tuple[ToolInterface, ...] = (),
-    ceilings: PolicyLayer | None = None,
+    ceilings: ToolPolicyLayer | None = None,
     sessions: AgentSessionsOptions | None = None,
     infra: InfraLocalImpl | None = None,
 ) -> Loop:

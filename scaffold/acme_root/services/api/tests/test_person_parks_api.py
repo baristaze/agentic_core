@@ -40,17 +40,17 @@ from acme.om.budgets.types.amount import Amount
 from acme.om.context import Role, TenantContext
 from acme.om.steps.types.header import LoopOutcome, Park, ParkReason
 from acme.om.tools.native.spawn_sub_agent import SPAWN_SUB_AGENT
-from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule
+from acme.om.tools.types.policy import Decision, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import ToolClass
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
 from acme.om.work.types.work_item import WorkKind
 from acme.services.api.container import AppContainer
 
-POLICY = PolicyLayer(
+POLICY = ToolPolicyLayer(
     rules=(
-        PolicyRule(authorization_class=ToolClass.READ, decision=Decision.ALLOW),
-        PolicyRule(authorization_class=ToolClass.WRITE, decision=Decision.ALLOW),
-        PolicyRule(tool="note", decision=Decision.APPROVE),
+        ToolPolicyRule(authorization_class=ToolClass.READ, decision=Decision.ALLOW),
+        ToolPolicyRule(authorization_class=ToolClass.WRITE, decision=Decision.ALLOW),
+        ToolPolicyRule(tool="note", decision=Decision.APPROVE),
     )
 )
 STEWARD = AgentKind(
@@ -73,10 +73,10 @@ LEAD = STEWARD.model_copy(
         "name": "lead",
         "tools": (*STEWARD.tools, SPAWN_SUB_AGENT),
         "tree": TreeLimits(height=2, count=1),
-        "policy": PolicyLayer(
+        "policy": ToolPolicyLayer(
             rules=(
                 *POLICY.rules,
-                PolicyRule(authorization_class=ToolClass.SPAWN, decision=Decision.ALLOW),
+                ToolPolicyRule(authorization_class=ToolClass.SPAWN, decision=Decision.ALLOW),
             )
         ),
     }

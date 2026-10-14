@@ -45,14 +45,17 @@ from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.tools.native.spawn_sub_agent import SPAWN_SUB_AGENT
 from acme.om.tools.native.wait_for_sub_agents import WAIT_FOR_SUB_AGENTS
 from acme.om.tools.tool import TakeSnapshot
-from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule
+from acme.om.tools.types.policy import Decision, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import ToolClass
 from contracts.agent_session_storage import marked
 from contracts.budget_storage import make_budget
 from contracts.loops import ALLOWED, Loop, call, reply, said, use
 
-SPAWNING = PolicyLayer(
-    rules=(*ALLOWED.rules, PolicyRule(authorization_class=ToolClass.SPAWN, decision=Decision.ALLOW))
+SPAWNING = ToolPolicyLayer(
+    rules=(
+        *ALLOWED.rules,
+        ToolPolicyRule(authorization_class=ToolClass.SPAWN, decision=Decision.ALLOW),
+    )
 )
 
 RESEARCH = AgentKind(
@@ -75,11 +78,11 @@ CAREFUL = RESEARCH.model_copy(
     update={
         "name": "careful",
         "tools": (*RESEARCH.tools, "note"),
-        "policy": PolicyLayer(
+        "policy": ToolPolicyLayer(
             rules=(
-                PolicyRule(authorization_class=ToolClass.READ, decision=Decision.ALLOW),
-                PolicyRule(authorization_class=ToolClass.SPAWN, decision=Decision.ALLOW),
-                PolicyRule(authorization_class=ToolClass.WRITE, decision=Decision.APPROVE),
+                ToolPolicyRule(authorization_class=ToolClass.READ, decision=Decision.ALLOW),
+                ToolPolicyRule(authorization_class=ToolClass.SPAWN, decision=Decision.ALLOW),
+                ToolPolicyRule(authorization_class=ToolClass.WRITE, decision=Decision.APPROVE),
             )
         ),
     }
@@ -92,11 +95,11 @@ LOOSE = RESEARCH.model_copy(update={"name": "loose", "tools": (*RESEARCH.tools, 
 STRICT = CAREFUL.model_copy(
     update={
         "name": "strict",
-        "policy": PolicyLayer(
+        "policy": ToolPolicyLayer(
             rules=(
-                PolicyRule(authorization_class=ToolClass.READ, decision=Decision.ALLOW),
-                PolicyRule(authorization_class=ToolClass.SPAWN, decision=Decision.ALLOW),
-                PolicyRule(authorization_class=ToolClass.WRITE, decision=Decision.DENY),
+                ToolPolicyRule(authorization_class=ToolClass.READ, decision=Decision.ALLOW),
+                ToolPolicyRule(authorization_class=ToolClass.SPAWN, decision=Decision.ALLOW),
+                ToolPolicyRule(authorization_class=ToolClass.WRITE, decision=Decision.DENY),
             )
         ),
     }

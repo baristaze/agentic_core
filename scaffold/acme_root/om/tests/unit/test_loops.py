@@ -71,7 +71,7 @@ from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.steps.types.stream import StreamPart, TextPart, ToolInputPart
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.rules import DEFAULT_CEILINGS
-from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule
+from acme.om.tools.types.policy import Decision, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import ToolClass
 from acme.om.windows.impl.gate import CallGateBudgetImpl
 from acme.om.windows.rules import request_step
@@ -631,7 +631,7 @@ async def test_a_session_holding_no_private_data_acts_outward_unattended(tmp_pat
     The platform's outward ceiling holds back every outward call, so the
     session acts unattended only where its adopter lifts that ceiling."""
     public = ASSISTANT.model_copy(update={"name": "public", "private_data": False})
-    destructive_only = PolicyLayer(
+    destructive_only = ToolPolicyLayer(
         rules=tuple(r for r in DEFAULT_CEILINGS.rules if r.authorization_class is not None)
     )
     ran: dict[bool, RunEnd] = {}
@@ -666,10 +666,10 @@ async def test_a_command_under_open_egress_runs_unattended_until_the_session_is_
             "isolation": IsolationSpec(
                 mode=IsolationMode.TWIN, egress=EgressPolicy(mode=EgressMode.OPEN)
             ),
-            "policy": PolicyLayer(
+            "policy": ToolPolicyLayer(
                 rules=(
                     *ALLOWED.rules,
-                    PolicyRule(authorization_class=ToolClass.EXECUTE, decision=Decision.ALLOW),
+                    ToolPolicyRule(authorization_class=ToolClass.EXECUTE, decision=Decision.ALLOW),
                 )
             ),
         }

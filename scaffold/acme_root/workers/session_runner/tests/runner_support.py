@@ -18,7 +18,7 @@ from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.base import Platform
 from acme.om.context import TenantContext
 from acme.om.tools.tool import ToolInterface, ToolRuntime
-from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule, Target
+from acme.om.tools.types.policy import Decision, Target, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolSpec
 
 HOST = IsolationSpec(mode=IsolationMode.HOST, egress=EgressPolicy(mode=EgressMode.OPEN))
@@ -90,8 +90,8 @@ def assistant(isolation: IsolationSpec = HOST) -> AgentKind:
             "You answer a person's question. Run a command in the workspace with "
             "run_command when the answer needs one, then answer in one sentence.",
         ),
-        policy=PolicyLayer(
-            rules=(PolicyRule(authorization_class=ToolClass.EXECUTE, decision=Decision.ALLOW),)
+        policy=ToolPolicyLayer(
+            rules=(ToolPolicyRule(authorization_class=ToolClass.EXECUTE, decision=Decision.ALLOW),)
         ),
         isolation=isolation,
     )

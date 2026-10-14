@@ -34,7 +34,7 @@ from acme.om.steps.types.header import (
 )
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.tools.rules import DEFAULT_CEILINGS
-from acme.om.tools.types.policy import PolicyLayer
+from acme.om.tools.types.policy import ToolPolicyLayer
 from acme.om.windows.types.policy import CompactionPolicy
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
 from acme.om.work.types.work_item import WorkKind
@@ -308,7 +308,7 @@ async def test_a_parent_holds_what_its_child_held_private_once_the_report_arrive
         update={"name": "public_lead", "private_data": False, "tools": (*LEAD.tools, "send")}
     )
     worker = WORKER.model_copy(update={"private_data": private})
-    lifted = PolicyLayer(
+    lifted = ToolPolicyLayer(
         rules=tuple(r for r in DEFAULT_CEILINGS.rules if r.authorization_class is not None)
     )
     loop = loop_over(tmp_path, kinds=(public, worker), ceilings=lifted)

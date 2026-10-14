@@ -69,7 +69,7 @@ from acme.om.tools.manager import ToolsManagerInterface
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.rules import tool_request
 from acme.om.tools.tool import ToolInterface, ToolRuntime
-from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule, Target
+from acme.om.tools.types.policy import Decision, Target, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolMode, ToolSpec
 from acme.om.windows.impl.hashes import PromptHashMemoryImpl
 from contracts.doubles import Members
@@ -193,12 +193,12 @@ class PushBranch(ToolInterface):
         return Pushed(branch=call_input.branch)
 
 
-KIND_DEFAULTS = PolicyLayer(
+KIND_DEFAULTS = ToolPolicyLayer(
     rules=(
-        PolicyRule(authorization_class=ToolClass.READ, decision=Decision.ALLOW),
-        PolicyRule(authorization_class=ToolClass.EXECUTE, decision=Decision.ALLOW),
-        PolicyRule(authorization_class=ToolClass.INTEGRATION, decision=Decision.APPROVE),
-        PolicyRule(tool="push_branch", target={"protected": True}, decision=Decision.DENY),
+        ToolPolicyRule(authorization_class=ToolClass.READ, decision=Decision.ALLOW),
+        ToolPolicyRule(authorization_class=ToolClass.EXECUTE, decision=Decision.ALLOW),
+        ToolPolicyRule(authorization_class=ToolClass.INTEGRATION, decision=Decision.APPROVE),
+        ToolPolicyRule(tool="push_branch", target={"protected": True}, decision=Decision.DENY),
     )
 )
 """An agent kind's defaults, as the suites use them."""

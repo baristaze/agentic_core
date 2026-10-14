@@ -9,7 +9,7 @@ from acme.om.base import new_id, utcnow
 from acme.om.context import Role
 from acme.om.exceptions import PreconditionFailed, UniqueKeyTaken
 from acme.om.tools.storage import ToolStorageInterface
-from acme.om.tools.types.policy import ApproverRule, Decision, PolicyRule, ToolPolicy
+from acme.om.tools.types.policy import ApproverRule, Decision, ToolPolicy, ToolPolicyRule
 from acme.om.tools.types.tool import Effect
 
 CROSS_TENANT_CASES: frozenset[str] = frozenset(
@@ -29,8 +29,8 @@ def make_policy() -> ToolPolicy:
         created_by=actor,
         updated_by=actor,
         rules=(
-            PolicyRule(tool="push_branch", target={"protected": True}, decision=Decision.DENY),
-            PolicyRule(
+            ToolPolicyRule(tool="push_branch", target={"protected": True}, decision=Decision.DENY),
+            ToolPolicyRule(
                 authorization_class="read", effect=Effect.READ_ONLY, decision=Decision.ALLOW
             ),
         ),

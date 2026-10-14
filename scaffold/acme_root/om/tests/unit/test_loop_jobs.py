@@ -56,7 +56,7 @@ from acme.om.steps.types.header import (
 from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.tools.tool import ToolRuntime
 from acme.om.tools.types.call import MAX_JOB_COST_MICROS, JobCompletion
-from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule
+from acme.om.tools.types.policy import Decision, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput
 
 
@@ -473,11 +473,11 @@ APPROVER = BUILDER.model_copy(
     update={
         "name": "approver",
         "tools": ("build", "compute", "poke"),
-        "policy": PolicyLayer(
+        "policy": ToolPolicyLayer(
             rules=(
-                PolicyRule(authorization_class=ToolClass.WRITE, decision=Decision.ALLOW),
-                PolicyRule(tool="build", decision=Decision.APPROVE),
-                PolicyRule(tool="compute", decision=Decision.APPROVE),
+                ToolPolicyRule(authorization_class=ToolClass.WRITE, decision=Decision.ALLOW),
+                ToolPolicyRule(tool="build", decision=Decision.APPROVE),
+                ToolPolicyRule(tool="compute", decision=Decision.APPROVE),
             )
         ),
     }

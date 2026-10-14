@@ -97,7 +97,7 @@ from acme.om.tools.types.call import (
     JobStarted,
     Verdict,
 )
-from acme.om.tools.types.policy import Decision, PolicyCall, PolicyLayer, ToolPolicy
+from acme.om.tools.types.policy import Decision, ToolPolicy, ToolPolicyCall, ToolPolicyLayer
 from acme.om.tools.types.tool import ToolInput, ToolMode
 
 log = logging.getLogger(__name__)
@@ -109,7 +109,7 @@ SECRET_USED = "tools.secret.used"
 
 class ToolsOptions(Platform):
     # The platform's: no tenant loosens a call past them.
-    ceilings: PolicyLayer = Field(default_factory=lambda: DEFAULT_CEILINGS)
+    ceilings: ToolPolicyLayer = Field(default_factory=lambda: DEFAULT_CEILINGS)
     engine_limit: timedelta = timedelta(minutes=30)  # the engine's ceiling on one call
     approval_lifetime: timedelta = timedelta(hours=1)  # an approval expires, and is asked again
     max_output_chars: int = 50_000  # what the model reads of one output, at most
@@ -373,14 +373,14 @@ class ToolsManagerImpl(ToolsManagerInterface):
         self,
         ctx: TenantContext,
         registry: ToolRegistry,
-        defaults: PolicyLayer,
+        defaults: ToolPolicyLayer,
         request: Step,
         call_input: Mapping[str, Any],
         workspace: Workspace,
         *,
         holds_private: bool = True,
         tree_deadline: datetime | None = None,
-        above: Sequence[PolicyLayer] = (),
+        above: Sequence[ToolPolicyLayer] = (),
     ) -> Gate:
         ctx.require(Permission.WRITE)
         resolved = await self._resolve(ctx, registry, request, call_input)
@@ -402,7 +402,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         except Exception as error:
             failure, detail = self._classify(error, tool)
             return Gate(outcome=GateOutcome.REFUSE, response=self._answer(request, detail, failure))
-        asked = PolicyCall(
+        asked = ToolPolicyCall(
             tool=tool.spec.name,
             authorization_class=tool.spec.authorization_class,
             effect=tool.spec.effect,

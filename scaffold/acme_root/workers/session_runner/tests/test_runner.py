@@ -47,7 +47,7 @@ from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.tenancy.rules import ROLE_PERMISSIONS
 from acme.om.tools.attachments import AttachmentReaderInterface, AttachmentText
 from acme.om.tools.tool import ToolInterface, ToolRuntime
-from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule, Target
+from acme.om.tools.types.policy import Decision, Target, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolSpec
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
 from acme.om.work.types.handler import WorkParked
@@ -434,8 +434,8 @@ ASKING = AgentKind(
     authority=AuthorityMode.DELEGATED,
     tree=TreeLimits(height=1, count=0),
     prompts=("Answer.",),
-    policy=PolicyLayer(
-        rules=(PolicyRule(authorization_class=ToolClass.READ, decision=Decision.ALLOW),)
+    policy=ToolPolicyLayer(
+        rules=(ToolPolicyRule(authorization_class=ToolClass.READ, decision=Decision.ALLOW),)
     ),
     isolation=NO_WORKSPACE,
 )

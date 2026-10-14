@@ -27,7 +27,7 @@ from acme.om.base import Platform
 from acme.om.budgets.types.amount import Amount
 from acme.om.exceptions import UnknownAgentKind
 from acme.om.models.types.fill import MAIN, SUMMARIZER, ModelAsk, ModelRole
-from acme.om.tools.types.policy import PolicyLayer
+from acme.om.tools.types.policy import ToolPolicyLayer
 from acme.om.tools.types.toolset import LOAD_TOOLSET, Toolset
 
 NO_WORKSPACE = IsolationSpec(mode=IsolationMode.NONE, egress=EgressPolicy(mode=EgressMode.NONE))
@@ -92,7 +92,7 @@ class AgentKind(Platform):
     limits: Limits = Limits()
     # Its layer of tool policy, before a tenant narrows or loosens it and
     # under the platform's ceilings.
-    policy: PolicyLayer = PolicyLayer()
+    policy: ToolPolicyLayer = ToolPolicyLayer()
     # The workspace its sessions work in, prepared to this spec before a
     # loop's first model call and never weakened.
     isolation: IsolationSpec = NO_WORKSPACE

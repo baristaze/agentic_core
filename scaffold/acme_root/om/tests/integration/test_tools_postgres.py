@@ -37,7 +37,7 @@ from acme.om.storage.impl.postgres import StoragePostgresImpl
 from acme.om.storage.settings import MigrationSettings
 from acme.om.tools.impl.manager import SECRET_USED
 from acme.om.tools.types.call import GateOutcome
-from acme.om.tools.types.policy import Decision, PolicyRule
+from acme.om.tools.types.policy import Decision, ToolPolicyRule
 from acme.om.tools.types.tool import Effect
 
 pytestmark = pytest.mark.integration
@@ -120,7 +120,7 @@ async def test_a_call_is_approved_run_audited_and_recovered_over_postgres(
     )
     # The tenant narrows the kind's default: this one call waits for a person.
     policy = await tools.get_policy(owner)
-    narrowed = (PolicyRule(tool="call_api", decision=Decision.APPROVE),)
+    narrowed = (ToolPolicyRule(tool="call_api", decision=Decision.APPROVE),)
     stored = await tools.write_policy(owner, policy.model_copy(update={"rules": narrowed}))
     assert (await tools.get_policy(owner)) == stored
 

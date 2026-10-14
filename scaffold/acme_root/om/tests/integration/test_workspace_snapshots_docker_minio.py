@@ -66,7 +66,7 @@ from acme.om.steps.types.step import Step, StepType
 from acme.om.tools.impl.snapshots import BUCKET, session_prefix, snapshot_key
 from acme.om.tools.native.ask_person import ASK_PERSON
 from acme.om.tools.native.spawn_sub_agent import SPAWN_SUB_AGENT
-from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule
+from acme.om.tools.types.policy import Decision, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import ToolClass
 
 IMAGE = "python:3.14-slim"
@@ -84,11 +84,11 @@ BOXED = ASSISTANT.model_copy(
         "name": "boxed",
         "isolation": BOXED_SPEC,
         "tools": (*ASSISTANT.tools, "run_command", SPAWN_SUB_AGENT, ASK_PERSON),
-        "policy": PolicyLayer(
+        "policy": ToolPolicyLayer(
             rules=(
                 *ALLOWED.rules,
-                PolicyRule(authorization_class=ToolClass.EXECUTE, decision=Decision.ALLOW),
-                PolicyRule(authorization_class=ToolClass.SPAWN, decision=Decision.ALLOW),
+                ToolPolicyRule(authorization_class=ToolClass.EXECUTE, decision=Decision.ALLOW),
+                ToolPolicyRule(authorization_class=ToolClass.SPAWN, decision=Decision.ALLOW),
             )
         ),
     }

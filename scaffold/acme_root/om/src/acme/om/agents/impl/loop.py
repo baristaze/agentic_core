@@ -109,7 +109,7 @@ from acme.om.tools.types.call import (
     JobHandle,
     JobNotStarted,
 )
-from acme.om.tools.types.policy import PolicyLayer
+from acme.om.tools.types.policy import ToolPolicyLayer
 from acme.om.tools.types.tool import ToolMode
 from acme.om.tools.types.toolset import LOAD_TOOLSET
 from acme.om.windows import WindowsManagerInterface
@@ -186,7 +186,7 @@ class _Run:
     deadline: datetime | None = None
     # The policy layers of the kinds above the session in its tree, nearest
     # first: each of its calls is decided under them as under its own kind's.
-    above: tuple[PolicyLayer, ...] = ()
+    above: tuple[ToolPolicyLayer, ...] = ()
     workspace: Workspace | None = None
     kept: bool = False  # a snapshot holds its workspace whole, taken at its end
     made: set[UUID] = field(default_factory=lambda: set[UUID]())  # tool requests it wrote
@@ -1688,7 +1688,7 @@ class LoopManagerImpl(LoopManagerInterface):
 
     async def _policies_above(
         self, ctx: TenantContext, session: AgentSession
-    ) -> tuple[PolicyLayer, ...] | None:
+    ) -> tuple[ToolPolicyLayer, ...] | None:
         """The policy layers of the kinds above `session` in its tree, each
         at the version its session pinned, an ancestor marked deleted among
         them. None when a session above it is past its purge: its kind is

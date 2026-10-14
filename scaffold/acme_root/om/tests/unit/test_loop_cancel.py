@@ -16,16 +16,16 @@ from acme.om.agent_sessions.types.agent_session import SessionStatus
 from acme.om.leases.types.request import WaiterKind
 from acme.om.steps.types.header import LoopOutcome, ParkReason
 from acme.om.steps.types.step import StepType
-from acme.om.tools.types.policy import Decision, PolicyLayer, PolicyRule
+from acme.om.tools.types.policy import Decision, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import ToolClass
 
 APPROVES_FIRST = BUILDER.model_copy(
     update={
         "name": "approves_first",
-        "policy": PolicyLayer(
+        "policy": ToolPolicyLayer(
             rules=(
-                PolicyRule(authorization_class=ToolClass.WRITE, decision=Decision.ALLOW),
-                PolicyRule(tool="build", decision=Decision.APPROVE),
+                ToolPolicyRule(authorization_class=ToolClass.WRITE, decision=Decision.ALLOW),
+                ToolPolicyRule(tool="build", decision=Decision.APPROVE),
             )
         ),
     }

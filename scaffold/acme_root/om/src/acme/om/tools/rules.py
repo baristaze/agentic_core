@@ -31,21 +31,21 @@ from acme.om.tools.types.mcp import McpBinding, McpToolDefinition
 from acme.om.tools.types.policy import (
     DEFAULT_APPROVERS,
     Decision,
-    PolicyCall,
-    PolicyLayer,
-    PolicyRule,
     Target,
     ToolPolicy,
+    ToolPolicyCall,
+    ToolPolicyLayer,
+    ToolPolicyRule,
 )
 from acme.om.tools.types.tool import Effect, ToolClass
 
 UNMATCHED = Decision.APPROVE
 """What a call no layer speaks to gets: a person decides."""
 
-DEFAULT_CEILINGS = PolicyLayer(
+DEFAULT_CEILINGS = ToolPolicyLayer(
     rules=(
-        PolicyRule(authorization_class=ToolClass.DESTRUCTIVE, decision=Decision.APPROVE),
-        PolicyRule(target={"outward": True}, decision=Decision.APPROVE),
+        ToolPolicyRule(authorization_class=ToolClass.DESTRUCTIVE, decision=Decision.APPROVE),
+        ToolPolicyRule(target={"outward": True}, decision=Decision.APPROVE),
     )
 )
 """The platform's ceilings out of the box: what is destructive, and what
@@ -197,7 +197,7 @@ def tool_request(
 # Policy.
 
 
-def matches(rule: PolicyRule, call: PolicyCall) -> bool:
+def matches(rule: ToolPolicyRule, call: ToolPolicyCall) -> bool:
     return (
         (rule.tool is None or rule.tool == call.tool)
         and (
@@ -212,7 +212,7 @@ def matches(rule: PolicyRule, call: PolicyCall) -> bool:
     )
 
 
-def reaches_outward(call: PolicyCall, egress: EgressMode) -> bool:
+def reaches_outward(call: ToolPolicyCall, egress: EgressMode) -> bool:
     """Whether a call acts outward, for the rule of two: on external state
     beyond the session's own work product, or past its egress allowlist.
     The target's `outward` attribute answers, as the system it acts on
@@ -227,7 +227,7 @@ def reaches_outward(call: PolicyCall, egress: EgressMode) -> bool:
     return call.authorization_class not in INWARD_CLASSES
 
 
-def with_reach(call: PolicyCall) -> PolicyCall:
+def with_reach(call: ToolPolicyCall) -> ToolPolicyCall:
     """The call as policy reads it: its target says whether it acts outward,
     in the target's own word or, where the target does not say, by its class
     alone. So the platform's outward ceiling, and any rule keyed on
@@ -242,7 +242,7 @@ def with_reach(call: PolicyCall) -> PolicyCall:
     return call.model_copy(update={"target": Target(kind=call.target.kind, attributes=attributes)})
 
 
-def specificity(rule: PolicyRule) -> int:
+def specificity(rule: ToolPolicyRule) -> int:
     selectors = (rule.tool, rule.authorization_class, rule.effect, rule.target_kind)
     return sum(selector is not None for selector in selectors) + len(rule.target)
 
@@ -252,7 +252,10 @@ def strictest(*decisions: Decision) -> Decision:
 
 
 def decide(
-    call: PolicyCall, defaults: PolicyLayer, tenant: PolicyLayer, ceilings: PolicyLayer
+    call: ToolPolicyCall,
+    defaults: ToolPolicyLayer,
+    tenant: ToolPolicyLayer,
+    ceilings: ToolPolicyLayer,
 ) -> Decision:
     """The most specific rule that matches, of the kind's defaults and the
     tenant's layer together, decides; where the two are equally specific
