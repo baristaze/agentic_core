@@ -407,7 +407,7 @@ def _usage_record(at: str, settled_whole: bool) -> dict[str, object]:
     return {
         "id": "5" * 32,
         "created_at": at,
-        "hold_id": "6" * 32,
+        "spend_hold_id": "6" * 32,
         "agent_session_id": "7" * 32,
         "tree_id": "8" * 32,
         "loop_id": "9" * 32,

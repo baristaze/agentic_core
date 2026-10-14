@@ -36,16 +36,6 @@ from acme.om.attribution.impl.manager import (
     members_context,
 )
 from acme.om.base import utcnow
-from acme.om.budgets import (
-    BudgetGateInterface,
-    BudgetsManagerInterface,
-    BudgetsOperatorManagerInterface,
-)
-from acme.om.budgets.impl.gate import BudgetGateImpl, BudgetGateOptions
-from acme.om.budgets.impl.manager import BudgetsManagerImpl, BudgetsOptions
-from acme.om.budgets.impl.operator import BudgetsOperatorManagerImpl, BudgetsOperatorOptions
-from acme.om.budgets.impl.pricing import PricingTableImpl
-from acme.om.budgets.pricing import PricingInterface
 from acme.om.context import TenantContext
 from acme.om.events import EventsManagerInterface
 from acme.om.events.impl.manager import EventsManagerImpl, EventsOptions
@@ -80,6 +70,19 @@ from acme.om.privacy.impl.sealed_agent_steps import AgentStepStorageSealedImpl
 from acme.om.privacy.impl.snapshots import SnapshotSealKeysImpl
 from acme.om.privacy.impl.tool_outputs import ToolOutputSealKeysImpl
 from acme.om.privacy.keys import AgentSessionKeysInterface
+from acme.om.spend_budgets import (
+    SpendBudgetGateInterface,
+    SpendBudgetsManagerInterface,
+    SpendBudgetsOperatorManagerInterface,
+)
+from acme.om.spend_budgets.impl.gate import SpendBudgetGateImpl, SpendBudgetGateOptions
+from acme.om.spend_budgets.impl.manager import SpendBudgetsManagerImpl, SpendBudgetsOptions
+from acme.om.spend_budgets.impl.operator import (
+    SpendBudgetsOperatorManagerImpl,
+    SpendBudgetsOperatorOptions,
+)
+from acme.om.spend_budgets.impl.pricing import PricingTableImpl
+from acme.om.spend_budgets.pricing import PricingInterface
 from acme.om.storage.root import StorageInterface
 from acme.om.tenancy import TenancyManagerInterface, TenancyOperatorManagerInterface
 from acme.om.tenancy.impl.credentials import TenancyCredentialsManagerImpl
@@ -107,7 +110,7 @@ from acme.om.tools.tool import ToolInterface
 from acme.om.windows import WindowsManagerInterface
 from acme.om.windows.gate import CallGateInterface
 from acme.om.windows.hashes import PromptHashInterface
-from acme.om.windows.impl.gate import CallGateBudgetImpl
+from acme.om.windows.impl.gate import CallGateSpendBudgetImpl
 from acme.om.windows.impl.hashes import PromptHashPrivacyImpl
 from acme.om.windows.impl.manager import WindowsManagerImpl, WindowsOptions
 from acme.om.windows.seal import ToolOutputSealInterface
@@ -132,9 +135,9 @@ class Managers:
     agent_steps: AgentStepsManagerInterface
     agent_sessions: AgentSessionsManagerInterface
     privacy: PrivacyManagerInterface
-    budgets: BudgetsManagerInterface
-    budgets_operator: BudgetsOperatorManagerInterface
-    budget_gate: BudgetGateInterface
+    spend_budgets: SpendBudgetsManagerInterface
+    spend_budgets_operator: SpendBudgetsOperatorManagerInterface
+    spend_budget_gate: SpendBudgetGateInterface
     pricing: PricingInterface
     language_models: LanguageModelsManagerInterface
     windows: WindowsManagerInterface
@@ -262,7 +265,7 @@ def build_managers(
     leases_options: LeasesOptions | None = None,
     steps_options: AgentStepsOptions | None = None,
     agent_sessions_options: AgentSessionsOptions | None = None,
-    budgets_options: BudgetsOptions | None = None,
+    budgets_options: SpendBudgetsOptions | None = None,
     language_models_options: LanguageModelsOptions | None = None,
     model_prices: ModelPricesInterface | None = None,
     language_models_layer: LanguageModelsLayer | None = None,
@@ -278,7 +281,7 @@ def build_managers(
     principal_context: PrincipalContext | None = None,
     result_gate: ResultGateInterface | None = None,
     tools_options: ToolsOptions | None = None,
-    budget_gate: BudgetGateInterface | None = None,
+    spend_budget_gate: SpendBudgetGateInterface | None = None,
     stream_sink: StreamSinkInterface | None = None,
     tool_catalog: tuple[ToolInterface, ...] = (),
     attachment_reader: AttachmentReaderInterface | None = None,
@@ -305,7 +308,7 @@ def build_managers(
     `call_gate` is the budget gate every model call passes, the loop's and a
     compaction's, and `prompt_hash` the key service's hash a request's
     header records. None wires the budgets' gate behind the one, and the
-    privacy namespace's keyed hash behind the other. `budget_gate` None is
+    privacy namespace's keyed hash behind the other. `spend_budget_gate` None is
     the gate over the ledger; outside `environment` `local`, a quiet null
     gate or ledger is refused at boot (`UnsafeConfiguration`).
     `tool_output_seal` is what seals a tool output's text under its session's
@@ -438,15 +441,15 @@ def build_managers(
         revoked=lambda ctx, agent_session_id: managers.tools.erase_snapshots(ctx, agent_session_id),
     )
     # The gate reads the budgets of a call's scopes and holds on the ledger.
-    budgets = BudgetsManagerImpl(
-        storage.get_budget_storage(),
+    budgets = SpendBudgetsManagerImpl(
+        storage.get_spend_budget_storage(),
         storage.get_ledger_storage(),
         tenancy,
         outbox,
-        budgets_options or BudgetsOptions(),
+        budgets_options or SpendBudgetsOptions(),
     )
-    gate = budget_gate or BudgetGateImpl(
-        storage.get_budget_storage(), storage.get_ledger_storage(), BudgetGateOptions()
+    gate = spend_budget_gate or SpendBudgetGateImpl(
+        storage.get_spend_budget_storage(), storage.get_ledger_storage(), SpendBudgetGateOptions()
     )
     refuse_quiet_spend(environment, gate, storage.get_ledger_storage())
     # The one source of prices, which the resolver asks before it answers a
@@ -487,7 +490,7 @@ def build_managers(
         else language_models_layer.credentials(providers)
     )
     # The one gate every model call passes, priced from the one source.
-    calls = call_gate or CallGateBudgetImpl(gate, pricing, agent_sessions, budgets)
+    calls = call_gate or CallGateSpendBudgetImpl(gate, pricing, agent_sessions, budgets)
     windows = WindowsManagerImpl(
         storage.get_window_storage(),
         steps,
@@ -600,11 +603,13 @@ def build_managers(
         agent_steps=steps,
         agent_sessions=agent_sessions,
         privacy=privacy,
-        budgets=budgets,
-        budgets_operator=BudgetsOperatorManagerImpl(
-            storage.get_ledger_storage(), storage.get_tenancy_storage(), BudgetsOperatorOptions()
+        spend_budgets=budgets,
+        spend_budgets_operator=SpendBudgetsOperatorManagerImpl(
+            storage.get_ledger_storage(),
+            storage.get_tenancy_storage(),
+            SpendBudgetsOperatorOptions(),
         ),
-        budget_gate=gate,
+        spend_budget_gate=gate,
         # The one source of prices: the list table.
         pricing=pricing,
         language_models=models,

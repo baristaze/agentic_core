@@ -121,7 +121,10 @@ def test_an_input_that_wakes_starts_a_loop_on_an_idle_session_and_no_other() -> 
     assert (woken.status, woken.pending_input) == (AgentSessionStatus.PENDING, message.id)
     assert after_step(IDLE, quiet) == IDLE
     assert after_step(RUNNING, message).status is AgentSessionStatus.RUNNING
-    assert after_step(parked_state(ParkReason.BUDGET), message).status is AgentSessionStatus.PARKED
+    assert (
+        after_step(parked_state(ParkReason.SPEND_BUDGET), message).status
+        is AgentSessionStatus.PARKED
+    )
 
 
 def test_an_event_built_with_no_word_on_waking_leaves_an_idle_session_idle() -> None:
@@ -312,7 +315,7 @@ def test_a_session_carries_a_park_exactly_while_parked() -> None:
         AgentSession.model_validate({**session.model_dump(), "status": AgentSessionStatus.PARKED})
     with pytest.raises(ValueError, match="exactly while it is parked"):
         AgentSession.model_validate(
-            {**session.model_dump(), "park": {"reason": "budget", "unlock": "raise"}}
+            {**session.model_dump(), "park": {"reason": "spend_budget", "unlock": "raise"}}
         )
 
 

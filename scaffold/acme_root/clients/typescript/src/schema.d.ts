@@ -170,7 +170,7 @@ export interface paths {
          *
          *     The answer is a `AgentSessionUsageView`: `agent_session_id`; `items`, a page of the
          *     session's usage records, oldest first, each with `id`, `created_at`,
-         *     `hold_id`, `agent_session_id`, `tree_id`, `loop_id`, `agent_step_id` (the call's
+         *     `spend_hold_id`, `agent_session_id`, `tree_id`, `loop_id`, `agent_step_id` (the call's
          *     response step), `agent_kind`, `kind_version`, `role`, `provider`, `model`, `input_tokens`,
          *     `cache_read_tokens`, `cache_write_tokens`, `output_tokens`,
          *     `thinking_tokens`, `cost_micros` (reference cost in millionths, null when
@@ -2793,7 +2793,7 @@ export interface components {
          * @description Why a loop waits, and so what clears it.
          * @enum {string}
          */
-        ParkReason: "person" | "provider" | "budget" | "resource" | "job" | "children" | "handover" | "pause";
+        ParkReason: "person" | "provider" | "spend_budget" | "resource" | "job" | "children" | "handover" | "pause";
         /**
          * ParkView
          * @description Why a parked loop waits, what clears it, and when it tries again by
@@ -3298,7 +3298,7 @@ export interface components {
          *     by disjoint class, reference cost in millionths (null when no price
          *     applied), the provider's latency, and the labels of what served it. It
          *     holds no content, so it reads the same in every storage mode. `agent_step_id`
-         *     is the call's response step; `hold_id` its hold; `tree_id` the
+         *     is the call's response step; `spend_hold_id` its hold; `tree_id` the
          *     session's tree; `kind_version` the agent kind's version the session
          *     ran. `settled_whole` marks a call whose usage was never reported whole
          *     (a broken stream, a lost run): its cost is its whole hold, and its
@@ -3329,11 +3329,6 @@ export interface components {
              */
             created_at: string;
             /**
-             * Hold Id
-             * Format: uuid
-             */
-            hold_id: string;
-            /**
              * Id
              * Format: uuid
              */
@@ -3359,6 +3354,11 @@ export interface components {
             role: string;
             /** Settled Whole */
             settled_whole: boolean;
+            /**
+             * Spend Hold Id
+             * Format: uuid
+             */
+            spend_hold_id: string;
             /** Thinking Tokens */
             thinking_tokens: number;
             /**

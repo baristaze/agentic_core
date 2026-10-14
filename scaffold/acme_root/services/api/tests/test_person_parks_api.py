@@ -37,8 +37,8 @@ from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
 from acme.om.agents.types.run import RunEnd
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.base import new_id, utcnow
-from acme.om.budgets.types.amount import Amount
 from acme.om.context import Role, TenantContext
+from acme.om.spend_budgets.types.amount import Amount
 from acme.om.tools.native.spawn_sub_agent import SPAWN_SUB_AGENT
 from acme.om.tools.types.policy import Decision, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import ToolClass

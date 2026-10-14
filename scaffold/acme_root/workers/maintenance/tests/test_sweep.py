@@ -57,11 +57,6 @@ from acme.om.agents.types.tree import AgentTree
 from acme.om.attribution.types.authority import AgentSessionAuthority, AuthorityMode
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import EMPTY_UUID, new_id, utcnow
-from acme.om.budgets.rules import lines_of
-from acme.om.budgets.types.amount import Spend
-from acme.om.budgets.types.budget import Budget, BudgetScopeKind, WindowKind
-from acme.om.budgets.types.hold import Hold
-from acme.om.budgets.types.usage import UsageRecord
 from acme.om.context import CredentialKind, RequestContext, Role, TenantContext, build_context
 from acme.om.events.manager import audit_event
 from acme.om.media.types.file import File
@@ -72,6 +67,11 @@ from acme.om.orchestrations.types.orchestration import (
 )
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.privacy.types.agent_session_privacy import AgentSessionKey, AgentSessionPrivacy
+from acme.om.spend_budgets.rules import lines_of
+from acme.om.spend_budgets.types.amount import Spend
+from acme.om.spend_budgets.types.spend_budget import SpendBudget, SpendBudgetScopeKind, WindowKind
+from acme.om.spend_budgets.types.spend_hold import SpendHold
+from acme.om.spend_budgets.types.usage import UsageRecord
 from acme.om.tenancy.rules import hash_token, permissions_of
 from acme.om.tenancy.storage.impl.memory import TenancyStorageMemoryImpl
 from acme.om.tenancy.types.org import Org
@@ -605,7 +605,7 @@ async def test_a_deleted_tenants_usage_records_stay_and_never_keep_it_from_being
         UsageRecord(
             id=new_id(),
             created_at=now,
-            hold_id=new_id(),
+            spend_hold_id=new_id(),
             agent_session_id=agent_session_id,
             tree_id=agent_session_id,
             loop_id=new_id(),
@@ -894,21 +894,24 @@ async def test_a_deleted_tenants_budgets_go_and_it_is_marked_purged_while_its_le
     leaves it out from then on."""
     container = build_container(tmp_path)
     org_id, _ = await deleted_org(container, days_ago=40)
-    budgets, ledger = container.storage.get_budget_storage(), container.storage.get_ledger_storage()
+    budgets, ledger = (
+        container.storage.get_spend_budget_storage(),
+        container.storage.get_ledger_storage(),
+    )
     now = utcnow()
-    budget = Budget(
+    budget = SpendBudget(
         id=new_id(),
         created_at=now,
         updated_at=now,
         created_by=new_id(),
         updated_by=new_id(),
-        scope_kind=BudgetScopeKind.TENANT,
+        scope_kind=SpendBudgetScopeKind.TENANT,
         scope_key=str(org_id),
         window_kind=WindowKind.LIFE,
         tokens=1_000,
     )
-    assert await budgets.create_budget(org_id, budget, ())
-    hold = Hold(
+    assert await budgets.create_spend_budget(org_id, budget, ())
+    hold = SpendHold(
         id=new_id(),
         created_at=now,
         spender_id=new_id(),
@@ -916,13 +919,13 @@ async def test_a_deleted_tenants_budgets_go_and_it_is_marked_purged_while_its_le
         exposure=Spend(cost_micros=0, tokens=10),
         lines=lines_of([budget], now),
     )
-    assert await ledger.open_hold(org_id, hold) is None
+    assert await ledger.open_spend_hold(org_id, hold) is None
     loop = build_loop(container)
     tenancy = container.storage.get_tenancy_storage()
 
     for _ in range(3):
         await loop._sweep_once()  # pyright: ignore[reportPrivateUsage]
-    assert await budgets.read_budgets(org_id, None, 10) == []
+    assert await budgets.read_spend_budgets(org_id, None, 10) == []
     assert await ledger.count_tenant(org_id, 10) == 2, "the hold and its tally stay"
     marked = await tenancy.read_org(org_id)
     assert marked is not None and marked.purged_at is not None

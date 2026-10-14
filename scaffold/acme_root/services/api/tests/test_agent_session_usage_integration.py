@@ -15,8 +15,8 @@ import pytest
 from api_support import OWNER, TOTP_KEY, client_over, enrol_operator, seed_request, sign_in_as
 
 from acme.om.base import new_id, utcnow
-from acme.om.budgets.types.usage import UsageRecord
 from acme.om.context import OperatorRole
+from acme.om.spend_budgets.types.usage import UsageRecord
 from acme.services.api.container import AppContainer
 from acme.services.api.settings import ApiSettings
 
@@ -66,7 +66,7 @@ def a_record(
     return UsageRecord(
         id=new_id(),
         created_at=utcnow(),
-        hold_id=new_id(),
+        spend_hold_id=new_id(),
         agent_session_id=agent_session_id,
         tree_id=agent_session_id,
         loop_id=loop_id,

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from acme.om.agent_steps.types.header import Park, ToolFailure
-    from acme.om.budgets.types.breach import Refusal
+    from acme.om.spend_budgets.types.spend_breach import Refusal
 
 
 class PlatformException(Exception):
@@ -372,13 +372,13 @@ class PolicyFixed(PrivacyException, Conflict):
     code = "policy_fixed"
 
 
-class BudgetsException(PlatformException): ...
+class SpendBudgetsException(PlatformException): ...
 
 
-class BudgetRefused(BudgetsException):
+class SpendBudgetRefused(SpendBudgetsException):
     """The gate refused a model call: nothing is held, nothing is spent, and
     the call is never made. `refusal` lists every breach, each with what
-    clears it, and the loop parks on it (`budgets.rules.budget_park`)."""
+    clears it, and the loop parks on it (`spend_budgets.rules.spend_budget_park`)."""
 
     code = "budget_refused"
 
@@ -387,14 +387,14 @@ class BudgetRefused(BudgetsException):
         self.refusal = refusal
 
 
-class SpenderUnknown(BudgetsException, NotAuthorized):
+class SpenderUnknown(SpendBudgetsException, NotAuthorized):
     """A call or a job whose payer the engine cannot tell. The gate fails
     closed for spend: nothing is held and nothing is spent."""
 
     code = "spender_unknown"
 
 
-class GateParked(BudgetsException):
+class GateParked(SpendBudgetsException):
     """A gate that parks the call itself, on a reason and an unlock of its
     own: a platform's gate, for what no breach of a budget says, such as a
     call far above its session's norm. Nothing is held, nothing is spent,

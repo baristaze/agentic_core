@@ -140,7 +140,7 @@ def test_tol11_a_secret_typed_field_on_a_tool_input_output_or_step_is_a_finding(
 
 def test_tol11_a_secret_outside_what_a_step_carries_is_no_finding(tmp_path):
     settings = "from pydantic import BaseModel, SecretStr\n\n\nclass Settings(BaseModel):\n    api_key: SecretStr\n"
-    write_project(tmp_path, {f"{OM}/budgets/settings.py": settings})
+    write_project(tmp_path, {f"{OM}/spend_budgets/settings.py": settings})
     assert found(tmp_path, "TOL-11") == []
 
 
@@ -173,22 +173,22 @@ def test_tol13_a_module_that_defines_no_tool_may_start_a_process(tmp_path):
 
 def test_prv06_an_optional_or_defaulted_interface_in_an_engine_constructor_is_a_finding(tmp_path):
     manager = BASE[MANAGER].replace(
-        "gate: BudgetGateInterface)", "gate: BudgetGateInterface | None = None)"
+        "gate: SpendBudgetGateInterface)", "gate: SpendBudgetGateInterface | None = None)"
     )
     sink = (
         "from dataclasses import dataclass\nfrom typing import Optional\n\n"
-        "from acme.om.budgets.gate import BudgetGateInterface\n\n\n"
+        "from acme.om.spend_budgets.gate import SpendBudgetGateInterface\n\n\n"
         "class Meter:\n"
-        "    def __init__(self, *, gate: Optional[BudgetGateInterface]) -> None:\n"
+        "    def __init__(self, *, gate: Optional[SpendBudgetGateInterface]) -> None:\n"
         "        self._gate = gate\n\n\n"
-        "@dataclass(frozen=True)\nclass Wiring:\n    gate: BudgetGateInterface = None\n"
+        "@dataclass(frozen=True)\nclass Wiring:\n    gate: SpendBudgetGateInterface = None\n"
     )
-    write_project(tmp_path, {MANAGER: manager, f"{OM}/budgets/impl/meter.py": sink})
+    write_project(tmp_path, {MANAGER: manager, f"{OM}/spend_budgets/impl/meter.py": sink})
     hits = found(tmp_path, "PRV-06")
     assert [m.split(";")[0] for _, _, m in hits] == [
-        "BudgetsManagerImpl takes gate: BudgetGateInterface with a default",
-        "Meter takes gate: BudgetGateInterface as optional",
-        "Wiring takes gate: BudgetGateInterface with a default",
+        "SpendBudgetsManagerImpl takes gate: SpendBudgetGateInterface with a default",
+        "Meter takes gate: SpendBudgetGateInterface as optional",
+        "Wiring takes gate: SpendBudgetGateInterface with a default",
     ]
 
 

@@ -70,7 +70,6 @@ from acme.om.attribution.types.authority import (
 )
 from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
-from acme.om.budgets.types.amount import Amount
 from acme.om.context import (
     CredentialKind,
     RequestContext,
@@ -87,6 +86,7 @@ from acme.om.exceptions import (
     ValidationFailed,
 )
 from acme.om.root import Managers, build_managers
+from acme.om.spend_budgets.types.amount import Amount
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.tenancy.rules import permissions_of
 

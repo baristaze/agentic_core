@@ -18,11 +18,6 @@ from acme.om.agents.storage import AgentStorageInterface
 from acme.om.agents.storage.impl.postgres import AgentStoragePostgresImpl
 from acme.om.attribution.storage import AttributionStorageInterface
 from acme.om.attribution.storage.impl.postgres import AttributionStoragePostgresImpl
-from acme.om.budgets.storage import BudgetStorageInterface, LedgerStorageInterface
-from acme.om.budgets.storage.impl.postgres import (
-    BudgetStoragePostgresImpl,
-    LedgerStoragePostgresImpl,
-)
 from acme.om.events.storage import EventStorageInterface
 from acme.om.events.storage.impl.postgres import EventStoragePostgresImpl
 from acme.om.idempotency.storage import IdempotencyStorageInterface
@@ -39,6 +34,11 @@ from acme.om.outbox.storage import OutboxStorageInterface
 from acme.om.outbox.storage.impl.postgres import OutboxStoragePostgresImpl
 from acme.om.privacy.storage import PrivacyStorageInterface
 from acme.om.privacy.storage.impl.postgres import PrivacyStoragePostgresImpl
+from acme.om.spend_budgets.storage import LedgerStorageInterface, SpendBudgetStorageInterface
+from acme.om.spend_budgets.storage.impl.postgres import (
+    LedgerStoragePostgresImpl,
+    SpendBudgetStoragePostgresImpl,
+)
 from acme.om.storage.impl.pg_base import LoginSessions, ScopedConnection, SessionFactory
 from acme.om.storage.roles import DatabaseRole
 from acme.om.storage.root import StorageInterface
@@ -188,7 +188,7 @@ class StoragePostgresImpl(StorageInterface):
         self._agents = AgentStoragePostgresImpl(sessions)
         self._attribution = AttributionStoragePostgresImpl(sessions)
         self._privacy = PrivacyStoragePostgresImpl(sessions)
-        self._budgets = BudgetStoragePostgresImpl(sessions)
+        self._budgets = SpendBudgetStoragePostgresImpl(sessions)
         self._ledger = LedgerStoragePostgresImpl(sessions)
         self._fill_sets = FillSetStoragePostgresImpl(sessions)
         self._windows = WindowStoragePostgresImpl(sessions)
@@ -233,7 +233,7 @@ class StoragePostgresImpl(StorageInterface):
     def get_privacy_storage(self) -> PrivacyStorageInterface:
         return self._privacy
 
-    def get_budget_storage(self) -> BudgetStorageInterface:
+    def get_spend_budget_storage(self) -> SpendBudgetStorageInterface:
         return self._budgets
 
     def get_ledger_storage(self) -> LedgerStorageInterface:

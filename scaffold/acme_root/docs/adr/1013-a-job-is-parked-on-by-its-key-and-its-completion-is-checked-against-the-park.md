@@ -57,7 +57,7 @@ which the work was started to keep.
 **A job that spends names its rate.** A job tool declares what it costs
 an hour at most. The loop holds that rate until the job's deadline
 before it starts the work, paid for by whoever the model request that
-asked for the call was paid by. A refusal parks the loop on `budget`
+asked for the call was paid by. A refusal parks the loop on `spend_budget`
 with nothing started. The hold settles at the cost the completion
 reports, else whole. Only a start refused before any work began
 releases it: its input's refusal, or the tool's own `JobRefused`. Any

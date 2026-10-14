@@ -15,7 +15,7 @@ ENGINE = [
     "om.windows",
     "om.language_models",
     "om.tools",
-    "om.budgets",
+    "om.spend_budgets",
     "om.agents",
     "om.attribution",
     "om.privacy",

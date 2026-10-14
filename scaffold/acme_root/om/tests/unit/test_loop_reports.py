@@ -368,7 +368,7 @@ async def test_a_child_whose_parents_key_is_revoked_ends_its_loop_and_its_report
         (Park(reason=ParkReason.PERSON, unlock="approval"), True),
         (deadline_park(), False),
         (Park(reason=ParkReason.PROVIDER, unlock="anthropic"), False),
-        (Park(reason=ParkReason.BUDGET, unlock="budget"), False),
+        (Park(reason=ParkReason.SPEND_BUDGET, unlock="spend_budget"), False),
     ],
 )
 def test_a_park_on_a_person_reaches_the_parent_and_the_trees_waits_do_not(

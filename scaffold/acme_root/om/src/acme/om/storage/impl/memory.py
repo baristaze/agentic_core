@@ -8,8 +8,6 @@ from acme.om.agents.storage import AgentStorageInterface
 from acme.om.agents.storage.impl.memory import AgentStorageMemoryImpl
 from acme.om.attribution.storage import AttributionStorageInterface
 from acme.om.attribution.storage.impl.memory import AttributionStorageMemoryImpl
-from acme.om.budgets.storage import BudgetStorageInterface, LedgerStorageInterface
-from acme.om.budgets.storage.impl.memory import BudgetStorageMemoryImpl, LedgerStorageMemoryImpl
 from acme.om.events.storage import EventStorageInterface
 from acme.om.events.storage.impl.memory import EventStorageMemoryImpl
 from acme.om.idempotency.storage import IdempotencyStorageInterface
@@ -26,6 +24,11 @@ from acme.om.outbox.storage import OutboxStorageInterface
 from acme.om.outbox.storage.impl.memory import OutboxStorageMemoryImpl
 from acme.om.privacy.storage import PrivacyStorageInterface
 from acme.om.privacy.storage.impl.memory import PrivacyStorageMemoryImpl
+from acme.om.spend_budgets.storage import LedgerStorageInterface, SpendBudgetStorageInterface
+from acme.om.spend_budgets.storage.impl.memory import (
+    LedgerStorageMemoryImpl,
+    SpendBudgetStorageMemoryImpl,
+)
 from acme.om.storage.root import StorageInterface
 from acme.om.tenancy.storage import TenancyStorageInterface
 from acme.om.tenancy.storage.impl.memory import TenancyStorageMemoryImpl
@@ -57,7 +60,7 @@ class StorageMemoryImpl(StorageInterface):
         self._agents = AgentStorageMemoryImpl(self._outbox)
         self._attribution = AttributionStorageMemoryImpl(self._outbox)
         self._privacy = PrivacyStorageMemoryImpl(self._outbox)
-        self._budgets = BudgetStorageMemoryImpl(self._outbox)
+        self._budgets = SpendBudgetStorageMemoryImpl(self._outbox)
         self._ledger = LedgerStorageMemoryImpl()
         self._fill_sets = FillSetStorageMemoryImpl()
         self._windows = WindowStorageMemoryImpl()
@@ -102,7 +105,7 @@ class StorageMemoryImpl(StorageInterface):
     def get_privacy_storage(self) -> PrivacyStorageInterface:
         return self._privacy
 
-    def get_budget_storage(self) -> BudgetStorageInterface:
+    def get_spend_budget_storage(self) -> SpendBudgetStorageInterface:
         return self._budgets
 
     def get_ledger_storage(self) -> LedgerStorageInterface:

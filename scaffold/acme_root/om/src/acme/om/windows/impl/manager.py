@@ -23,8 +23,6 @@ from acme.om.agent_steps.types.header import (
 )
 from acme.om.attribution import AttributionManagerInterface
 from acme.om.base import Platform, derived_id, new_id, utcnow
-from acme.om.budgets.rules import elapsed_ms
-from acme.om.budgets.types.usage import CallSite
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import (
     CompactionFailed,
@@ -37,6 +35,8 @@ from acme.om.exceptions import (
 from acme.om.language_models.credentials import CallCredentialsInterface
 from acme.om.language_models.manager import LanguageModelsManagerInterface
 from acme.om.language_models.types.fill import MAIN, SUMMARIZER, Fill, FillSet, ModelRole
+from acme.om.spend_budgets.rules import elapsed_ms
+from acme.om.spend_budgets.types.usage import CallSite
 from acme.om.tenancy import TenancyManagerInterface
 from acme.om.windows import rules
 from acme.om.windows.gate import CallGateInterface
@@ -423,7 +423,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
             credential=used.credential,
         )
         request = rules.request_step(
-            rendered, paid, agent_session_id, loop_id, new_id(), self._clock(), hold_id=hold
+            rendered, paid, agent_session_id, loop_id, new_id(), self._clock(), spend_hold_id=hold
         )
         try:
             (request,) = await self._steps.append_agent_steps(

@@ -34,11 +34,11 @@ from acme.om.agents.types.run import RunEnd
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import Platform, new_id, utcnow
-from acme.om.budgets.types.amount import Amount
 from acme.om.context import CredentialKind, RequestContext, Role, TenantContext, build_context
 from acme.om.language_models.impl.credentials import CallCredentialsPlatformImpl
 from acme.om.language_models.layer import LanguageModelsLayer
 from acme.om.root import Managers, build_managers, engine_tools
+from acme.om.spend_budgets.types.amount import Amount
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.storage.root import StorageInterface
 from acme.om.tenancy.rules import permissions_of
@@ -50,7 +50,7 @@ from acme.om.tools.types.call import JobHandle, JobStarted
 from acme.om.tools.types.policy import Decision, Target, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolMode, ToolSpec
 from acme.om.windows.gate import CallGateInterface
-from acme.om.windows.impl.gate import CallGateBudgetImpl
+from acme.om.windows.impl.gate import CallGateSpendBudgetImpl
 from contracts.agent_step_storage import make_message
 from contracts.doubles import APP, context
 from contracts.factories import make_org
@@ -427,11 +427,11 @@ def loop_over(
         managers.windows,
         managers.tools,
         (
-            CallGateBudgetImpl(
-                managers.budget_gate,
+            CallGateSpendBudgetImpl(
+                managers.spend_budget_gate,
                 managers.pricing,
                 managers.agent_sessions,
-                managers.budgets,
+                managers.spend_budgets,
                 clock,
             )
             if call_gate is None

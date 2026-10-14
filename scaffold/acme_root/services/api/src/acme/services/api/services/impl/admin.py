@@ -1,10 +1,10 @@
 from datetime import timedelta
 from uuid import UUID
 
-from acme.om.budgets import BudgetsOperatorManagerInterface
-from acme.om.budgets.types.usage import AgentSessionUsage
 from acme.om.context import OperatorContext, OperatorPermission, OperatorRole
 from acme.om.idempotency.types.attempt import Attempt
+from acme.om.spend_budgets import SpendBudgetsOperatorManagerInterface
+from acme.om.spend_budgets.types.usage import AgentSessionUsage
 from acme.om.tenancy import TenancyOperatorManagerInterface
 from acme.om.tenancy.types.session import Session
 from acme.om.work import WorkOperatorManagerInterface
@@ -41,7 +41,7 @@ class AdminServiceImpl(AdminServiceInterface):
         self,
         tenancy: TenancyOperatorManagerInterface,
         work: WorkOperatorManagerInterface,
-        budgets: BudgetsOperatorManagerInterface,
+        budgets: SpendBudgetsOperatorManagerInterface,
     ) -> None:
         self._tenancy = tenancy
         self._work = work

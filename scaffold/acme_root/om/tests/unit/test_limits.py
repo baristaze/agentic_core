@@ -39,9 +39,9 @@ from acme.om.agent_steps.types.header import (
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.attribution.types.principal import AgentRef
 from acme.om.base import new_id, utcnow
-from acme.om.budgets.rules import budget_park
-from acme.om.budgets.types.amount import AmountUnit
-from acme.om.budgets.types.breach import Breach, BreachAction, Refusal
+from acme.om.spend_budgets.rules import spend_budget_park
+from acme.om.spend_budgets.types.amount import AmountUnit
+from acme.om.spend_budgets.types.spend_breach import Refusal, SpendBreach, SpendBreachAction
 
 SESSION = new_id()
 NOW = utcnow()
@@ -62,15 +62,15 @@ def check(
 def refusal() -> Refusal:
     return Refusal(
         breaches=(
-            Breach(
-                budget_id=new_id(),
+            SpendBreach(
+                spend_budget_id=new_id(),
                 scope=None,
                 unit=AmountUnit.COST,
                 amount=1,
                 committed=1,
                 held=0,
                 exposure=1,
-                action=BreachAction.RAISE,
+                action=SpendBreachAction.RAISE,
                 needed=2,
                 resets_at=NOW + timedelta(hours=3),
             ),
@@ -79,7 +79,9 @@ def refusal() -> Refusal:
 
 
 TRIPS: dict[Limit, Callable[[], Trip | None]] = {
-    Limit.BUDGET: lambda: Trip(limit=Limit.BUDGET, park=budget_park(refusal(), NOW)),
+    Limit.SPEND_BUDGET: lambda: Trip(
+        limit=Limit.SPEND_BUDGET, park=spend_budget_park(refusal(), NOW)
+    ),
     Limit.DEADLINE: lambda: check(LoopTally(), deadline_in=timedelta(0)),
     Limit.STEP_GUARD: lambda: check(LoopTally(model_calls=3)),
     Limit.ERROR_STREAK: lambda: check(LoopTally(tool_errors=2)),
@@ -104,7 +106,7 @@ def test_each_limit_trips_as_its_kind_says(limit: Limit) -> None:
 
 def test_the_table_of_kinds() -> None:
     assert {limit for limit, kind in LIMIT_KINDS.items() if kind is LimitKind.GUARD} == {
-        Limit.BUDGET,
+        Limit.SPEND_BUDGET,
         Limit.DEADLINE,
         Limit.STEP_GUARD,
     }
@@ -209,7 +211,7 @@ def test_every_loop_starts_the_step_guard_afresh() -> None:
 
 def test_a_persons_look_restarts_the_step_guard_and_no_other_park_does() -> None:
     loop = new_id()
-    budget = Park(reason=ParkReason.BUDGET, unlock="b", retry_at=NOW)
+    budget = Park(reason=ParkReason.SPEND_BUDGET, unlock="b", retry_at=NOW)
     history = numbered(
         [make_request(SESSION, loop) for _ in range(3)]
         + [parked_step(new_id(), SESSION, loop, step_guard_park(), NOW)]

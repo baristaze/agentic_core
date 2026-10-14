@@ -23,11 +23,11 @@ from acme.om.agent_steps.types.header import (
 from acme.om.agents.line_rules import in_line
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
-from acme.om.budgets.types.amount import Amount
-from acme.om.budgets.types.budget import Budget, BudgetScopeKind, WindowKind
 from acme.om.context import TenantContext
 from acme.om.leases.types.request import LeaseRequest
 from acme.om.leases.types.resource import Resource, ResourceKind
+from acme.om.spend_budgets.types.amount import Amount
+from acme.om.spend_budgets.types.spend_budget import SpendBudget, SpendBudgetScopeKind, WindowKind
 from acme.om.work.types.work_item import WorkItem, WorkKind
 from acme.workers.maintenance.container import WorkerContainer
 from acme.workers.maintenance.main import build_loop
@@ -138,26 +138,28 @@ async def test_a_raised_budget_wakes_the_sessions_parked_on_a_budget(tmp_path: P
     ctx = await sign_in(container)
     reset = utcnow() + timedelta(days=1)
     on_budget = await parked(
-        container, ctx, Park(reason=ParkReason.BUDGET, unlock="b", retry_at=reset)
+        container, ctx, Park(reason=ParkReason.SPEND_BUDGET, unlock="b", retry_at=reset)
     )
     on_person = await parked(container, ctx, Park(reason=ParkReason.PERSON, unlock="approval"))
     now = utcnow()
-    budget = await container.managers.budgets.create_budget(
+    budget = await container.managers.spend_budgets.create_spend_budget(
         ctx,
-        Budget(
+        SpendBudget(
             id=new_id(),
             created_at=now,
             updated_at=now,
             created_by=ctx.user_id,
             updated_by=ctx.user_id,
-            scope_kind=BudgetScopeKind.TENANT,
+            scope_kind=SpendBudgetScopeKind.TENANT,
             scope_key=str(ctx.org_id),
             window_kind=WindowKind.DAY,
             cost_micros=1_000,
         ),
     )
     assert await drain(container) == [], "the budget park waits for its reset"
-    await container.managers.budgets.change_amount(ctx, budget.id, Amount(cost_micros=9_000), 1)
+    await container.managers.spend_budgets.change_amount(
+        ctx, budget.id, Amount(cost_micros=9_000), 1
+    )
     ran = await drain(container)
     assert [(item.kind, item.target_id) for item in ran] == [
         (WorkKind.WAKE_AGENT_SESSIONS, ctx.org_id)
@@ -170,23 +172,25 @@ async def test_a_closed_budget_wakes_the_sessions_parked_on_it_alone(tmp_path: P
     container = build_container(tmp_path)
     ctx = await sign_in(container)
     now = utcnow()
-    budget = await container.managers.budgets.create_budget(
+    budget = await container.managers.spend_budgets.create_spend_budget(
         ctx,
-        Budget(
+        SpendBudget(
             id=new_id(),
             created_at=now,
             updated_at=now,
             created_by=ctx.user_id,
             updated_by=ctx.user_id,
-            scope_kind=BudgetScopeKind.TREE,
+            scope_kind=SpendBudgetScopeKind.TREE,
             scope_key=str(new_id()),
             window_kind=WindowKind.LIFE,
             cost_micros=1_000,
         ),
     )
-    on_it = await parked(container, ctx, Park(reason=ParkReason.BUDGET, unlock=str(budget.id)))
-    on_another = await parked(container, ctx, Park(reason=ParkReason.BUDGET, unlock="b"))
-    await container.managers.budgets.close_budget(ctx, budget.id)
+    on_it = await parked(
+        container, ctx, Park(reason=ParkReason.SPEND_BUDGET, unlock=str(budget.id))
+    )
+    on_another = await parked(container, ctx, Park(reason=ParkReason.SPEND_BUDGET, unlock="b"))
+    await container.managers.spend_budgets.close_spend_budget(ctx, budget.id)
     ran = await drain(container)
     assert [(item.kind, item.target_id) for item in ran] == [
         (WorkKind.WAKE_AGENT_SESSIONS, ctx.org_id)

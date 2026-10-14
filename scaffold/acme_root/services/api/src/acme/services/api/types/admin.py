@@ -147,7 +147,7 @@ class UsageRecordView(View):
     by disjoint class, reference cost in millionths (null when no price
     applied), the provider's latency, and the labels of what served it. It
     holds no content, so it reads the same in every storage mode. `agent_step_id`
-    is the call's response step; `hold_id` its hold; `tree_id` the
+    is the call's response step; `spend_hold_id` its hold; `tree_id` the
     session's tree; `kind_version` the agent kind's version the session
     ran. `settled_whole` marks a call whose usage was never reported whole
     (a broken stream, a lost run): its cost is its whole hold, and its
@@ -155,7 +155,7 @@ class UsageRecordView(View):
 
     id: UUID
     created_at: datetime
-    hold_id: UUID
+    spend_hold_id: UUID
     agent_session_id: UUID
     tree_id: UUID
     loop_id: UUID

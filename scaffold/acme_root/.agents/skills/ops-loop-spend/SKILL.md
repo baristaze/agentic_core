@@ -197,7 +197,7 @@ that follows a summarizer turn was sent after the window was compacted.
    - A mechanical task's turns on the `main` role: a model role of its
      own, which a cheaper model can fill.
    - An unpriced turn: the price table,
-     `om/src/acme/om/budgets/impl/pricing.py`, has no row for its
+     `om/src/acme/om/spend_budgets/impl/pricing.py`, has no row for its
      model.
    - A loop that does not reconcile: the figures, for a person to
      check against the records.

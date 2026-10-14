@@ -21,7 +21,6 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from contracts.budget_storage import make_budget
 from contracts.doubles import context
 from contracts.factories import make_org
 from contracts.loops import (
@@ -35,6 +34,7 @@ from contracts.loops import (
     reply,
     said,
 )
+from contracts.spend_budget_storage import make_spend_budget
 from pydantic import ValidationError
 
 from acme.infra.exceptions import InfraException
@@ -49,11 +49,11 @@ from acme.om.agent_steps.types.header import (
 )
 from acme.om.agents.types.run import RunEnd
 from acme.om.base import Platform, new_id
-from acme.om.budgets.types.amount import Amount
-from acme.om.budgets.types.budget import BudgetScopeKind
-from acme.om.budgets.types.hold import Tally
 from acme.om.context import Role, TenantContext
 from acme.om.exceptions import JobRefused, NotFound, UnresolvedRole
+from acme.om.spend_budgets.types.amount import Amount
+from acme.om.spend_budgets.types.spend_budget import SpendBudgetScopeKind
+from acme.om.spend_budgets.types.spend_hold import SpendTally
 from acme.om.tools.tool import ToolRuntime
 from acme.om.tools.types.call import MAX_JOB_COST_MICROS, JobCompletion
 from acme.om.tools.types.policy import Decision, ToolPolicyLayer, ToolPolicyRule
@@ -262,28 +262,30 @@ async def test_a_spending_job_passes_the_budget_gate_first_and_a_refusal_starts_
     loop = builder_loop(tmp_path)
     compute = loop.jobs["compute"]  # 3.6 units an hour, for two hours at most
     agent_session_id = await loop.start("builder")
-    line = await loop.managers.budgets.create_budget(
+    line = await loop.managers.spend_budgets.create_spend_budget(
         loop.owner,
-        make_budget(BudgetScopeKind.SESSION, str(agent_session_id), cost_micros=5_000_000),
+        make_spend_budget(
+            SpendBudgetScopeKind.AGENT_SESSION, str(agent_session_id), cost_micros=5_000_000
+        ),
     )
     await loop.say(agent_session_id, "Start it.")
     loop.anthropic.add(reply(call("compute", q="everything")), reply(said("It is done.")))
 
     refused = await loop.loops.run(loop.owner, agent_session_id)
 
-    assert refused.park is not None and refused.park.reason is ParkReason.BUDGET
+    assert refused.park is not None and refused.park.reason is ParkReason.SPEND_BUDGET
     assert compute.started == {}, "no job started"
     (request,) = of_type(await loop.history(agent_session_id), AgentStepType.TOOL_REQUEST)
     assert not [s for s in await loop.history(agent_session_id) if s.responds_to == request.id]
 
     raised = Amount(cost_micros=50_000_000)
-    await loop.managers.budgets.change_amount(loop.owner, line.id, raised, line.version)
-    await loop.managers.agent_sessions.wake_parked(loop.owner, ParkReason.BUDGET)
+    await loop.managers.spend_budgets.change_amount(loop.owner, line.id, raised, line.version)
+    await loop.managers.agent_sessions.wake_parked(loop.owner, ParkReason.SPEND_BUDGET)
     started = await loop.loops.run(loop.owner, agent_session_id)
 
     assert started.park is not None and started.park.job is not None
-    assert started.park.job.hold_id is not None
-    held = await loop.managers.budgets.get_spend(loop.owner, line.id)
+    assert started.park.job.spend_hold_id is not None
+    held = await loop.managers.spend_budgets.get_spend(loop.owner, line.id)
     assert held.held_cost_micros >= 7_200_000, "held at its rate until its deadline"
     await loop.loops.complete_job(
         loop.owner,
@@ -292,14 +294,14 @@ async def test_a_spending_job_passes_the_budget_gate_first_and_a_refusal_starts_
     )
     done = await loop.loops.run(loop.owner, agent_session_id)
     assert done.outcome is LoopOutcome.SUCCEEDED
-    spent = await loop.managers.budgets.get_spend(loop.owner, line.id)
+    spent = await loop.managers.spend_budgets.get_spend(loop.owner, line.id)
     assert spent.held_cost_micros == 0, "the hold settled"
     assert spent.spent_cost_micros >= 1_234
 
 
 async def failed_start(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, raised: Exception, *, began: bool
-) -> tuple[Tally, AgentStep]:
+) -> tuple[SpendTally, AgentStep]:
     """A spending job whose tool raised `raised`, after it began the work
     when `began`: the spend of the session's budget once the loop answered
     the call, and that answer."""
@@ -314,9 +316,11 @@ async def failed_start(
 
     monkeypatch.setattr(compute, "run", run)
     agent_session_id = await loop.start("builder")
-    line = await loop.managers.budgets.create_budget(
+    line = await loop.managers.spend_budgets.create_spend_budget(
         loop.owner,
-        make_budget(BudgetScopeKind.SESSION, str(agent_session_id), cost_micros=50_000_000),
+        make_spend_budget(
+            SpendBudgetScopeKind.AGENT_SESSION, str(agent_session_id), cost_micros=50_000_000
+        ),
     )
     await loop.say(agent_session_id, "Start it.")
     loop.anthropic.add(reply(call("compute", q="everything")), reply(said("It failed.")))
@@ -327,7 +331,7 @@ async def failed_start(
     assert bool(compute.started) is began
     (request,) = of_type(await loop.history(agent_session_id), AgentStepType.TOOL_REQUEST)
     answer = answer_to(await loop.history(agent_session_id), request)
-    return await loop.managers.budgets.get_spend(loop.owner, line.id), answer
+    return await loop.managers.spend_budgets.get_spend(loop.owner, line.id), answer
 
 
 async def test_a_spending_job_whose_tool_failed_after_it_began_keeps_its_whole_hold(
@@ -380,9 +384,11 @@ async def lost_after_its_request(
     the first call of `manager.method`, with its budget line and the open
     request."""
     agent_session_id = await loop.start("builder")
-    line = await loop.managers.budgets.create_budget(
+    line = await loop.managers.spend_budgets.create_spend_budget(
         loop.owner,
-        make_budget(BudgetScopeKind.SESSION, str(agent_session_id), cost_micros=cost_micros),
+        make_spend_budget(
+            SpendBudgetScopeKind.AGENT_SESSION, str(agent_session_id), cost_micros=cost_micros
+        ),
     )
     await loop.say(agent_session_id, "Start it.")
     loop.anthropic.add(reply(call("compute", q="everything")), reply(said("It is done.")))
@@ -412,15 +418,15 @@ async def test_a_run_lost_before_its_jobs_park_is_recovered_by_one_start_and_one
         loop, monkeypatch, getattr(loop.managers, manager), method, 100_000_000
     )
     starts = len(compute.deadlines)
-    held = (await loop.managers.budgets.get_spend(loop.owner, line_id)).held_cost_micros
+    held = (await loop.managers.spend_budgets.get_spend(loop.owner, line_id)).held_cost_micros
 
     recovered = await loop.loops.run(loop.owner, agent_session_id)
 
     assert recovered.park is not None and recovered.park.job is not None
     assert recovered.park.job.key == request.id, "parked on the job it started"
-    assert recovered.park.job.hold_id is not None
+    assert recovered.park.job.spend_hold_id is not None
     assert len(compute.deadlines) == starts + 1, "started once"
-    spend = await loop.managers.budgets.get_spend(loop.owner, line_id)
+    spend = await loop.managers.spend_budgets.get_spend(loop.owner, line_id)
     assert spend.held_cost_micros == held + 7_200_000, "under one hold of its own"
     session = await loop.managers.agent_sessions.get_agent_session(loop.owner, agent_session_id)
     assert session.park == recovered.park
@@ -430,7 +436,7 @@ async def test_a_run_lost_before_its_jobs_park_is_recovered_by_one_start_and_one
     done = await loop.loops.run(loop.owner, agent_session_id)
 
     assert done.outcome is LoopOutcome.SUCCEEDED
-    settled = await loop.managers.budgets.get_spend(loop.owner, line_id)
+    settled = await loop.managers.spend_budgets.get_spend(loop.owner, line_id)
     assert settled.held_cost_micros == held, "its own hold settled"
     assert len(compute.deadlines) == starts + 1, "never started again"
 
@@ -446,7 +452,7 @@ async def test_a_budget_park_met_while_recovering_a_call_is_kept_and_its_gate_as
     agent_session_id, line_id, request = await lost_after_its_request(
         loop, monkeypatch, loop.managers.tools, "gate", 5_000_000
     )
-    gate = loop.managers.budget_gate
+    gate = loop.managers.spend_budget_gate
     authorize = gate.authorize
     asked: list[object] = []
 
@@ -459,16 +465,16 @@ async def test_a_budget_park_met_while_recovering_a_call_is_kept_and_its_gate_as
 
     parked = await loop.loops.run(loop.owner, agent_session_id)
 
-    assert parked.park is not None and parked.park.reason is ParkReason.BUDGET
+    assert parked.park is not None and parked.park.reason is ParkReason.SPEND_BUDGET
     assert len(asked) == 1, "the gate is asked once"
     assert compute.started == {}, "no job started"
     session = await loop.managers.agent_sessions.get_agent_session(loop.owner, agent_session_id)
     assert session.park == parked.park
 
-    line = await loop.managers.budgets.get_budget(loop.owner, line_id)
+    line = await loop.managers.spend_budgets.get_spend_budget(loop.owner, line_id)
     raised = Amount(cost_micros=50_000_000)
-    await loop.managers.budgets.change_amount(loop.owner, line_id, raised, line.version)
-    await loop.managers.agent_sessions.wake_parked(loop.owner, ParkReason.BUDGET)
+    await loop.managers.spend_budgets.change_amount(loop.owner, line_id, raised, line.version)
+    await loop.managers.agent_sessions.wake_parked(loop.owner, ParkReason.SPEND_BUDGET)
     started = await loop.loops.run(loop.owner, agent_session_id)
 
     assert started.park is not None and started.park.job is not None
@@ -502,9 +508,11 @@ async def handed_over_mid_turn(
     poke = Lookup("poke", effect=Effect.UNSAFE, authorization_class=ToolClass.WRITE, holds=True)
     loop = loop_over(tmp_path, kinds=(APPROVER,), extra=(poke,))
     agent_session_id = await loop.start("approver")
-    line = await loop.managers.budgets.create_budget(
+    line = await loop.managers.spend_budgets.create_spend_budget(
         loop.owner,
-        make_budget(BudgetScopeKind.SESSION, str(agent_session_id), cost_micros=cost_micros),
+        make_spend_budget(
+            SpendBudgetScopeKind.AGENT_SESSION, str(agent_session_id), cost_micros=cost_micros
+        ),
     )
     await loop.say(agent_session_id, "Start it, and poke it.")
     loop.anthropic.add(reply(call(job, q="everything"), call("poke", q="once")))
@@ -559,7 +567,7 @@ async def test_a_cancel_met_while_recovering_cancels_the_job_the_recovery_starte
         tmp_path, "compute"
     )
     compute = loop.jobs["compute"]  # 3.6 units an hour, for two hours: 7.2 held
-    held = (await loop.managers.budgets.get_spend(loop.owner, line_id)).held_cost_micros
+    held = (await loop.managers.spend_budgets.get_spend(loop.owner, line_id)).held_cost_micros
 
     async def cancelled(*args: Any, **kwargs: Any) -> Any:
         await loop.managers.agent_steps.append_inputs(
@@ -577,7 +585,7 @@ async def test_a_cancel_met_while_recovering_cancels_the_job_the_recovery_starte
     steps = await loop.history(agent_session_id)
     assert "the job was cancelled" in text_of(answer_to(steps, asked))
     assert answer_to(steps, poked)
-    spend = await loop.managers.budgets.get_spend(loop.owner, line_id)
+    spend = await loop.managers.spend_budgets.get_spend(loop.owner, line_id)
     assert spend.held_cost_micros == held, "its hold settled"
     assert spend.spent_cost_micros >= 7_200_000, "counted whole"
 
@@ -589,10 +597,12 @@ async def test_a_completion_past_the_most_a_job_costs_is_refused_and_the_session
     cost at the bound is counted, and the session goes on."""
     loop = builder_loop(tmp_path)
     agent_session_id = await loop.start("builder")
-    line = await loop.managers.budgets.create_budget(
+    line = await loop.managers.spend_budgets.create_spend_budget(
         loop.owner,
-        make_budget(
-            BudgetScopeKind.SESSION, str(agent_session_id), cost_micros=2 * MAX_JOB_COST_MICROS
+        make_spend_budget(
+            SpendBudgetScopeKind.AGENT_SESSION,
+            str(agent_session_id),
+            cost_micros=2 * MAX_JOB_COST_MICROS,
         ),
     )
     await loop.say(agent_session_id, "Start it.")
@@ -612,5 +622,5 @@ async def test_a_completion_past_the_most_a_job_costs_is_refused_and_the_session
     done = await loop.loops.run(loop.owner, agent_session_id)
 
     assert done.outcome is LoopOutcome.SUCCEEDED
-    spend = await loop.managers.budgets.get_spend(loop.owner, line.id)
+    spend = await loop.managers.spend_budgets.get_spend(loop.owner, line.id)
     assert spend.spent_cost_micros >= MAX_JOB_COST_MICROS

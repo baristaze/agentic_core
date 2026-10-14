@@ -76,7 +76,7 @@ does not read exits 2:
 
 ```toml
 [tool.agentic-check.options.MOD-01]
-sites = ["om/src/acme/om/budgets/impl/pricing.py", "om/src/acme/om/language_models/impl/*.py"]
+sites = ["om/src/acme/om/spend_budgets/impl/pricing.py", "om/src/acme/om/language_models/impl/*.py"]
 
 [tool.agentic-check.options.PRV-06]
 modules = ["om.agent_sessions", "om.agent_steps", "om.tools"]

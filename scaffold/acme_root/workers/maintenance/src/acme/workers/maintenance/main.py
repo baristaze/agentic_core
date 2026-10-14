@@ -119,7 +119,7 @@ def build_loop(container: WorkerContainer, lane: str | None = None) -> WorkerLoo
             "privacy": managers.privacy.purge_tenant,
             # What a call held and spent is not a purge of its tenant's: no
             # serving login deletes it, so it never holds the tenant's mark.
-            "budgets": managers.budgets.purge_tenant,
+            "spend_budgets": managers.spend_budgets.purge_tenant,
         },
         # Once a pass, across every tenant: each namespace's rows past their
         # retention.

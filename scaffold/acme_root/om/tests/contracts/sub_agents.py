@@ -38,18 +38,22 @@ from acme.om.agents.types.request import Spawn
 from acme.om.agents.types.run import LoopRun, RunEnd
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.base import new_id
-from acme.om.budgets.types.amount import Amount
-from acme.om.budgets.types.budget import BudgetScope, BudgetScopeKind, WindowKind
 from acme.om.context import TenantContext
 from acme.om.exceptions import NotFound, ValidationFailed
+from acme.om.spend_budgets.types.amount import Amount
+from acme.om.spend_budgets.types.spend_budget import (
+    SpendBudgetScope,
+    SpendBudgetScopeKind,
+    WindowKind,
+)
 from acme.om.tools.native.spawn_sub_agent import SPAWN_SUB_AGENT
 from acme.om.tools.native.wait_for_sub_agents import WAIT_FOR_SUB_AGENTS
 from acme.om.tools.tool import TakeSnapshot
 from acme.om.tools.types.policy import Decision, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import ToolClass
 from contracts.agent_session_storage import marked
-from contracts.budget_storage import make_budget
 from contracts.loops import ALLOWED, Loop, call, reply, said, use
+from contracts.spend_budget_storage import make_spend_budget
 
 SPAWNING = ToolPolicyLayer(
     rules=(
@@ -214,9 +218,11 @@ async def children_together_spend_no_more_than_the_trees_budget(loop: Loop) -> N
     is refused, and starts nothing."""
     root = await a_root(loop, "Test three hypotheses.")
     cap = 340_000  # one call's worst case, about 320,000, and some calls besides
-    budget = await loop.managers.budgets.create_budget(
+    budget = await loop.managers.spend_budgets.create_spend_budget(
         loop.owner,
-        make_budget(BudgetScopeKind.TREE, str(root), window=WindowKind.LIFE, cost_micros=cap),
+        make_spend_budget(
+            SpendBudgetScopeKind.TREE, str(root), window=WindowKind.LIFE, cost_micros=cap
+        ),
     )
     calls = [spawn(f"hypothesis {n}") for n in (1, 2, 3)]
     loop.anthropic.add(
@@ -242,9 +248,9 @@ async def children_together_spend_no_more_than_the_trees_budget(loop: Loop) -> N
 
     assert ended.outcome is LoopOutcome.SUCCEEDED
     for run in refused:
-        assert run.park is not None and run.park.reason is ParkReason.BUDGET
+        assert run.park is not None and run.park.reason is ParkReason.SPEND_BUDGET
         assert run.park.unlock == str(budget.id), "the tree's budget refused it, not its share"
-    tally = await loop.managers.budgets.get_spend(loop.owner, budget.id)
+    tally = await loop.managers.spend_budgets.get_spend(loop.owner, budget.id)
     assert tally.spent_cost_micros + tally.held_cost_micros <= cap
     spent = [await child_spend(loop, child.id) for child in children]
     assert all(child > 0 for child in spent), "each child spent from the tree"
@@ -254,10 +260,10 @@ async def children_together_spend_no_more_than_the_trees_budget(loop: Loop) -> N
 async def child_spend(loop: Loop, agent_session_id: UUID) -> int:
     """What a child spent, as its share's budget on its own session counts
     it."""
-    page = await loop.managers.budgets.get_budgets(loop.owner, None, 50)
-    scope = BudgetScope(kind=BudgetScopeKind.SESSION, key=str(agent_session_id))
+    page = await loop.managers.spend_budgets.get_spend_budgets(loop.owner, None, 50)
+    scope = SpendBudgetScope(kind=SpendBudgetScopeKind.AGENT_SESSION, key=str(agent_session_id))
     (share,) = [budget for budget in page.items if budget.scope == scope]
-    tally = await loop.managers.budgets.get_spend(loop.owner, share.id)
+    tally = await loop.managers.spend_budgets.get_spend(loop.owner, share.id)
     return tally.spent_cost_micros + tally.held_cost_micros
 
 

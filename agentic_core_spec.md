@@ -208,7 +208,7 @@ async def run_loop(ctx, session):                         # illustrative
     while True:
         await controls.apply(ctx, session)                 # pause, cancel, compact...
         request = render(session)                          # pinned zone, window, inputs
-        hold = await budget_gate.authorize(ctx, request)   # before the call
+        hold = await spend_budget_gate.authorize(ctx, request)   # before the call
         await steps.append(ctx, request)                   # persist first
         response = await models.call(ctx, request)         # streamed
         await steps.append(ctx, response)
@@ -1448,6 +1448,11 @@ A **budget** has a scope, a window, and an amount:
 - **Amount:** in reference cost, in native tokens, or both. A token
   budget still binds when a price is unknown or a model is free.
 
+In code it is `SpendBudget`, in `spend_budgets`, with its `SpendHold`,
+`SpendSettlement`, `SpendBreach`, and `SpendTally`, and its scope kinds
+are `agent_session`, `tree`, `person`, `agent_project`, `team`, and
+`tenant`.
+
 A budget can be **closed**, once. From then on it binds no call, and
 what it counted stays. A run's budget is one: made on a session's scope
 just before the run and closed when the run ends, it counts from its
@@ -1595,7 +1600,7 @@ memory-only session's runtime, a resource lease's hold time).
 |---|---|---|---|
 | `person` | A question, an approval, a passed deadline, the step guard, a principal to reassign, a lost workspace | An answer, a decision, an extension, an assignment, an unlock | No |
 | `provider` | An outage, a rate limit, a billing or credential error, a missing key | The provider recovers; a key or account is fixed | At the retry time: an outage's or a rate limit's end, or the next try after a key or an account error, which finds the fix |
-| `budget` | The gate refused | A raise, a close, or the window resets | At the reset |
+| `spend_budget` | The gate refused | A raise, a close, or the window resets | At the reset |
 | `resource` | Waiting in line for a scarce resource ([Leases on a Resource][g-leases]), or for a workspace | A grant, or the request's end without one | On the grant or the end; for a workspace, at the retry time; for a job in line, at its deadline |
 | `job` | A long-running tool job is working | The job's completion | On completion |
 | `children` | Waiting for sub-agents' reports | A report; the tree's deadline ends the wait | On the report; past the deadline it parks on `person` |
@@ -1836,7 +1841,7 @@ interface][g-impls]); the null object is the engine's addition beside
 them.
 
 ```python
-class BudgetGateNullImpl(BudgetGateInterface):   # quiet: allows every call
+class SpendBudgetGateNullImpl(SpendBudgetGateInterface):   # quiet: allows every call
     async def authorize(self, ctx, request) -> Hold:
         return Hold.unbounded()
 
@@ -1898,7 +1903,7 @@ every surface a copy shares, so the bare word stays the product's.
 | `windows` | Rendering, windows, the pinned zone, compaction policy, summaries |
 | `language_models` | Model roles, model sizes and asks, fills, fill sets, the resolver, error kinds, usage |
 | `tools` | The tool contract, the registry, classes, effects, policy, approvals, failure classes, jobs, workspace snapshots |
-| `budgets` | Budgets, budget windows, the gate, holds, breaches, the ledger, pricing |
+| `spend_budgets` | Budgets, budget windows, the gate, holds, breaches, the ledger, pricing |
 | `agents` | Agent kinds, done rules, result gates, trees, handoffs |
 | `attribution` | Actors, principals, spenders, authority modes, visibility by mode, the steerer, the untrusted mark |
 | `privacy` | Storage modes, sealing, deletes |

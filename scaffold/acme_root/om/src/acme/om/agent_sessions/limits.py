@@ -1,7 +1,7 @@
 """Pure rules of a loop's limits of time, steps, and streaks: what each one
 measures, and what it does when it trips. Values in, values out; no clock,
 no storage. The budget, a guard too, trips at the gate
-(`budgets.rules.budget_park`).
+(`spend_budgets.rules.spend_budget_park`).
 
 | Limit | Measures | Kind | When it trips |
 |---|---|---|---|
@@ -58,7 +58,7 @@ DEADLINE_UNLOCK = "deadline"
 
 
 class Limit(StrEnum):
-    BUDGET = "budget"
+    SPEND_BUDGET = "spend_budget"
     DEADLINE = "deadline"
     STEP_GUARD = "step_guard"
     ERROR_STREAK = "error_streak"
@@ -73,7 +73,7 @@ class LimitKind(StrEnum):
 
 
 LIMIT_KINDS: dict[Limit, LimitKind] = {
-    Limit.BUDGET: LimitKind.GUARD,
+    Limit.SPEND_BUDGET: LimitKind.GUARD,
     Limit.DEADLINE: LimitKind.GUARD,
     Limit.STEP_GUARD: LimitKind.GUARD,
     Limit.ERROR_STREAK: LimitKind.BOUND,

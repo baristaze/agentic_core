@@ -64,11 +64,8 @@ from acme.om.attribution.rules import PRINCIPAL_PARK, in_person
 from acme.om.attribution.types.authority import CallReach
 from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
 from acme.om.base import Platform, new_id, thaw_mapping, utcnow
-from acme.om.budgets.rules import budget_park, elapsed_ms
-from acme.om.budgets.types.usage import CallLabels, CallSite
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import (
-    BudgetRefused,
     CompactionFailed,
     Conflict,
     ContextOverflow,
@@ -80,6 +77,7 @@ from acme.om.exceptions import (
     NotFound,
     PlatformException,
     PrincipalLapsed,
+    SpendBudgetRefused,
     SpenderUnknown,
     StaleWriter,
     ToolFailed,
@@ -94,6 +92,8 @@ from acme.om.language_models.types.fill import MAIN, SUMMARIZER, Eligibility, Fi
 from acme.om.leases import LeasesManagerInterface
 from acme.om.leases.types.lease import LeaseStatus
 from acme.om.leases.types.request import RequestStatus, Standing, WaiterKind
+from acme.om.spend_budgets.rules import elapsed_ms, spend_budget_park
+from acme.om.spend_budgets.types.usage import CallLabels, CallSite
 from acme.om.tools import ToolsManagerInterface
 from acme.om.tools.native.load_toolset import callable_tools, load, loads
 from acme.om.tools.native.write_agent_plan import current_agent_plan
@@ -654,8 +654,8 @@ class LoopManagerImpl(LoopManagerInterface):
         nobody to pay parks for a person, and a window that cannot be read
         ends the loop. Anything else is not the loop's to answer."""
         match refused:
-            case BudgetRefused():
-                return await self._park(run, budget_park(refused.refusal, self._clock()))
+            case SpendBudgetRefused():
+                return await self._park(run, spend_budget_park(refused.refusal, self._clock()))
             case GateParked():
                 return await self._park(run, refused.park)
             case NoSpender() | SpenderUnknown():
@@ -698,7 +698,13 @@ class LoopManagerImpl(LoopManagerInterface):
             credential=used.credential,
         )
         request = request_step(
-            rendered, said, agent_session_id, run.loop_id, new_id(), self._clock(), hold_id=hold
+            rendered,
+            said,
+            agent_session_id,
+            run.loop_id,
+            new_id(),
+            self._clock(),
+            spend_hold_id=hold,
         )
         try:
             (request,) = await self._steps.append_agent_steps(
@@ -1201,8 +1207,8 @@ class LoopManagerImpl(LoopManagerInterface):
                 hold = await self._gate.authorize_job(
                     run.ctx, run.agent_session_id, spender, tool.spec.name, rate, deadline
                 )
-            except BudgetRefused as refused:
-                return _Settled(park=budget_park(refused.refusal, self._clock()))
+            except SpendBudgetRefused as refused:
+                return _Settled(park=spend_budget_park(refused.refusal, self._clock()))
             except GateParked as parked:
                 return _Settled(park=parked.park)
             except SpenderUnknown as unknown:
@@ -1237,7 +1243,10 @@ class LoopManagerImpl(LoopManagerInterface):
             await self._answer(run, request, started)
             return _Settled()
         job = JobPark(
-            key=started.key, handle=started.handle, hold_id=hold, request_id=started.request_id
+            key=started.key,
+            handle=started.handle,
+            spend_hold_id=hold,
+            request_id=started.request_id,
         )
         park = Park(
             reason=ParkReason.JOB, unlock=str(started.key), retry_at=started.deadline, job=job
@@ -1286,8 +1295,8 @@ class LoopManagerImpl(LoopManagerInterface):
                 await self._close_job(run, started, stopped, ran=False)
                 return _Settled()
             return _Settled(park=lines.job_line_park(standing, job, deadline))
-        if job.hold_id is not None:
-            await self._gate.settle_job(run.ctx, job.hold_id, None, started=False)
+        if job.spend_hold_id is not None:
+            await self._gate.settle_job(run.ctx, job.spend_hold_id, None, started=False)
         if standing is None:
             text, failure = rules.JOB_GONE, ToolFailure.PERMANENT
         else:
@@ -1330,8 +1339,8 @@ class LoopManagerImpl(LoopManagerInterface):
             await self._cancel_job(run, started)
             answer = self._stopped(request, *stopped)
             cost = None
-        if job.hold_id is not None:
-            await self._gate.settle_job(run.ctx, job.hold_id, cost, started=ran)
+        if job.spend_hold_id is not None:
+            await self._gate.settle_job(run.ctx, job.spend_hold_id, cost, started=ran)
         await self._answer(run, request, answer)
         run.jobs.pop(job.key, None)
 
@@ -1781,7 +1790,7 @@ class LoopManagerImpl(LoopManagerInterface):
         run's gate never held it, and the request closed as abandoned."""
         header = request.header
         closing = rules.abandoned_step(new_id(), self._clock(), request)
-        if isinstance(header, ModelRequestHeader) and header.hold_id is not None:
+        if isinstance(header, ModelRequestHeader) and header.spend_hold_id is not None:
             provider, _, model = header.fill.partition("/")
             session = run.session
             labels = CallLabels(
@@ -1797,7 +1806,7 @@ class LoopManagerImpl(LoopManagerInterface):
                 loop_id=run.loop_id, agent_step_id=closing.id, latency_ms=0, labels=labels
             )
             with contextlib.suppress(NotFound):
-                await self._gate.settle(run.ctx, header.hold_id, None, billed=True, site=site)
+                await self._gate.settle(run.ctx, header.spend_hold_id, None, billed=True, site=site)
         await self._steps.append_agent_steps(run.ctx, run.agent_session_id, run.epoch, [closing])
 
     async def _keep(self, run: _Run) -> None:

@@ -35,10 +35,10 @@ from acme.om.attribution.rules import trust_of
 from acme.om.attribution.types.authority import AuthorityMode, Trust
 from acme.om.attribution.types.principal import AgentRef
 from acme.om.base import Platform, new_id, utcnow
-from acme.om.budgets.types.amount import Amount
 from acme.om.context import Role, TenantContext
 from acme.om.exceptions import McpDefinitionChanged, NotAuthorized, NotFound, ValidationFailed
 from acme.om.root import build_managers
+from acme.om.spend_budgets.types.amount import Amount
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.tools.mcp import McpToolImpl
 from acme.om.tools.registry import ToolRegistry

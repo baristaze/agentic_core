@@ -181,9 +181,9 @@ def test_role_metadata_holds_only_that_role() -> None:
         "event_cursors",
         "agent_steps",
         "agent_step_cursors",
-        "budget_tallies",
-        "budget_holds",
-        "budget_settlements",
+        "spend_budget_tallies",
+        "spend_budget_holds",
+        "spend_budget_settlements",
         "usage_records",
         "tool_outputs",
     }
@@ -252,7 +252,7 @@ PARTIAL_INDEXES = {
     "ix_users_deleted_at": "deleted_at IS NOT NULL",
     "ix_memberships_deleted_at": "deleted_at IS NOT NULL",
     "ix_api_keys_deleted_at": "deleted_at IS NOT NULL",
-    "ix_budgets_org_id_scope_kind_scope_key": "closed_at IS NULL",
+    "ix_spend_budgets_org_id_scope_kind_scope_key": "closed_at IS NULL",
 }
 """The partial indexes the fence, the purges across tenants, and the budget
 gate read, with their predicates."""

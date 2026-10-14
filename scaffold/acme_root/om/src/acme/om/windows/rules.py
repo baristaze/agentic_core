@@ -56,8 +56,8 @@ from acme.om.agent_steps.types.header import (
 )
 from acme.om.attribution.rules import trust_of
 from acme.om.attribution.types.authority import RequestAttribution, Trust
-from acme.om.budgets.types.exposure import CacheWrite, CallShape, PromptCount, PromptSize
 from acme.om.language_models.types.fill import MAIN, SUMMARIZER, Fill, ModelRole, OutputShape
+from acme.om.spend_budgets.types.exposure import CacheWrite, CallShape, PromptCount, PromptSize
 from acme.om.windows.types.kind import KindPrompts
 from acme.om.windows.types.pinned import PinnedItem, PinnedZone
 from acme.om.windows.types.policy import CompactionPolicy
@@ -936,7 +936,7 @@ def request_step(
     agent_step_id: UUID,
     at: datetime,
     *,
-    hold_id: UUID | None = None,
+    spend_hold_id: UUID | None = None,
 ) -> AgentStep:
     """The `model_request` a rendered request is recorded as: it references
     the inputs it delivers and names its window, its prompt's hash, who
@@ -961,7 +961,7 @@ def request_step(
             left_edge=window.left_edge,
             summary_id=window.summary_id,
             prompt_hash=rendered.prompt_hash,
-            hold_id=hold_id,
+            spend_hold_id=spend_hold_id,
         ),
     )
 

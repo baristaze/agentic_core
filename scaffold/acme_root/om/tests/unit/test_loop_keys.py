@@ -36,7 +36,7 @@ from acme.om.language_models.credentials import (
 from acme.om.language_models.layer import LanguageModelsLayer
 from acme.om.language_models.types.fill import Fill, ModelRole
 from acme.om.root import Managers
-from acme.om.windows.impl.gate import CallGateBudgetImpl
+from acme.om.windows.impl.gate import CallGateSpendBudgetImpl
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
 from acme.om.work.types.work_item import WakeAgentSessionPayload, WorkKind
 
@@ -44,12 +44,16 @@ KEY = "key-1"
 """The reference a tenant's own key is named by: never the key."""
 
 
-class Told(CallGateBudgetImpl):
+class Told(CallGateSpendBudgetImpl):
     """The budgets' gate, keeping the credential each hold was asked for."""
 
     def __init__(self, managers: Managers, clock: Clock) -> None:
         super().__init__(
-            managers.budget_gate, managers.pricing, managers.agent_sessions, managers.budgets, clock
+            managers.spend_budget_gate,
+            managers.pricing,
+            managers.agent_sessions,
+            managers.spend_budgets,
+            clock,
         )
         self.credentials: list[str] = []
 

@@ -598,7 +598,7 @@ class ParkReason(StrEnum):
     """
     person = 'person'
     provider = 'provider'
-    budget = 'budget'
+    spend_budget = 'spend_budget'
     resource = 'resource'
     job = 'job'
     children = 'children'
@@ -1024,7 +1024,7 @@ class UsageRecordView(BaseModel):
     by disjoint class, reference cost in millionths (null when no price
     applied), the provider's latency, and the labels of what served it. It
     holds no content, so it reads the same in every storage mode. `agent_step_id`
-    is the call's response step; `hold_id` its hold; `tree_id` the
+    is the call's response step; `spend_hold_id` its hold; `tree_id` the
     session's tree; `kind_version` the agent kind's version the session
     ran. `settled_whole` marks a call whose usage was never reported whole
     (a broken stream, a lost run): its cost is its whole hold, and its
@@ -1037,7 +1037,6 @@ class UsageRecordView(BaseModel):
     cache_write_tokens: Annotated[int, Field(title='Cache Write Tokens')]
     cost_micros: Annotated[int | None, Field(title='Cost Micros')]
     created_at: Annotated[AwareDatetime, Field(title='Created At')]
-    hold_id: Annotated[UUID, Field(title='Hold Id')]
     id: Annotated[UUID, Field(title='Id')]
     input_tokens: Annotated[int, Field(title='Input Tokens')]
     kind_version: Annotated[int, Field(title='Kind Version')]
@@ -1048,6 +1047,7 @@ class UsageRecordView(BaseModel):
     provider: Annotated[str, Field(title='Provider')]
     role: Annotated[str, Field(title='Role')]
     settled_whole: Annotated[bool, Field(title='Settled Whole')]
+    spend_hold_id: Annotated[UUID, Field(title='Spend Hold Id')]
     thinking_tokens: Annotated[int, Field(title='Thinking Tokens')]
     tree_id: Annotated[UUID, Field(title='Tree Id')]
 

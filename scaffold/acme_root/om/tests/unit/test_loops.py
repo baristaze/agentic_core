@@ -73,7 +73,7 @@ from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.rules import DEFAULT_CEILINGS
 from acme.om.tools.types.policy import Decision, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import ToolClass
-from acme.om.windows.impl.gate import CallGateBudgetImpl
+from acme.om.windows.impl.gate import CallGateSpendBudgetImpl
 from acme.om.windows.rules import request_step
 
 
@@ -270,8 +270,11 @@ async def test_a_request_a_lost_run_left_open_is_closed_and_its_hold_settled_who
     )
     fill = (await managers.language_models.get_fill_set(ctx, agent_session_id)).fill_for(MAIN)
     assert fill is not None
-    gate = CallGateBudgetImpl(
-        managers.budget_gate, managers.pricing, managers.agent_sessions, managers.budgets
+    gate = CallGateSpendBudgetImpl(
+        managers.spend_budget_gate,
+        managers.pricing,
+        managers.agent_sessions,
+        managers.spend_budgets,
     )
     hold = await gate.authorize(
         ctx, agent_session_id, person(ctx.user_id), MAIN, fill, rendered.call, credential="platform"
@@ -283,7 +286,7 @@ async def test_a_request_a_lost_run_left_open_is_closed_and_its_hold_settled_who
         trigger.id,
         new_id(),
         loop.clock(),
-        hold_id=hold,
+        spend_hold_id=hold,
     )
     await managers.agent_steps.append_agent_steps(ctx, agent_session_id, epoch, [lost])
     loop.anthropic.add(reply(said("The total is 12.")))
@@ -295,14 +298,18 @@ async def test_a_request_a_lost_run_left_open_is_closed_and_its_hold_settled_who
     closing = next(step for step in steps if step.responds_to == lost.id)
     assert isinstance(closing.header, ModelResponseHeader) and closing.header.abandoned
     ledger = loop.storage.get_ledger_storage()
-    settlement = await ledger.read_settlement(ctx.org_id, hold)
+    settlement = await ledger.read_spend_settlement(ctx.org_id, hold)
     assert settlement is not None and settlement.bill.kind == "unknown", "settled whole"
     # This run's gate never held the lost call: its record is named from the
     # request and the session, at the whole hold, and marked.
     record = next(
         r for r in await ledger.read_usage_records(ctx.org_id, agent_session_id, None, 10)
     )
-    assert (record.hold_id, record.agent_step_id, record.settled_whole) == (hold, closing.id, True)
+    assert (record.spend_hold_id, record.agent_step_id, record.settled_whole) == (
+        hold,
+        closing.id,
+        True,
+    )
     assert (record.role, record.provider, record.model) == (MAIN, fill.provider.value, fill.model)
     assert (record.cost_micros, record.input_tokens) == (settlement.spent.cost_micros, 0)
     with pytest.raises(StaleWriter):

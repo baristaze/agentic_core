@@ -22,13 +22,13 @@ from acme.om.context import TenantContext
 from acme.om.exceptions import GateParked, PlatformException, SpenderUnknown
 from acme.om.language_models.types.fill import Fill, ModelRole
 from acme.om.root import Managers
-from acme.om.windows.impl.gate import CallGateBudgetImpl
+from acme.om.windows.impl.gate import CallGateSpendBudgetImpl
 
 NORM = Park(reason=ParkReason.PERSON, unlock="norm")
 """A gate's own park: a call far above its session's norm, for a person."""
 
 
-class Parking(CallGateBudgetImpl):
+class Parking(CallGateSpendBudgetImpl):
     """The budgets' gate, behind one that raises `turn` at a model call's
     hold and `job` at a spending job's, and counts the holds it let through."""
 
@@ -41,7 +41,11 @@ class Parking(CallGateBudgetImpl):
         job: PlatformException | None = None,
     ) -> None:
         super().__init__(
-            managers.budget_gate, managers.pricing, managers.agent_sessions, managers.budgets, clock
+            managers.spend_budget_gate,
+            managers.pricing,
+            managers.agent_sessions,
+            managers.spend_budgets,
+            clock,
         )
         self.turn, self.job = turn, job
         self.held = 0

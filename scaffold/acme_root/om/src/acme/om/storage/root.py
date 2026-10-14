@@ -6,7 +6,6 @@ from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_steps.storage import AgentStepStorageInterface
 from acme.om.agents.storage import AgentStorageInterface
 from acme.om.attribution.storage import AttributionStorageInterface
-from acme.om.budgets.storage import BudgetStorageInterface, LedgerStorageInterface
 from acme.om.events.storage import EventStorageInterface
 from acme.om.idempotency.storage import IdempotencyStorageInterface
 from acme.om.language_models.storage import FillSetStorageInterface
@@ -15,6 +14,7 @@ from acme.om.media.storage import MediaStorageInterface
 from acme.om.orchestrations.storage import OrchestrationsStorageInterface
 from acme.om.outbox.storage import OutboxStorageInterface
 from acme.om.privacy.storage import PrivacyStorageInterface
+from acme.om.spend_budgets.storage import LedgerStorageInterface, SpendBudgetStorageInterface
 from acme.om.tenancy.storage import TenancyStorageInterface
 from acme.om.tools.storage import ToolStorageInterface
 from acme.om.windows.storage import WindowStorageInterface
@@ -62,7 +62,7 @@ class StorageInterface(ABC):
     def get_privacy_storage(self) -> PrivacyStorageInterface: ...
 
     @abstractmethod
-    def get_budget_storage(self) -> BudgetStorageInterface: ...
+    def get_spend_budget_storage(self) -> SpendBudgetStorageInterface: ...
 
     @abstractmethod
     def get_ledger_storage(self) -> LedgerStorageInterface: ...

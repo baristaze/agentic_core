@@ -10,9 +10,9 @@ from uuid import UUID
 import pytest
 from contracts.agent_session_storage import make_agent_session
 from contracts.agent_step_storage import make_message, make_parked, make_request, make_response
-from contracts.budget_storage import make_budget
 from contracts.doubles import context, model_request
 from contracts.factories import make_org
+from contracts.spend_budget_storage import make_spend_budget
 from contracts.tools import stand_ins
 from pydantic import ValidationError
 
@@ -42,10 +42,6 @@ from acme.om.attribution.rules import trust_of
 from acme.om.attribution.types.authority import AuthorityMode, Trust
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
-from acme.om.budgets.types.amount import Amount, Spend
-from acme.om.budgets.types.breach import Refusal
-from acme.om.budgets.types.budget import BudgetScope, BudgetScopeKind, WindowKind
-from acme.om.budgets.types.hold import Hold, HoldRequest
 from acme.om.context import Role, TenantContext
 from acme.om.exceptions import (
     NotAuthorized,
@@ -55,6 +51,14 @@ from acme.om.exceptions import (
     ValidationFailed,
 )
 from acme.om.root import Managers, build_managers
+from acme.om.spend_budgets.types.amount import Amount, Spend
+from acme.om.spend_budgets.types.spend_breach import Refusal
+from acme.om.spend_budgets.types.spend_budget import (
+    SpendBudgetScope,
+    SpendBudgetScopeKind,
+    WindowKind,
+)
+from acme.om.spend_budgets.types.spend_hold import SpendHold, SpendHoldRequest
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.tools.registry import ToolRegistry
 from acme.om.windows.impl.gate import scopes_of
@@ -337,12 +341,14 @@ def test_an_objective_past_its_bound_is_refused_with_the_bound_named() -> None:
             request(id=new_id(), kind="helper", title="t", objective=at_bound + "x")
 
 
-def hold(ctx: TenantContext, session: AgentSession, cost_micros: int) -> HoldRequest:
+def hold(ctx: TenantContext, session: AgentSession, cost_micros: int) -> SpendHoldRequest:
     """A model call of `session` with the worst case named, charged to the
     scopes the call gate charges it to."""
     scopes = scopes_of(ctx.org_id, session.id, session.root_id, person_of(ctx))
     exposure = Spend(cost_micros=cost_micros, tokens=10)
-    return HoldRequest(spender_id=ctx.user_id, scopes=scopes, exposure=exposure, purpose="main")
+    return SpendHoldRequest(
+        spender_id=ctx.user_id, scopes=scopes, exposure=exposure, purpose="main"
+    )
 
 
 async def test_a_child_stops_at_its_share_while_its_tree_has_room(managers: Managers) -> None:
@@ -352,27 +358,31 @@ async def test_a_child_stops_at_its_share_while_its_tree_has_room(managers: Mana
     org = make_org()
     admin, member = context(Role.ADMIN, org), context(Role.MEMBER, org)
     root = await start(managers, member)
-    tree = await managers.budgets.create_budget(
+    tree = await managers.spend_budgets.create_spend_budget(
         admin,
-        make_budget(BudgetScopeKind.TREE, str(root.id), window=WindowKind.LIFE, cost_micros=10_000),
+        make_spend_budget(
+            SpendBudgetScopeKind.TREE, str(root.id), window=WindowKind.LIFE, cost_micros=10_000
+        ),
     )
     asked = spawn()
     child = await managers.agents.spawn(member, root.id, asked)
     assert await managers.agents.spawn(member, root.id, asked) == child
-    page = await managers.budgets.get_budgets(admin, None, 50)
+    page = await managers.spend_budgets.get_spend_budgets(admin, None, 50)
     (cap,) = [
         b
         for b in page.items
-        if b.scope == BudgetScope(kind=BudgetScopeKind.SESSION, key=str(child.id))
+        if b.scope == SpendBudgetScope(kind=SpendBudgetScopeKind.AGENT_SESSION, key=str(child.id))
     ]
     assert (cap.window_kind, cap.amount) == (WindowKind.LIFE, HELPER.share)
-    gate = managers.budget_gate
-    assert isinstance(await gate.authorize(member, hold(member, child, 600)), Hold)
+    gate = managers.spend_budget_gate
+    assert isinstance(await gate.authorize(member, hold(member, child, 600)), SpendHold)
     refused = await gate.authorize(member, hold(member, child, 600))
     assert isinstance(refused, Refusal)
-    assert [breach.budget_id for breach in refused.breaches] == [cap.id], "its share, not the tree"
-    assert isinstance(await gate.authorize(member, hold(member, root, 600)), Hold)
-    assert (await managers.budgets.get_budget(admin, tree.id)).amount == tree.amount
+    assert [breach.spend_budget_id for breach in refused.breaches] == [cap.id], (
+        "its share, not the tree"
+    )
+    assert isinstance(await gate.authorize(member, hold(member, root, 600)), SpendHold)
+    assert (await managers.spend_budgets.get_spend_budget(admin, tree.id)).amount == tree.amount
 
 
 async def test_a_share_never_adds_to_its_trees_budget(managers: Managers) -> None:
@@ -382,14 +392,16 @@ async def test_a_share_never_adds_to_its_trees_budget(managers: Managers) -> Non
     org = make_org()
     admin, member = context(Role.ADMIN, org), context(Role.MEMBER, org)
     root = await start(managers, member)
-    tree = await managers.budgets.create_budget(
+    tree = await managers.spend_budgets.create_spend_budget(
         admin,
-        make_budget(BudgetScopeKind.TREE, str(root.id), window=WindowKind.LIFE, cost_micros=500),
+        make_spend_budget(
+            SpendBudgetScopeKind.TREE, str(root.id), window=WindowKind.LIFE, cost_micros=500
+        ),
     )
     child = await managers.agents.spawn(member, root.id, spawn())
-    refused = await managers.budget_gate.authorize(member, hold(member, child, 800))
+    refused = await managers.spend_budget_gate.authorize(member, hold(member, child, 800))
     assert isinstance(refused, Refusal)
-    assert [breach.budget_id for breach in refused.breaches] == [tree.id]
+    assert [breach.spend_budget_id for breach in refused.breaches] == [tree.id]
 
 
 async def test_a_kind_that_names_no_share_is_never_spawned(managers: Managers) -> None:

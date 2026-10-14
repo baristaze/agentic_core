@@ -351,10 +351,10 @@ async def test_a_member_who_spoke_through_a_key_acts_no_higher_than_the_key(
 async def test_a_parked_session_the_engine_unlocks_asks_for_its_run(engine: Engine) -> None:
     ctx = context(Role.MEMBER)
     session, epoch, loop_id = await running(engine, ctx)
-    budget = Park(reason=ParkReason.BUDGET, unlock="budget")
+    budget = Park(reason=ParkReason.SPEND_BUDGET, unlock="spend_budget")
     parked = await engine.managers.agent_sessions.park(ctx, session.id, epoch, loop_id, budget)
     assert parked.status is AgentSessionStatus.PARKED
 
-    woken = await engine.managers.agent_sessions.wake_parked(ctx, ParkReason.BUDGET)
+    woken = await engine.managers.agent_sessions.wake_parked(ctx, ParkReason.SPEND_BUDGET)
 
     assert woken == 1 and len(engine.runs(session.id)) == 2

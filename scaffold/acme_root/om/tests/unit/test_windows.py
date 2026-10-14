@@ -40,7 +40,6 @@ from acme.om.attribution import AttributionManagerInterface
 from acme.om.attribution.types.authority import AuthorityMode, RequestAttribution
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
-from acme.om.budgets.types.usage import CallSite
 from acme.om.context import Role, TenantContext
 from acme.om.exceptions import (
     CompactionFailed,
@@ -67,6 +66,7 @@ from acme.om.language_models.types.fill import (
 from acme.om.privacy.impl.keys import AgentSessionKeysImpl
 from acme.om.privacy.impl.tool_outputs import ToolOutputSealKeysImpl
 from acme.om.root import Managers, build_managers
+from acme.om.spend_budgets.types.usage import CallSite
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.windows import rules
 from acme.om.windows.gate import CallGateInterface
@@ -161,15 +161,15 @@ class Gate(CallGateInterface):
     async def settle(
         self,
         ctx: TenantContext,
-        hold_id: UUID,
+        spend_hold_id: UUID,
         usage: Usage | None,
         *,
         billed: bool,
         site: CallSite | None,
         partial: Usage | None = None,
     ) -> None:
-        assert hold_id in self.holds
-        self.settled.append((hold_id, usage, billed))
+        assert spend_hold_id in self.holds
+        self.settled.append((spend_hold_id, usage, billed))
         self.sites.append(site)
         self.partials.append(partial)
 
@@ -185,7 +185,7 @@ class Gate(CallGateInterface):
         raise AssertionError("a compaction starts no job")
 
     async def settle_job(
-        self, ctx: TenantContext, hold_id: UUID, cost_micros: int | None, *, started: bool
+        self, ctx: TenantContext, spend_hold_id: UUID, cost_micros: int | None, *, started: bool
     ) -> None:
         raise AssertionError("a compaction starts no job")
 

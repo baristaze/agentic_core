@@ -15,7 +15,6 @@ from acme.integrations.model_providers.types import Effort, ProviderName
 from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
 from acme.om.agent_steps.types.header import SwitchedHeader
 from acme.om.base import new_id
-from acme.om.budgets.impl.pricing import PricingTableImpl
 from acme.om.context import RequestContext, Role, TenantContext
 from acme.om.exceptions import (
     NotAuthorized,
@@ -49,6 +48,7 @@ from acme.om.language_models.types.fill import (
     SwitchReason,
 )
 from acme.om.root import Managers, build_managers
+from acme.om.spend_budgets.impl.pricing import PricingTableImpl
 from acme.om.storage.impl.memory import StorageMemoryImpl
 
 UNLISTED = Fill(

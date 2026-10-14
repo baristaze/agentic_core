@@ -65,7 +65,7 @@ class ParkReason(StrEnum):
 
     PERSON = "person"  # a question, an approval, a deadline, a principal to reassign
     PROVIDER = "provider"  # an outage, a rate limit, a billing or credential error
-    BUDGET = "budget"  # the gate refused
+    SPEND_BUDGET = "spend_budget"  # the gate refused
     RESOURCE = "resource"  # a scarce resource or a workspace, in line
     JOB = "job"  # a long-running tool job is working
     CHILDREN = "children"  # sub-agents have not reported
@@ -108,7 +108,7 @@ class JobPark(Platform):
 
     key: UUID
     handle: Stored = Field(min_length=1, max_length=MAX_NAME)
-    hold_id: UUID | None = None
+    spend_hold_id: UUID | None = None
     request_id: UUID | None = None
 
 
@@ -296,7 +296,7 @@ class ModelRequestHeader(Platform):
     session, so a cache regression is a query and a replay is checked by it.
     `speaker` is the principal behind the latest principal-authored input
     the model has received, this request's included: the person a delegated
-    call it leads to runs under. `spender` pays for the call. `hold_id` is
+    call it leads to runs under. `spender` pays for the call. `spend_hold_id` is
     the budget hold the call's worst case was reserved by before the
     request was written, so a run that finds the request unanswered after
     a crash settles that hold rather than leaving it held."""
@@ -310,7 +310,7 @@ class ModelRequestHeader(Platform):
     left_edge: int = Field(ge=1)
     summary_id: UUID | None = None
     prompt_hash: Stored = Field(min_length=1, max_length=MAX_NAME)
-    hold_id: UUID | None = None
+    spend_hold_id: UUID | None = None
 
 
 class ModelResponseHeader(Platform):

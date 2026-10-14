@@ -62,7 +62,9 @@ def parked(session: AgentSession, version: int) -> AgentSession:
         update={
             "status": AgentSessionStatus.PARKED,
             "park": Park(
-                reason=ParkReason.BUDGET, unlock="raise", retry_at=utcnow() + timedelta(hours=1)
+                reason=ParkReason.SPEND_BUDGET,
+                unlock="raise",
+                retry_at=utcnow() + timedelta(hours=1),
             ),
             "status_seq": 7,
             "pending_input": new_id(),

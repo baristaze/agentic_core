@@ -208,7 +208,7 @@ async def get_agent_session_usage(
 
     The answer is a `AgentSessionUsageView`: `agent_session_id`; `items`, a page of the
     session's usage records, oldest first, each with `id`, `created_at`,
-    `hold_id`, `agent_session_id`, `tree_id`, `loop_id`, `agent_step_id` (the call's
+    `spend_hold_id`, `agent_session_id`, `tree_id`, `loop_id`, `agent_step_id` (the call's
     response step), `agent_kind`, `kind_version`, `role`, `provider`, `model`, `input_tokens`,
     `cache_read_tokens`, `cache_write_tokens`, `output_tokens`,
     `thinking_tokens`, `cost_micros` (reference cost in millionths, null when

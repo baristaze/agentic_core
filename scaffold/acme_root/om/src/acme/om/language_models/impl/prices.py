@@ -4,8 +4,8 @@ so the resolver refuses every one, and nothing runs on a price it would
 have to guess. Loud, never quiet."""
 
 from acme.integrations.model_providers.types import ProviderName
-from acme.om.budgets.pricing import PricingInterface
 from acme.om.language_models.prices import ModelPricesInterface
+from acme.om.spend_budgets.pricing import PricingInterface
 
 
 class ModelPricesNullImpl(ModelPricesInterface):

@@ -24,9 +24,9 @@ from acme.om.agent_sessions.limits import Limits
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.attribution.types.principal import MAX_KIND
 from acme.om.base import Platform
-from acme.om.budgets.types.amount import Amount
 from acme.om.exceptions import UnknownAgentKind
 from acme.om.language_models.types.fill import MAIN, SUMMARIZER, ModelAsk, ModelRole
+from acme.om.spend_budgets.types.amount import Amount
 from acme.om.tools.types.policy import ToolPolicyLayer
 from acme.om.tools.types.toolset import LOAD_TOOLSET, Toolset
 

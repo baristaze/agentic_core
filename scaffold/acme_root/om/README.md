@@ -203,7 +203,7 @@ arrive twice, so the second copy gets the first one's answer.
 - [Agents](src/acme/om/agents/README.md)
 - [Attribution](src/acme/om/attribution/README.md)
 - [Privacy](src/acme/om/privacy/README.md)
-- [Budgets](src/acme/om/budgets/README.md)
+- [Budgets](src/acme/om/spend_budgets/README.md)
 - [Models](src/acme/om/language_models/README.md)
 - [Windows](src/acme/om/windows/README.md)
 - [Tools](src/acme/om/tools/README.md)

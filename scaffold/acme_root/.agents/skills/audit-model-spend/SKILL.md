@@ -109,7 +109,7 @@ the preamble gives.
    cache, `cache_write / prompt`; its share of the tokens; and its share
    of the spend. A cost in dollars is `cost_micros` divided by
    1,000,000. The rates of a cache write and an uncached input token are
-   the price table's, in `om/src/acme/om/budgets/impl/pricing.py` (read
+   the price table's, in `om/src/acme/om/spend_budgets/impl/pricing.py` (read
    it with `Read`), so the cost of rebuilt caches is each group's cache
    writes at the write rate's premium over the input rate, as an
    estimate the report labels so. Each kind version's total across its

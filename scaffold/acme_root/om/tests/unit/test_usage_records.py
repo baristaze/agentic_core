@@ -18,14 +18,14 @@ from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
 from acme.om.agent_steps.types.header import LoopOutcome, ModelRequestHeader
 from acme.om.agents.types.request import Start
 from acme.om.base import new_id
-from acme.om.budgets.rules import usage_spend
-from acme.om.budgets.storage.tables.usage_records import UsageRecords
-from acme.om.budgets.types.hold import Settlement
-from acme.om.budgets.types.usage import UsageRecord
 from acme.om.context import TenantContext
 from acme.om.exceptions import Unavailable
 from acme.om.language_models.types.fill import MAIN, SUMMARIZER
 from acme.om.privacy.types.agent_session_privacy import StorageMode, StoragePolicy
+from acme.om.spend_budgets.rules import usage_spend
+from acme.om.spend_budgets.storage.tables.usage_records import UsageRecords
+from acme.om.spend_budgets.types.spend_hold import SpendSettlement
+from acme.om.spend_budgets.types.usage import UsageRecord
 
 FIRST = Usage(input=1_200, cache_read=800, cache_write=300, output=45, thinking=20)
 SECOND = Usage(input=1_400, cache_read=1_100, cache_write=0, output=60, thinking=0)
@@ -116,7 +116,7 @@ async def test_every_storage_mode_keeps_one_usage_record_per_model_call(
         ]
         assert [r.agent_step_id for r in records] == [s.id for s in responses], mode
         assert len({r.loop_id for r in records}) == 1 and records[0].loop_id == responses[0].loop_id
-        assert len({r.hold_id for r in records}) == 2, f"{mode}: one record per hold"
+        assert len({r.spend_hold_id for r in records}) == 2, f"{mode}: one record per hold"
         row = await loop.managers.agent_sessions.get_agent_session(loop.owner, session)
         assert {(r.tree_id, r.kind_version) for r in records} == {(row.root_id, row.kind_version)}
         at_rest = await loop.storage.get_agent_step_storage().read_agent_steps(org, session, 0, 100)
@@ -154,7 +154,7 @@ COLUMNS = {
     "id": Uuid,
     "org_id": Uuid,
     "created_at": DateTime,
-    "hold_id": Uuid,
+    "spend_hold_id": Uuid,
     "agent_session_id": Uuid,
     "tree_id": Uuid,
     "loop_id": Uuid,
@@ -260,7 +260,7 @@ async def test_a_deleted_tenants_purge_keeps_its_usage_records(
         managers.agent_steps.purge_tenant,
         managers.agent_sessions.purge_tenant,
         managers.privacy.purge_tenant,
-        managers.budgets.purge_tenant,
+        managers.spend_budgets.purge_tenant,
     ):
         while await purge(loop.owner):
             pass
@@ -276,12 +276,12 @@ def is_request(step: AgentStep) -> bool:
     return isinstance(step.header, ModelRequestHeader)
 
 
-async def settlement_of(loop: Loop, request: AgentStep) -> Settlement:
+async def spend_settlement_of(loop: Loop, request: AgentStep) -> SpendSettlement:
     """How the ledger closed a model request's hold."""
     header = request.header
-    assert isinstance(header, ModelRequestHeader) and header.hold_id is not None
-    found = await loop.storage.get_ledger_storage().read_settlement(
-        loop.owner.org_id, header.hold_id
+    assert isinstance(header, ModelRequestHeader) and header.spend_hold_id is not None
+    found = await loop.storage.get_ledger_storage().read_spend_settlement(
+        loop.owner.org_id, header.spend_hold_id
     )
     assert found is not None
     return found
@@ -312,7 +312,7 @@ async def test_a_call_settled_whole_leaves_a_marked_record_at_its_hold(
     assert run.outcome is LoopOutcome.SUCCEEDED
     history = await loop.history(session)
     ledger = loop.storage.get_ledger_storage()
-    first, second = [await settlement_of(loop, s) for s in history if is_request(s)]
+    first, second = [await spend_settlement_of(loop, s) for s in history if is_request(s)]
     assert (first.bill.kind, second.bill.kind) == ("unknown", "billed")
     broken, whole = await records_of(loop, loop.owner, session)
     responses = [s.id for s in history if s.type is AgentStepType.MODEL_RESPONSE]
@@ -355,6 +355,6 @@ async def test_a_record_that_fails_to_land_never_fails_its_call(
     history = await loop.history(session)
     responses = [s for s in history if s.type is AgentStepType.MODEL_RESPONSE]
     assert len(responses) == 2 and responses[-1].as_text() == "12.", "both replies are kept"
-    settled = [await settlement_of(loop, s) for s in history if is_request(s)]
+    settled = [await spend_settlement_of(loop, s) for s in history if is_request(s)]
     assert [s.bill.kind for s in settled] == ["billed", "billed"]
     assert await records_of(loop, loop.owner, session) == []

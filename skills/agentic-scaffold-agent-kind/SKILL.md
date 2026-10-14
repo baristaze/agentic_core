@@ -40,7 +40,7 @@ Example: `fixer --done result_tool --result-tool submit --tools read_log,run_tes
   sub-agent, as `Amount` holds it: a bare `<micros>` is reference cost in
   millionths, `Amount(cost_micros=<micros>)`, and `tokens=<count>` is
   native tokens, `Amount(tokens=<count>)`. A share covers at least one
-  call's worst-case hold (Hold, in `om/src/<name>/om/budgets/README.md`):
+  call's worst-case hold (Hold, in `om/src/<name>/om/spend_budgets/README.md`):
   a smaller one refuses the child's first call, and only a person clears
   it. A kind names a share when a spawn can start it, which is known when
   the kind is written: every kind that delivers through a result tool,
@@ -96,7 +96,7 @@ The shape of a kind is `DELIVERY` and `ASSISTANT` in
    deadline every session of it shares. A kind that spawns sub-agents
    names a `spawn`-class tool among its tools. A kind a spawn can start
    names its `share`, an `Amount` from
-   `om/src/<name>/om/budgets/types/amount.py`: a spawn writes it as a
+   `om/src/<name>/om/spend_budgets/types/amount.py`: a spawn writes it as a
    budget on the child's session, and refuses a kind with none. Its
    parent holds what a spawn asks of it: a `spawn`-class tool, the kind's
    result tool among its tools, and a tree with room for the child, a

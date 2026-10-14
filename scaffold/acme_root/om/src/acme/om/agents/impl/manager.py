@@ -39,7 +39,6 @@ from acme.om.attribution.rules import visibility_of
 from acme.om.attribution.types.authority import AgentSessionAuthority
 from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
 from acme.om.base import Platform, derived_id, new_id, utcnow
-from acme.om.budgets import BudgetsManagerInterface
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import (
     KeyRevoked,
@@ -50,6 +49,7 @@ from acme.om.exceptions import (
 )
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.types.row import OutboxRow, versioned_row
+from acme.om.spend_budgets import SpendBudgetsManagerInterface
 from acme.om.tenancy import TenancyManagerInterface
 from acme.om.tools import ToolsManagerInterface
 from acme.om.tools.rules import instruct_refusal
@@ -79,7 +79,7 @@ class AgentsManagerImpl(AgentsManagerInterface):
         options: AgentsOptions,
         clock: Callable[[], datetime] = utcnow,
         *,
-        budgets: BudgetsManagerInterface,
+        budgets: SpendBudgetsManagerInterface,
         windows: WindowsManagerInterface,
         tool_classes: Mapping[str, str],
         secret_tools: frozenset[str],

@@ -14,7 +14,7 @@ the gate reads, which refuses it. No cap leaves the run unbounded.
 
 ## Decision
 
-**A budget closes, once.** `close_budget` sets `closed_at` through the
+**A budget closes, once.** `close_spend_budget` sets `closed_at` through the
 same compare-and-set on the version that a change of the amount takes,
 so a change read before the close is refused and never reopens it. A
 close that loses to a change reads the budget again and closes it as it

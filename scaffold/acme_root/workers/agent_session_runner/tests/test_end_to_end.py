@@ -45,9 +45,9 @@ from acme.integrations.model_providers.types import ProviderName
 from acme.om.agent_steps.types.header import LoopOutcome
 from acme.om.agents.loop_rules import ended_step
 from acme.om.base import new_id, utcnow
-from acme.om.budgets.types.budget import Budget, BudgetScopeKind, WindowKind
 from acme.om.context import TenantContext
 from acme.om.exceptions import StaleWriter
+from acme.om.spend_budgets.types.spend_budget import SpendBudget, SpendBudgetScopeKind, WindowKind
 from acme.om.storage.migrate import VERSION_TABLE
 from acme.om.storage.roles import DatabaseRole
 from acme.om.storage.settings import MigrationSettings
@@ -414,7 +414,7 @@ async def test_a_message_sent_mid_run_is_kept_at_once_and_read_by_the_next_reque
     assert steps[-1]["outcome"] == "succeeded"
 
 
-LIVE_BUDGET_MICROS = 500_000
+LIVE_SPEND_BUDGET_MICROS = 500_000
 """The most the live case may spend, in millionths of a dollar: its tenant's
 budget, which the gate holds every call to before it is made."""
 
@@ -438,18 +438,18 @@ async def test_a_real_loop_runs_end_to_end_on_a_live_provider(
     stack: Stack, report: dict[str, object]
 ) -> None:
     person = await owner_of(stack)
-    budget = await stack.container.managers.budgets.create_budget(
+    budget = await stack.container.managers.spend_budgets.create_spend_budget(
         person.ctx,
-        Budget(
+        SpendBudget(
             id=new_id(),
             created_at=utcnow(),
             updated_at=utcnow(),
             created_by=person.ctx.user_id,
             updated_by=person.ctx.user_id,
-            scope_kind=BudgetScopeKind.TENANT,
+            scope_kind=SpendBudgetScopeKind.TENANT,
             scope_key=str(person.ctx.org_id),
             window_kind=WindowKind.LIFE,
-            cost_micros=LIVE_BUDGET_MICROS,
+            cost_micros=LIVE_SPEND_BUDGET_MICROS,
         ),
     )
     stack.runner("runner-live", None, ACME_LLM_PROVIDERS="live", ACME_ANTHROPIC_API_KEY=live_key())
@@ -465,7 +465,7 @@ async def test_a_real_loop_runs_end_to_end_on_a_live_provider(
     session = await settled(stack, person, agent_session_id)
 
     steps = await history(stack, person, agent_session_id)
-    spend = await stack.container.managers.budgets.get_spend(person.ctx, budget.id)
+    spend = await stack.container.managers.spend_budgets.get_spend(person.ctx, budget.id)
     report |= {
         "steps": [step["type"] for step in steps],
         "answer": of_type(steps, "model_response")[-1]["text"],
@@ -474,4 +474,4 @@ async def test_a_real_loop_runs_end_to_end_on_a_live_provider(
     }
     assert session["status"] == "idle" and steps[-1]["outcome"] == "succeeded", report
     assert "tool_response" in report["steps"]  # pyright: ignore[reportOperatorIssue]
-    assert 0 < spend.spent_cost_micros <= LIVE_BUDGET_MICROS and spend.held_cost_micros == 0
+    assert 0 < spend.spent_cost_micros <= LIVE_SPEND_BUDGET_MICROS and spend.held_cost_micros == 0

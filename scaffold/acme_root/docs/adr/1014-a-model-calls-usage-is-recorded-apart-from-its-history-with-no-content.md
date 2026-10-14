@@ -20,7 +20,7 @@ rest keep its shape anyway.
 ## Decision
 
 **Every billed call leaves a usage record.** It is one row of
-`activity.usage_records`, in the `budgets` namespace beside the ledger.
+`activity.usage_records`, in the `spend_budgets` namespace beside the ledger.
 It holds the call's hold, its session, the session's tree, its loop,
 and the step that answered it; the agent kind and its version, the
 model role, the provider, and the model; input, cache-read, cache-write,
@@ -71,7 +71,7 @@ org, and none of the figures. The answer, `AgentSessionUsageView`:
 
 - `agent_session_id`.
 - `items`: a page of records, oldest first, each with `id`,
-  `created_at`, `hold_id`, `agent_session_id`, `tree_id`, `loop_id`,
+  `created_at`, `spend_hold_id`, `agent_session_id`, `tree_id`, `loop_id`,
   `agent_step_id`, `agent_kind`, `kind_version`, `role`, `provider`, `model`,
   `input_tokens`, `cache_read_tokens`, `cache_write_tokens`,
   `output_tokens`, `thinking_tokens`, `cost_micros`, `latency_ms`, and
