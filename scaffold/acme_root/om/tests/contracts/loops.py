@@ -17,14 +17,19 @@ from acme.infra.outages import OutageSignalInterface
 from acme.infra.outages.cache import OutageSignalCacheImpl
 from acme.integrations.identity.absent import IdentityProviderAbsentImpl
 from acme.integrations.impl.configured import IntegrationsOverImpl
-from acme.integrations.model_providers.calls import ModelReply
+from acme.integrations.model_providers.calls import ModelCall, ModelReply
 from acme.integrations.model_providers.registry import ModelProvidersOverImpl
 from acme.integrations.model_providers.scripted import ModelProviderScriptedImpl, ScriptedFailure
 from acme.integrations.model_providers.types import ErrorKind, ProviderName, StopReason, Usage
 from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
-from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
-from acme.om.agent_steps.types.content import TextBlock, ToolUseBlock
-from acme.om.agent_steps.types.header import LoopOutcome, ParkReason
+from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
+from acme.om.agent_steps.types.content import TextBlock, ToolResultBlock, ToolUseBlock
+from acme.om.agent_steps.types.header import (
+    ControlCommand,
+    ControlHeader,
+    LoopOutcome,
+    ParkReason,
+)
 from acme.om.agents.hooks import LoopHooksInterface
 from acme.om.agents.impl.hooks import LoopHooksNullImpl
 from acme.om.agents.impl.loop import LoopManagerImpl, LoopOptions
@@ -545,3 +550,46 @@ async def outage_parks_at_once_and_resumes_at_the_retry_time(loop: Loop) -> None
     assert await loop.outages.current(*pair) is None, "the call that answered cleared the mark"
     types = [step.type for step in await loop.history(second)]
     assert types.count(AgentStepType.RESUMED) == 1 and len(loop.anthropic.calls) == 4
+
+
+def of_type(steps: list[AgentStep], *types: AgentStepType) -> list[AgentStep]:
+    return [step for step in steps if step.type in types]
+
+
+def person(user_id: UUID) -> Principal:
+    return Principal(kind=PrincipalKind.PERSON, id=user_id)
+
+
+def text_of(call: ModelCall) -> str:
+    """Every text a call carries, its tool results' included."""
+    texts: list[str] = []
+    for message in call.messages:
+        for block in message.blocks:
+            parts = block.parts if isinstance(block, ToolResultBlock) else (block,)
+            texts.extend(part.text for part in parts if isinstance(part, TextBlock))
+    return "\n".join(texts)
+
+
+async def ran_alone(loop: Loop, agent_session_id: UUID) -> list[AgentStep]:
+    """The history once a run is done, after every step is checked to have
+    a number of its own, in order."""
+    steps = await loop.history(agent_session_id)
+    assert [step.seq for step in steps] == list(range(1, len(steps) + 1))
+    return steps
+
+
+def control(loop: Loop, agent_session_id: UUID, command: ControlCommand) -> AgentStep:
+    return AgentStep(
+        id=new_id(),
+        created_at=loop.clock(),
+        agent_session_id=agent_session_id,
+        loop_id=new_id(),
+        type=AgentStepType.CONTROL,
+        actor=Actor.PERSON,
+        origin=Origin.PORTAL,
+        header=ControlHeader(command=command),
+    )
+
+
+def answer_to(steps: list[AgentStep], request: AgentStep) -> AgentStep:
+    return next(step for step in steps if step.responds_to == request.id)

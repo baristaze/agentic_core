@@ -10,7 +10,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.loops import ASSISTANT, Lookup, loop_over, reply, said, use
+from contracts.loops import ASSISTANT, Lookup, control, loop_over, reply, said, text_of, use
 
 from acme.integrations.model_providers.calls import ModelCall
 from acme.om.agent_sessions.types.agent_session import AgentSession
@@ -18,7 +18,6 @@ from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType
 from acme.om.agent_steps.types.content import Content, TextBlock, ToolResultBlock, ToolUseBlock
 from acme.om.agent_steps.types.header import (
     ControlCommand,
-    ControlHeader,
     LoopOutcome,
     MarkHeader,
     ParkReason,
@@ -106,15 +105,6 @@ def answers(steps: list[AgentStep]) -> list[str]:
     return texts
 
 
-def text_of(call: ModelCall) -> str:
-    return "\n".join(
-        block.text
-        for message in call.messages
-        for block in message.blocks
-        if isinstance(block, TextBlock)
-    )
-
-
 async def test_a_session_calls_its_attached_toolsets_held_from_the_start_and_loaded(
     tmp_path: Path,
 ) -> None:
@@ -178,13 +168,13 @@ async def test_the_hooks_tell_a_new_loop_from_one_a_run_takes_up_again(tmp_path:
     running = asyncio.ensure_future(loop.loops.run(loop.owner, agent_session_id))
     await slow.started.wait()
     await loop.managers.agent_steps.append_inputs(
-        loop.owner, agent_session_id, [control(agent_session_id, ControlCommand.PAUSE)]
+        loop.owner, agent_session_id, [control(loop, agent_session_id, ControlCommand.PAUSE)]
     )
     slow.release.set()
     paused = await running
     assert paused.park is not None and paused.park.reason is ParkReason.PAUSE
     await loop.managers.agent_steps.append_inputs(
-        loop.owner, agent_session_id, [control(agent_session_id, ControlCommand.RESUME)]
+        loop.owner, agent_session_id, [control(loop, agent_session_id, ControlCommand.RESUME)]
     )
 
     resumed = await loop.loops.run(loop.owner, agent_session_id)
@@ -218,16 +208,3 @@ def test_attached_toolsets_fold_into_the_kind_and_give_each_tool_once() -> None:
     assert attached.names == ("ledger_read", "archive_search", LOAD_TOOLSET)
     with pytest.raises(ValueError, match="given once"):
         AttachedToolsets(held=(LEDGER,), tools=())
-
-
-def control(agent_session_id: UUID, command: ControlCommand) -> AgentStep:
-    return AgentStep(
-        id=new_id(),
-        created_at=utcnow(),
-        agent_session_id=agent_session_id,
-        loop_id=new_id(),
-        type=AgentStepType.CONTROL,
-        actor=Actor.PERSON,
-        origin=Origin.PORTAL,
-        header=ControlHeader(command=command),
-    )
