@@ -21,7 +21,9 @@ from acme.om.agent_steps.impl.manager import AgentStepsManagerImpl, AgentStepsOp
 from acme.om.agent_steps.storage import AgentStepStorageInterface
 from acme.om.agent_steps.storage.impl.memory import AgentStepStorageMemoryImpl
 from acme.om.agents import AgentsManagerInterface, ResultGateInterface
+from acme.om.agents.hooks import LoopHooksInterface
 from acme.om.agents.impl.gate import ResultGateNullImpl
+from acme.om.agents.impl.hooks import LoopHooksNullImpl
 from acme.om.agents.impl.loop import LoopManagerImpl, LoopOptions
 from acme.om.agents.impl.manager import AgentsManagerImpl, AgentsOptions
 from acme.om.agents.impl.sink import StreamSinkNullImpl
@@ -287,6 +289,7 @@ def build_managers(
     attachment_reader: AttachmentReaderInterface | None = None,
     domain_classes: tuple[str, ...] = (),
     loop_options: LoopOptions | None = None,
+    loop_hooks: LoopHooksInterface | None = None,
     environment: str = LOCAL,
 ) -> Managers:
     """`integrations` is the root of the hosted services the managers front:
@@ -636,6 +639,7 @@ def build_managers(
             loop_options or LoopOptions(),
             leases=leases,
             domain_classes=domain_classes,
+            hooks=loop_hooks or LoopHooksNullImpl(),
         ),
     )
     return managers

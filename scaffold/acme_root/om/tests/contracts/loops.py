@@ -25,6 +25,8 @@ from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
 from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
 from acme.om.agent_steps.types.content import TextBlock, ToolUseBlock
 from acme.om.agent_steps.types.header import LoopOutcome, ParkReason
+from acme.om.agents.hooks import LoopHooksInterface
+from acme.om.agents.impl.hooks import LoopHooksNullImpl
 from acme.om.agents.impl.loop import LoopManagerImpl, LoopOptions
 from acme.om.agents.impl.sink import StreamSinkMemoryImpl
 from acme.om.agents.types.kind import AgentKind, AgentKindCatalog, DoneRule, TreeLimits
@@ -369,6 +371,7 @@ def loop_over(
     ceilings: ToolPolicyLayer | None = None,
     sessions: AgentSessionsOptions | None = None,
     infra: InfraLocalImpl | None = None,
+    hooks: LoopHooksInterface | None = None,
 ) -> Loop:
     """`storage` None is the memory storage, and `owner` None a fresh
     tenant's owner; a suite over Postgres hands in both. `jitter` is what
@@ -381,7 +384,8 @@ def loop_over(
     loop takes the layer's call credentials. `ceilings` None keeps the
     platform's, and `sessions` None is the sessions' own options. `infra`
     None is the local root over `tmp_path`; a suite on real Docker hands in
-    one whose workspaces are containers."""
+    one whose workspaces are containers. `hooks` None is the null hooks; a
+    suite of a layer's hooks hands in its own."""
     infra = infra or InfraLocalImpl(tmp_path)
     anthropic = ModelProviderScriptedImpl(ProviderName.ANTHROPIC)
     openai = ModelProviderScriptedImpl(ProviderName.OPENAI)
@@ -456,6 +460,7 @@ def loop_over(
         clock,
         sleep,
         leases=managers.leases,
+        hooks=hooks or LoopHooksNullImpl(),
         jitter=jitter,
     )
     owner = owner or context(Role.OWNER, make_org())

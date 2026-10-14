@@ -52,6 +52,13 @@ from acme.om.agent_steps.types.stream import StreamPart, ToolOutputPart
 from acme.om.agents import AgentsManagerInterface
 from acme.om.agents import line_rules as lines
 from acme.om.agents import loop_rules as rules
+from acme.om.agents.hooks import (
+    NO_ATTACHED_TOOLSETS,
+    AttachedToolsets,
+    LoopHooksInterface,
+    LoopStart,
+    with_attached_toolsets,
+)
 from acme.om.agents.loop import LoopManagerInterface
 from acme.om.agents.rules import CHILDREN_PARK, after_turn, ends_parents_wait, notes_parent
 from acme.om.agents.sink import StreamSinkInterface
@@ -202,6 +209,8 @@ class _Run:
     # The jobs the loop parked on whose calls were open when the run began,
     # by key: whatever the run has not answered goes with its loop's end.
     jobs: dict[UUID, rules.StartedJob] = field(default_factory=lambda: {})
+    # What the session holds beyond its kind, folded into `kind` already.
+    attached: AttachedToolsets = NO_ATTACHED_TOOLSETS
 
     @property
     def agent_session_id(self) -> UUID:
@@ -247,11 +256,15 @@ class LoopManagerImpl(LoopManagerInterface):
         *,
         leases: LeasesManagerInterface,
         domain_classes: Sequence[str] = (),
+        hooks: LoopHooksInterface,
         jitter: Callable[[], float] = random.random,
     ) -> None:
         """`credentials` answers the client each call runs on and the
         credential it carries: the platform's key, or a tenant's. `leases`
-        answers where each request a tool asked in line stands."""
+        answers where each request a tool asked in line stands. `hooks` is
+        where a layer above extends each run: a session's attached toolsets,
+        and the steps it appends before the run's first call."""
+        self._hooks = hooks
         self._jitter = jitter
         self._leases = leases
         self._steps = steps
@@ -310,8 +323,11 @@ class LoopManagerImpl(LoopManagerInterface):
                 # are settled by effect.
                 session = await self._sessions.resume(ctx, agent_session_id, epoch, loop_id)
                 resumed = loop.park.reason is not ParkReason.HANDOVER and not loop.park.unsettled
-        kind = self._kinds.get(session.kind, session.kind_version)
-        registry = self._registry(session, kind, history)
+        # The session's attached toolsets, once a run and the same each time,
+        # folded into its kind before anything renders.
+        attached = await self._hooks.attached_toolsets(ctx, session)
+        kind = with_attached_toolsets(self._kinds.get(session.kind, session.kind_version), attached)
+        registry = self._registry(session, kind, history, attached)
         tree = await self._agents.tree_of(ctx, agent_session_id)
         above = await self._policies_above(ctx, session)
         run = _Run(
@@ -327,6 +343,7 @@ class LoopManagerImpl(LoopManagerInterface):
             deadline=tree.deadline,
             above=above or (),
             jobs={} if loop is None else rules.started_jobs(history, loop_id),
+            attached=attached,
         )
         if above is None:
             # Its calls are decided under every kind above it, and one of
@@ -350,6 +367,9 @@ class LoopManagerImpl(LoopManagerInterface):
         unlocked = loop is not None and loop.park is not None and lost_agent_workspace(loop.park)
         try:
             stopped = await self._prepare(run, start, unlocked=unlocked)
+            if stopped is not None:
+                return stopped
+            stopped = await self._start(run, new_loop=loop is None)
             if stopped is not None:
                 return stopped
             return await self._drive(run, history)
@@ -400,6 +420,30 @@ class LoopManagerImpl(LoopManagerInterface):
                 new_id(), self._clock(), run.agent_session_id, run.loop_id, start
             )
             await self._steps.append_agent_steps(run.ctx, run.agent_session_id, run.epoch, [done])
+        return None
+
+    async def _start(self, run: _Run, *, new_loop: bool) -> LoopRun | None:
+        """The steps the hooks append before the run's first model call, under
+        its epoch. None once they are written; else how the run stopped: a
+        fill the hooks refuse ends the loop, as the resolve before does."""
+        assert run.workspace is not None
+        start = LoopStart(
+            agent_session=run.session,
+            kind=run.kind,
+            epoch=run.epoch,
+            loop_id=run.loop_id,
+            new_loop=new_loop,
+            workspace=run.workspace,
+        )
+        try:
+            steps = await self._hooks.before_first_call(run.ctx, start)
+        except (UnresolvedRole, UnpricedModel) as refused:
+            log.warning("session %s resolves no fill: %s", run.agent_session_id, refused.message)
+            return await self._end(run, LoopOutcome.ERRORED)
+        if steps:
+            await self._steps.append_agent_steps(
+                run.ctx, run.agent_session_id, run.epoch, list(steps)
+            )
         return None
 
     async def _unprepared(self, run: _Run, refused: InfraException, *, restoring: bool) -> LoopRun:
@@ -585,7 +629,7 @@ class LoopManagerImpl(LoopManagerInterface):
         # The tools this request offers: the history's loads included, so a
         # load settled since the last request adds its tools here, and never
         # to a call of the turn that made it.
-        run.registry = self._registry(run.session, run.kind, history)
+        run.registry = self._registry(run.session, run.kind, history, run.attached)
         prompts = rules.kind_prompts(
             run.kind, run.registry, loads(history), rules.standing_text(history, run.start_seq)
         )
@@ -1431,7 +1475,7 @@ class LoopManagerImpl(LoopManagerInterface):
         try:
             loaded = load(
                 run.kind.deferred,
-                run.session.tools,
+                (*run.session.tools, *run.attached.names),
                 run.kind.waiting,
                 loads(history),
                 thaw_mapping(use.input),
@@ -1462,13 +1506,20 @@ class LoopManagerImpl(LoopManagerInterface):
         return _Settled()
 
     def _registry(
-        self, session: AgentSession, kind: AgentKind, history: Sequence[AgentStep]
+        self,
+        session: AgentSession,
+        kind: AgentKind,
+        history: Sequence[AgentStep],
+        attached: AttachedToolsets,
     ) -> ToolRegistry:
-        """The run's registry: the tools of the catalog its session may call
-        that wait for no load, and those the history's loads added."""
-        names = callable_tools(session.tools, kind.waiting, loads(history))
+        """The run's registry: the tools of the catalog, and those attached
+        to the session, that it may call and that wait for no load, and those
+        the history's loads added."""
+        holds = (*session.tools, *attached.names)
+        names = callable_tools(holds, kind.waiting, loads(history))
         return ToolRegistry(
-            (tool for tool in self._catalog if tool.spec.name in names), self._domain_classes
+            (tool for tool in (*self._catalog, *attached.tools) if tool.spec.name in names),
+            self._domain_classes,
         )
 
     async def _answer(
