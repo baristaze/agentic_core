@@ -71,7 +71,13 @@ def with_attached_toolsets(kind: AgentKind, attached: AttachedToolsets) -> Agent
 class LoopStart:
     """A run as it reaches its first model call: its session, its kind with
     the attached toolsets folded in, its epoch and loop, whether the loop is
-    new or one the run takes up again, and its prepared workspace."""
+    new, and its prepared workspace.
+
+    A loop is new until its first model call. One whose run stopped before
+    that call, parked as its workspace was prepared say, is new again to
+    the run that takes it up, so a step taken once a loop may be taken
+    twice before the loop's first call, and the second leaves what the
+    first left."""
 
     agent_session: AgentSession
     kind: AgentKind

@@ -36,7 +36,9 @@ for the toolsets a session holds beyond its kind, and folds them into the
 kind, so held ones join the registry and deferred ones the load. Once the
 workspace is prepared, before the first model call, it asks them for the
 steps to append, under the run's epoch, and tells them whether the loop
-is new. A refusal of the session's fill there ends the loop errored, as
+is new: whether it has made no model call yet, so a loop whose first run
+parked before its first call is still new to the run that takes it up.
+A refusal of the session's fill there ends the loop errored, as
 the loop's own resolve does. With no hooks wired, the null extends
 nothing.
 

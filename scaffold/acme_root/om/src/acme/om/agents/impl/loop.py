@@ -159,7 +159,7 @@ class LoopManagerImpl(
             stopped = await self._prepare(run, start, unlocked=unlocked)
             if stopped is not None:
                 return stopped
-            stopped = await self._start(run, new_loop=loop is None)
+            stopped = await self._start(run, new_loop=not rules.called(history, loop_id))
             if stopped is not None:
                 return stopped
             return await self._drive(run, history)
