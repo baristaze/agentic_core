@@ -780,13 +780,15 @@ a `switched` step that names the tools it added. They render after every
 tool before them, from the next request on, for the rest of the session,
 and the one cache write that costs is paid knowingly and recorded, as a
 fill switch is. Nothing else changes a session's tool definitions: they
-follow from its kind version and its history, so a replay renders the
-same requests.
+follow from its kind version, the toolsets the loop's hooks attach to it,
+which answer the same for a session for its life, and its history, so a
+replay renders the same requests.
 
 A message to a session enqueues its loop, so the guideline's enqueue
 rule applies to the registry ([The Work Queue][g-workq]): a principal may
 start or instruct a session of a kind only if it may make each kind of
-call the registry offers, a deferred toolset's included. Policy then
+call the registry offers, a deferred toolset's and an attached toolset's
+included. Policy then
 gates each call on its own, since an agent picks its calls at runtime.
 
 ### Tools over MCP

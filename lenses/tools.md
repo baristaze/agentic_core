@@ -75,20 +75,22 @@ workspace tool cannot touch a workspace, whatever the model asks for. A
 message to a session enqueues its loop, so the guideline's enqueue rule
 applies to the registry: a principal may start or instruct a session of
 a kind only if it may make each kind of call the registry offers, a
-deferred toolset's included. Policy then gates each call on its own,
-since an agent picks its calls at runtime.
+deferred toolset's and an attached toolset's included. Policy then gates
+each call on its own, since an agent picks its calls at runtime.
 
 **Source.** Tools, The Registry.
 
 **Look for.** How a tool call from the model is resolved to a tool; the
 permission check on starting or messaging a session; what that check
-compares against the kind's registry and its deferred toolsets.
+compares against the kind's registry, its deferred toolsets, and the
+toolsets the loop's hooks attach to the session.
 
 **Violation.** A tool resolved from a name the model chose that the
 registry does not hold, a waiting tool of a deferred toolset before its
 load among them; a session started or messaged by a principal who may
 not make every kind of call its registry offers, a deferred toolset's
-included, so a message buys calls its sender may not make.
+or an attached toolset's included, so a message buys calls its sender
+may not make.
 
 **Severity.** high
 
