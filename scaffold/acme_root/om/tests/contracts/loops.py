@@ -36,8 +36,8 @@ from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import Platform, new_id, utcnow
 from acme.om.budgets.types.amount import Amount
 from acme.om.context import CredentialKind, RequestContext, Role, TenantContext, build_context
-from acme.om.models.impl.credentials import CallCredentialsPlatformImpl
-from acme.om.models.layer import ModelsLayer
+from acme.om.language_models.impl.credentials import CallCredentialsPlatformImpl
+from acme.om.language_models.layer import LanguageModelsLayer
 from acme.om.root import Managers, build_managers, engine_tools
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.storage.root import StorageInterface
@@ -363,7 +363,7 @@ def loop_over(
     sink: StreamSinkMemoryImpl | None = None,
     jitter: Callable[[], float] = random.random,
     call_gate: Callable[[Managers, Clock], CallGateInterface] | None = None,
-    models_layer: ModelsLayer | None = None,
+    language_models_layer: LanguageModelsLayer | None = None,
     reader: AttachmentReaderInterface | None = None,
     extra: tuple[ToolInterface, ...] = (),
     ceilings: ToolPolicyLayer | None = None,
@@ -377,7 +377,7 @@ def loop_over(
     `extra` after them: a product's own tool, which a kind of `kinds`
     names. `call_gate` None is the budgets' gate behind the call gate; a
     suite of a gate of its own builds it from the managers and the clock.
-    `models_layer` goes to the root as a layer's root hands it in, and the
+    `language_models_layer` goes to the root as a layer's root hands it in, and the
     loop takes the layer's call credentials. `ceilings` None keeps the
     platform's, and `sessions` None is the sessions' own options. `infra`
     None is the local root over `tmp_path`; a suite on real Docker hands in
@@ -402,7 +402,7 @@ def loop_over(
         principal_context=live,
         tool_catalog=every,
         attachment_reader=reader,
-        models_layer=models_layer,
+        language_models_layer=language_models_layer,
         tools_options=None if ceilings is None else ToolsOptions(ceilings=ceilings),
         agent_sessions_options=sessions,
     )
@@ -423,7 +423,7 @@ def loop_over(
         managers.agents,
         AgentKindCatalog(kinds=kinds),
         managers.attribution,
-        managers.models,
+        managers.language_models,
         managers.windows,
         managers.tools,
         (
@@ -439,8 +439,8 @@ def loop_over(
         ),
         (
             CallCredentialsPlatformImpl(providers, options.credential)
-            if models_layer is None
-            else models_layer.credentials(providers)
+            if language_models_layer is None
+            else language_models_layer.credentials(providers)
         ),
         signal,
         sink,

@@ -23,7 +23,7 @@ Example: `title --fill anthropic/claude-haiku-4-5 --fallback openai/gpt-6-luna -
 for "names a session in a few words".
 
 - `<role>` names the task, never a model or a provider, as `ModelRole`
-  in `om/src/<name>/om/models/types/fill.py` holds it. `<ROLE>` is its
+  in `om/src/<name>/om/language_models/types/fill.py` holds it. `<ROLE>` is its
   constant in upper snake case.
 - `--fill` and each `--fallback` name a `ProviderName` and a model.
   Fallbacks are in the order a fallback takes them. A provider the tree
@@ -43,12 +43,12 @@ The shape is the rows of `MAIN` and `SUMMARIZER`.
 
 | File | Change |
 |------|--------|
-| `om/src/<name>/om/models/types/fill.py` | `<ROLE>`, a `ModelRole` beside `MAIN` and `SUMMARIZER`, with a docstring naming its task |
-| `om/src/<name>/om/models/impl/resolver.py` | a `RoleFill` in `DEFAULT_TABLE`: the fill and its fallbacks; the table's docstring names the roles it holds |
+| `om/src/<name>/om/language_models/types/fill.py` | `<ROLE>`, a `ModelRole` beside `MAIN` and `SUMMARIZER`, with a docstring naming its task |
+| `om/src/<name>/om/language_models/impl/resolver.py` | a `RoleFill` in `DEFAULT_TABLE`: the fill and its fallbacks; the table's docstring names the roles it holds |
 | `om/src/<name>/om/budgets/impl/pricing.py` (a model with no row) | its row in `LIST_PRICES`, and the table's next version |
 | `om/tests/unit/test_budgets.py` (a new row) | the model in `ADAPTER_MODELS`, and the table's version |
 | `om/tests/unit/test_models.py` | the role's cases |
-| `om/src/<name>/om/models/README.md` | the role, in the product's language, beside the agent's own turns and the summary |
+| `om/src/<name>/om/language_models/README.md` | the role, in the product's language, beside the agent's own turns and the summary |
 
 ## Procedure
 

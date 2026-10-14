@@ -10,8 +10,8 @@ import pytest
 from acme.integrations.model_providers.types import Effort, ProviderName
 from acme.om.base import new_id, utcnow
 from acme.om.exceptions import PreconditionFailed
-from acme.om.models.storage import FillSetStorageInterface
-from acme.om.models.types.fill import (
+from acme.om.language_models.storage import FillSetStorageInterface
+from acme.om.language_models.types.fill import (
     MAIN,
     SUMMARIZER,
     Eligibility,

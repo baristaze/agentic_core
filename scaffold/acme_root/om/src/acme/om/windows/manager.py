@@ -19,7 +19,7 @@ from uuid import UUID
 
 from acme.om.agent_steps.types.agent_step import AgentStep
 from acme.om.context import TenantContext
-from acme.om.models.types.fill import MAIN, ModelRole
+from acme.om.language_models.types.fill import MAIN, ModelRole
 from acme.om.windows.types.kind import KindPrompts
 from acme.om.windows.types.tool_output import ToolOutputPage
 from acme.om.windows.types.window import RenderedRequest

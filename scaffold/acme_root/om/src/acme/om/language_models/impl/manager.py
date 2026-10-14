@@ -8,11 +8,11 @@ from acme.om.agent_steps.types.header import SwitchedHeader
 from acme.om.base import Platform, new_id, utcnow
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import NotFound, PreconditionFailed, ValidationFailed
-from acme.om.models import rules
-from acme.om.models.manager import ModelsManagerInterface
-from acme.om.models.resolver import ModelResolverInterface
-from acme.om.models.storage import FillSetStorageInterface
-from acme.om.models.types.fill import (
+from acme.om.language_models import rules
+from acme.om.language_models.manager import LanguageModelsManagerInterface
+from acme.om.language_models.resolver import ModelResolverInterface
+from acme.om.language_models.storage import FillSetStorageInterface
+from acme.om.language_models.types.fill import (
     Eligibility,
     Fill,
     FillSet,
@@ -24,18 +24,18 @@ from acme.om.models.types.fill import (
 from acme.om.tenancy import TenancyManagerInterface
 
 
-class ModelsOptions(Platform):
+class LanguageModelsOptions(Platform):
     purge_batch: int = 1000  # fill-set versions one purge statement deletes at most
 
 
-class ModelsManagerImpl(ModelsManagerInterface):
+class LanguageModelsManagerImpl(LanguageModelsManagerInterface):
     def __init__(
         self,
         storage: FillSetStorageInterface,
         steps: AgentStepsManagerInterface,
         tenancy: TenancyManagerInterface,
         resolver: ModelResolverInterface,
-        options: ModelsOptions,
+        options: LanguageModelsOptions,
         clock: Callable[[], datetime] = utcnow,
     ) -> None:
         self._storage = storage

@@ -53,8 +53,8 @@ from acme.om.budgets.types.amount import Spend
 from acme.om.budgets.types.hold import Hold, HoldRequest
 from acme.om.context import RequestContext, Role
 from acme.om.exceptions import PlatformException, UnsafeConfiguration
-from acme.om.models.impl.prices import ModelPricesNullImpl
-from acme.om.models.prices import ModelPricesInterface
+from acme.om.language_models.impl.prices import ModelPricesNullImpl
+from acme.om.language_models.prices import ModelPricesInterface
 from acme.om.root import build_managers
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.tools.impl.seal import RecordSealNullImpl

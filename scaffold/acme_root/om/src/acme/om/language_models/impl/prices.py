@@ -5,7 +5,7 @@ have to guess. Loud, never quiet."""
 
 from acme.integrations.model_providers.types import ProviderName
 from acme.om.budgets.pricing import PricingInterface
-from acme.om.models.prices import ModelPricesInterface
+from acme.om.language_models.prices import ModelPricesInterface
 
 
 class ModelPricesNullImpl(ModelPricesInterface):

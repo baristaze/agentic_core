@@ -41,11 +41,11 @@ class IntegrationsSettings(BaseSettings):
     # twin (local only, refused at boot anywhere else), or none, which fails
     # every model call as a missing credential and is what a process that
     # calls no model holds.
-    model_providers: Literal["live", "scripted", "none"] = "none"
+    llm_providers: Literal["live", "scripted", "none"] = "none"
     # The scripted twin's script: a JSON file of each provider's turns, read
     # once at boot, so a process the twin serves answers what a suite
     # scripted for it. None leaves every script empty.
-    model_script: Path | None = None
+    llm_script: Path | None = None
     # The platform's own keys, process credentials injected at start. Empty
     # or "off" leaves the provider with no platform key: a call runs only on
     # a credential of its own, and without one fails as `credential`.
@@ -55,7 +55,7 @@ class IntegrationsSettings(BaseSettings):
     openai_base_url: str = "https://api.openai.com"
     # The longest a model call waits on the network at one time: to connect,
     # to send, and between two parts of a streamed answer.
-    model_timeout_seconds: float = Field(default=120.0, gt=0)
+    llm_timeout_seconds: float = Field(default=120.0, gt=0)
 
     @field_validator("workos_api_key", "anthropic_api_key", "openai_api_key")
     @classmethod

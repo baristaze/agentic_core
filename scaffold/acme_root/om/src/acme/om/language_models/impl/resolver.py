@@ -10,9 +10,9 @@ from acme.integrations.model_providers.types import Effort, ProviderName
 from acme.om.base import Platform
 from acme.om.context import TenantContext
 from acme.om.exceptions import UnpricedModel, UnresolvedRole
-from acme.om.models.prices import ModelPricesInterface
-from acme.om.models.resolver import ModelResolverInterface
-from acme.om.models.types.fill import (
+from acme.om.language_models.prices import ModelPricesInterface
+from acme.om.language_models.resolver import ModelResolverInterface
+from acme.om.language_models.types.fill import (
     MAIN,
     SUMMARIZER,
     Eligibility,

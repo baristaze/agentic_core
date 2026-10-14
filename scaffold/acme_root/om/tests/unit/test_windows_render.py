@@ -23,7 +23,7 @@ from acme.om.agent_steps.types.content import (
 )
 from acme.om.agent_steps.types.header import InputHeader
 from acme.om.base import new_id
-from acme.om.models.types.fill import Fill
+from acme.om.language_models.types.fill import Fill
 from acme.om.windows import rules
 from acme.om.windows.types.kind import KindPrompts
 from acme.om.windows.types.policy import CompactionPolicy

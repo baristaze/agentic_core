@@ -38,7 +38,7 @@ from acme.om.agents.types.request import MAX_STANDING, Handoff, Spawn, Start, Sw
 from acme.om.agents.types.run import RunEnd
 from acme.om.base import new_id
 from acme.om.exceptions import NotAuthorized
-from acme.om.models.types.fill import MAIN
+from acme.om.language_models.types.fill import MAIN
 from acme.om.tools.native.load_toolset import loads
 from acme.om.tools.registry import ToolRegistry
 from acme.om.windows.rules import DATA_NOTICE, STANDING_LEAD, render_main
@@ -98,7 +98,9 @@ async def replayed(loop: Loop, agent_session_id: UUID) -> list[ModelCall]:
     standing text read off them as the run of its loop read it."""
     steps = await loop.history(agent_session_id)
     session = await loop.managers.agent_sessions.get_agent_session(loop.owner, agent_session_id)
-    fill = (await loop.managers.models.get_fill_set(loop.owner, agent_session_id)).fill_for(MAIN)
+    fill = (
+        await loop.managers.language_models.get_fill_set(loop.owner, agent_session_id)
+    ).fill_for(MAIN)
     assert fill is not None
     registry = ToolRegistry(tool for tool in loop.tools.values() if tool.spec.name in session.tools)
     calls: list[ModelCall] = []

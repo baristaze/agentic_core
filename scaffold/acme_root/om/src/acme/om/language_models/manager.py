@@ -15,7 +15,7 @@ from datetime import datetime
 from uuid import UUID
 
 from acme.om.context import TenantContext
-from acme.om.models.types.fill import (
+from acme.om.language_models.types.fill import (
     Eligibility,
     Fill,
     FillSet,
@@ -26,7 +26,7 @@ from acme.om.models.types.fill import (
 )
 
 
-class ModelsManagerInterface(ABC):
+class LanguageModelsManagerInterface(ABC):
     @abstractmethod
     async def resolve_fill_set(
         self,

@@ -139,7 +139,7 @@ role.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/models/types/fill.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/language_models/types/fill.py`
 
 **Check.** review
 

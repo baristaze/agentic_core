@@ -41,8 +41,8 @@ from acme.om.context import (
     Permission,
     Role,
 )
+from acme.om.language_models.types.fill import OutputShape, SwitchReason
 from acme.om.media.types.file import FilePurpose, FileStatus
-from acme.om.models.types.fill import OutputShape, SwitchReason
 from acme.om.orchestrations.types.orchestration import OrchestrationKind, OrchestrationStatus
 from acme.om.storage.roles import DatabaseRole
 from acme.om.storage.scopes import ScopeKind

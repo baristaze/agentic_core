@@ -92,9 +92,9 @@ BASE: dict[str, str] = {
         '        "DELETE FROM activity.agent_steps WHERE agent_session_id = :id"\n'
     ),
     # the fills and the price table: the two places a model is named
-    f"{OM}/models/__init__.py": "",
-    f"{OM}/models/impl/__init__.py": "",
-    f"{OM}/models/impl/resolver.py": 'FILLS = [dict(provider="anthropic", model="claude-x")]\n',
+    f"{OM}/language_models/__init__.py": "",
+    f"{OM}/language_models/impl/__init__.py": "",
+    f"{OM}/language_models/impl/resolver.py": 'FILLS = [dict(provider="anthropic", model="claude-x")]\n',
     f"{OM}/budgets/__init__.py": "",
     f"{OM}/budgets/impl/__init__.py": "",
     f"{OM}/budgets/impl/pricing.py": (

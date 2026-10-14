@@ -3,9 +3,9 @@ from uuid import UUID
 from sqlalchemy import select
 
 from acme.om.exceptions import PreconditionFailed, UniqueKeyTaken
-from acme.om.models.storage import FillSetStorageInterface
-from acme.om.models.storage.tables.fill_sets import FillSets
-from acme.om.models.types.fill import FillSet
+from acme.om.language_models.storage import FillSetStorageInterface
+from acme.om.language_models.storage.tables.fill_sets import FillSets
+from acme.om.language_models.types.fill import FillSet
 from acme.om.storage.impl.pg_base import PgStorageBase, delete_batch, deleted
 from acme.om.storage.utils.translation import to_model
 

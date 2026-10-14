@@ -57,7 +57,7 @@ from acme.om.agent_steps.types.header import (
 from acme.om.attribution.rules import trust_of
 from acme.om.attribution.types.authority import RequestAttribution, Trust
 from acme.om.budgets.types.exposure import CacheWrite, CallShape, PromptCount, PromptSize
-from acme.om.models.types.fill import MAIN, SUMMARIZER, Fill, ModelRole, OutputShape
+from acme.om.language_models.types.fill import MAIN, SUMMARIZER, Fill, ModelRole, OutputShape
 from acme.om.windows.types.kind import KindPrompts
 from acme.om.windows.types.pinned import PinnedItem, PinnedZone
 from acme.om.windows.types.policy import CompactionPolicy

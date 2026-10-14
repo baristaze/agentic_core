@@ -88,12 +88,12 @@ from acme.om.exceptions import (
     UnresolvedRole,
     ValidationFailed,
 )
+from acme.om.language_models.credentials import CallClient, CallCredentialsInterface
+from acme.om.language_models.manager import LanguageModelsManagerInterface
+from acme.om.language_models.types.fill import MAIN, SUMMARIZER, Eligibility, Fill
 from acme.om.leases import LeasesManagerInterface
 from acme.om.leases.types.lease import LeaseStatus
 from acme.om.leases.types.request import RequestStatus, Standing, WaiterKind
-from acme.om.models.credentials import CallClient, CallCredentialsInterface
-from acme.om.models.manager import ModelsManagerInterface
-from acme.om.models.types.fill import MAIN, SUMMARIZER, Eligibility, Fill
 from acme.om.tools import ToolsManagerInterface
 from acme.om.tools.native.load_toolset import callable_tools, load, loads
 from acme.om.tools.native.write_agent_plan import current_agent_plan
@@ -233,7 +233,7 @@ class LoopManagerImpl(LoopManagerInterface):
         agents: AgentsManagerInterface,
         kinds: AgentKindCatalog,
         attribution: AttributionManagerInterface,
-        models: ModelsManagerInterface,
+        models: LanguageModelsManagerInterface,
         windows: WindowsManagerInterface,
         tools: ToolsManagerInterface,
         gate: CallGateInterface,
@@ -259,7 +259,7 @@ class LoopManagerImpl(LoopManagerInterface):
         self._agents = agents
         self._kinds = kinds
         self._attribution = attribution
-        self._models = models
+        self._language_models = models
         self._windows = windows
         self._tools = tools
         self._gate = gate
@@ -334,7 +334,7 @@ class LoopManagerImpl(LoopManagerInterface):
             log.warning("session %s has a session above it past its purge", agent_session_id)
             return await self._end(run, LoopOutcome.ERRORED)
         try:
-            await self._models.resolve_fill_set(
+            await self._language_models.resolve_fill_set(
                 ctx, agent_session_id, kind.roles, Eligibility(), kind.asks
             )
         except (UnresolvedRole, UnpricedModel) as refused:
@@ -564,7 +564,7 @@ class LoopManagerImpl(LoopManagerInterface):
 
     async def _model_turn(self, run: _Run, history: Sequence[AgentStep]) -> LoopRun | None:
         ctx = run.ctx
-        fill_set = await self._models.get_fill_set(ctx, run.agent_session_id)
+        fill_set = await self._language_models.get_fill_set(ctx, run.agent_session_id)
         fill = fill_set.fill_for(MAIN)
         if fill is None:
             return await self._end(run, LoopOutcome.ERRORED)
@@ -869,7 +869,7 @@ class LoopManagerImpl(LoopManagerInterface):
     async def _fall_back(self, run: _Run, fill: Fill) -> bool:
         """A switch of the main role to its next declared fallback the session
         admits and no call of this run has tried; False when none is left."""
-        switched = await self._models.fall_back(
+        switched = await self._language_models.fall_back(
             run.ctx, run.agent_session_id, run.epoch, run.loop_id, MAIN, (*run.tried, fill)
         )
         if switched is None:

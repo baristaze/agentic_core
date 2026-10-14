@@ -68,7 +68,7 @@ from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
 from acme.om.context import TenantContext
 from acme.om.exceptions import StaleWriter
-from acme.om.models.types.fill import MAIN, SUMMARIZER, Eligibility, ModelAsk, ModelSize
+from acme.om.language_models.types.fill import MAIN, SUMMARIZER, Eligibility, ModelAsk, ModelSize
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.rules import DEFAULT_CEILINGS
 from acme.om.tools.types.policy import Decision, ToolPolicyLayer, ToolPolicyRule
@@ -258,7 +258,9 @@ async def test_a_request_a_lost_run_left_open_is_closed_and_its_hold_settled_who
     managers, ctx = loop.managers, loop.owner
     agent_session_id = await loop.start()
     trigger = await loop.say(agent_session_id, "What is the total?")
-    await managers.models.resolve_fill_set(ctx, agent_session_id, [MAIN, SUMMARIZER], Eligibility())
+    await managers.language_models.resolve_fill_set(
+        ctx, agent_session_id, [MAIN, SUMMARIZER], Eligibility()
+    )
     # The lost run: its epoch, its hold, its request, and nothing after.
     epoch = await managers.agent_steps.begin_run(ctx, agent_session_id)
     registry = ToolRegistry([loop.tools[name] for name in ASSISTANT.tools])
@@ -266,7 +268,7 @@ async def test_a_request_a_lost_run_left_open_is_closed_and_its_hold_settled_who
     rendered = await managers.windows.render_request(
         ctx, agent_session_id, epoch, trigger.id, prompts
     )
-    fill = (await managers.models.get_fill_set(ctx, agent_session_id)).fill_for(MAIN)
+    fill = (await managers.language_models.get_fill_set(ctx, agent_session_id)).fill_for(MAIN)
     assert fill is not None
     gate = CallGateBudgetImpl(
         managers.budget_gate, managers.pricing, managers.agent_sessions, managers.budgets
@@ -1289,5 +1291,5 @@ async def test_a_kind_that_asks_a_size_runs_its_turns_on_that_sizes_fill(tmp_pat
     assert run.outcome is LoopOutcome.SUCCEEDED
     (call,) = loop.anthropic.calls
     assert (call.model, call.effort) == ("claude-opus-5-5", Effort.LOW)
-    fills = await loop.managers.models.get_fill_set(loop.owner, agent_session_id)
+    fills = await loop.managers.language_models.get_fill_set(loop.owner, agent_session_id)
     assert [r.ask for r in fills.roles] == [asked.asks[0], None], "the summarizer by its name"

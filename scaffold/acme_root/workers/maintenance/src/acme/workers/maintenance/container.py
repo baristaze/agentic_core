@@ -19,9 +19,9 @@ from acme.om.attribution.impl.manager import AttributionOptions
 from acme.om.budgets.impl.manager import BudgetsOptions
 from acme.om.events.impl.manager import EventsOptions
 from acme.om.idempotency.impl.manager import IdempotencyOptions
+from acme.om.language_models.impl.manager import LanguageModelsOptions
 from acme.om.leases.impl.manager import LeasesOptions
 from acme.om.media.impl.manager import MediaOptions
-from acme.om.models.impl.manager import ModelsOptions
 from acme.om.orchestrations.impl.manager import OrchestrationsOptions
 from acme.om.root import Managers, build_managers
 from acme.om.storage.impl.postgres import StoragePostgresImpl
@@ -100,7 +100,7 @@ def worker_managers(
         agents_options=AgentsOptions(purge_batch=batch),
         attribution_options=AttributionOptions(purge_batch=batch),
         budgets_options=BudgetsOptions(purge_batch=batch),
-        models_options=ModelsOptions(purge_batch=batch),
+        language_models_options=LanguageModelsOptions(purge_batch=batch),
         tools_options=ToolsOptions(purge_batch=batch),
     )
 

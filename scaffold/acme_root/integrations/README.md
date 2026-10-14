@@ -90,13 +90,13 @@ in place of the platform's.
 | `model_providers/scripted.py` | The twin of every provider: each call takes the next turn of its script, a reply streamed in parts with its usage, or a failure of any kind, before the stream or part of the way through it. |
 | `model_providers/absent.py` | The provider of a process that calls no model: every call fails as a missing credential. |
 
-Settings: `ACME_MODEL_PROVIDERS` (`live`, `scripted`, or `none`, the
+Settings: `ACME_LLM_PROVIDERS` (`live`, `scripted`, or `none`, the
 default; the scripted twin is refused at boot outside `local` and
-`test`), `ACME_MODEL_SCRIPT` (the twin's script, a JSON file of each
+`test`), `ACME_LLM_SCRIPT` (the twin's script, a JSON file of each
 provider's turns, read once at boot), `ACME_ANTHROPIC_API_KEY` and `ACME_OPENAI_API_KEY` (the
 platform's keys; empty or `off` leaves a provider with none),
 `ACME_ANTHROPIC_BASE_URL`, `ACME_OPENAI_BASE_URL`, and
-`ACME_MODEL_TIMEOUT_SECONDS`.
+`ACME_LLM_TIMEOUT_SECONDS`.
 
 ## The MCP client
 

@@ -44,11 +44,11 @@ def no_model_at_a_call_site(project: Project) -> Iterator[Violation]:
     called `model`. Option `[tool.agentic-check.options.MOD-01]`:
     `sites`, globs of the files that may name a model (default the
     price table, `om/src/<pkg>/om/budgets/impl/pricing.py`, and the
-    fills, `om/src/<pkg>/om/models/impl/resolver.py`). A model chosen
+    fills, `om/src/<pkg>/om/language_models/impl/resolver.py`). A model chosen
     per call from a variable, and a provider named at a call site, are
     judged."""
     base = f"om/src/{project.package.replace('.', '/')}/om"
-    default = [f"{base}/budgets/impl/pricing.py", f"{base}/models/impl/resolver.py"]
+    default = [f"{base}/budgets/impl/pricing.py", f"{base}/language_models/impl/resolver.py"]
     sites = project.option("MOD-01", "sites", default, {"sites"})
     for file, tree in project.trees():
         if any(glob_match(site, file.rel) for site in sites):

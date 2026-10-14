@@ -27,12 +27,12 @@ from acme.om.events.storage import EventStorageInterface
 from acme.om.events.storage.impl.postgres import EventStoragePostgresImpl
 from acme.om.idempotency.storage import IdempotencyStorageInterface
 from acme.om.idempotency.storage.impl.postgres import IdempotencyStoragePostgresImpl
+from acme.om.language_models.storage import FillSetStorageInterface
+from acme.om.language_models.storage.impl.postgres import FillSetStoragePostgresImpl
 from acme.om.leases.storage import LeasesStorageInterface
 from acme.om.leases.storage.impl.postgres import LeasesStoragePostgresImpl
 from acme.om.media.storage import MediaStorageInterface
 from acme.om.media.storage.impl.postgres import MediaStoragePostgresImpl
-from acme.om.models.storage import FillSetStorageInterface
-from acme.om.models.storage.impl.postgres import FillSetStoragePostgresImpl
 from acme.om.orchestrations.storage import OrchestrationsStorageInterface
 from acme.om.orchestrations.storage.impl.postgres import OrchestrationsStoragePostgresImpl
 from acme.om.outbox.storage import OutboxStorageInterface

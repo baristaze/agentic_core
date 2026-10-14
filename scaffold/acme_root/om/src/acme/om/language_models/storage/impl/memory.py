@@ -1,8 +1,8 @@
 from uuid import UUID
 
 from acme.om.exceptions import PreconditionFailed
-from acme.om.models.storage import FillSetStorageInterface
-from acme.om.models.types.fill import FillSet
+from acme.om.language_models.storage import FillSetStorageInterface
+from acme.om.language_models.types.fill import FillSet
 from acme.om.storage.impl.memory_base import MemoryStorageBase, MemoryTable
 
 

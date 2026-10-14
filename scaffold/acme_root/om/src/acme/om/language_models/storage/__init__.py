@@ -4,7 +4,7 @@ set, written once. Every operation takes org_id first."""
 from abc import ABC, abstractmethod
 from uuid import UUID
 
-from acme.om.models.types.fill import FillSet
+from acme.om.language_models.types.fill import FillSet
 
 
 class FillSetStorageInterface(ABC):

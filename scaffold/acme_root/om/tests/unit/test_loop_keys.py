@@ -28,9 +28,13 @@ from acme.om.agents.types.run import RunEnd
 from acme.om.attribution.types.principal import Principal
 from acme.om.context import Role, TenantContext
 from acme.om.exceptions import NoCredential
-from acme.om.models.credentials import PLATFORM_CREDENTIAL, CallClient, CallCredentialsInterface
-from acme.om.models.layer import ModelsLayer
-from acme.om.models.types.fill import Fill, ModelRole
+from acme.om.language_models.credentials import (
+    PLATFORM_CREDENTIAL,
+    CallClient,
+    CallCredentialsInterface,
+)
+from acme.om.language_models.layer import LanguageModelsLayer
+from acme.om.language_models.types.fill import Fill, ModelRole
 from acme.om.root import Managers
 from acme.om.windows.impl.gate import CallGateBudgetImpl
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
@@ -98,7 +102,7 @@ class OwnKey(CallCredentialsInterface):
         self.refusals.append((provider, credential))
 
 
-def keyed_loop(tmp_path: Path, layer: ModelsLayer) -> tuple[Loop, Told]:
+def keyed_loop(tmp_path: Path, layer: LanguageModelsLayer) -> tuple[Loop, Told]:
     """A loop whose calls go out on the key `layer` answers, behind a gate
     that keeps what it was told."""
     gates: list[Told] = []
@@ -107,14 +111,14 @@ def keyed_loop(tmp_path: Path, layer: ModelsLayer) -> tuple[Loop, Told]:
         gates.append(Told(managers, clock))
         return gates[-1]
 
-    loop = loop_over(tmp_path, call_gate=told, models_layer=layer)
+    loop = loop_over(tmp_path, call_gate=told, language_models_layer=layer)
     return loop, gates[0]
 
 
 async def test_a_call_whose_key_cannot_be_had_parks_on_its_provider_and_spends_nothing(
     tmp_path: Path,
 ) -> None:
-    loop, gate = keyed_loop(tmp_path, ModelsLayer(credentials=lambda providers: Keyless()))
+    loop, gate = keyed_loop(tmp_path, LanguageModelsLayer(credentials=lambda providers: Keyless()))
     agent_session_id = await loop.start()
     await loop.say(agent_session_id, "What is the total?")
     loop.anthropic.add(reply(said("Never asked.")))
@@ -152,7 +156,7 @@ async def test_a_key_its_provider_refuses_is_marked_refused_and_no_outage_is_rep
     refused: list[tuple[ProviderName, str]],
 ) -> None:
     keys = OwnKey()
-    loop, gate = keyed_loop(tmp_path, ModelsLayer(credentials=keys.over))
+    loop, gate = keyed_loop(tmp_path, LanguageModelsLayer(credentials=keys.over))
     agent_session_id = await loop.start()
     await loop.say(agent_session_id, "What is the total?")
     loop.anthropic.add(ScriptedFailure(kind=ErrorKind.CREDENTIAL, status=status, message=message))
@@ -171,7 +175,7 @@ async def test_a_key_its_provider_refuses_is_marked_refused_and_no_outage_is_rep
 async def test_a_tenant_keys_outage_is_marked_under_its_org_and_parks_that_org_alone(
     tmp_path: Path,
 ) -> None:
-    loop = loop_over(tmp_path, models_layer=ModelsLayer(credentials=OwnKey().over))
+    loop = loop_over(tmp_path, language_models_layer=LanguageModelsLayer(credentials=OwnKey().over))
     learner = await loop.start()
     await loop.say(learner, "What is the total?")
     overloaded = ScriptedFailure(kind=ErrorKind.OVERLOADED, retry_after=2)
@@ -249,7 +253,10 @@ async def test_a_park_on_a_key_or_an_account_says_who_acts_and_wakes_once_it_is_
     and nothing tells the engine: the park says who must act, an operator
     for the platform's key and an admin for the org's, and tries again by
     itself, so the next run after the fix goes on."""
-    loop = loop_over(tmp_path, models_layer=ModelsLayer(credentials=OwnKey().over) if own else None)
+    loop = loop_over(
+        tmp_path,
+        language_models_layer=LanguageModelsLayer(credentials=OwnKey().over) if own else None,
+    )
     agent_session_id = await loop.start()
     await loop.say(agent_session_id, "What is the total?")
     loop.anthropic.add(ScriptedFailure(kind=kind, status=status, message=message))

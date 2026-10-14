@@ -30,7 +30,7 @@ from acme.om.agent_steps.types.header import (
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
 from acme.om.base import new_id
-from acme.om.models.types.fill import MAIN, SUMMARIZER
+from acme.om.language_models.types.fill import MAIN, SUMMARIZER
 
 AT = datetime(2026, 10, 2, 9, 0, tzinfo=UTC)
 MAIN_FILL = "anthropic/claude-sonnet-5-5"

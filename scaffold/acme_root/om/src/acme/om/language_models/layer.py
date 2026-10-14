@@ -6,11 +6,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from acme.integrations.model_providers import ModelProvidersInterface
-from acme.om.models.credentials import CallCredentialsInterface
+from acme.om.language_models.credentials import CallCredentialsInterface
 
 
 @dataclass(frozen=True)
-class ModelsLayer:
+class LanguageModelsLayer:
     """`credentials` builds the client each call runs on over the providers'
     registry, which holds the platform's key."""
 

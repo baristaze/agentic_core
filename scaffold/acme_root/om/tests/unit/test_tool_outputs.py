@@ -23,7 +23,7 @@ from acme.om.agent_steps.types.header import ToolOutputRef, ToolResponseHeader
 from acme.om.base import new_id
 from acme.om.context import Role, TenantContext
 from acme.om.exceptions import KeyRevoked, NotFound, Unavailable
-from acme.om.models.impl.credentials import CallCredentialsPlatformImpl
+from acme.om.language_models.impl.credentials import CallCredentialsPlatformImpl
 from acme.om.privacy.impl.keys import AgentSessionKeysImpl
 from acme.om.privacy.impl.tool_outputs import ToolOutputSealKeysImpl
 from acme.om.privacy.types.agent_session_privacy import StorageMode, StoragePolicy
@@ -201,7 +201,7 @@ async def test_a_deleted_tenants_tool_outputs_go_a_batch_a_pass(roots: Roots) ->
         roots.storage.get_window_storage(),
         managers.agent_steps,
         members,
-        managers.models,
+        managers.language_models,
         managers.attribution,
         CallCredentialsPlatformImpl(absent_model_providers()),
         roots.infra.get_buckets(),

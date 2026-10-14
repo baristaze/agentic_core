@@ -106,7 +106,7 @@ def build_loop(container: WorkerContainer, lane: str | None = None) -> WorkerLoo
             "work": managers.work.purge_tenant,
             "agent_trees": managers.agents.purge_tenant,
             "agent_session_authorities": managers.attribution.purge_tenant,
-            "models": managers.models.purge_tenant,
+            "language_models": managers.language_models.purge_tenant,
             "tools": managers.tools.purge_tenant,
             # Every tool output's object, then its record, under the purge login.
             "tool_outputs": managers.windows.purge_tenant,

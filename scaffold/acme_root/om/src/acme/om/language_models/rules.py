@@ -6,7 +6,7 @@ from datetime import datetime
 from uuid import UUID
 
 from acme.om.base import derived_id
-from acme.om.models.types.fill import Fill, FillSet, FillSwitch, ModelRole, SwitchReason
+from acme.om.language_models.types.fill import Fill, FillSet, FillSwitch, ModelRole, SwitchReason
 
 
 def switch_refusal(head: FillSet, role: ModelRole, to: Fill) -> str | None:

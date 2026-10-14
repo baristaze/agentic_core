@@ -44,7 +44,7 @@ from acme.om.agent_steps.types.header import (
     ToolRequestHeader,
 )
 from acme.om.base import Platform
-from acme.om.models.types.fill import MAIN
+from acme.om.language_models.types.fill import MAIN
 
 STEP_GUARD_CEILING = 1000
 """The most model calls a step guard lets one loop make between two looks

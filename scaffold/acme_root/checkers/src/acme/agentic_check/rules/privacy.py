@@ -13,7 +13,7 @@ ENGINE = [
     "om.agent_sessions",
     "om.agent_steps",
     "om.windows",
-    "om.models",
+    "om.language_models",
     "om.tools",
     "om.budgets",
     "om.agents",

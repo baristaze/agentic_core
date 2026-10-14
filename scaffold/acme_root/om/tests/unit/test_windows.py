@@ -51,11 +51,11 @@ from acme.om.exceptions import (
     Unavailable,
     ValidationFailed,
 )
-from acme.om.models.impl.credentials import CallCredentialsPlatformImpl
-from acme.om.models.impl.manager import ModelsManagerImpl, ModelsOptions
-from acme.om.models.impl.resolver import ModelResolverTableImpl, ResolverOptions
-from acme.om.models.prices import ModelPricesInterface
-from acme.om.models.types.fill import (
+from acme.om.language_models.impl.credentials import CallCredentialsPlatformImpl
+from acme.om.language_models.impl.manager import LanguageModelsManagerImpl, LanguageModelsOptions
+from acme.om.language_models.impl.resolver import ModelResolverTableImpl, ResolverOptions
+from acme.om.language_models.prices import ModelPricesInterface
+from acme.om.language_models.types.fill import (
     MAIN,
     SUMMARIZER,
     Eligibility,
@@ -218,7 +218,7 @@ Payer.__abstractmethods__ = frozenset()
 @dataclass
 class Engine:
     steps: AgentStepsManagerInterface
-    models: ModelsManagerImpl
+    models: LanguageModelsManagerImpl
     windows: WindowsManagerImpl
     main: ModelProviderScriptedImpl
     summarizer: ModelProviderScriptedImpl
@@ -238,12 +238,12 @@ def an_engine(
     infra = InfraLocalImpl(tmp_path)
     managers = build_managers(storage, infra)
     clocked: dict[str, Callable[[], datetime]] = {} if clock is None else {"clock": clock}
-    models = ModelsManagerImpl(
+    models = LanguageModelsManagerImpl(
         storage.get_fill_set_storage(),
         managers.agent_steps,
         managers.tenancy,
         ModelResolverTableImpl(Priced(), ResolverOptions(table=tuple(table))),
-        ModelsOptions(),
+        LanguageModelsOptions(),
         **clocked,
     )
     providers = scripted_model_providers()
@@ -954,7 +954,7 @@ async def test_a_root_hashes_a_prompt_under_the_sessions_key(tmp_path: Path) -> 
     history.message("Find it.")
     await managers.agent_steps.append_inputs(ctx, history.agent_session_id, history.steps)
     epoch = await managers.agent_steps.begin_run(ctx, history.agent_session_id)
-    await managers.models.resolve_fill_set(
+    await managers.language_models.resolve_fill_set(
         ctx, history.agent_session_id, [MAIN, SUMMARIZER], Eligibility()
     )
     first, again = [
@@ -969,7 +969,7 @@ async def test_a_root_hashes_a_prompt_under_the_sessions_key(tmp_path: Path) -> 
     other.message("Find it.")
     await managers.agent_steps.append_inputs(ctx, other.agent_session_id, other.steps)
     epoch = await managers.agent_steps.begin_run(ctx, other.agent_session_id)
-    await managers.models.resolve_fill_set(
+    await managers.language_models.resolve_fill_set(
         ctx, other.agent_session_id, [MAIN, SUMMARIZER], Eligibility()
     )
     elsewhere = await managers.windows.render_request(
@@ -994,7 +994,7 @@ async def test_a_root_with_the_nulls_wired_refuses_to_hash_or_spend(tmp_path: Pa
     history.message("Find it.")
     await managers.agent_steps.append_inputs(ctx, history.agent_session_id, history.steps)
     epoch = await managers.agent_steps.begin_run(ctx, history.agent_session_id)
-    await managers.models.resolve_fill_set(
+    await managers.language_models.resolve_fill_set(
         ctx, history.agent_session_id, [MAIN, SUMMARIZER], Eligibility()
     )
     with pytest.raises(Unavailable, match="key service"):

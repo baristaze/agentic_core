@@ -24,7 +24,7 @@ from acme.om.budgets.types.hold import Settlement
 from acme.om.budgets.types.usage import UsageRecord
 from acme.om.context import TenantContext
 from acme.om.exceptions import Unavailable
-from acme.om.models.types.fill import MAIN, SUMMARIZER
+from acme.om.language_models.types.fill import MAIN, SUMMARIZER
 from acme.om.privacy.types.agent_session_privacy import StorageMode, StoragePolicy
 
 FIRST = Usage(input=1_200, cache_read=800, cache_write=300, output=45, thinking=20)
@@ -123,7 +123,9 @@ async def test_every_storage_mode_keeps_one_usage_record_per_model_call(
         assert bool(at_rest) is (mode != "memory_only without keep_shape"), mode
         found[mode] = [figures(r) for r in records]
 
-    fill = (await loop.managers.models.get_fill_set(loop.owner, sessions[0])).fill_for(MAIN)
+    fill = (await loop.managers.language_models.get_fill_set(loop.owner, sessions[0])).fill_for(
+        MAIN
+    )
     assert fill is not None
     price = loop.managers.pricing.price_of(fill.provider.value, fill.model)
     assert price is not None, "the assistant's model has a price"

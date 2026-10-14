@@ -204,7 +204,7 @@ arrive twice, so the second copy gets the first one's answer.
 - [Attribution](src/acme/om/attribution/README.md)
 - [Privacy](src/acme/om/privacy/README.md)
 - [Budgets](src/acme/om/budgets/README.md)
-- [Models](src/acme/om/models/README.md)
+- [Models](src/acme/om/language_models/README.md)
 - [Windows](src/acme/om/windows/README.md)
 - [Tools](src/acme/om/tools/README.md)
 - [Events](src/acme/om/events/README.md)

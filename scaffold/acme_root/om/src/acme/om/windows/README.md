@@ -98,7 +98,7 @@ reads, sized for the model that reads it.
 The agent's loop asks for each request here, records it as a step, and
 calls the model it names. It keeps each large tool result here before it
 writes the result's step. The fills come from [the
-models](../models/README.md), the steps from [the
+models](../language_models/README.md), the steps from [the
 steps](../agent_steps/README.md), and the summarizer's call goes to the model
 providers, under `integrations/`, behind the budget gate.
 

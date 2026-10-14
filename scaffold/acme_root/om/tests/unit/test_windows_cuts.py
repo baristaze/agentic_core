@@ -17,7 +17,7 @@ from acme.integrations.model_providers.types import ProviderName
 from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
 from acme.om.agent_steps.types.content import ToolResultBlock, ToolUseBlock
 from acme.om.agent_steps.types.header import ToolRequestHeader
-from acme.om.models.types.fill import Fill
+from acme.om.language_models.types.fill import Fill
 from acme.om.windows import rules
 from acme.om.windows.types.kind import KindPrompts
 from acme.om.windows.types.policy import CompactionPolicy

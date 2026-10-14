@@ -33,7 +33,7 @@ from acme.om.agents.types.kind import AgentKind, AgentKindCatalog, DoneRule
 from acme.om.agents.types.run import RunEnd
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.context import TenantContext
-from acme.om.models.types.fill import MAIN
+from acme.om.language_models.types.fill import MAIN
 from acme.om.tools.native.load_toolset import LoadToolsetToolImpl, callable_tools, loads
 from acme.om.tools.native.write_agent_plan import current_agent_plan
 from acme.om.tools.registry import ToolRegistry
@@ -91,7 +91,7 @@ async def replayed(loop: Loop, kind: AgentKind, agent_session_id: UUID) -> list[
     them."""
     steps = await loop.history(agent_session_id)
     session = await loop.managers.agent_sessions.get_agent_session(loop.owner, agent_session_id)
-    fill_set = await loop.managers.models.get_fill_set(loop.owner, agent_session_id)
+    fill_set = await loop.managers.language_models.get_fill_set(loop.owner, agent_session_id)
     fill = fill_set.fill_for(MAIN)
     assert fill is not None
     catalog = (LoadToolsetToolImpl(), *loop.tools.values())

@@ -135,7 +135,7 @@ class Stack:
         if script is not None:
             path = self.tmp_path / f"{name}.script.json"
             path.write_bytes(SCRIPT.dump_json({ProviderName.ANTHROPIC: script}))
-            overrides |= {"ACME_MODEL_PROVIDERS": "scripted", "ACME_MODEL_SCRIPT": str(path)}
+            overrides |= {"ACME_LLM_PROVIDERS": "scripted", "ACME_LLM_SCRIPT": str(path)}
         log = self.tmp_path / f"{name}.log"
         with log.open("wb") as out:
             process = subprocess.Popen(
@@ -452,9 +452,7 @@ async def test_a_real_loop_runs_end_to_end_on_a_live_provider(
             cost_micros=LIVE_BUDGET_MICROS,
         ),
     )
-    stack.runner(
-        "runner-live", None, ACME_MODEL_PROVIDERS="live", ACME_ANTHROPIC_API_KEY=live_key()
-    )
+    stack.runner("runner-live", None, ACME_LLM_PROVIDERS="live", ACME_ANTHROPIC_API_KEY=live_key())
     agent_session_id = await started(stack, person)
 
     await say(

@@ -198,7 +198,7 @@ async def test_a_loop_that_ends_any_other_way_while_its_job_works_cancels_the_jo
     async def unresolved(*args: object, **kwargs: object) -> None:
         raise UnresolvedRole("the main role resolves no fill")
 
-    monkeypatch.setattr(loop.managers.models, "resolve_fill_set", unresolved)
+    monkeypatch.setattr(loop.managers.language_models, "resolve_fill_set", unresolved)
     await loop.managers.agent_sessions.receive(
         loop.owner, agent_session_id, [unlock(loop, agent_session_id)]
     )

@@ -1896,7 +1896,7 @@ every surface a copy shares, so the bare word stays the product's.
 | `agent_sessions` | The session, its status projection, its parks, who sees it and takes part in it |
 | `agent_steps` | The step, its types, actors and origins, headers, content blocks, children, stream parts |
 | `windows` | Rendering, windows, the pinned zone, compaction policy, summaries |
-| `models` | Model roles, model sizes and asks, fills, fill sets, the resolver, error kinds, usage |
+| `language_models` | Model roles, model sizes and asks, fills, fill sets, the resolver, error kinds, usage |
 | `tools` | The tool contract, the registry, classes, effects, policy, approvals, failure classes, jobs, workspace snapshots |
 | `budgets` | Budgets, budget windows, the gate, holds, breaches, the ledger, pricing |
 | `agents` | Agent kinds, done rules, result gates, trees, handoffs |

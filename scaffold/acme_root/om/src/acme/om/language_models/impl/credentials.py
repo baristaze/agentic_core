@@ -6,7 +6,11 @@ import logging
 from acme.integrations.model_providers import ModelProvidersInterface
 from acme.integrations.model_providers.types import ProviderName
 from acme.om.context import TenantContext
-from acme.om.models.credentials import PLATFORM_CREDENTIAL, CallClient, CallCredentialsInterface
+from acme.om.language_models.credentials import (
+    PLATFORM_CREDENTIAL,
+    CallClient,
+    CallCredentialsInterface,
+)
 
 log = logging.getLogger(__name__)
 

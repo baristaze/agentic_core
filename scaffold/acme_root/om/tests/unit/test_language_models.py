@@ -26,18 +26,18 @@ from acme.om.exceptions import (
     UnresolvedRole,
     ValidationFailed,
 )
-from acme.om.models import rules
-from acme.om.models.impl.manager import ModelsManagerImpl, ModelsOptions
-from acme.om.models.impl.prices import ModelPricesFromPricingImpl, ModelPricesNullImpl
-from acme.om.models.impl.resolver import (
+from acme.om.language_models import rules
+from acme.om.language_models.impl.manager import LanguageModelsManagerImpl, LanguageModelsOptions
+from acme.om.language_models.impl.prices import ModelPricesFromPricingImpl, ModelPricesNullImpl
+from acme.om.language_models.impl.resolver import (
     DEFAULT_SIZES,
     DEFAULT_TABLE,
     ModelResolverTableImpl,
     ResolverOptions,
 )
-from acme.om.models.prices import ModelPricesInterface
-from acme.om.models.storage.impl.memory import FillSetStorageMemoryImpl
-from acme.om.models.types.fill import (
+from acme.om.language_models.prices import ModelPricesInterface
+from acme.om.language_models.storage.impl.memory import FillSetStorageMemoryImpl
+from acme.om.language_models.types.fill import (
     MAIN,
     SUMMARIZER,
     Eligibility,
@@ -129,7 +129,9 @@ async def test_the_resolver_refuses_a_model_with_no_price_row() -> None:
 async def test_a_root_resolves_only_what_the_list_table_prices(tmp_path: Path) -> None:
     rooted = build_managers(StorageMemoryImpl(), InfraLocalImpl(tmp_path))
     ctx = context(Role.MEMBER)
-    fills = await rooted.models.resolve_fill_set(ctx, new_id(), [MAIN, SUMMARIZER], Eligibility())
+    fills = await rooted.language_models.resolve_fill_set(
+        ctx, new_id(), [MAIN, SUMMARIZER], Eligibility()
+    )
     assert [r.role for r in fills.roles] == [MAIN, SUMMARIZER], "the default table, all priced"
     unlisted_fill = SONNET.model_copy(update={"model": "a-model-the-list-does-not-hold"})
     unlisted = ModelResolverTableImpl(
@@ -222,10 +224,10 @@ async def test_an_ask_never_widens_what_a_fill_allows_and_the_fill_set_keeps_bot
         ModelAsk(role=MAIN, size=ModelSize.L, effort=Effort.NONE),
         ModelAsk(role=SUMMARIZER, size=ModelSize.S, effort=Effort.HIGH),
     )
-    await managers.models.resolve_fill_set(
+    await managers.language_models.resolve_fill_set(
         ctx, agent_session_id, [MAIN, SUMMARIZER], Eligibility(), asks
     )
-    main, summarizer = (await managers.models.get_fill_set(ctx, agent_session_id)).roles
+    main, summarizer = (await managers.language_models.get_fill_set(ctx, agent_session_id)).roles
     assert served(main) == [
         ("anthropic/claude-sonnet-5-5", Effort.HIGH),
         ("openai/gpt-6.1-sol", Effort.HIGH),
@@ -271,19 +273,19 @@ async def test_a_session_resolves_its_fills_once(managers: Managers) -> None:
     ctx = context(Role.MEMBER)
     agent_session_id = new_id()
     with pytest.raises(NotFound):
-        await managers.models.get_fill_set(ctx, agent_session_id)
-    first = await managers.models.resolve_fill_set(
+        await managers.language_models.get_fill_set(ctx, agent_session_id)
+    first = await managers.language_models.resolve_fill_set(
         ctx, agent_session_id, [MAIN, SUMMARIZER], Eligibility()
     )
     assert first.version == 1 and first.reason is None and first.switched_by is None
     assert first.fill_for(MAIN) == DEFAULT_MAIN.fill
-    again = await managers.models.resolve_fill_set(
+    again = await managers.language_models.resolve_fill_set(
         ctx, agent_session_id, [MAIN], Eligibility(region="eu")
     )
     assert again == first, "a later resolution keeps the first"
-    assert await managers.models.get_fill_set(ctx, agent_session_id) == first
+    assert await managers.language_models.get_fill_set(ctx, agent_session_id) == first
     with pytest.raises(NotFound):
-        await managers.models.get_fill_set(context(Role.MEMBER), agent_session_id)
+        await managers.language_models.get_fill_set(context(Role.MEMBER), agent_session_id)
 
 
 async def test_a_switch_writes_a_new_version_and_a_switched_step_naming_both_fills(
@@ -291,11 +293,11 @@ async def test_a_switch_writes_a_new_version_and_a_switched_step_naming_both_fil
 ) -> None:
     ctx = context(Role.MEMBER)
     agent_session_id, epoch, loop_id = await a_run(managers, ctx)
-    first = await managers.models.resolve_fill_set(
+    first = await managers.language_models.resolve_fill_set(
         ctx, agent_session_id, [MAIN, SUMMARIZER], Eligibility()
     )
     to = DEFAULT_MAIN.fallbacks[0]
-    second = await managers.models.switch_fill(
+    second = await managers.language_models.switch_fill(
         ctx, agent_session_id, epoch, loop_id, MAIN, to, SwitchReason.FALLBACK
     )
     (step,) = await switches(managers, ctx, agent_session_id)
@@ -312,20 +314,22 @@ async def test_a_switch_writes_a_new_version_and_a_switched_step_naming_both_fil
     assert second.fill_for(MAIN) == to and second.fill_for(SUMMARIZER) == first.fill_for(SUMMARIZER)
     main = second.role_fill(MAIN)
     assert main is not None and to not in main.fallbacks
-    assert await managers.models.get_fill_set(ctx, agent_session_id) == second
+    assert await managers.language_models.get_fill_set(ctx, agent_session_id) == second
 
 
 async def test_a_run_that_lost_its_claim_switches_nothing(managers: Managers) -> None:
     ctx = context(Role.MEMBER)
     agent_session_id, stale, loop_id = await a_run(managers, ctx)
-    first = await managers.models.resolve_fill_set(ctx, agent_session_id, [MAIN], Eligibility())
+    first = await managers.language_models.resolve_fill_set(
+        ctx, agent_session_id, [MAIN], Eligibility()
+    )
     await managers.agent_steps.begin_run(ctx, agent_session_id)
     with pytest.raises(StaleWriter):
-        await managers.models.switch_fill(
+        await managers.language_models.switch_fill(
             ctx, agent_session_id, stale, loop_id, MAIN, SOL, SwitchReason.POLICY
         )
     assert await switches(managers, ctx, agent_session_id) == []
-    assert await managers.models.get_fill_set(ctx, agent_session_id) == first
+    assert await managers.language_models.get_fill_set(ctx, agent_session_id) == first
 
 
 @pytest.mark.parametrize(
@@ -341,13 +345,15 @@ async def test_a_refused_switch_writes_nothing(
 ) -> None:
     ctx = context(Role.MEMBER)
     agent_session_id, epoch, loop_id = await a_run(managers, ctx)
-    first = await managers.models.resolve_fill_set(ctx, agent_session_id, [MAIN], Eligibility())
+    first = await managers.language_models.resolve_fill_set(
+        ctx, agent_session_id, [MAIN], Eligibility()
+    )
     with pytest.raises(refused):
-        await managers.models.switch_fill(
+        await managers.language_models.switch_fill(
             ctx, agent_session_id, epoch, loop_id, role, to, SwitchReason.POLICY
         )
     assert await switches(managers, ctx, agent_session_id) == []
-    assert await managers.models.get_fill_set(ctx, agent_session_id) == first
+    assert await managers.language_models.get_fill_set(ctx, agent_session_id) == first
 
 
 async def test_a_switch_stays_inside_the_sessions_eligibility(managers: Managers) -> None:
@@ -356,7 +362,7 @@ async def test_a_switch_stays_inside_the_sessions_eligibility(managers: Managers
     ineligible = SOL.model_copy(update={"eligibility": Eligibility(region="us")})
     eligible = SOL.model_copy(update={"eligibility": Eligibility(region="eu")})
     lighter = eligible.model_copy(update={"effort": Effort.LOW})
-    models = ModelsManagerImpl(
+    models = LanguageModelsManagerImpl(
         FillSetStorageMemoryImpl(),
         managers.agent_steps,
         managers.tenancy,
@@ -366,7 +372,7 @@ async def test_a_switch_stays_inside_the_sessions_eligibility(managers: Managers
                 table=(RoleFill(role=MAIN, fill=eligible, fallbacks=(ineligible, lighter)),)
             ),
         ),
-        ModelsOptions(),
+        LanguageModelsOptions(),
     )
     await models.resolve_fill_set(ctx, agent_session_id, [MAIN], Eligibility(region="eu"))
     with pytest.raises(ValidationFailed):
@@ -384,12 +390,14 @@ async def test_a_switch_stays_inside_the_sessions_eligibility(managers: Managers
 async def test_a_fallback_takes_the_next_declared_fill_it_has_not_tried(managers: Managers) -> None:
     ctx = context(Role.MEMBER)
     agent_session_id, epoch, loop_id = await a_run(managers, ctx)
-    head = await managers.models.resolve_fill_set(ctx, agent_session_id, [MAIN], Eligibility())
+    head = await managers.language_models.resolve_fill_set(
+        ctx, agent_session_id, [MAIN], Eligibility()
+    )
     declared = DEFAULT_MAIN.fallbacks
     assert rules.next_fallback(head, MAIN) == declared[0]
     assert rules.next_fallback(head, MAIN, tried=declared) is None
     assert rules.next_fallback(head, "title") is None
-    fallen = await managers.models.fall_back(ctx, agent_session_id, epoch, loop_id, MAIN)
+    fallen = await managers.language_models.fall_back(ctx, agent_session_id, epoch, loop_id, MAIN)
     assert fallen is not None and fallen.fill_for(MAIN) == declared[0]
     assert fallen.reason is SwitchReason.FALLBACK
 
@@ -415,12 +423,12 @@ async def test_a_version_a_crash_left_unwritten_is_written_from_its_step(
     ctx = context(Role.MEMBER)
     agent_session_id, epoch, loop_id = await a_run(managers, ctx)
     storage = CrashAfterTheStep()
-    models = ModelsManagerImpl(
+    models = LanguageModelsManagerImpl(
         storage,
         managers.agent_steps,
         managers.tenancy,
         ModelResolverTableImpl(EVERY_DEFAULT, ResolverOptions()),
-        ModelsOptions(),
+        LanguageModelsOptions(),
     )
     await models.resolve_fill_set(ctx, agent_session_id, [MAIN], Eligibility())
     with pytest.raises(ConnectionError):
@@ -449,13 +457,15 @@ async def test_a_viewer_reads_and_switches_nothing(managers: Managers) -> None:
     agent_session_id, epoch, loop_id = await a_run(managers, member)
     viewer = context(Role.VIEWER)
     with pytest.raises(NotAuthorized):
-        await managers.models.resolve_fill_set(viewer, agent_session_id, [MAIN], Eligibility())
+        await managers.language_models.resolve_fill_set(
+            viewer, agent_session_id, [MAIN], Eligibility()
+        )
     with pytest.raises(NotAuthorized):
-        await managers.models.switch_fill(
+        await managers.language_models.switch_fill(
             viewer, agent_session_id, epoch, loop_id, MAIN, SOL, SwitchReason.POLICY
         )
     with pytest.raises(NotAuthorized):
-        await managers.models.purge_tenant(viewer)
+        await managers.language_models.purge_tenant(viewer)
 
 
 async def test_the_sweep_purges_no_living_tenants_fill_sets(managers: Managers) -> None:
@@ -467,6 +477,8 @@ async def test_the_sweep_purges_no_living_tenants_fill_sets(managers: Managers) 
         "Ann",
     )
     agent_session_id = new_id()
-    first = await managers.models.resolve_fill_set(ctx, agent_session_id, [MAIN], Eligibility())
-    assert await managers.models.purge_tenant(ctx) == 0
-    assert await managers.models.get_fill_set(ctx, agent_session_id) == first
+    first = await managers.language_models.resolve_fill_set(
+        ctx, agent_session_id, [MAIN], Eligibility()
+    )
+    assert await managers.language_models.purge_tenant(ctx) == 0
+    assert await managers.language_models.get_fill_set(ctx, agent_session_id) == first

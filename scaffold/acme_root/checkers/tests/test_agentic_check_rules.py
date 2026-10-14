@@ -82,10 +82,10 @@ def test_mod01_a_model_written_outside_the_fills_and_the_prices_is_a_finding(tmp
 
 
 def test_mod01_the_sites_option_names_the_files_that_may_name_a_model(tmp_path):
-    catalog = {f"{OM}/models/impl/catalog.py": "CATALOG = dict(model='claude-x')\n"}
+    catalog = {f"{OM}/language_models/impl/catalog.py": "CATALOG = dict(model='claude-x')\n"}
     write_project(tmp_path, catalog)
     assert len(found(tmp_path, "MOD-01")) == 1
-    sites = '\n[tool.agentic-check.options.MOD-01]\nsites = ["om/src/acme/om/models/impl/*.py"]\n'
+    sites = '\n[tool.agentic-check.options.MOD-01]\nsites = ["om/src/acme/om/language_models/impl/*.py"]\n'
     write_project(tmp_path, catalog, pyproject='[tool.agentic-check]\npackage = "acme"\n' + sites)
     assert found(tmp_path, "MOD-01") == []
 

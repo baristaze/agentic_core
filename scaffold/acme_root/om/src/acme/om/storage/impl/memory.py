@@ -14,12 +14,12 @@ from acme.om.events.storage import EventStorageInterface
 from acme.om.events.storage.impl.memory import EventStorageMemoryImpl
 from acme.om.idempotency.storage import IdempotencyStorageInterface
 from acme.om.idempotency.storage.impl.memory import IdempotencyStorageMemoryImpl
+from acme.om.language_models.storage import FillSetStorageInterface
+from acme.om.language_models.storage.impl.memory import FillSetStorageMemoryImpl
 from acme.om.leases.storage import LeasesStorageInterface
 from acme.om.leases.storage.impl.memory import LeasesStorageMemoryImpl
 from acme.om.media.storage import MediaStorageInterface
 from acme.om.media.storage.impl.memory import MediaStorageMemoryImpl
-from acme.om.models.storage import FillSetStorageInterface
-from acme.om.models.storage.impl.memory import FillSetStorageMemoryImpl
 from acme.om.orchestrations.storage import OrchestrationsStorageInterface
 from acme.om.orchestrations.storage.impl.memory import OrchestrationsStorageMemoryImpl
 from acme.om.outbox.storage import OutboxStorageInterface

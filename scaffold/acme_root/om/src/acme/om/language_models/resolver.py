@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
 from acme.om.context import TenantContext
-from acme.om.models.types.fill import Eligibility, Fill, ModelAsk, ModelRole, RoleFill
+from acme.om.language_models.types.fill import Eligibility, Fill, ModelAsk, ModelRole, RoleFill
 
 
 class ModelResolverInterface(ABC):

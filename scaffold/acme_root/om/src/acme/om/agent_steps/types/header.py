@@ -23,7 +23,7 @@ from acme.om.attribution.types.authority import AuthorityMode, Visibility
 from acme.om.attribution.types.principal import AgentRef, Principal
 from acme.om.base import Platform
 from acme.om.context import Role
-from acme.om.models.types.fill import FillSwitch
+from acme.om.language_models.types.fill import FillSwitch
 
 
 class ControlCommand(StrEnum):

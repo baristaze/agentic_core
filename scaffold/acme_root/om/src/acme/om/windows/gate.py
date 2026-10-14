@@ -18,7 +18,7 @@ from acme.integrations.model_providers.types import Usage
 from acme.om.attribution.types.principal import Principal
 from acme.om.budgets.types.usage import CallSite
 from acme.om.context import TenantContext
-from acme.om.models.types.fill import Fill, ModelRole
+from acme.om.language_models.types.fill import Fill, ModelRole
 
 
 class CallGateInterface(ABC):

@@ -52,6 +52,13 @@ from acme.om.events.impl.manager import EventsManagerImpl, EventsOptions
 from acme.om.exceptions import NotFound, UnsafeConfiguration
 from acme.om.idempotency import IdempotencyManagerInterface
 from acme.om.idempotency.impl.manager import IdempotencyManagerImpl, IdempotencyOptions
+from acme.om.language_models.impl.credentials import CallCredentialsPlatformImpl
+from acme.om.language_models.impl.manager import LanguageModelsManagerImpl, LanguageModelsOptions
+from acme.om.language_models.impl.prices import ModelPricesFromPricingImpl
+from acme.om.language_models.impl.resolver import ModelResolverTableImpl, ResolverOptions
+from acme.om.language_models.layer import LanguageModelsLayer
+from acme.om.language_models.manager import LanguageModelsManagerInterface
+from acme.om.language_models.prices import ModelPricesInterface
 from acme.om.leases import LeasesManagerInterface
 from acme.om.leases.impl.kinds import NoopResourceKindImpl, OrchestrationWaiterImpl
 from acme.om.leases.impl.manager import LeasesManagerImpl, LeasesOptions
@@ -59,13 +66,6 @@ from acme.om.leases.types.request import WaiterKind
 from acme.om.leases.types.resource import ResourceKind
 from acme.om.media import MediaManagerInterface
 from acme.om.media.impl.manager import MediaManagerImpl, MediaOptions
-from acme.om.models.impl.credentials import CallCredentialsPlatformImpl
-from acme.om.models.impl.manager import ModelsManagerImpl, ModelsOptions
-from acme.om.models.impl.prices import ModelPricesFromPricingImpl
-from acme.om.models.impl.resolver import ModelResolverTableImpl, ResolverOptions
-from acme.om.models.layer import ModelsLayer
-from acme.om.models.manager import ModelsManagerInterface
-from acme.om.models.prices import ModelPricesInterface
 from acme.om.orchestrations import OrchestrationsManagerInterface
 from acme.om.orchestrations.impl.manager import OrchestrationsManagerImpl, OrchestrationsOptions
 from acme.om.outbox import OutboxRelayInterface
@@ -136,7 +136,7 @@ class Managers:
     budgets_operator: BudgetsOperatorManagerInterface
     budget_gate: BudgetGateInterface
     pricing: PricingInterface
-    models: ModelsManagerInterface
+    language_models: LanguageModelsManagerInterface
     windows: WindowsManagerInterface
     attribution: AttributionManagerInterface
     agents: AgentsManagerInterface
@@ -263,9 +263,9 @@ def build_managers(
     steps_options: AgentStepsOptions | None = None,
     agent_sessions_options: AgentSessionsOptions | None = None,
     budgets_options: BudgetsOptions | None = None,
-    models_options: ModelsOptions | None = None,
+    language_models_options: LanguageModelsOptions | None = None,
     model_prices: ModelPricesInterface | None = None,
-    models_layer: ModelsLayer | None = None,
+    language_models_layer: LanguageModelsLayer | None = None,
     call_gate: CallGateInterface | None = None,
     prompt_hash: PromptHashInterface | None = None,
     tool_output_seal: ToolOutputSealInterface | None = None,
@@ -299,7 +299,7 @@ def build_managers(
     asks the one source of prices, the budgets' list table, so a model with
     no row of its own resolves nowhere.
 
-    `models_layer` is a layer's own models: the client each model call runs
+    `language_models_layer` is a layer's own models: the client each model call runs
     on. None keeps the engine's: every call on the platform's key.
 
     `call_gate` is the budget gate every model call passes, the loop's and a
@@ -454,14 +454,14 @@ def build_managers(
     pricing = PricingTableImpl()
     # A session's fills. The resolver refuses a model with no price row of
     # its own.
-    models = ModelsManagerImpl(
+    models = LanguageModelsManagerImpl(
         storage.get_fill_set_storage(),
         steps,
         tenancy,
         ModelResolverTableImpl(
             model_prices or ModelPricesFromPricingImpl(pricing), ResolverOptions()
         ),
-        models_options or ModelsOptions(),
+        language_models_options or LanguageModelsOptions(),
     )
     attribution = AttributionManagerImpl(
         storage.get_attribution_storage(),
@@ -483,8 +483,8 @@ def build_managers(
     # The key each call goes out on: the platform's, unless a layer says.
     credentials = (
         CallCredentialsPlatformImpl(providers, (loop_options or LoopOptions()).credential)
-        if models_layer is None
-        else models_layer.credentials(providers)
+        if language_models_layer is None
+        else language_models_layer.credentials(providers)
     )
     # The one gate every model call passes, priced from the one source.
     calls = call_gate or CallGateBudgetImpl(gate, pricing, agent_sessions, budgets)
@@ -607,7 +607,7 @@ def build_managers(
         budget_gate=gate,
         # The one source of prices: the list table.
         pricing=pricing,
-        models=models,
+        language_models=models,
         windows=windows,
         attribution=attribution,
         agents=agents,

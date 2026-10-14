@@ -34,9 +34,9 @@ from acme.om.exceptions import (
     PreconditionFailed,
     ValidationFailed,
 )
-from acme.om.models.credentials import CallCredentialsInterface
-from acme.om.models.manager import ModelsManagerInterface
-from acme.om.models.types.fill import MAIN, SUMMARIZER, Fill, FillSet, ModelRole
+from acme.om.language_models.credentials import CallCredentialsInterface
+from acme.om.language_models.manager import LanguageModelsManagerInterface
+from acme.om.language_models.types.fill import MAIN, SUMMARIZER, Fill, FillSet, ModelRole
 from acme.om.tenancy import TenancyManagerInterface
 from acme.om.windows import rules
 from acme.om.windows.gate import CallGateInterface
@@ -66,7 +66,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
         storage: WindowStorageInterface,
         steps: AgentStepsManagerInterface,
         tenancy: TenancyManagerInterface,
-        models: ModelsManagerInterface,
+        models: LanguageModelsManagerInterface,
         attribution: AttributionManagerInterface,
         credentials: CallCredentialsInterface,
         buckets: BucketsInterface,
@@ -86,7 +86,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
         self._storage = storage
         self._steps = steps
         self._tenancy = tenancy
-        self._models = models
+        self._language_models = models
         self._attribution = attribution
         self._credentials = credentials
         self._buckets = buckets
@@ -114,7 +114,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
         history: Sequence[AgentStep] | None = None,
     ) -> RenderedRequest:
         ctx.require(Permission.WRITE)
-        fill_set = await self._models.get_fill_set(ctx, agent_session_id)
+        fill_set = await self._language_models.get_fill_set(ctx, agent_session_id)
         fill = _fill(fill_set, role)
         steps = await self._history(ctx, agent_session_id) if history is None else history
         if role != MAIN:
@@ -165,7 +165,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
             raise ContextOverflow("the provider refused the request's one retry as too long")
         if refused.window.role != MAIN:
             raise ContextOverflow(f"a {refused.window.role} request reads a suffix; none compacts")
-        fill_set = await self._models.get_fill_set(ctx, agent_session_id)
+        fill_set = await self._language_models.get_fill_set(ctx, agent_session_id)
         fill = _fill(fill_set, MAIN)
         steps = await self._history(ctx, agent_session_id) if history is None else history
         self._main(steps, kind, fill, fill_set.version, plan)

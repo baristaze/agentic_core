@@ -33,30 +33,30 @@ def refuse_unsafe(settings: IntegrationsSettings, environment: str, deployed: bo
         raise UnsafeIntegration(
             f"ACME_IDENTITY_PROVIDER=twin is refused when ACME_ENVIRONMENT={environment}"
         )
-    if deployed and settings.model_providers == "scripted":
+    if deployed and settings.llm_providers == "scripted":
         raise UnsafeIntegration(
-            f"ACME_MODEL_PROVIDERS=scripted is refused when ACME_ENVIRONMENT={environment}"
+            f"ACME_LLM_PROVIDERS=scripted is refused when ACME_ENVIRONMENT={environment}"
         )
 
 
 def model_providers_for(settings: IntegrationsSettings) -> ModelProvidersInterface:
     """Each provider's adapter, from settings. A live adapter with no platform
     key still serves a call that carries its own credential."""
-    if settings.model_providers == "scripted":
-        script = None if settings.model_script is None else read_script(settings.model_script)
+    if settings.llm_providers == "scripted":
+        script = None if settings.llm_script is None else read_script(settings.llm_script)
         return scripted_model_providers(script)
-    if settings.model_providers == "live":
-        timeout = timedelta(seconds=settings.model_timeout_seconds)
+    if settings.llm_providers == "live":
+        timeout = timedelta(seconds=settings.llm_timeout_seconds)
         return ModelProvidersOverImpl(
             {
                 ProviderName.ANTHROPIC: ModelProviderAnthropicImpl(
-                    http=httpx.AsyncClient(timeout=settings.model_timeout_seconds),
+                    http=httpx.AsyncClient(timeout=settings.llm_timeout_seconds),
                     api_key=settings.anthropic_api_key,
                     base_url=settings.anthropic_base_url,
                     timeout=timeout,
                 ),
                 ProviderName.OPENAI: ModelProviderOpenAIImpl(
-                    http=httpx.AsyncClient(timeout=settings.model_timeout_seconds),
+                    http=httpx.AsyncClient(timeout=settings.llm_timeout_seconds),
                     api_key=settings.openai_api_key,
                     base_url=settings.openai_base_url,
                     timeout=timeout,

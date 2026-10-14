@@ -26,7 +26,7 @@ from acme.om.attribution.types.principal import MAX_KIND
 from acme.om.base import Platform
 from acme.om.budgets.types.amount import Amount
 from acme.om.exceptions import UnknownAgentKind
-from acme.om.models.types.fill import MAIN, SUMMARIZER, ModelAsk, ModelRole
+from acme.om.language_models.types.fill import MAIN, SUMMARIZER, ModelAsk, ModelRole
 from acme.om.tools.types.policy import ToolPolicyLayer
 from acme.om.tools.types.toolset import LOAD_TOOLSET, Toolset
 

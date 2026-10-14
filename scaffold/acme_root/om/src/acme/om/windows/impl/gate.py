@@ -25,7 +25,7 @@ from acme.om.budgets.types.hold import (
 from acme.om.budgets.types.usage import CallLabels, CallSite, UsageRecord
 from acme.om.context import TenantContext
 from acme.om.exceptions import BudgetRefused, Unavailable
-from acme.om.models.types.fill import Fill, ModelRole
+from acme.om.language_models.types.fill import Fill, ModelRole
 from acme.om.windows.gate import CallGateInterface
 from acme.om.windows.rules import call_shape
 

@@ -20,7 +20,7 @@ from acme.om.agents.types.run import RunEnd
 from acme.om.attribution.types.principal import Principal
 from acme.om.context import TenantContext
 from acme.om.exceptions import GateParked, PlatformException, SpenderUnknown
-from acme.om.models.types.fill import Fill, ModelRole
+from acme.om.language_models.types.fill import Fill, ModelRole
 from acme.om.root import Managers
 from acme.om.windows.impl.gate import CallGateBudgetImpl
 

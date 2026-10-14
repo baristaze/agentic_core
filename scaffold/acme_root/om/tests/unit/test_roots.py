@@ -17,12 +17,12 @@ from acme.om.events import EventsManagerInterface
 from acme.om.events.storage import EventStorageInterface
 from acme.om.idempotency import IdempotencyManagerInterface
 from acme.om.idempotency.storage import IdempotencyStorageInterface
+from acme.om.language_models.manager import LanguageModelsManagerInterface
+from acme.om.language_models.storage import FillSetStorageInterface
 from acme.om.leases import LeasesManagerInterface
 from acme.om.leases.storage import LeasesStorageInterface
 from acme.om.media import MediaManagerInterface
 from acme.om.media.storage import MediaStorageInterface
-from acme.om.models.manager import ModelsManagerInterface
-from acme.om.models.storage import FillSetStorageInterface
 from acme.om.orchestrations import OrchestrationsManagerInterface
 from acme.om.orchestrations.storage import OrchestrationsStorageInterface
 from acme.om.outbox import OutboxRelayInterface
@@ -155,7 +155,7 @@ def test_business_root_has_a_field_per_manager(tmp_path: Path) -> None:
     assert isinstance(managers.budgets, BudgetsManagerInterface)
     assert isinstance(managers.budget_gate, BudgetGateInterface)
     assert isinstance(managers.pricing, PricingInterface)
-    assert isinstance(managers.models, ModelsManagerInterface)
+    assert isinstance(managers.language_models, LanguageModelsManagerInterface)
     assert isinstance(managers.windows, WindowsManagerInterface)
     assert isinstance(managers.tools, ToolsManagerInterface)
 

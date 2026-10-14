@@ -407,10 +407,10 @@ class GateParked(BudgetsException):
         self.park = park
 
 
-class ModelsException(PlatformException): ...
+class LanguageModelsException(PlatformException): ...
 
 
-class UnpricedModel(ModelsException, ValidationFailed):
+class UnpricedModel(LanguageModelsException, ValidationFailed):
     """A model with no row in the one source of prices. A resolver never
     picks one, and a switch never lands on one: every figure built on a
     default row would be a guess, the budgets that bind on it included."""
@@ -418,14 +418,14 @@ class UnpricedModel(ModelsException, ValidationFailed):
     code = "unpriced_model"
 
 
-class UnresolvedRole(ModelsException, ValidationFailed):
+class UnresolvedRole(LanguageModelsException, ValidationFailed):
     """A model role the resolver does not know, or one with no fill the
     session's eligibility admits."""
 
     code = "unresolved_model_role"
 
 
-class NoCredential(ModelsException, PreconditionFailed):
+class NoCredential(LanguageModelsException, PreconditionFailed):
     """A call that needs a key the tenant does not hold, or holds no longer:
     nothing is spent, nothing falls back to the platform's key, and the
     session parks on the provider until a key is saved (`unlock`)."""
