@@ -296,7 +296,7 @@ async def test_a_restore_starts_from_its_snapshot_and_reads_no_base(tmp_path: Pa
     )
     epoch = await bases.tools.steps.begin_run(bases.ctx, agent_session_id)
     step = await bases.tools.manager.snapshot_agent_workspace(
-        bases.ctx, agent_session_id, workspace, epoch=epoch, loop_id=new_id()
+        bases.ctx, agent_session_id, workspace, epoch=epoch, loop_id=new_id(), tools=()
     )
     assert isinstance(step.header, SnapshotHeader)
     snapshot = step.header.snapshot

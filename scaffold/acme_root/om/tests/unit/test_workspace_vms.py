@@ -36,6 +36,7 @@ from acme.infra.secrets.local import SecretsLocalImpl
 from acme.infra.transports.broker import BrokerTwinImpl
 from acme.infra.transports.vm import TransportVmImpl
 from acme.infra.vms.twin import VmsTwinImpl
+from acme.om.agent_root import AgentRootOptions
 from acme.om.agent_steps.types.agent_step import AgentStep
 from acme.om.agent_steps.types.header import AgentWorkspaceSnapshot, SnapshotHeader
 from acme.om.base import new_id
@@ -91,7 +92,7 @@ class Vms:
     async def snapshot(self, workspace: AgentWorkspace) -> AgentWorkspaceSnapshot:
         epoch = await self.tools.steps.begin_run(self.ctx, workspace.id)
         step = await self.tools.manager.snapshot_agent_workspace(
-            self.ctx, workspace.id, workspace, epoch=epoch, loop_id=new_id()
+            self.ctx, workspace.id, workspace, epoch=epoch, loop_id=new_id(), tools=()
         )
         return named(step)
 
@@ -191,7 +192,11 @@ async def test_a_revoked_key_destroys_the_disks_kept_for_its_snapshots_and_no_ot
     workspace, a cache, stays, and so does a fork's copy, kept for the
     child under its own key: the child still starts from it."""
     infra = VmInfra(tmp_path)
-    managers = build_managers(StorageMemoryImpl(), infra, tool_catalog=stand_ins("read_log"))
+    managers = build_managers(
+        StorageMemoryImpl(),
+        infra,
+        agent_root_options=AgentRootOptions(tool_catalog=stand_ins("read_log")),
+    )
     ctx = context(Role.MEMBER)
     parent, child = [
         (await managers.agent_sessions.create_agent_session(ctx, make_agent_session())).id
@@ -203,7 +208,7 @@ async def test_a_revoked_key_destroys_the_disks_kept_for_its_snapshots_and_no_ot
     epoch = await managers.agent_steps.begin_run(ctx, parent)
     for _ in range(2):
         await managers.tools.snapshot_agent_workspace(
-            ctx, parent, workspace, epoch=epoch, loop_id=new_id()
+            ctx, parent, workspace, epoch=epoch, loop_id=new_id(), tools=()
         )
     taken = TakenSnapshot(agent_workspace_id=parent, archive=await infra.vms.snapshot(workspace))
     copy = await managers.tools.fork_snapshot(ctx, child, new_id(), taken)

@@ -17,6 +17,7 @@ from acme.infra.root import InfraInterface
 from acme.infra.trust import install_trust_store
 from acme.integrations.impl.configured import IntegrationsConfiguredImpl, absent_integrations
 from acme.integrations.root import IntegrationsInterface
+from acme.om.agent_root import AgentRootOptions
 from acme.om.agents.types.kind import AgentKind
 from acme.om.root import Managers, TenancyOperatorOptions, TenancyOptions, build_managers
 from acme.om.storage.impl.memory import StorageMemoryImpl
@@ -212,10 +213,12 @@ class AppContainer:
             tenancy_options(settings),
             operator_options(settings),
             integrations,
-            environment=settings.environment,
-            agent_kinds=agent_kinds,
-            tool_catalog=tool_catalog,
-            domain_classes=domain_classes,
+            agent_root_options=AgentRootOptions(
+                environment=settings.environment,
+                agent_kinds=agent_kinds,
+                tool_catalog=tool_catalog,
+                domain_classes=domain_classes,
+            ),
         )
         services = build_services(
             managers,

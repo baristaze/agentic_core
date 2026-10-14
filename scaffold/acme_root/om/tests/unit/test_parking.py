@@ -16,6 +16,7 @@ from contracts.spend_budget_storage import make_spend_budget
 from contracts.tools import stand_ins
 
 from acme.infra.impl.local import InfraLocalImpl
+from acme.om.agent_root import AgentRootOptions
 from acme.om.agent_sessions.limits import step_guard_park
 from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus
 from acme.om.agent_steps.types.agent_step import Actor, AgentStepType
@@ -59,7 +60,9 @@ class Engine:
     def __init__(self, tmp_path: Path) -> None:
         self.storage = StorageMemoryImpl()
         self.managers: Managers = build_managers(
-            self.storage, InfraLocalImpl(tmp_path), tool_catalog=TOOLS
+            self.storage,
+            InfraLocalImpl(tmp_path),
+            agent_root_options=AgentRootOptions(tool_catalog=TOOLS),
         )
 
     def queued(self, kind: WorkKind) -> list[WorkItem]:

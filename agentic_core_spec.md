@@ -232,6 +232,13 @@ providers, the workspace provider and the transport, the outage signal,
 the clock, and the stream sink. A laptop, a container, a VM in a
 customer's cloud, and a unit test are all valid hosts.
 
+An adopter extends a run without editing the loop, through the loop's
+hooks, which its root wires beside the rest. Once a run, before anything
+renders, the hooks name the toolsets a session holds beyond its kind,
+which the loop folds into the kind. Once the workspace is prepared, they
+name the steps to append before the first model call. With none wired,
+the null extends nothing ([Null Objects](#null-objects)).
+
 Its operations take the guideline's context first. A tenant operation
 takes `TenantContext`; a consumer that reads less declares a scope
 ([Stages][g-stages], [Scopes][g-scopes]). The engine never mints a
@@ -773,13 +780,15 @@ a `switched` step that names the tools it added. They render after every
 tool before them, from the next request on, for the rest of the session,
 and the one cache write that costs is paid knowingly and recorded, as a
 fill switch is. Nothing else changes a session's tool definitions: they
-follow from its kind version and its history, so a replay renders the
-same requests.
+follow from its kind version, the toolsets the loop's hooks attach to it,
+which answer the same for a session for its life, and its history, so a
+replay renders the same requests.
 
 A message to a session enqueues its loop, so the guideline's enqueue
 rule applies to the registry ([The Work Queue][g-workq]): a principal may
 start or instruct a session of a kind only if it may make each kind of
-call the registry offers, a deferred toolset's included. Policy then
+call the registry offers, a deferred toolset's and an attached toolset's
+included. Policy then
 gates each call on its own, since an agent picks its calls at runtime.
 
 ### Tools over MCP

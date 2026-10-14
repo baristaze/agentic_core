@@ -17,14 +17,22 @@ from acme.infra.outages import OutageSignalInterface
 from acme.infra.outages.cache import OutageSignalCacheImpl
 from acme.integrations.identity.absent import IdentityProviderAbsentImpl
 from acme.integrations.impl.configured import IntegrationsOverImpl
-from acme.integrations.model_providers.calls import ModelReply
+from acme.integrations.model_providers.calls import ModelCall, ModelReply
 from acme.integrations.model_providers.registry import ModelProvidersOverImpl
 from acme.integrations.model_providers.scripted import ModelProviderScriptedImpl, ScriptedFailure
 from acme.integrations.model_providers.types import ErrorKind, ProviderName, StopReason, Usage
+from acme.om.agent_root import AgentRootOptions
 from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
-from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
-from acme.om.agent_steps.types.content import TextBlock, ToolUseBlock
-from acme.om.agent_steps.types.header import LoopOutcome, ParkReason
+from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
+from acme.om.agent_steps.types.content import TextBlock, ToolResultBlock, ToolUseBlock
+from acme.om.agent_steps.types.header import (
+    ControlCommand,
+    ControlHeader,
+    LoopOutcome,
+    ParkReason,
+)
+from acme.om.agents.hooks import LoopHooksInterface
+from acme.om.agents.impl.hooks import LoopHooksNullImpl
 from acme.om.agents.impl.loop import LoopManagerImpl, LoopOptions
 from acme.om.agents.impl.sink import StreamSinkMemoryImpl
 from acme.om.agents.types.kind import AgentKind, AgentKindCatalog, DoneRule, TreeLimits
@@ -37,7 +45,7 @@ from acme.om.base import Platform, new_id, utcnow
 from acme.om.context import CredentialKind, RequestContext, Role, TenantContext, build_context
 from acme.om.language_models.impl.credentials import CallCredentialsPlatformImpl
 from acme.om.language_models.layer import LanguageModelsLayer
-from acme.om.root import Managers, build_managers, engine_tools
+from acme.om.root import Managers, build_managers
 from acme.om.spend_budgets.types.amount import Amount
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.storage.root import StorageInterface
@@ -45,6 +53,7 @@ from acme.om.tenancy.rules import permissions_of
 from acme.om.tools.attachments import AttachmentReaderInterface
 from acme.om.tools.impl.attachments import AttachmentReaderNullImpl
 from acme.om.tools.impl.manager import ToolsOptions
+from acme.om.tools.native import native_tools
 from acme.om.tools.tool import JobToolInterface, ToolInterface, ToolRuntime
 from acme.om.tools.types.call import JobHandle, JobStarted
 from acme.om.tools.types.policy import Decision, Target, ToolPolicyLayer, ToolPolicyRule
@@ -369,6 +378,7 @@ def loop_over(
     ceilings: ToolPolicyLayer | None = None,
     sessions: AgentSessionsOptions | None = None,
     infra: InfraLocalImpl | None = None,
+    hooks: LoopHooksInterface | None = None,
 ) -> Loop:
     """`storage` None is the memory storage, and `owner` None a fresh
     tenant's owner; a suite over Postgres hands in both. `jitter` is what
@@ -381,7 +391,8 @@ def loop_over(
     loop takes the layer's call credentials. `ceilings` None keeps the
     platform's, and `sessions` None is the sessions' own options. `infra`
     None is the local root over `tmp_path`; a suite on real Docker hands in
-    one whose workspaces are containers."""
+    one whose workspaces are containers. `hooks` None is the null hooks; a
+    suite of a layer's hooks hands in its own."""
     infra = infra or InfraLocalImpl(tmp_path)
     anthropic = ModelProviderScriptedImpl(ProviderName.ANTHROPIC)
     openai = ModelProviderScriptedImpl(ProviderName.OPENAI)
@@ -398,13 +409,16 @@ def loop_over(
         storage,
         infra,
         integrations=integrations,
-        agent_kinds=kinds,
-        principal_context=live,
-        tool_catalog=every,
-        attachment_reader=reader,
-        language_models_layer=language_models_layer,
-        tools_options=None if ceilings is None else ToolsOptions(ceilings=ceilings),
-        agent_sessions_options=sessions,
+        agent_root_options=AgentRootOptions(
+            agent_kinds=kinds,
+            principal_context=live,
+            tool_catalog=every,
+            attachment_reader=reader,
+            language_models_layer=language_models_layer,
+            tools_options=None if ceilings is None else ToolsOptions(ceilings=ceilings),
+            agent_sessions_options=sessions,
+            loop_hooks=hooks,
+        ),
     )
     clock = Clock()
     # The sessions of one case share one signal, as a fleet's do on Valkey:
@@ -444,7 +458,7 @@ def loop_over(
         ),
         signal,
         sink,
-        engine_tools(
+        native_tools(
             managers.agent_steps,
             managers.agent_sessions,
             reader,
@@ -456,6 +470,7 @@ def loop_over(
         clock,
         sleep,
         leases=managers.leases,
+        hooks=hooks or LoopHooksNullImpl(),
         jitter=jitter,
     )
     owner = owner or context(Role.OWNER, make_org())
@@ -540,3 +555,46 @@ async def outage_parks_at_once_and_resumes_at_the_retry_time(loop: Loop) -> None
     assert await loop.outages.current(*pair) is None, "the call that answered cleared the mark"
     types = [step.type for step in await loop.history(second)]
     assert types.count(AgentStepType.RESUMED) == 1 and len(loop.anthropic.calls) == 4
+
+
+def of_type(steps: list[AgentStep], *types: AgentStepType) -> list[AgentStep]:
+    return [step for step in steps if step.type in types]
+
+
+def person(user_id: UUID) -> Principal:
+    return Principal(kind=PrincipalKind.PERSON, id=user_id)
+
+
+def text_of(call: ModelCall) -> str:
+    """Every text a call carries, its tool results' included."""
+    texts: list[str] = []
+    for message in call.messages:
+        for block in message.blocks:
+            parts = block.parts if isinstance(block, ToolResultBlock) else (block,)
+            texts.extend(part.text for part in parts if isinstance(part, TextBlock))
+    return "\n".join(texts)
+
+
+async def ran_alone(loop: Loop, agent_session_id: UUID) -> list[AgentStep]:
+    """The history once a run is done, after every step is checked to have
+    a number of its own, in order."""
+    steps = await loop.history(agent_session_id)
+    assert [step.seq for step in steps] == list(range(1, len(steps) + 1))
+    return steps
+
+
+def control(loop: Loop, agent_session_id: UUID, command: ControlCommand) -> AgentStep:
+    return AgentStep(
+        id=new_id(),
+        created_at=loop.clock(),
+        agent_session_id=agent_session_id,
+        loop_id=new_id(),
+        type=AgentStepType.CONTROL,
+        actor=Actor.PERSON,
+        origin=Origin.PORTAL,
+        header=ControlHeader(command=command),
+    )
+
+
+def answer_to(steps: list[AgentStep], request: AgentStep) -> AgentStep:
+    return next(step for step in steps if step.responds_to == request.id)

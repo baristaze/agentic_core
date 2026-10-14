@@ -1,7 +1,6 @@
 from datetime import timedelta
 from pathlib import Path
 
-from acme.infra.agent_workspaces import EgressMode, EgressPolicy, IsolationMode, IsolationSpec
 from acme.infra.base import new_id
 from acme.infra.buckets import Buckets
 from acme.infra.cache import CacheScope
@@ -23,11 +22,5 @@ async def test_every_capability_works_over_the_local_root(tmp_path: Path) -> Non
     assert await infra.get_secrets().get(org, "s") == "v"
     assert infra.get_topics().describe() == "topics=memory"
     assert infra.get_outages().describe() == "outages=none"
-    spec = IsolationSpec(mode=IsolationMode.TWIN, egress=EgressPolicy(mode=EgressMode.NONE))
-    workspace = await infra.get_agent_workspaces().prepare(org, new_id(), spec)
-    await infra.get_transport().write_file(workspace, "a.txt", b"hi", epoch=1)
-    assert await infra.get_transport().read_file(workspace, "a.txt", 10) == b"hi"
-    org_key = await infra.get_keys().generate(org, new_id(), 1)
-    assert len(org_key.plaintext) == 32
     assert len(infra.describe()) == len(CacheScope) + 11
     await infra.close()

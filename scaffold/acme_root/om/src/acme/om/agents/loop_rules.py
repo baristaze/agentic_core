@@ -849,6 +849,15 @@ def restored_step(
     )
 
 
+def called(steps: Sequence[AgentStep], loop_id: UUID) -> bool:
+    """Whether the loop has made a model call: a request of any role names
+    it. A loop that stopped before its first call, parked as its workspace
+    was prepared say, is still new."""
+    return any(
+        step.type is AgentStepType.MODEL_REQUEST and step.loop_id == loop_id for step in steps
+    )
+
+
 def unanswered_requests(steps: Sequence[AgentStep], loop_id: UUID) -> list[AgentStep]:
     """The loop's model requests, of any role, that no response answers:
     what a lost run left, one per call it had in flight."""

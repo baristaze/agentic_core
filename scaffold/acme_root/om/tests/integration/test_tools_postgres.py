@@ -28,6 +28,7 @@ from contracts.tools import (
 from acme.infra.impl.configured import InfraConfiguredImpl
 from acme.infra.impl.settings import InfraSettings
 from acme.infra.transports.redaction import forms, marker
+from acme.om.agent_root import AgentRootOptions
 from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.base import new_id, utcnow
@@ -71,7 +72,9 @@ async def an_org(storage: StoragePostgresImpl, tmp_path: Path) -> tuple[TenantCo
     )
     overrides = {f"{owner.org_id.hex}_api_token".upper(): SECRET}
     managers = build_managers(
-        storage, InfraConfiguredImpl(settings(tmp_path, overrides)), principal_context=live
+        storage,
+        InfraConfiguredImpl(settings(tmp_path, overrides)),
+        agent_root_options=AgentRootOptions(principal_context=live),
     )
     return owner, managers
 

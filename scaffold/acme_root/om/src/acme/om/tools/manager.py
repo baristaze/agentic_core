@@ -28,7 +28,7 @@ from acme.om.agent_steps.types.agent_step import AgentStep
 from acme.om.agent_steps.types.header import AgentWorkspaceSnapshot
 from acme.om.context import TenantContext
 from acme.om.tools.registry import ToolRegistry
-from acme.om.tools.tool import TakenSnapshot
+from acme.om.tools.tool import TakenSnapshot, ToolInterface
 from acme.om.tools.types.call import Gate, JobHandle, JobNotStarted
 from acme.om.tools.types.policy import ToolPolicy, ToolPolicyLayer
 
@@ -97,6 +97,7 @@ class ToolsManagerInterface(ABC):
         *,
         epoch: int,
         loop_id: UUID,
+        tools: Sequence[ToolInterface],
     ) -> AgentStep:
         """A snapshot of the session's live workspace, kept, and the
         `snapshotted` step that names it, appended in the loop under
@@ -104,9 +105,11 @@ class ToolsManagerInterface(ABC):
         of each run that holds a workspace kept by snapshots, before it lets
         the instance go. Every credential the broker attached there is taken
         back first, and the snapshot holds no value of a secret the
-        catalog's tools may have injected: one that does is refused, and
-        nothing is kept. It is sealed under the session's key and stored
-        under its keyed hash. `SnapshotRefused` before anything runs when
+        catalog's tools may have injected, nor one a tool of `tools` may
+        have, the session's own beyond the catalog (its attached toolsets'):
+        one that does is refused, and nothing is kept. It is sealed under
+        the session's key and stored under its keyed hash.
+        `SnapshotRefused` before anything runs when
         the provider cannot snapshot, the workspace holds no instance, as
         once its run let it go, or the session keeps no content at rest."""
         ...

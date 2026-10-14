@@ -117,7 +117,7 @@ class Kept:
     async def snapshot(self, workspace: AgentWorkspace) -> AgentStep:
         epoch = await self.tools.steps.begin_run(self.ctx, workspace.id)
         return await self.tools.manager.snapshot_agent_workspace(
-            self.ctx, workspace.id, workspace, epoch=epoch, loop_id=new_id()
+            self.ctx, workspace.id, workspace, epoch=epoch, loop_id=new_id(), tools=()
         )
 
     async def stored(self, agent_session_id: UUID) -> list[str]:
@@ -261,7 +261,7 @@ async def test_a_host_workspace_refuses_a_snapshot_with_its_reason_before_anythi
     epoch = await tools.steps.begin_run(ctx, agent_session_id)
     with pytest.raises(SnapshotRefused, match=UNKEPT):
         await tools.manager.snapshot_agent_workspace(
-            ctx, agent_session_id, workspace, epoch=epoch, loop_id=new_id()
+            ctx, agent_session_id, workspace, epoch=epoch, loop_id=new_id(), tools=()
         )
     assert (await tools.steps.get_cursor(ctx, agent_session_id)).head == 0, "no step names one"
 

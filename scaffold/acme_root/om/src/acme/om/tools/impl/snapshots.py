@@ -4,8 +4,8 @@ trusted only by that hash when they are read back.
 
 A snapshot is content: what a workspace's commands wrote. So it is sealed
 like the steps they answered, scanned for the values of the secrets the
-catalog's tools may have injected before anything of it is kept, and goes
-with its session's purge. Each session keeps its own: a child that starts
+catalog's tools, and the session's own beyond them, may have injected
+before anything of it is kept, and goes with its session's purge. Each session keeps its own: a child that starts
 from its parent's workspace keeps its copy sealed under its own key, so
 neither purge nor revocation of one reaches the other (ADR 1027, ADR
 1030)."""
@@ -125,14 +125,17 @@ class SnapshotStore:
             raise AgentWorkspaceLost(f"{what} does not match its hash")
         return archive
 
-    async def scan(self, ctx: TenantContext, held: AsyncIterable[bytes]) -> None:
+    async def scan(
+        self, ctx: TenantContext, held: AsyncIterable[bytes], also: Collection[str] = ()
+    ) -> None:
         """Refuses a snapshot whose bytes, `held` as its provider reads them
         (`AgentWorkspaceProviderInterface.held`), hold the value of a secret the
-        catalog's tools may have injected, in any form redaction matches, and
-        names the secret, never its value. A secret the tenant does not hold
-        was never given, so it is not looked for."""
+        catalog's tools may have injected, or one named in `also`, the secrets
+        a session's own tools beyond the catalog may have, in any form
+        redaction matches, and names the secret, never its value. A secret the
+        tenant does not hold was never given, so it is not looked for."""
         values: dict[str, str] = {}
-        for name in self._secret_names:
+        for name in sorted({*self._secret_names, *also}):
             try:
                 values[name] = await self._secrets.get(ctx.org_id, name, deadline=ctx.deadline)
             except InfraException as error:

@@ -76,6 +76,7 @@ from acme.om.tools.rules import (
     decide,
     engine_retries,
     infra_failure,
+    injected_secrets,
     job_deadline,
     named_snapshot,
     reaches_outward,
@@ -271,9 +272,10 @@ class ToolsManagerImpl(ToolsManagerInterface):
         *,
         epoch: int,
         loop_id: UUID,
+        tools: Sequence[ToolInterface],
     ) -> AgentStep:
         ctx.require(Permission.WRITE)
-        archive = await self._take(ctx, agent_session_id, workspace)
+        archive = await self._take(ctx, agent_session_id, workspace, tools)
         return await self._name(
             ctx, agent_session_id, workspace, archive, epoch=epoch, loop_id=loop_id
         )
@@ -310,20 +312,29 @@ class ToolsManagerImpl(ToolsManagerInterface):
         raise NotFound(f"agent session {agent_session_id} names no snapshot {snapshot_id}")
 
     async def _take(
-        self, ctx: TenantContext, agent_session_id: UUID, workspace: AgentWorkspace
+        self,
+        ctx: TenantContext,
+        agent_session_id: UUID,
+        workspace: AgentWorkspace,
+        tools: Sequence[ToolInterface],
     ) -> bytes:
         """The live workspace's archive, refused before anything runs when
         there is none to take or the session keeps no content at rest. No
         credential is in it: the broker takes back all it attached there,
         one a lost run never took back included, and an injected secret's
-        value a command wrote there refuses it."""
+        value a command wrote there refuses it, one a tool of `tools`, the
+        session's beyond the catalog, injected included."""
         if workspace.spec.mode is IsolationMode.NONE:
             raise SnapshotRefused(f"agent session {agent_session_id} has no workspace to snapshot")
         await self._snapshots.at_rest(ctx, agent_session_id)
         await self._broker.detach_all(workspace)
         archive = await self._agent_workspaces.snapshot(workspace)
         try:
-            await self._snapshots.scan(ctx, self._agent_workspaces.held(archive))
+            await self._snapshots.scan(
+                ctx,
+                self._agent_workspaces.held(archive),
+                also=injected_secrets(tool.spec for tool in tools),
+            )
         except BaseException:
             # Refused, so nothing of it stays: a disk its provider keeps
             # apart, one that holds a secret's value included, goes too.
@@ -356,14 +367,20 @@ class ToolsManagerImpl(ToolsManagerInterface):
         return stored
 
     async def _fork_point(
-        self, ctx: TenantContext, request: AgentStep, workspace: AgentWorkspace, epoch: int
+        self,
+        ctx: TenantContext,
+        registry: ToolRegistry,
+        request: AgentStep,
+        workspace: AgentWorkspace,
+        epoch: int,
     ) -> TakenSnapshot:
         """The call's workspace as it stands, taken for a sub-agent to start
-        from. A workspace kept by snapshots keeps it as its own too, named in
-        the call's loop, so its history holds the state the child started
-        from; a cache keeps nothing, and the child alone keeps it."""
+        from, scanned for what each tool of `registry` may have injected. A
+        workspace kept by snapshots keeps it as its own too, named in the
+        call's loop, so its history holds the state the child started from;
+        a cache keeps nothing, and the child alone keeps it."""
         agent_session_id = request.agent_session_id
-        archive = await self._take(ctx, agent_session_id, workspace)
+        archive = await self._take(ctx, agent_session_id, workspace, registry.tools())
         kept = workspace.spec.durability is Durability.SNAPSHOT
         if kept:
             await self._name(
@@ -406,7 +423,9 @@ class ToolsManagerImpl(ToolsManagerInterface):
             )
         now = self._clock()
         deadline = call_deadline(now, tool.spec.timeout, self._options.engine_limit, tree_deadline)
-        runtime = self._runtime(ctx, request, tool, workspace, 0, deadline, None, read_only=True)
+        runtime = self._runtime(
+            ctx, registry, request, tool, workspace, 0, deadline, None, read_only=True
+        )
         try:
             async with asyncio.timeout(self._seconds_until(deadline)):
                 await tool.preflight(ctx, parsed, runtime)
@@ -494,7 +513,9 @@ class ToolsManagerImpl(ToolsManagerInterface):
         )
         retried = False
         while True:
-            runtime = self._runtime(ctx, request, tool, workspace, epoch, deadline, on_output)
+            runtime = self._runtime(
+                ctx, registry, request, tool, workspace, epoch, deadline, on_output
+            )
             try:
                 async with asyncio.timeout(self._seconds_until(deadline + self._options.grace)):
                     output = await tool.run(ctx, parsed, runtime)
@@ -591,7 +612,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         if not isinstance(tool, JobToolInterface):
             raise ValidationFailed(f"{tool.spec.name} is not a job")
         deadline = job_deadline(self._clock(), tool.spec.timeout, tree_deadline)
-        runtime = self._runtime(ctx, request, tool, workspace, epoch, deadline, None)
+        runtime = self._runtime(ctx, registry, request, tool, workspace, epoch, deadline, None)
         try:
             # Starting is quick, and never outlasts the engine's limit or the
             # job's deadline; the work runs by that deadline.
@@ -773,6 +794,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
     def _runtime(
         self,
         ctx: TenantContext,
+        registry: ToolRegistry,
         request: AgentStep,
         tool: ToolInterface,
         workspace: AgentWorkspace,
@@ -808,7 +830,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
             effect=tool.spec.effect,
             secrets=tool.spec.secrets,
             audit=audit,
-            snapshot=lambda: self._fork_point(ctx, request, workspace, epoch),
+            snapshot=lambda: self._fork_point(ctx, registry, request, workspace, epoch),
             on_output=on_output,
             read_only=read_only,
             answer_chars=self._options.max_output_chars,

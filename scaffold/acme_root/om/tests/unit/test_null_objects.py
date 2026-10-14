@@ -9,6 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+from contracts.agent_session_storage import make_agent_session
 from contracts.doubles import APP, context
 
 from acme.infra.agent_workspaces import (
@@ -38,9 +39,12 @@ from acme.integrations.model_providers import ModelProviderInterface, reply_of
 from acme.integrations.model_providers.absent import ModelProviderAbsentImpl
 from acme.integrations.model_providers.calls import ModelCall
 from acme.integrations.model_providers.types import ProviderName
+from acme.om.agent_root import AgentRootOptions
 from acme.om.agent_steps.types.stream import TextPart
-from acme.om.agents import ResultGateInterface
+from acme.om.agents import LoopHooksInterface, ResultGateInterface
+from acme.om.agents.hooks import NO_ATTACHED_TOOLSETS
 from acme.om.agents.impl.gate import ResultGateNullImpl
+from acme.om.agents.impl.hooks import LoopHooksNullImpl
 from acme.om.agents.impl.sink import StreamSinkNullImpl
 from acme.om.agents.sink import StreamSinkInterface
 from acme.om.agents.types.result import Claim, Result
@@ -174,10 +178,12 @@ async def test_the_quiet_nulls_do_nothing_and_say_so() -> None:
     gate = SpendBudgetGateNullImpl()
     sink = StreamSinkNullImpl()
     verdicts = ResultGateNullImpl()
+    hooks = LoopHooksNullImpl()
     for interface, null in (
         (SpendBudgetGateInterface, gate),
         (StreamSinkInterface, sink),
         (ResultGateInterface, verdicts),
+        (LoopHooksInterface, hooks),
     ):
         assert isinstance(null, interface) and isinstance(null, QuietNull)
     request = SpendHoldRequest(
@@ -190,6 +196,8 @@ async def test_the_quiet_nulls_do_nothing_and_say_so() -> None:
     assert verdict.accepted and not verdict.verified, "accepted, and marked unverified"
     assert not ModelPricesNullImpl().priced(ProviderName.ANTHROPIC, "any"), "no price is guessed"
     assert isinstance(ModelPricesNullImpl(), ModelPricesInterface)
+    session = make_agent_session()
+    assert await hooks.attached_toolsets(CTX, session) == NO_ATTACHED_TOOLSETS, "its kind's alone"
 
 
 @pytest.mark.parametrize("environment", ["test", "dev", "staging", "production"])
@@ -198,17 +206,22 @@ def test_a_root_outside_local_refuses_a_quiet_budget_gate(tmp_path: Path, enviro
         build_managers(
             StorageMemoryImpl(),
             InfraLocalImpl(tmp_path),
-            spend_budget_gate=SpendBudgetGateNullImpl(),
-            environment=environment,
+            agent_root_options=AgentRootOptions(
+                spend_budget_gate=SpendBudgetGateNullImpl(), environment=environment
+            ),
         )
 
 
 def test_a_local_root_accepts_a_quiet_budget_gate_and_any_root_its_own(tmp_path: Path) -> None:
     local = build_managers(
-        StorageMemoryImpl(), InfraLocalImpl(tmp_path), spend_budget_gate=SpendBudgetGateNullImpl()
+        StorageMemoryImpl(),
+        InfraLocalImpl(tmp_path),
+        agent_root_options=AgentRootOptions(spend_budget_gate=SpendBudgetGateNullImpl()),
     )
     assert isinstance(local.spend_budget_gate, QuietNull)
     deployed = build_managers(
-        StorageMemoryImpl(), InfraLocalImpl(tmp_path), environment="production"
+        StorageMemoryImpl(),
+        InfraLocalImpl(tmp_path),
+        agent_root_options=AgentRootOptions(environment="production"),
     )
     assert not isinstance(deployed.spend_budget_gate, QuietNull)

@@ -220,7 +220,7 @@ or ends instead of parking; a call that answers and leaves the mark.
 
 **Shape.**
 `scaffold/acme_root/integrations/src/acme/integrations/model_providers`
-and `scaffold/acme_root/om/src/acme/om/agents/impl/loop.py`
+and `scaffold/acme_root/om/src/acme/om/agents/impl/loop_model_turn.py`
 
 **Check.** review
 

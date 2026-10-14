@@ -23,6 +23,7 @@ from acme.integrations.model_providers.failures import ModelCallFailed
 from acme.integrations.model_providers.registry import scripted_model_providers
 from acme.integrations.model_providers.scripted import ModelProviderScriptedImpl, ScriptedFailure
 from acme.integrations.model_providers.types import ErrorKind, ProviderName, StopReason, Usage
+from acme.om.agent_root import AgentRootOptions
 from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.agent_steps import AgentStepsManagerInterface
 from acme.om.agent_steps.impl.manager import no_session
@@ -947,7 +948,11 @@ async def authorized(managers: Managers, ctx: TenantContext, agent_session_id: U
 
 
 async def test_a_root_hashes_a_prompt_under_the_sessions_key(tmp_path: Path) -> None:
-    managers = build_managers(StorageMemoryImpl(), InfraLocalImpl(tmp_path), model_prices=Priced())
+    managers = build_managers(
+        StorageMemoryImpl(),
+        InfraLocalImpl(tmp_path),
+        agent_root_options=AgentRootOptions(model_prices=Priced()),
+    )
     ctx = context(Role.MEMBER)
     history = History()
     await authorized(managers, ctx, history.agent_session_id)
@@ -984,9 +989,9 @@ async def test_a_root_with_the_nulls_wired_refuses_to_hash_or_spend(tmp_path: Pa
     managers = build_managers(
         StorageMemoryImpl(),
         InfraLocalImpl(tmp_path),
-        model_prices=Priced(),
-        call_gate=CallGateNullImpl(),
-        prompt_hash=PromptHashNullImpl(),
+        agent_root_options=AgentRootOptions(
+            model_prices=Priced(), call_gate=CallGateNullImpl(), prompt_hash=PromptHashNullImpl()
+        ),
     )
     ctx = context(Role.MEMBER)
     history = History()

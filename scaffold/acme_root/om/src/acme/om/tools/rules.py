@@ -10,7 +10,7 @@ from typing import Any
 from uuid import UUID
 
 from acme.infra.agent_workspaces import EgressMode
-from acme.infra.transports import CommandResult
+from acme.infra.transports import CommandResult, SecretVia
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
 from acme.om.agent_steps.types.content import Content, TextBlock, ToolResultBlock, ToolUseBlock
 from acme.om.agent_steps.types.header import (
@@ -37,7 +37,7 @@ from acme.om.tools.types.policy import (
     ToolPolicyLayer,
     ToolPolicyRule,
 )
-from acme.om.tools.types.tool import Effect, ToolClass
+from acme.om.tools.types.tool import Effect, ToolClass, ToolSpec
 
 UNMATCHED = Decision.APPROVE
 """What a call no layer speaks to gets: a person decides."""
@@ -541,6 +541,14 @@ def recovered_text(result: CommandResult, limit: int) -> str:
 
 
 # Workspace snapshots.
+
+
+def injected_secrets(specs: Iterable[ToolSpec]) -> frozenset[str]:
+    """The secrets tools of these specs may have injected into a command, by
+    name: what a workspace's snapshot is scanned for."""
+    return frozenset(
+        use.name for spec in specs for use in spec.secrets if use.via is SecretVia.INJECTED
+    )
 
 
 def named_snapshot(step: AgentStep) -> AgentWorkspaceSnapshot | None:

@@ -12,6 +12,7 @@ from acme.infra.impl.configured import InfraConfiguredImpl
 from acme.infra.root import InfraInterface
 from acme.integrations.impl.configured import IntegrationsConfiguredImpl
 from acme.integrations.root import IntegrationsInterface
+from acme.om.agent_root import AgentRootOptions
 from acme.om.agents.types.kind import AgentKind
 from acme.om.root import Managers, build_managers
 from acme.om.storage.impl.postgres import StoragePostgresImpl
@@ -90,11 +91,13 @@ class RunnerContainer:
             storage,
             infra,
             integrations=integrations,
-            environment=settings.environment,
-            agent_kinds=agent_kinds,
-            tool_catalog=tool_catalog,
-            attachment_reader=attachment_reader,
-            domain_classes=domain_classes,
+            agent_root_options=AgentRootOptions(
+                environment=settings.environment,
+                agent_kinds=agent_kinds,
+                tool_catalog=tool_catalog,
+                attachment_reader=attachment_reader,
+                domain_classes=domain_classes,
+            ),
         )
         return cls(settings, storage, infra, integrations, managers)
 

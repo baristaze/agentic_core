@@ -57,7 +57,7 @@ nothing on the network.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/root.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_root.py`
 
 **Check.** review
 

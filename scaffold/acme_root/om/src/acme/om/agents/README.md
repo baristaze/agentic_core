@@ -37,6 +37,11 @@ of](../../../../README.md).
 - **Stream part**: a live piece of what a step will hold, numbered and
   naming its step, handed to a carrier for whoever watches and never
   kept.
+- **Loop hooks**: where a layer above the engine extends a run without
+  editing the loop: the toolsets it attaches to a session beyond its
+  kind's, held or deferred, and the steps it appends before a run's
+  first model call. With no hooks supplied, a session holds its kind's
+  tools and nothing is appended.
 
 ## What can happen
 
@@ -233,6 +238,10 @@ turns pending, and again when a run's time is up. Nothing else drives a
 loop. A job's report comes in through the loop too, from whatever the
 product connects to the system the job runs on. A session waits in a
 line of the [leases](../leases/README.md) as a waiter the root
-registers, and a grant reaches it through the work queue.
+registers, and a grant reaches it through the work queue. A layer above
+the engine extends a run through the loop's hooks, which the root wires:
+once a run, the loop asks them for the toolsets a session holds beyond
+its kind, and, once its workspace is prepared, for the steps they append
+before its first model call.
 Each session is an [agent session](../agent_sessions/README.md); what it
 may do and who pays is [attribution](../attribution/README.md)'s.

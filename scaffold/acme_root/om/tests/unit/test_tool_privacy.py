@@ -38,6 +38,7 @@ from acme.infra.impl.local import InfraLocalImpl
 from acme.infra.transports import RecordSeal, TransportInterface
 from acme.infra.transports.local import DEFAULT_PATH, TransportLocalImpl
 from acme.infra.transports.twin import TransportTwinImpl
+from acme.om.agent_root import AgentRootOptions
 from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
 from acme.om.agent_steps.types.agent_step import AgentStepType
 from acme.om.agent_steps.types.header import ToolRequestHeader
@@ -97,8 +98,9 @@ class Roots:
         self.managers: Managers = build_managers(
             self.storage,
             self.infra,
-            agent_sessions_options=options,
-            tool_catalog=stand_ins("read_log", "run_tests"),
+            agent_root_options=AgentRootOptions(
+                agent_sessions_options=options, tool_catalog=stand_ins("read_log", "run_tests")
+            ),
         )
         self.ctx: TenantContext = context(Role.MEMBER)
 

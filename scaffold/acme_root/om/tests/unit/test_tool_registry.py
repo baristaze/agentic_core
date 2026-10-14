@@ -27,6 +27,7 @@ from contracts.tools import (
 from pydantic import ValidationError
 
 from acme.infra.impl.local import InfraLocalImpl
+from acme.om.agent_root import AgentRootOptions
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
 from acme.om.agent_steps.types.header import InputHeader, ToolFailure
 from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
@@ -83,8 +84,7 @@ async def test_a_message_buys_no_call_its_sender_may_not_make(tmp_path: Path) ->
     managers = build_managers(
         StorageMemoryImpl(),
         InfraLocalImpl(tmp_path),
-        agent_kinds=(CONFIGURER,),
-        tool_catalog=catalog,
+        agent_root_options=AgentRootOptions(agent_kinds=(CONFIGURER,), tool_catalog=catalog),
     )
     org = make_org()
     member, admin = context(Role.MEMBER, org), context(Role.ADMIN, org)
@@ -148,8 +148,9 @@ async def test_an_instruction_asks_its_sender_however_it_arrives(tmp_path: Path)
     managers = build_managers(
         StorageMemoryImpl(),
         InfraLocalImpl(tmp_path),
-        agent_kinds=(CONFIGURER, FLAGGER),
-        tool_catalog=catalog,
+        agent_root_options=AgentRootOptions(
+            agent_kinds=(CONFIGURER, FLAGGER), tool_catalog=catalog
+        ),
     )
     org = make_org()
     member, admin = context(Role.MEMBER, org), context(Role.ADMIN, org)

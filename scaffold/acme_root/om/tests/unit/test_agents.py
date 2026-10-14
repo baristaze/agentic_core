@@ -17,6 +17,7 @@ from contracts.tools import stand_ins
 from pydantic import ValidationError
 
 from acme.infra.impl.local import InfraLocalImpl
+from acme.om.agent_root import AgentRootOptions
 from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
 from acme.om.agent_sessions.limits import deadline_park
 from acme.om.agent_sessions.rules import lineage
@@ -213,7 +214,9 @@ class Refusing(ResultGateInterface):
 @pytest.fixture
 def managers(tmp_path: Path) -> Managers:
     return build_managers(
-        StorageMemoryImpl(), InfraLocalImpl(tmp_path), agent_kinds=KINDS, tool_catalog=TOOLS
+        StorageMemoryImpl(),
+        InfraLocalImpl(tmp_path),
+        agent_root_options=AgentRootOptions(agent_kinds=KINDS, tool_catalog=TOOLS),
     )
 
 
@@ -633,9 +636,9 @@ async def test_a_result_passes_the_gate_and_the_null_gate_marks_it_unverified(
     gated = build_managers(
         StorageMemoryImpl(),
         InfraLocalImpl(tmp_path),
-        agent_kinds=KINDS,
-        tool_catalog=TOOLS,
-        result_gate=Refusing(),
+        agent_root_options=AgentRootOptions(
+            agent_kinds=KINDS, tool_catalog=TOOLS, result_gate=Refusing()
+        ),
     )
     gated_sid = (await start(gated, ctx)).id
     verdict = await gated.agents.judge_result(ctx, gated_sid, cited)
@@ -657,8 +660,9 @@ async def test_a_tool_the_catalog_cannot_class_starts_nothing(tmp_path: Path) ->
     managers = build_managers(
         StorageMemoryImpl(),
         InfraLocalImpl(tmp_path),
-        agent_kinds=(unlisted,),
-        tool_catalog=stand_ins("read_log"),
+        agent_root_options=AgentRootOptions(
+            agent_kinds=(unlisted,), tool_catalog=stand_ins("read_log")
+        ),
     )
     owner = context(Role.OWNER)
     with pytest.raises(NotAuthorized, match="grant_admin"):
@@ -690,9 +694,11 @@ async def test_a_purged_session_leaves_no_authority_or_tree_behind(tmp_path: Pat
     managers = build_managers(
         storage,
         InfraLocalImpl(tmp_path),
-        agent_kinds=KINDS,
-        tool_catalog=TOOLS,
-        agent_sessions_options=AgentSessionsOptions(retention=timedelta(0)),
+        agent_root_options=AgentRootOptions(
+            agent_kinds=KINDS,
+            tool_catalog=TOOLS,
+            agent_sessions_options=AgentSessionsOptions(retention=timedelta(0)),
+        ),
     )
     ctx = context(Role.MEMBER)
     sessions, authority = managers.agent_sessions, managers.attribution.get_authority
