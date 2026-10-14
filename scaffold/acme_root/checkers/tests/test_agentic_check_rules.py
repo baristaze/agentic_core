@@ -23,25 +23,26 @@ def test_the_base_tree_is_clean_under_every_rule(tmp_path):
 STORAGE = (
     "from typing import cast\n\nimport sqlalchemy as sa\nfrom sqlalchemy import Table, delete, update\n"
     "from sqlalchemy.dialects.postgresql import insert as pg_insert\n\n"
-    "from acme.om.steps.storage.tables.steps import Steps\n\n\n"
-    "def fix(step_id: str) -> None:\n"
-    "    update(Steps).where(Steps.id == step_id)\n"
-    "    table = cast(Table, Steps.__table__)\n"
+    "from acme.om.agent_steps.storage.tables.agent_steps import AgentSteps\n\n\n"
+    "def fix(agent_step_id: str) -> None:\n"
+    "    update(AgentSteps).where(AgentSteps.id == agent_step_id)\n"
+    "    table = cast(Table, AgentSteps.__table__)\n"
     "    sa.update(table).values(text='')\n"
-    "    Steps.__table__.update()\n"
-    "    delete(Steps).where(Steps.id == step_id)\n"
-    "    pg_insert(Steps).values(id=step_id).on_conflict_do_update(index_elements=['id'], set_={'text': ''})\n"
-    "    \"UPDATE activity.steps SET text = ''\"\n"
-    "    'DELETE FROM \"steps\" WHERE id = :id'\n"
-    "    \"INSERT INTO steps (id) VALUES (:id) ON CONFLICT (id) DO UPDATE SET text = ''\"\n"
+    "    AgentSteps.__table__.update()\n"
+    "    delete(AgentSteps).where(AgentSteps.id == agent_step_id)\n"
+    "    pg_insert(AgentSteps).values(id=agent_step_id)"
+    ".on_conflict_do_update(index_elements=['id'], set_={'text': ''})\n"
+    "    \"UPDATE activity.agent_steps SET text = ''\"\n"
+    "    'DELETE FROM \"agent_steps\" WHERE id = :id'\n"
+    "    \"INSERT INTO agent_steps (id) VALUES (:id) ON CONFLICT (id) DO UPDATE SET text = ''\"\n"
 )
 
 
 def test_stp07_an_update_of_a_step_and_a_delete_outside_a_purge_are_findings(tmp_path):
-    write_project(tmp_path, {f"{OM}/steps/storage/impl/repair.py": STORAGE})
+    write_project(tmp_path, {f"{OM}/agent_steps/storage/impl/repair.py": STORAGE})
     hits = found(tmp_path, "STP-07")
     assert [line for _, line, _ in hits] == [11, 13, 14, 15, 16, 17, 18, 19]
-    assert all(path == f"{OM}/steps/storage/impl/repair.py" for path, _, _ in hits)
+    assert all(path == f"{OM}/agent_steps/storage/impl/repair.py" for path, _, _ in hits)
     messages = [m.split(";")[0] for _, _, m in hits]
     assert messages == [
         "updates a step",
@@ -127,13 +128,13 @@ def test_tol11_a_secret_typed_field_on_a_tool_input_output_or_step_is_a_finding(
         )
     )
     step = "from pydantic import SecretStr\n\nfrom acme.om.base import Platform\n\n\n"
-    step += "class Step(Platform):\n    secret: 'SecretStr'\n"
-    write_project(tmp_path, {TOOL: tool, f"{OM}/steps/types/step.py": step})
+    step += "class AgentStep(Platform):\n    secret: 'SecretStr'\n"
+    write_project(tmp_path, {TOOL: tool, f"{OM}/agent_steps/types/agent_step.py": step})
     hits = found(tmp_path, "TOL-11")
     assert sorted(m.split(" is a")[0] for _, _, m in hits) == [
+        "AgentStep.secret",
         "EchoInput.token",
         "EchoOutput.key",
-        "Step.secret",
     ]
 
 

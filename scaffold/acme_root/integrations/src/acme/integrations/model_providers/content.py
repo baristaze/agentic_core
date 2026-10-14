@@ -1,6 +1,6 @@
 """The one content shape: a provider-neutral block model that runs through
 the engine and across the provider boundary. A step's content is made of
-these blocks (`acme.om.steps.types.content`), and each provider adapter
+these blocks (`acme.om.agent_steps.types.content`), and each provider adapter
 translates them both ways. They live here, beneath the object model,
 because the object model imports the integrations and never the reverse
 (ADR 1005).

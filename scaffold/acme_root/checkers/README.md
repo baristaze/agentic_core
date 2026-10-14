@@ -79,7 +79,7 @@ does not read exits 2:
 sites = ["om/src/acme/om/budgets/impl/pricing.py", "om/src/acme/om/models/impl/*.py"]
 
 [tool.agentic-check.options.PRV-06]
-modules = ["om.agent_sessions", "om.steps", "om.tools"]
+modules = ["om.agent_sessions", "om.agent_steps", "om.tools"]
 ```
 
 ## Exceptions

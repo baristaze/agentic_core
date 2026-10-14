@@ -23,28 +23,30 @@ class OpenKey(Platform):
     key: bytes = Field(repr=False)
 
 
-class SessionKeysInterface(ABC):
+class AgentSessionKeysInterface(ABC):
     @abstractmethod
-    async def current(self, org_id: UUID, session_id: UUID) -> OpenKey:
+    async def current(self, org_id: UUID, agent_session_id: UUID) -> OpenKey:
         """The version new content is sealed under, made at version 1 when
         the session has none. `KeyRevoked` when the session's key is
         revoked."""
         ...
 
     @abstractmethod
-    async def opened(self, org_id: UUID, session_id: UUID, versions: Set[int]) -> dict[int, bytes]:
+    async def opened(
+        self, org_id: UUID, agent_session_id: UUID, versions: Set[int]
+    ) -> dict[int, bytes]:
         """The data key of each of `versions` the session still holds; a
         version destroyed, or never made, is left out."""
         ...
 
     @abstractmethod
-    async def add_version(self, org_id: UUID, session_id: UUID) -> int:
+    async def add_version(self, org_id: UUID, agent_session_id: UUID) -> int:
         """A new version above every one before it, which new content is
         sealed under from now on; returns it. `KeyRevoked` when revoked."""
         ...
 
     @abstractmethod
-    async def hash_key(self, org_id: UUID, session_id: UUID) -> bytes:
+    async def hash_key(self, org_id: UUID, agent_session_id: UUID) -> bytes:
         """The key a keyed hash of the session's shape is made with: derived
         from the session's first version, so it goes when the key is
         revoked. `KeyRevoked` when it is."""

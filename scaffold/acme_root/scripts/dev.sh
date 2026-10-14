@@ -70,7 +70,7 @@ uv run --package acme-api acme-api serve --port "${ACME_PORT:-8000}" &
 pids+=($!)
 uv run --package acme-maintenance acme-maintenance serve &
 pids+=($!)
-uv run --package acme-session-runner acme-session-runner serve &
+uv run --package acme-agent-session-runner acme-agent-session-runner serve &
 pids+=($!)
 pnpm --filter @acme/portal dev &
 pids+=($!)

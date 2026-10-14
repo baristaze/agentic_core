@@ -20,11 +20,11 @@ from typing import Any
 
 from pydantic import Field, ValidationError
 
+from acme.om.agent_steps.types.agent_step import AgentStep
+from acme.om.agent_steps.types.header import SwitchedHeader, ToolFailure, ToolsetSwitch
 from acme.om.base import Platform
 from acme.om.context import TenantContext
 from acme.om.exceptions import ToolFailed
-from acme.om.steps.types.header import SwitchedHeader, ToolFailure, ToolsetSwitch
-from acme.om.steps.types.step import Step
 from acme.om.tools.tool import ToolInterface, ToolRuntime
 from acme.om.tools.types.policy import Target
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolMode, ToolSpec
@@ -65,7 +65,7 @@ def description(deferred: Sequence[Toolset]) -> str:
     return "\n".join((DESCRIPTION, *lines))
 
 
-def loads(steps: Sequence[Step]) -> tuple[ToolsetSwitch, ...]:
+def loads(steps: Sequence[AgentStep]) -> tuple[ToolsetSwitch, ...]:
     """Every load the history records, in the order they happened."""
     return tuple(
         step.header.toolset

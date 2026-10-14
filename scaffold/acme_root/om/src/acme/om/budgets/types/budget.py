@@ -17,9 +17,9 @@ from typing import ClassVar, Self
 
 from pydantic import Field, model_validator
 
+from acme.om.agent_steps.types.content import Stored
 from acme.om.base import Identifiable, Platform, Trackable
 from acme.om.budgets.types.amount import Amount
-from acme.om.steps.types.content import Stored
 
 MAX_KEY = 200
 

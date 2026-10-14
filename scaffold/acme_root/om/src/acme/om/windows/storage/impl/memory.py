@@ -16,18 +16,18 @@ class WindowStorageMemoryImpl(MemoryStorageBase, WindowStorageInterface):
             return self._insert(self._artifacts, org_id, artifact)
 
     async def read_artifact(
-        self, org_id: UUID, session_id: UUID, artifact_id: UUID
+        self, org_id: UUID, agent_session_id: UUID, artifact_id: UUID
     ) -> Artifact | None:
         found = self._get(self._artifacts, org_id, artifact_id)
-        return found if found is not None and found.session_id == session_id else None
+        return found if found is not None and found.agent_session_id == agent_session_id else None
 
     async def read_artifacts(
-        self, org_id: UUID, session_id: UUID | None, limit: int
+        self, org_id: UUID, agent_session_id: UUID | None, limit: int
     ) -> list[Artifact]:
         found = [
             artifact
             for artifact in self._rows(self._artifacts, org_id)
-            if session_id is None or artifact.session_id == session_id
+            if agent_session_id is None or artifact.agent_session_id == agent_session_id
         ]
         return found[:limit]
 

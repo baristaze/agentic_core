@@ -45,7 +45,7 @@ authority. The rest is read off the session and its
   participant: their messages instruct it, and its calls run under them,
   from then on. The move is a recorded step.
 - **Take over.** For a steerer who lapsed, someone who holds
-  `manage_sessions` takes the steer, and takes part from then on, a
+  `manage_agent_sessions` takes the steer, and takes part from then on, a
   recorded step too.
 - **Speak.** A message is written in the name of whoever appends it;
   nobody writes one in another's name. The steerer's is an instruction;
@@ -66,7 +66,7 @@ authority. The rest is read off the session and its
   read. A person who spoke through an API key acts no higher than the
   key, and only while it holds. A delegated call whose person left is
   refused. A steady session whose person left waits until someone who
-  holds `manage_sessions` takes it over: the assignment wakes the loop
+  holds `manage_agent_sessions` takes it over: the assignment wakes the loop
   parked on them, and on its root it reaches the sub-agents that still
   hold them (ADR 1039).
 - **Mark.** The first outside data a session reads marks it, for good.

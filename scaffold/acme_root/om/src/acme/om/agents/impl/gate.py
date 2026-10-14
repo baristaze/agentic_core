@@ -11,5 +11,5 @@ class ResultGateNullImpl(ResultGateInterface, QuietNull):
     """Quiet: accepts every result with the outcome it claims, and marks it
     unverified. It never says a result was checked."""
 
-    async def check(self, ctx: TenantContext, session_id: UUID, result: Result) -> Verdict:
+    async def check(self, ctx: TenantContext, agent_session_id: UUID, result: Result) -> Verdict:
         return Verdict(accepted=True, verified=False, outcome=OUTCOMES[result.claim])

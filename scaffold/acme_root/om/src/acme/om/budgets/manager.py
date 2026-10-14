@@ -15,7 +15,7 @@ from uuid import UUID
 from acme.om.budgets.types.amount import Amount
 from acme.om.budgets.types.budget import Budget, BudgetPage
 from acme.om.budgets.types.hold import Tally
-from acme.om.budgets.types.usage import SessionUsage, UsageRecord
+from acme.om.budgets.types.usage import AgentSessionUsage, UsageRecord
 from acme.om.context import OperatorContext, TenantContext
 
 
@@ -28,7 +28,7 @@ class BudgetsManagerInterface(ABC):
 
     @abstractmethod
     async def cap_session(
-        self, ctx: TenantContext, session_id: UUID, budget_id: UUID, amount: Amount
+        self, ctx: TenantContext, agent_session_id: UUID, budget_id: UUID, amount: Amount
     ) -> Budget:
         """A budget of `amount` on one session over its whole life, created as
         `create_budget` creates one: an id written already answers the budget
@@ -98,14 +98,14 @@ class BudgetsOperatorManagerInterface(ABC):
     else."""
 
     @abstractmethod
-    async def get_session_usage(
+    async def get_agent_session_usage(
         self,
         admin: OperatorContext,
         org_id: UUID,
-        session_id: UUID,
+        agent_session_id: UUID,
         after: UUID | None,
         limit: int,
-    ) -> SessionUsage:
+    ) -> AgentSessionUsage:
         """A page of the session's usage records, after the id named, and the
         rollups of all of them, per loop and for the session. A record holds
         no content, so this reads the same for every storage mode, and for a

@@ -35,6 +35,60 @@ class TtlDays(RootModel[int]):
     root: Annotated[int, Field(ge=1, le=90, title='Ttl Days')]
 
 
+class AgentSessionControl(StrEnum):
+    """
+    The controls a person sends a session out of band. A decision on one
+    tool call is a route of its own.
+    """
+    pause = 'pause'
+    resume = 'resume'
+    cancel = 'cancel'
+    interrupt = 'interrupt'
+    compact = 'compact'
+    unlock = 'unlock'
+    restore = 'restore'
+
+
+class AgentSessionStatus(StrEnum):
+    pending = 'pending'
+    running = 'running'
+    parked = 'parked'
+    idle = 'idle'
+
+
+class AgentStepType(StrEnum):
+    """
+    What a step records. The type answers questions, so no caller
+    compares strings.
+    """
+    message = 'message'
+    event = 'event'
+    control = 'control'
+    model_request = 'model_request'
+    model_response = 'model_response'
+    tool_request = 'tool_request'
+    tool_response = 'tool_response'
+    summary = 'summary'
+    parked = 'parked'
+    resumed = 'resumed'
+    loop_ended = 'loop_ended'
+    switched = 'switched'
+    environment_changed = 'environment_changed'
+    snapshotted = 'snapshotted'
+
+
+class AgentStepUsageView(BaseModel):
+    """
+    What a model call used, as its provider reported it, in disjoint
+    classes, so no token is counted twice.
+    """
+    cache_read: Annotated[int, Field(title='Cache Read')]
+    cache_write: Annotated[int, Field(title='Cache Write')]
+    input: Annotated[int, Field(title='Input')]
+    output: Annotated[int, Field(title='Output')]
+    thinking: Annotated[int, Field(title='Thinking')]
+
+
 class Among(StrEnum):
     """
     Which root sessions a person's list holds: sub-agents are read
@@ -96,6 +150,21 @@ class ControlCommand(StrEnum):
 
 class RequestSeq(RootModel[int]):
     root: Annotated[int, Field(ge=1, title='Request Seq')]
+
+
+class ControlRequest(BaseModel):
+    """
+    A control. An interrupt names the seq of the tool request it stops,
+    and a restore the id of a snapshot the session's history names, which
+    its workspace's next prepare starts from; no other control names
+    either.
+    """
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    command: AgentSessionControl
+    request_seq: Annotated[RequestSeq | None, Field(title='Request Seq')] = None
+    snapshot_id: Annotated[UUID | None, Field(title='Snapshot Id')] = None
 
 
 class CreateOrgRequest(BaseModel):
@@ -572,7 +641,7 @@ class Permission(StrEnum):
     write = 'write'
     manage_members = 'manage_members'
     manage_keys = 'manage_keys'
-    manage_sessions = 'manage_sessions'
+    manage_agent_sessions = 'manage_agent_sessions'
 
 
 class PlaceView(BaseModel):
@@ -696,27 +765,6 @@ class SecondFactorRequest(BaseModel):
         extra='forbid',
     )
     totp_code: Annotated[str, Field(max_length=6, min_length=6, title='Totp Code')]
-
-
-class SessionControl(StrEnum):
-    """
-    The controls a person sends a session out of band. A decision on one
-    tool call is a route of its own.
-    """
-    pause = 'pause'
-    resume = 'resume'
-    cancel = 'cancel'
-    interrupt = 'interrupt'
-    compact = 'compact'
-    unlock = 'unlock'
-    restore = 'restore'
-
-
-class SessionStatus(StrEnum):
-    pending = 'pending'
-    running = 'running'
-    parked = 'parked'
-    idle = 'idle'
 
 
 class SessionView(BaseModel):
@@ -845,7 +893,7 @@ class SsoLinkView(BaseModel):
     url: Annotated[str, Field(title='Url')]
 
 
-class StartSessionRequest(BaseModel):
+class StartAgentSessionRequest(BaseModel):
     """
     A session to start on the latest version of a kind the product runs.
     """
@@ -868,39 +916,6 @@ class StartUploadRequest(BaseModel):
     content_type: Annotated[str, Field(max_length=255, min_length=1, title='Content Type')]
     name: Annotated[str, Field(max_length=255, min_length=1, title='Name')]
     size_bytes: Annotated[int, Field(gt=0, title='Size Bytes')]
-
-
-class StepType(StrEnum):
-    """
-    What a step records. The type answers questions, so no caller
-    compares strings.
-    """
-    message = 'message'
-    event = 'event'
-    control = 'control'
-    model_request = 'model_request'
-    model_response = 'model_response'
-    tool_request = 'tool_request'
-    tool_response = 'tool_response'
-    summary = 'summary'
-    parked = 'parked'
-    resumed = 'resumed'
-    loop_ended = 'loop_ended'
-    switched = 'switched'
-    environment_changed = 'environment_changed'
-    snapshotted = 'snapshotted'
-
-
-class StepUsageView(BaseModel):
-    """
-    What a model call used, as its provider reported it, in disjoint
-    classes, so no token is counted twice.
-    """
-    cache_read: Annotated[int, Field(title='Cache Read')]
-    cache_write: Annotated[int, Field(title='Cache Write')]
-    input: Annotated[int, Field(title='Input')]
-    output: Annotated[int, Field(title='Output')]
-    thinking: Annotated[int, Field(title='Thinking')]
 
 
 class StopReason(StrEnum):
@@ -1008,7 +1023,7 @@ class UsageRecordView(BaseModel):
     One model call a provider billed, as the ledger keeps it: ids, tokens
     by disjoint class, reference cost in millionths (null when no price
     applied), the provider's latency, and the labels of what served it. It
-    holds no content, so it reads the same in every storage mode. `step_id`
+    holds no content, so it reads the same in every storage mode. `agent_step_id`
     is the call's response step; `hold_id` its hold; `tree_id` the
     session's tree; `kind_version` the agent kind's version the session
     ran. `settled_whole` marks a call whose usage was never reported whole
@@ -1016,6 +1031,8 @@ class UsageRecordView(BaseModel):
     tokens are what a partial reply reported, else 0.
     """
     agent_kind: Annotated[str, Field(title='Agent Kind')]
+    agent_session_id: Annotated[UUID, Field(title='Agent Session Id')]
+    agent_step_id: Annotated[UUID, Field(title='Agent Step Id')]
     cache_read_tokens: Annotated[int, Field(title='Cache Read Tokens')]
     cache_write_tokens: Annotated[int, Field(title='Cache Write Tokens')]
     cost_micros: Annotated[int | None, Field(title='Cost Micros')]
@@ -1030,9 +1047,7 @@ class UsageRecordView(BaseModel):
     output_tokens: Annotated[int, Field(title='Output Tokens')]
     provider: Annotated[str, Field(title='Provider')]
     role: Annotated[str, Field(title='Role')]
-    session_id: Annotated[UUID, Field(title='Session Id')]
     settled_whole: Annotated[bool, Field(title='Settled Whole')]
-    step_id: Annotated[UUID, Field(title='Step Id')]
     thinking_tokens: Annotated[int, Field(title='Thinking Tokens')]
     tree_id: Annotated[UUID, Field(title='Tree Id')]
 
@@ -1097,7 +1112,7 @@ class WaiterKind(StrEnum):
     each with a `WaiterInterface`.
     """
     orchestration = 'orchestration'
-    session = 'session'
+    agent_session = 'agent_session'
 
 
 class WorkKind(StrEnum):
@@ -1106,8 +1121,8 @@ class WorkKind(StrEnum):
     WAKE_PARKED = 'WAKE_PARKED'
     DELETE_ACCOUNT = 'DELETE_ACCOUNT'
     DELETE_ORG = 'DELETE_ORG'
-    WAKE_SESSION = 'WAKE_SESSION'
-    WAKE_SESSIONS = 'WAKE_SESSIONS'
+    WAKE_AGENT_SESSION = 'WAKE_AGENT_SESSION'
+    WAKE_AGENT_SESSIONS = 'WAKE_AGENT_SESSIONS'
     LOOP = 'LOOP'
     LEASE_NOTICE = 'LEASE_NOTICE'
 
@@ -1162,10 +1177,50 @@ class AgentSessionView(BaseModel):
     parent_id: Annotated[UUID | None, Field(title='Parent Id')]
     park: ParkView | None
     participants: Annotated[list[UUID], Field(title='Participants')]
-    status: SessionStatus
+    status: AgentSessionStatus
     steerer: Annotated[UUID | None, Field(title='Steerer')]
     title: Annotated[str, Field(title='Title')]
     visibility: Visibility
+
+
+class AgentStepView(BaseModel):
+    """
+    One step of a session's history, in its order. `text` is what it
+    says: a message's words, a model's answer, a tool's result. The rest is
+    its header's, by type: the tools a model response called, why it
+    stopped, and what it used; a tool call's tool and the class of its
+    failure; a control's command; a park; a loop's outcome, and its cause
+    when the engine names one, such as the setup command that failed and
+    its exit code; the snapshot a `snapshotted` step names, or a restore
+    starts from. A message names its `author`, and `participant` says it is
+    a participant's, data, never an instruction. A `switched` step that
+    moved the steer names the new `steerer`, and one that switched who sees
+    the session its `visibility`.
+    """
+    actor: Actor
+    author: Annotated[UUID | None, Field(title='Author')]
+    cause: Annotated[str | None, Field(title='Cause')]
+    command: ControlCommand | None
+    created_at: Annotated[AwareDatetime, Field(title='Created At')]
+    failure: ToolFailure | None
+    id: Annotated[UUID, Field(title='Id')]
+    loop_id: Annotated[UUID, Field(title='Loop Id')]
+    origin: Origin
+    outcome: LoopOutcome | None
+    park: ParkView | None
+    participant: Annotated[bool, Field(title='Participant')]
+    refs: Annotated[list[UUID], Field(title='Refs')]
+    responds_to: Annotated[UUID | None, Field(title='Responds To')]
+    seq: Annotated[int, Field(title='Seq')]
+    snapshot: SnapshotView | None
+    steerer: Annotated[UUID | None, Field(title='Steerer')]
+    stop_reason: StopReason | None
+    text: Annotated[str, Field(title='Text')]
+    tool: Annotated[str | None, Field(title='Tool')]
+    tools: Annotated[list[str], Field(title='Tools')]
+    type: AgentStepType
+    usage: AgentStepUsageView | None
+    visibility: Visibility | None
 
 
 class ApiKeyView(BaseModel):
@@ -1197,21 +1252,6 @@ class AskRequest(BaseModel):
     start_seconds: Annotated[StartSeconds | None, Field(title='Start Seconds')] = None
     term_seconds: Annotated[int | None, Field(ge=1, le=604800, title='Term Seconds')] = 60
     wait_seconds: Annotated[int | None, Field(ge=1, le=604800, title='Wait Seconds')] = 3600
-
-
-class ControlRequest(BaseModel):
-    """
-    A control. An interrupt names the seq of the tool request it stops,
-    and a restore the id of a snapshot the session's history names, which
-    its workspace's next prepare starts from; no other control names
-    either.
-    """
-    model_config = ConfigDict(
-        extra='forbid',
-    )
-    command: SessionControl
-    request_seq: Annotated[RequestSeq | None, Field(title='Request Seq')] = None
-    snapshot_id: Annotated[UUID | None, Field(title='Snapshot Id')] = None
 
 
 class FilePageView(BaseModel):
@@ -1447,22 +1487,6 @@ class OrgPageView(BaseModel):
     next_cursor: Annotated[str | None, Field(title='Next Cursor')]
 
 
-class SessionUsageView(BaseModel):
-    """
-    A page of a session's usage records, oldest first, with the rollup of
-    each loop, in the order it first called, and of the whole session. The
-    rollups cover every record, whatever the page; `has_more_loops` says the
-    session ran more loops than `loops` holds. With `next_cursor`, the next
-    page of `items` starts there.
-    """
-    has_more_loops: Annotated[bool, Field(title='Has More Loops')]
-    items: Annotated[list[UsageRecordView], Field(title='Items')]
-    loops: Annotated[list[LoopUsageView], Field(title='Loops')]
-    next_cursor: Annotated[str | None, Field(title='Next Cursor')]
-    session_id: Annotated[UUID, Field(title='Session Id')]
-    total: UsageRollupView
-
-
 class StandingView(BaseModel):
     """
     Where a request stands: its lease once granted, or its place (1 is
@@ -1473,46 +1497,6 @@ class StandingView(BaseModel):
     lease: LeaseView | None
     place: Annotated[int | None, Field(title='Place')]
     request: LeaseRequestView
-
-
-class StepView(BaseModel):
-    """
-    One step of a session's history, in its order. `text` is what it
-    says: a message's words, a model's answer, a tool's result. The rest is
-    its header's, by type: the tools a model response called, why it
-    stopped, and what it used; a tool call's tool and the class of its
-    failure; a control's command; a park; a loop's outcome, and its cause
-    when the engine names one, such as the setup command that failed and
-    its exit code; the snapshot a `snapshotted` step names, or a restore
-    starts from. A message names its `author`, and `participant` says it is
-    a participant's, data, never an instruction. A `switched` step that
-    moved the steer names the new `steerer`, and one that switched who sees
-    the session its `visibility`.
-    """
-    actor: Actor
-    author: Annotated[UUID | None, Field(title='Author')]
-    cause: Annotated[str | None, Field(title='Cause')]
-    command: ControlCommand | None
-    created_at: Annotated[AwareDatetime, Field(title='Created At')]
-    failure: ToolFailure | None
-    id: Annotated[UUID, Field(title='Id')]
-    loop_id: Annotated[UUID, Field(title='Loop Id')]
-    origin: Origin
-    outcome: LoopOutcome | None
-    park: ParkView | None
-    participant: Annotated[bool, Field(title='Participant')]
-    refs: Annotated[list[UUID], Field(title='Refs')]
-    responds_to: Annotated[UUID | None, Field(title='Responds To')]
-    seq: Annotated[int, Field(title='Seq')]
-    snapshot: SnapshotView | None
-    steerer: Annotated[UUID | None, Field(title='Steerer')]
-    stop_reason: StopReason | None
-    text: Annotated[str, Field(title='Text')]
-    tool: Annotated[str | None, Field(title='Tool')]
-    tools: Annotated[list[str], Field(title='Tools')]
-    type: StepType
-    usage: StepUsageView | None
-    visibility: Visibility | None
 
 
 class UserPageView(BaseModel):
@@ -1532,6 +1516,31 @@ class AgentSessionPageView(BaseModel):
     """
     has_more: Annotated[bool, Field(title='Has More')]
     items: Annotated[list[AgentSessionView], Field(title='Items')]
+
+
+class AgentSessionUsageView(BaseModel):
+    """
+    A page of a session's usage records, oldest first, with the rollup of
+    each loop, in the order it first called, and of the whole session. The
+    rollups cover every record, whatever the page; `has_more_loops` says the
+    session ran more loops than `loops` holds. With `next_cursor`, the next
+    page of `items` starts there.
+    """
+    agent_session_id: Annotated[UUID, Field(title='Agent Session Id')]
+    has_more_loops: Annotated[bool, Field(title='Has More Loops')]
+    items: Annotated[list[UsageRecordView], Field(title='Items')]
+    loops: Annotated[list[LoopUsageView], Field(title='Loops')]
+    next_cursor: Annotated[str | None, Field(title='Next Cursor')]
+    total: UsageRollupView
+
+
+class AgentStepPageView(BaseModel):
+    """
+    One page of a session's history, after the seq the request named.
+    With `has_more`, the next page starts after the last step's seq.
+    """
+    has_more: Annotated[bool, Field(title='Has More')]
+    items: Annotated[list[AgentStepView], Field(title='Items')]
 
 
 class ApiKeyPageView(BaseModel):
@@ -1609,12 +1618,3 @@ class MembershipPageView(BaseModel):
     """
     items: Annotated[list[MembershipView], Field(title='Items')]
     next_cursor: Annotated[str | None, Field(title='Next Cursor')]
-
-
-class StepPageView(BaseModel):
-    """
-    One page of a session's history, after the seq the request named.
-    With `has_more`, the next page starts after the last step's seq.
-    """
-    has_more: Annotated[bool, Field(title='Has More')]
-    items: Annotated[list[StepView], Field(title='Items')]

@@ -12,7 +12,7 @@ from acme.om.context import TenantContext
 
 class PromptHashInterface(ABC):
     @abstractmethod
-    async def keyed_hash(self, ctx: TenantContext, session_id: UUID, value: bytes) -> str:
+    async def keyed_hash(self, ctx: TenantContext, agent_session_id: UUID, value: bytes) -> str:
         """A hash of `value` under the session's key: the same bytes give the
         same hash for as long as the key lives."""
         ...

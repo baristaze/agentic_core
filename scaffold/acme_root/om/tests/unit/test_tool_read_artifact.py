@@ -28,18 +28,18 @@ from contracts.loops import (
     use,
 )
 
-from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
-from acme.om.attribution.types.authority import AuthorityMode
-from acme.om.base import Platform
-from acme.om.context import TenantContext
-from acme.om.steps.types.content import TextBlock, ToolResultBlock, ToolUseBlock
-from acme.om.steps.types.header import (
+from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
+from acme.om.agent_steps.types.content import TextBlock, ToolResultBlock, ToolUseBlock
+from acme.om.agent_steps.types.header import (
     ControlCommand,
     LoopOutcome,
     ToolFailure,
     ToolResponseHeader,
 )
-from acme.om.steps.types.step import Step, StepType
+from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
+from acme.om.attribution.types.authority import AuthorityMode
+from acme.om.base import Platform
+from acme.om.context import TenantContext
 from acme.om.storage.root import StorageInterface
 from acme.om.tools.tool import ToolRuntime
 from acme.om.tools.types.tool import ToolInput
@@ -86,11 +86,11 @@ def read(handle: UUID | str, **within: object) -> ToolUseBlock:
     return call("read_artifact", handle=str(handle), **within)
 
 
-def responses(steps: list[Step]) -> list[Step]:
-    return [step for step in steps if step.type is StepType.TOOL_RESPONSE]
+def responses(steps: list[AgentStep]) -> list[AgentStep]:
+    return [step for step in steps if step.type is AgentStepType.TOOL_RESPONSE]
 
 
-def answer(step: Step) -> tuple[ToolFailure | None, str]:
+def answer(step: AgentStep) -> tuple[ToolFailure | None, str]:
     assert isinstance(step.header, ToolResponseHeader)
     texts = [p.text for p in step.as_tool_response().parts if isinstance(p, TextBlock)]
     return step.header.failure, "\n".join(texts)
@@ -109,13 +109,13 @@ def rendered_result(loop: Loop, tool_use_id: str) -> ToolResultBlock:
     return found[-1]
 
 
-async def stored(loop: Loop, session_id: UUID, artifact_id: UUID) -> str:
+async def stored(loop: Loop, agent_session_id: UUID, artifact_id: UUID) -> str:
     """The whole text the artifact keeps, read from the store a page at a
     time."""
     pages, offset = [], 0
     while True:
         page = await loop.managers.windows.get_artifact(
-            loop.owner, session_id, artifact_id, offset, 100_000
+            loop.owner, agent_session_id, artifact_id, offset, 100_000
         )
         pages.append(page.text)
         offset += len(page.text)
@@ -127,30 +127,30 @@ async def test_a_read_by_the_handle_a_notice_names_answers_the_kept_text_at_its_
     tmp_path: Path,
 ) -> None:
     loop = a_loop(tmp_path)
-    session_id = await loop.start("reader")
-    await loop.say(session_id, "Read the dump.")
+    agent_session_id = await loop.start("reader")
+    await loop.say(agent_session_id, "Read the dump.")
     dumped = use("dump")
     loop.anthropic.add(reply(dumped), reply(said("It is long.")))
-    assert (await loop.loops.run(loop.owner, session_id)).outcome is LoopOutcome.SUCCEEDED
-    (kept,) = responses(await loop.history(session_id))
+    assert (await loop.loops.run(loop.owner, agent_session_id)).outcome is LoopOutcome.SUCCEEDED
+    (kept,) = responses(await loop.history(agent_session_id))
     assert isinstance(kept.header, ToolResponseHeader) and kept.header.artifact is not None
-    whole = await stored(loop, session_id, kept.header.artifact.id)
+    whole = await stored(loop, agent_session_id, kept.header.artifact.id)
     assert whole == Found(text=LARGE).model_dump_json(), "the artifact keeps the whole answer"
     _, notice, _ = rendered_result(loop, dumped.id).parts
     assert isinstance(notice, TextBlock) and "read_artifact pages through it" in notice.text
     (named,) = HANDLE.findall(notice.text)
     assert named == str(kept.header.artifact.id), "the notice names the artifact's handle"
 
-    await loop.say(session_id, "Read part of it.")
+    await loop.say(agent_session_id, "Read part of it.")
     loop.anthropic.add(
         reply(read(named, offset=12_345, limit=678)),
         reply(read(kept.id, offset=12_345, limit=678)),
         reply(read(named, offset=10_000)),
         reply(said("I read it.")),
     )
-    assert (await loop.loops.run(loop.owner, session_id)).outcome is LoopOutcome.SUCCEEDED
+    assert (await loop.loops.run(loop.owner, agent_session_id)).outcome is LoopOutcome.SUCCEEDED
 
-    by_artifact, by_step, rest = responses(await loop.history(session_id))[1:]
+    by_artifact, by_step, rest = responses(await loop.history(agent_session_id))[1:]
     failure, text = answer(by_artifact)
     assert failure is None and json.loads(text) == {
         "handle": named,
@@ -177,29 +177,29 @@ async def test_a_result_a_compaction_elided_reads_back_whole_by_the_handle_its_s
     tmp_path: Path,
 ) -> None:
     loop = a_loop(tmp_path)
-    session_id = await loop.start("reader")
-    await loop.say(session_id, "Find the total. " + "The ledger is long. " * 2_500)
+    agent_session_id = await loop.start("reader")
+    await loop.say(agent_session_id, "Find the total. " + "The ledger is long. " * 2_500)
     bulky = use("bulky")
     loop.anthropic.add(
         reply(use("lookup")), reply(bulky), reply(use("lookup")), reply(said("Read."))
     )
-    assert (await loop.loops.run(loop.owner, session_id)).outcome is LoopOutcome.SUCCEEDED
-    elided = responses(await loop.history(session_id))[1]
+    assert (await loop.loops.run(loop.owner, agent_session_id)).outcome is LoopOutcome.SUCCEEDED
+    elided = responses(await loop.history(agent_session_id))[1]
     whole = Found(text=MEDIUM).model_dump_json()
     assert answer(elided) == (None, whole), "within the bound, kept in its step"
 
-    control = History(session_id).control(ControlCommand.COMPACT)
-    await loop.managers.steps.append_inputs(loop.owner, session_id, [control])
-    await loop.say(session_id, "Read the bulky result again.")
+    control = History(agent_session_id).control(ControlCommand.COMPACT)
+    await loop.managers.agent_steps.append_inputs(loop.owner, agent_session_id, [control])
+    await loop.say(agent_session_id, "Read the bulky result again.")
     loop.anthropic.add(
         reply(said("Asked for the total; read the ledger."), model="claude-haiku-4-5"),
         reply(read(elided.id)),
         reply(said("I read it again.")),
     )
-    assert (await loop.loops.run(loop.owner, session_id)).outcome is LoopOutcome.SUCCEEDED
+    assert (await loop.loops.run(loop.owner, agent_session_id)).outcome is LoopOutcome.SUCCEEDED
 
-    history = await loop.history(session_id)
-    assert any(step.type is StepType.SUMMARY for step in history), "the window compacted"
+    history = await loop.history(agent_session_id)
+    assert any(step.type is AgentStepType.SUMMARY for step in history), "the window compacted"
     (stub,) = rendered_result(loop, bulky.id).parts
     assert isinstance(stub, TextBlock) and "elided once read" in stub.text
     assert "read_artifact reads it" in stub.text
@@ -233,9 +233,9 @@ async def test_a_read_never_reaches_another_session_and_refuses_what_it_cannot_r
     await stranger.say(theirs, "Read the dump.")
     for each in (loop, stranger):
         each.anthropic.add(*(reply(read(handle)) for handle in handles), reply(said("None.")))
-    for each, session_id in ((loop, other), (stranger, theirs)):
-        assert (await each.loops.run(each.owner, session_id)).outcome is LoopOutcome.SUCCEEDED
-        refused = [answer(step) for step in responses(await each.history(session_id))]
+    for each, agent_session_id in ((loop, other), (stranger, theirs)):
+        assert (await each.loops.run(each.owner, agent_session_id)).outcome is LoopOutcome.SUCCEEDED
+        refused = [answer(step) for step in responses(await each.history(agent_session_id))]
         assert [failure for failure, _ in refused] == [ToolFailure.INVALID_INPUT] * 3
         for (_, text), handle in zip(refused, handles, strict=True):
             assert f"this session keeps no result under {handle}" in text

@@ -15,6 +15,7 @@ from contracts.factories import make_org
 from pydantic import ValidationError
 
 from acme.infra.impl.local import InfraLocalImpl
+from acme.om.agent_steps.types.header import ParkReason
 from acme.om.base import new_id, utcnow
 from acme.om.budgets.impl.gate import BudgetGateImpl, BudgetGateOptions
 from acme.om.budgets.impl.pricing import LIST_PRICES, PricingTableImpl
@@ -65,7 +66,6 @@ from acme.om.exceptions import (
 )
 from acme.om.outbox.types.row import OutboxRow
 from acme.om.root import Managers, build_managers
-from acme.om.steps.types.header import ParkReason
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
 from acme.om.work.types.work_item import WorkItem, WorkKind
@@ -684,7 +684,7 @@ async def test_a_raise_asks_to_wake_the_sessions_parked_on_a_budget(tmp_path: Pa
     assert (raised.tokens, raised.version) == (900, 3)
     (wake,) = queued(storage)
     assert (wake.kind, wake.target_id, dict(wake.payload)) == (
-        WorkKind.WAKE_SESSIONS,
+        WorkKind.WAKE_AGENT_SESSIONS,
         ctx.org_id,
         {"reason": "budget"},
     )
@@ -713,7 +713,7 @@ async def test_a_close_is_final_and_wakes_the_sessions_parked_on_it(tmp_path: Pa
     assert closed.closed_at is not None and closed.version == 2
     (wake,) = queued(storage)
     assert (wake.kind, wake.target_id, dict(wake.payload)) == (
-        WorkKind.WAKE_SESSIONS,
+        WorkKind.WAKE_AGENT_SESSIONS,
         org.id,
         {"reason": "budget", "unlock": str(budget.id)},
     )

@@ -199,7 +199,7 @@ arrive twice, so the second copy gets the first one's answer.
 - [Orgs, identities, users, memberships, and credentials](src/acme/om/tenancy/README.md)
 - [Files](src/acme/om/media/README.md)
 - [Agent sessions](src/acme/om/agent_sessions/README.md)
-- [Steps](src/acme/om/steps/README.md)
+- [Steps](src/acme/om/agent_steps/README.md)
 - [Agents](src/acme/om/agents/README.md)
 - [Attribution](src/acme/om/attribution/README.md)
 - [Privacy](src/acme/om/privacy/README.md)

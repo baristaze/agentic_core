@@ -9,9 +9,9 @@ from uuid import UUID
 
 from pydantic import Field
 
+from acme.om.agent_steps.types.content import Attachment
 from acme.om.base import Platform
 from acme.om.context import TenantContext
-from acme.om.steps.types.content import Attachment
 
 
 class AttachmentText(Platform):
@@ -24,7 +24,7 @@ class AttachmentText(Platform):
 class AttachmentReaderInterface(ABC):
     @abstractmethod
     async def read_text(
-        self, ctx: TenantContext, session_id: UUID, attachment: Attachment
+        self, ctx: TenantContext, agent_session_id: UUID, attachment: Attachment
     ) -> AttachmentText | None:
         """The text of `attachment`, one the session's history holds, opened
         with the session's key and read from the tenant's own store, under

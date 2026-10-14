@@ -19,7 +19,18 @@ from contracts.loops import ALLOWED, Loop, call, loop_over, reply, said
 from unit.test_loop_jobs import cancel
 from unit.test_loop_lines import an_ask, notices, unlocked
 
-from acme.om.agent_sessions.types.agent_session import SessionStatus
+from acme.om.agent_sessions.types.agent_session import AgentSessionStatus
+from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
+from acme.om.agent_steps.types.content import TextBlock
+from acme.om.agent_steps.types.header import (
+    ControlCommand,
+    ControlHeader,
+    LoopOutcome,
+    Park,
+    ParkReason,
+    ToolFailure,
+    ToolResponseHeader,
+)
 from acme.om.agents import line_rules as lines
 from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
 from acme.om.agents.types.run import RunEnd
@@ -32,17 +43,6 @@ from acme.om.leases.types.lease import JobClaim, Lease, LeaseStatus
 from acme.om.leases.types.request import EndReason, LeaseRequest, RequestStatus
 from acme.om.leases.types.resource import Resource, ResourceKind
 from acme.om.outbox.types.row import OutboxRow, outbox_row
-from acme.om.steps.types.content import TextBlock
-from acme.om.steps.types.header import (
-    ControlCommand,
-    ControlHeader,
-    LoopOutcome,
-    Park,
-    ParkReason,
-    ToolFailure,
-    ToolResponseHeader,
-)
-from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.tools.tool import JobToolInterface, ToolRuntime
 from acme.om.tools.types.call import JobCompletion, JobHandle, JobStarted
 from acme.om.tools.types.policy import Target
@@ -92,7 +92,7 @@ class Dock(JobToolInterface):
         self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
     ) -> Platform:
         assert self.leases is not None and self.resource_id is not None
-        ask = lines.in_line(an_ask(self.resource_id), runtime.session_id, runtime.key)
+        ask = lines.in_line(an_ask(self.resource_id), runtime.agent_session_id, runtime.key)
         standing = await self.leases.ask(ctx, ask)
         return JobStarted(handle="dock-1", request_id=standing.request.id)
 
@@ -168,18 +168,20 @@ async def docking(
     return loop, dock, resource, holding
 
 
-async def asked(loop: Loop, *, deadline: datetime | None = None) -> tuple[UUID, Step, Park]:
+async def asked(loop: Loop, *, deadline: datetime | None = None) -> tuple[UUID, AgentStep, Park]:
     """A session whose model called the dock, by the tree's `deadline` when
     one is given: its run parks, with the call's request and the park."""
-    session_id = await loop.start("docker")
+    agent_session_id = await loop.start("docker")
     if deadline is not None:
-        await loop.managers.agents.set_deadline(loop.owner, session_id, deadline)
-    await loop.say(session_id, "Run the job.")
+        await loop.managers.agents.set_deadline(loop.owner, agent_session_id, deadline)
+    await loop.say(agent_session_id, "Run the job.")
     loop.anthropic.add(reply(call("dock")))
-    run = await loop.loops.run(loop.owner, session_id)
+    run = await loop.loops.run(loop.owner, agent_session_id)
     assert run.end is RunEnd.PARKED and run.park is not None, run
-    (request,) = [s for s in await loop.history(session_id) if s.type is StepType.TOOL_REQUEST]
-    return session_id, request, run.park
+    (request,) = [
+        s for s in await loop.history(agent_session_id) if s.type is AgentStepType.TOOL_REQUEST
+    ]
+    return agent_session_id, request, run.park
 
 
 async def the_job(loop: Loop, lease: Lease) -> WorkItem | None:
@@ -196,11 +198,11 @@ async def the_job(loop: Loop, lease: Lease) -> WorkItem | None:
 
 async def running(
     loop: Loop, *, deadline: datetime | None = None
-) -> tuple[UUID, Step, Park, Lease]:
+) -> tuple[UUID, AgentStep, Park, Lease]:
     """A session whose dock's job the free resource's grant started at once,
     and whose worker runs it: the loop parks on the job, which keeps its
     request, and the lease has started."""
-    session_id, request, park = await asked(loop, deadline=deadline)
+    agent_session_id, request, park = await asked(loop, deadline=deadline)
     assert park.reason is ParkReason.JOB and park.job is not None
     assert park.job.request_id == request.id, "the job's park keeps its request past the grant"
     lease = (await loop.managers.leases.get_request(loop.owner, request.id)).lease
@@ -210,10 +212,10 @@ async def running(
     claim = JobClaim(token=lease.token, claim_token=job.claim_token)
     started = await loop.managers.leases.start(loop.owner, lease.id, claim)
     assert started.started_at is not None
-    return session_id, request, park, started
+    return agent_session_id, request, park, started
 
 
-def said_in(answer: Step) -> str:
+def said_in(answer: AgentStep) -> str:
     parts = answer.as_tool_response().parts
     return "".join(part.text for part in parts if isinstance(part, TextBlock))
 
@@ -224,7 +226,7 @@ async def test_a_job_tool_waits_in_line_and_its_grant_starts_the_job_with_no_mod
     loop, _, resource, holding = await docking(tmp_path, monkeypatch)
     assert holding is not None
 
-    session_id, request, park = await asked(loop)
+    agent_session_id, request, park = await asked(loop)
 
     # The call parks in line at once: the stop reason names the request, its
     # place, and the job it waits to start, and tries again at the job's
@@ -241,8 +243,8 @@ async def test_a_job_tool_waits_in_line_and_its_grant_starts_the_job_with_no_mod
 
     # Woken while the request still waits, the loop parks in line again,
     # and calls no model.
-    await loop.managers.agent_sessions.wake_session(loop.owner, session_id, park)
-    again = await loop.loops.run(loop.owner, session_id)
+    await loop.managers.agent_sessions.wake_agent_session(loop.owner, agent_session_id, park)
+    again = await loop.loops.run(loop.owner, agent_session_id)
     assert again.end is RunEnd.PARKED and again.park is not None
     assert again.park.line is not None and again.park.job is not None
     assert len(loop.anthropic.calls) == 1, "no model call while the job waits in line"
@@ -252,10 +254,10 @@ async def test_a_job_tool_waits_in_line_and_its_grant_starts_the_job_with_no_mod
     await loop.managers.leases.release(loop.owner, holding.id)
     lease = (await loop.managers.leases.get_request(loop.owner, request.id)).lease
     assert lease is not None and lease.job_key is not None
-    assert await notices(loop) == [(session_id, request.id)]
-    assert (await unlocked(loop, loop.owner, session_id)).status is SessionStatus.PENDING
+    assert await notices(loop) == [(agent_session_id, request.id)]
+    assert (await unlocked(loop, loop.owner, agent_session_id)).status is AgentSessionStatus.PENDING
 
-    moved = await loop.loops.run(loop.owner, session_id)
+    moved = await loop.loops.run(loop.owner, agent_session_id)
 
     # The park moves to the job's, with no model call.
     assert moved.end is RunEnd.PARKED and moved.park is not None
@@ -276,17 +278,17 @@ async def test_a_job_tool_waits_in_line_and_its_grant_starts_the_job_with_no_mod
     assert started.started_at is not None
     woken = await loop.loops.complete_job(
         loop.owner,
-        session_id,
+        agent_session_id,
         JobCompletion(key=request.id, handle="dock-1", text="the job found 3 faults"),
     )
-    assert woken.status is SessionStatus.PENDING
+    assert woken.status is AgentSessionStatus.PENDING
     loop.anthropic.add(reply(said("It found 3 faults.")))
 
-    run = await loop.loops.run(loop.owner, session_id)
+    run = await loop.loops.run(loop.owner, agent_session_id)
 
     assert run.outcome is LoopOutcome.SUCCEEDED
     assert len(loop.anthropic.calls) == 2, "one model call, after the job's result"
-    steps = await loop.history(session_id)
+    steps = await loop.history(agent_session_id)
     (answer,) = [s for s in steps if s.responds_to == request.id]
     assert said_in(answer) == "the job found 3 faults"
     assert not [s for s in steps if s.actor is Actor.ENGINE and s.type.is_input()], "no notice"
@@ -315,21 +317,23 @@ async def test_a_grant_between_the_read_and_the_park_still_reaches_the_jobs_call
     park_as_written = sessions.park
 
     async def freed_first(
-        ctx: TenantContext, session_id: UUID, epoch: int, loop_id: UUID, park: Park
+        ctx: TenantContext, agent_session_id: UUID, epoch: int, loop_id: UUID, park: Park
     ) -> object:
         # The resource frees after the run read the request waiting, and
         # before its park lands: the grant finds no park to clear.
         if park.line is not None:
             await loop.managers.leases.release(loop.owner, holding.id)
-        return await park_as_written(ctx, session_id, epoch, loop_id, park)
+        return await park_as_written(ctx, agent_session_id, epoch, loop_id, park)
 
     monkeypatch.setattr(sessions, "park", freed_first)
 
-    session_id, _, _ = await asked(loop)
+    agent_session_id, _, _ = await asked(loop)
 
     # The run read the request again once parked, and cleared the park.
-    assert (await sessions.get_session(loop.owner, session_id)).status is SessionStatus.PENDING
-    run = await loop.loops.run(loop.owner, session_id)
+    assert (
+        await sessions.get_agent_session(loop.owner, agent_session_id)
+    ).status is AgentSessionStatus.PENDING
+    run = await loop.loops.run(loop.owner, agent_session_id)
     assert run.park is not None and run.park.reason is ParkReason.JOB
     assert len(loop.anthropic.calls) == 1
 
@@ -339,32 +343,32 @@ async def test_a_session_cancelled_while_its_job_waits_in_line_leaves_it_and_no_
 ) -> None:
     loop, dock, resource, holding = await docking(tmp_path, monkeypatch)
     assert holding is not None
-    session_id, request, _ = await asked(loop)
+    agent_session_id, request, _ = await asked(loop)
 
-    await loop.managers.steps.append_inputs(
+    await loop.managers.agent_steps.append_inputs(
         loop.owner,
-        session_id,
+        agent_session_id,
         [
-            Step(
+            AgentStep(
                 id=new_id(),
                 created_at=loop.clock(),
-                session_id=session_id,
+                agent_session_id=agent_session_id,
                 loop_id=new_id(),
-                type=StepType.CONTROL,
+                type=AgentStepType.CONTROL,
                 actor=Actor.PERSON,
                 origin=Origin.PORTAL,
                 header=ControlHeader(command=ControlCommand.CANCEL),
             )
         ],
     )
-    run = await loop.loops.run(loop.owner, session_id)
+    run = await loop.loops.run(loop.owner, agent_session_id)
 
     assert run.outcome is LoopOutcome.CANCELLED
     left = (await loop.managers.leases.get_request(loop.owner, request.id)).request
     assert (left.status, left.end_reason) == (RequestStatus.CANCELLED, EndReason.WAITER_GONE)
     assert (await loop.managers.leases.line(loop.owner, resource.id)).requests == ()
     assert [job.key for job in dock.cancelled] == [request.id], "the job is cancelled"
-    (answer,) = [s for s in await loop.history(session_id) if s.responds_to == request.id]
+    (answer,) = [s for s in await loop.history(agent_session_id) if s.responds_to == request.id]
     assert isinstance(answer.header, ToolResponseHeader)
     assert answer.header.failure is ToolFailure.INTERRUPTED
 
@@ -383,10 +387,12 @@ async def test_a_session_cancelled_while_its_granted_job_runs_hands_its_cancel_t
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     loop, dock, _, _ = await docking(tmp_path, monkeypatch, held=False)
-    session_id, request, _, lease = await running(loop)
+    agent_session_id, request, _, lease = await running(loop)
 
-    await loop.managers.steps.append_inputs(loop.owner, session_id, [cancel(loop, session_id)])
-    run = await loop.loops.run(loop.owner, session_id)
+    await loop.managers.agent_steps.append_inputs(
+        loop.owner, agent_session_id, [cancel(loop, agent_session_id)]
+    )
+    run = await loop.loops.run(loop.owner, agent_session_id)
 
     assert run.outcome is LoopOutcome.CANCELLED
     assert [(job.key, job.request_id) for job in dock.cancelled] == [(request.id, request.id)]
@@ -399,14 +405,14 @@ async def test_a_granted_job_stopped_at_its_deadline_hands_its_cancel_the_reques
 ) -> None:
     loop, dock, _, _ = await docking(tmp_path, monkeypatch, held=False)
     deadline = loop.clock.now + timedelta(minutes=2)  # inside the lease's five-minute term
-    session_id, request, park, lease = await running(loop, deadline=deadline)
+    agent_session_id, request, park, lease = await running(loop, deadline=deadline)
     assert park.retry_at == deadline
 
     loop.clock.now = deadline
-    await loop.managers.agent_sessions.wake_session(loop.owner, session_id, park)
-    await loop.loops.run(loop.owner, session_id)
+    await loop.managers.agent_sessions.wake_agent_session(loop.owner, agent_session_id, park)
+    await loop.loops.run(loop.owner, agent_session_id)
 
-    (answer,) = [s for s in await loop.history(session_id) if s.responds_to == request.id]
+    (answer,) = [s for s in await loop.history(agent_session_id) if s.responds_to == request.id]
     assert isinstance(answer.header, ToolResponseHeader)
     assert answer.header.failure is ToolFailure.TIMEOUT
     assert [(job.key, job.request_id) for job in dock.cancelled] == [(request.id, request.id)]

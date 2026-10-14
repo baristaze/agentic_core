@@ -266,7 +266,7 @@ retry time, which a fix made at the provider never wakes.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/steps/types/header.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_steps/types/header.py`
 
 **Check.** review
 

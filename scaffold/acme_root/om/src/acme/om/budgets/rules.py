@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from acme.integrations.model_providers.types import Usage
+from acme.om.agent_steps.types.header import Park, ParkReason
 from acme.om.budgets.pricing import ModelPrice, Rates
 from acme.om.budgets.types.amount import NOTHING, Amount, AmountUnit, Spend
 from acme.om.budgets.types.breach import Breach, BreachAction, Refusal
@@ -24,7 +25,6 @@ from acme.om.budgets.types.hold import (
     Tally,
 )
 from acme.om.budgets.types.usage import LoopUsage, UsageRecord, UsageRollup
-from acme.om.steps.types.header import Park, ParkReason
 
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 """The start of every window that never resets, and the origin a span

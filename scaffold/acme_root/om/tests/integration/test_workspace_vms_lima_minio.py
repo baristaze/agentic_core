@@ -44,9 +44,9 @@ from acme.infra.workspaces import (
     Workspace,
 )
 from acme.infra.workspaces.vm import WorkspaceVmImpl
+from acme.om.agent_steps.types.header import SnapshotHeader
 from acme.om.base import new_id
 from acme.om.context import Role
-from acme.om.steps.types.header import SnapshotHeader
 from acme.om.tools.impl.snapshots import session_prefix
 
 KEPT = IsolationSpec(
@@ -134,8 +134,8 @@ async def test_a_vm_snapshot_is_kept_on_minio_by_name_and_restores_its_whole_dis
     )
     ctx = context(Role.SERVICE, make_org())
     await secrets.put(ctx.org_id, "SERVICE_TOKEN", "tok-vm-0123456789abcdef")
-    session_id = new_id()
-    workspace = await tools.manager.prepare_workspace(ctx, session_id, KEPT)
+    agent_session_id = new_id()
+    workspace = await tools.manager.prepare_workspace(ctx, agent_session_id, KEPT)
     try:
         before = await run(
             transport,
@@ -145,32 +145,36 @@ async def test_a_vm_snapshot_is_kept_on_minio_by_name_and_restores_its_whole_dis
             "docker build -q -t acme-test-kept ctx >/dev/null && sha256sum state.bin && "
             "docker image inspect --format '{{.Id}}' acme-test-kept",
         )
-        epoch = await tools.steps.begin_run(ctx, session_id)
+        epoch = await tools.steps.begin_run(ctx, agent_session_id)
         step = await tools.manager.snapshot_workspace(
-            ctx, session_id, workspace, epoch=epoch, loop_id=new_id()
+            ctx, agent_session_id, workspace, epoch=epoch, loop_id=new_id()
         )
         assert isinstance(step.header, SnapshotHeader)
         snapshot = step.header.snapshot
-        (key,) = await minio.list(ctx.org_id, Buckets.SNAPSHOTS, session_prefix(session_id), 10)
+        (key,) = await minio.list(
+            ctx.org_id, Buckets.SNAPSHOTS, session_prefix(agent_session_id), 10
+        )
         sealed = await minio.get(ctx.org_id, Buckets.SNAPSHOTS, key)
         assert snapshot.size < 512 and len(sealed) < 1024, "a name and a digest, never the disk"
         assert workspace.location.encode() not in sealed, "sealed, never in the clear"
 
         await machines.destroy(workspace.location)
         assert await machines.state(workspace.location) is MachineState.ABSENT
-        restored = await tools.manager.prepare_workspace(ctx, session_id, KEPT, restore=snapshot)
+        restored = await tools.manager.prepare_workspace(
+            ctx, agent_session_id, KEPT, restore=snapshot
+        )
         check = "sha256sum state.bin && docker image inspect --format '{{.Id}}' acme-test-kept"
         assert await run(transport, restored, check) == before
 
         await run(transport, restored, "echo tok-vm-0123456789abcdef | sudo tee /etc/leak")
         with pytest.raises(SnapshotRefused, match="SERVICE_TOKEN"):
             await tools.manager.snapshot_workspace(
-                ctx, session_id, restored, epoch=epoch, loop_id=new_id()
+                ctx, agent_session_id, restored, epoch=epoch, loop_id=new_id()
             )
-        kept = await minio.list(ctx.org_id, Buckets.SNAPSHOTS, session_prefix(session_id), 10)
+        kept = await minio.list(ctx.org_id, Buckets.SNAPSHOTS, session_prefix(agent_session_id), 10)
         assert kept == [key], "nothing more stored"
         disks = await machines.names(f"{workspace.location}-")
         assert len(disks) == 1, "the refused snapshot's disk went; the kept one stays"
     finally:
-        await tools.manager.purge_workspace(ctx.org_id, session_id)
+        await tools.manager.purge_workspace(ctx.org_id, agent_session_id)
     assert await machines.names(workspace.location) == [], "the machine and its disks"

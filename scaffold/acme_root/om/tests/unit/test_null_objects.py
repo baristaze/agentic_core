@@ -38,6 +38,7 @@ from acme.integrations.model_providers import ModelProviderInterface, reply_of
 from acme.integrations.model_providers.absent import ModelProviderAbsentImpl
 from acme.integrations.model_providers.calls import ModelCall
 from acme.integrations.model_providers.types import ProviderName
+from acme.om.agent_steps.types.stream import TextPart
 from acme.om.agents import ResultGateInterface
 from acme.om.agents.impl.gate import ResultGateNullImpl
 from acme.om.agents.impl.sink import StreamSinkNullImpl
@@ -55,7 +56,6 @@ from acme.om.exceptions import PlatformException, UnsafeConfiguration
 from acme.om.models.impl.prices import ModelPricesNullImpl
 from acme.om.models.prices import ModelPricesInterface
 from acme.om.root import build_managers
-from acme.om.steps.types.stream import TextPart
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.tools.impl.seal import RecordSealNullImpl
 from acme.om.tools.seal import RecordSealInterface
@@ -185,7 +185,7 @@ async def test_the_quiet_nulls_do_nothing_and_say_so() -> None:
     )
     hold = await gate.authorize(CTX, request)
     assert isinstance(hold, Hold) and hold.lines == (), "a hold on no line bounds nothing"
-    sink.emit(TextPart(session_id=uuid4(), step_id=uuid4(), n=0, index=0, text="lost"))
+    sink.emit(TextPart(agent_session_id=uuid4(), agent_step_id=uuid4(), n=0, index=0, text="lost"))
     verdict = await verdicts.check(CTX, uuid4(), Result(claim=Claim.SUCCEEDED, evidence=(uuid4(),)))
     assert verdict.accepted and not verdict.verified, "accepted, and marked unverified"
     assert not ModelPricesNullImpl().priced(ProviderName.ANTHROPIC, "any"), "no price is guessed"

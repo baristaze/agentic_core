@@ -22,6 +22,7 @@ import pkgutil
 
 from contracts import (
     agent_session_storage,
+    agent_step_storage,
     agent_storage,
     attribution_storage,
     budget_storage,
@@ -34,7 +35,6 @@ from contracts import (
     orchestration_storage,
     outbox_storage,
     privacy_storage,
-    step_storage,
     tenancy_storage,
     tool_storage,
     window_storage,
@@ -131,7 +131,7 @@ CROSS_TENANT_CASES: dict[str, frozenset[str]] = {
     "OrchestrationsStorageInterface": orchestration_storage.CROSS_TENANT_CASES,
     "OutboxStorageInterface": outbox_storage.CROSS_TENANT_CASES,
     "PrivacyStorageInterface": privacy_storage.CROSS_TENANT_CASES,
-    "StepStorageInterface": step_storage.CROSS_TENANT_CASES,
+    "AgentStepStorageInterface": agent_step_storage.CROSS_TENANT_CASES,
     "TenancyStorageInterface": tenancy_storage.CROSS_TENANT_CASES,
     "WindowStorageInterface": window_storage.CROSS_TENANT_CASES,
     "ToolStorageInterface": tool_storage.CROSS_TENANT_CASES,
@@ -170,7 +170,7 @@ MANAGER_EXCEPTIONS: frozenset[tuple[str, str]] = frozenset(
         ("AgentSessionsManagerInterface", "purge_across_tenants"),
         # And the history of each session that purge has claimed, named with
         # its tenant: bookkeeping of the same step, for no principal.
-        ("StepsManagerInterface", "purge_histories"),
+        ("AgentStepsManagerInterface", "purge_histories"),
         # And the session's authority, its tree, its artifacts, and its
         # workspace, named with the tenant, which the same purge takes before
         # the session's row.

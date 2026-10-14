@@ -13,16 +13,16 @@ from uuid import UUID
 from acme.om.agent_sessions.types.agent_session import (
     AgentSession,
     AgentSessionPage,
+    AgentSessionStatus,
     Among,
-    SessionStatus,
 )
+from acme.om.agent_steps.types.agent_step import AgentStep
+from acme.om.agent_steps.types.header import Park, ParkReason
 from acme.om.attribution.types.authority import Visibility
 from acme.om.attribution.types.principal import AgentRef
 from acme.om.context import TenantContext
-from acme.om.steps.types.header import Park, ParkReason
-from acme.om.steps.types.step import Step
 
-SessionPurged = Callable[[UUID, UUID, UUID | None], Awaitable[None]]
+AgentSessionPurged = Callable[[UUID, UUID, UUID | None], Awaitable[None]]
 """What other namespaces hold of a session, purged before its row: given its
 tenant, its id, and its tree's id when no other session of the tree is
 left, and None otherwise, as in a tenant's purge, whose trees go with the
@@ -32,7 +32,7 @@ the agents' purges, which run under the purge login in that tenant."""
 
 class AgentSessionsManagerInterface(ABC):
     @abstractmethod
-    async def create_session(self, ctx: TenantContext, session: AgentSession) -> AgentSession:
+    async def create_agent_session(self, ctx: TenantContext, session: AgentSession) -> AgentSession:
         """The create: the session lands idle, with no history yet, and is
         announced. A session with a parent joins its parent's tree, and one
         handed over roots a tree of its own; a session to come from that the
@@ -46,25 +46,27 @@ class AgentSessionsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def get_session(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
+    async def get_agent_session(self, ctx: TenantContext, agent_session_id: UUID) -> AgentSession:
         """A session of the tenant; one another tenant holds, one marked
         deleted, and one the person does not see, is `NotFound`, as one that
         never existed is. Every operation here that names a session reads it
         so: an org-wide session is seen by every member of the org, a
         private one by its creator and its participants, and every one by a
-        holder of `manage_sessions`. A sub-agent is seen as its root is
+        holder of `manage_agent_sessions`. A sub-agent is seen as its root is
         (`agent_sessions.rules.sees`)."""
         ...
 
     @abstractmethod
-    async def is_visible(self, ctx: TenantContext, session_id: UUID) -> bool:
-        """Whether the person sees the session, as `get_session` reads it,
+    async def is_visible(self, ctx: TenantContext, agent_session_id: UUID) -> bool:
+        """Whether the person sees the session, as `get_agent_session` reads it,
         whether or not it is marked deleted: a history no session of the
         tenant stands over is seen by whoever may read it."""
         ...
 
     @abstractmethod
-    async def get_session_at_head(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
+    async def get_agent_session_at_head(
+        self, ctx: TenantContext, agent_session_id: UUID
+    ) -> AgentSession:
         """The session with its speaker, its mark, and whether it holds
         private data folded up to the head of its history: the cache, then
         the steps after it. Nothing is written, and the status and the
@@ -81,7 +83,9 @@ class AgentSessionsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def get_ancestors(self, ctx: TenantContext, session_id: UUID) -> tuple[AgentRef, ...]:
+    async def get_ancestors(
+        self, ctx: TenantContext, agent_session_id: UUID
+    ) -> tuple[AgentRef, ...]:
         """The agents above a session in its tree, its parent's first: each
         one's kind, at the version its session pinned, and its session. Each
         is read whether or not its session is marked deleted, from the row
@@ -92,10 +96,10 @@ class AgentSessionsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def get_sessions(
+    async def get_agent_sessions(
         self,
         ctx: TenantContext,
-        status: SessionStatus | None,
+        status: AgentSessionStatus | None,
         after: UUID | None,
         limit: int,
         among: Among = Among.VISIBLE,
@@ -103,18 +107,18 @@ class AgentSessionsManagerInterface(ABC):
         """One page of the tenant's root sessions in a status, or in any, by
         id, strictly after `after`; `limit` is clamped. `among` says which:
         the ones the person made or takes part in, or every one they see,
-        each org-wide one included, and with `manage_sessions` every one. A
+        each org-wide one included, and with `manage_agent_sessions` every one. A
         session marked deleted is on no page."""
         ...
 
     @abstractmethod
     async def add_participant(
-        self, ctx: TenantContext, session_id: UUID, user_id: UUID
+        self, ctx: TenantContext, agent_session_id: UUID, user_id: UUID
     ) -> AgentSession:
         """`user_id` takes part in the session from here. Any member joins
         an org-wide session, and its creator adds anyone. A private one's
         participants are the ones its creator adds: a self-join is refused
-        (`NotAuthorized`), a holder of `manage_sessions` included, since an
+        (`NotAuthorized`), a holder of `manage_agent_sessions` included, since an
         audit read is not a membership. Its steerer alone joins it on their
         own, as one who takes a lapsed steer does (`attribution`). Nobody
         else adds another (`NotAuthorized`). One who is no member of the org
@@ -126,14 +130,14 @@ class AgentSessionsManagerInterface(ABC):
 
     @abstractmethod
     async def remove_participant(
-        self, ctx: TenantContext, session_id: UUID, user_id: UUID
+        self, ctx: TenantContext, agent_session_id: UUID, user_id: UUID
     ) -> AgentSession:
         """`user_id` takes no part in the session from here: its creator
         removes any participant, and a participant leaves on their own;
         nobody else removes one (`NotAuthorized`). The steerer is not
         removed while they steer (`Conflict`): the steer is handed on first,
         so a session never has a steerer who takes no part in it. Removed
-        from a private session, a person who holds no `manage_sessions` no
+        from a private session, a person who holds no `manage_agent_sessions` no
         longer sees it. A sub-agent's participants are its root's
         (`ValidationFailed`). One who takes no part answers the session as
         it is."""
@@ -141,7 +145,7 @@ class AgentSessionsManagerInterface(ABC):
 
     @abstractmethod
     async def switch_visibility(
-        self, ctx: TenantContext, session_id: UUID, visibility: Visibility
+        self, ctx: TenantContext, agent_session_id: UUID, visibility: Visibility
     ) -> AgentSession:
         """Its creator switches who sees the session, org-wide or private,
         recorded as a `switched` step through the inbox, which the status's
@@ -152,7 +156,7 @@ class AgentSessionsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def project_status(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
+    async def project_status(self, ctx: TenantContext, agent_session_id: UUID) -> AgentSession:
         """Brings the cached status up to the history: reads the steps after
         the last one it read, folds them (`agent_sessions.rules.projected`),
         and writes the session conditioned on the version it read, with the
@@ -166,8 +170,8 @@ class AgentSessionsManagerInterface(ABC):
 
     @abstractmethod
     async def receive(
-        self, ctx: TenantContext, session_id: UUID, inputs: Sequence[Step]
-    ) -> tuple[tuple[Step, ...], AgentSession]:
+        self, ctx: TenantContext, agent_session_id: UUID, inputs: Sequence[AgentStep]
+    ) -> tuple[tuple[AgentStep, ...], AgentSession]:
         """The inbox, with the status after it: inputs and controls appended
         whether or not a run holds the session, durable when this returns,
         then the status brought up to them. A projection that makes the
@@ -180,7 +184,7 @@ class AgentSessionsManagerInterface(ABC):
 
     @abstractmethod
     async def park(
-        self, ctx: TenantContext, session_id: UUID, epoch: int, loop_id: UUID, park: Park
+        self, ctx: TenantContext, agent_session_id: UUID, epoch: int, loop_id: UUID, park: Park
     ) -> AgentSession:
         """A run's loop parks: a `parked` step carrying the park is appended
         under the run's epoch (`StaleWriter` once another run holds the
@@ -190,7 +194,7 @@ class AgentSessionsManagerInterface(ABC):
 
     @abstractmethod
     async def resume(
-        self, ctx: TenantContext, session_id: UUID, epoch: int, loop_id: UUID
+        self, ctx: TenantContext, agent_session_id: UUID, epoch: int, loop_id: UUID
     ) -> AgentSession:
         """A new run takes up a loop whose unlock happened: a `resumed` step
         is appended under the run's epoch, and the session is running. The
@@ -199,7 +203,9 @@ class AgentSessionsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def wake_session(self, ctx: TenantContext, session_id: UUID, park: Park) -> AgentSession:
+    async def wake_agent_session(
+        self, ctx: TenantContext, agent_session_id: UUID, park: Park
+    ) -> AgentSession:
         """A park's retry time came: a session still parked on exactly `park`
         is unlocked by an `unlock` control the engine writes, and is pending
         for a run to take up. A session that moved on is answered as it is."""
@@ -216,14 +222,18 @@ class AgentSessionsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def archive_session(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
+    async def archive_agent_session(
+        self, ctx: TenantContext, agent_session_id: UUID
+    ) -> AgentSession:
         """Sets the archive flag on an idle session; an archived one is
         answered as it is, and one with a loop open is `ValidationFailed`.
         A principal's message undoes it."""
         ...
 
     @abstractmethod
-    async def delete_session(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
+    async def delete_agent_session(
+        self, ctx: TenantContext, agent_session_id: UUID
+    ) -> AgentSession:
         """Marks an idle session deleted, and announces it. From then on every
         read of it answers as one that never existed, but the kind
         `get_ancestors` answers, while its history and its shape stay as
@@ -234,7 +244,9 @@ class AgentSessionsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def restore_session(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
+    async def restore_agent_session(
+        self, ctx: TenantContext, agent_session_id: UUID
+    ) -> AgentSession:
         """Unmarks a session marked deleted: it comes back as it was, with
         its history, and is announced. One not marked is answered as it is.
         One the sweep has claimed for its purge is `NotFound`, as one gone,

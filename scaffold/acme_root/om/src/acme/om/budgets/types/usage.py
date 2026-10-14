@@ -25,7 +25,7 @@ class CallLabels(Platform):
     session's tree, the agent kind and version that made it, its model role,
     and what served it."""
 
-    session_id: UUID
+    agent_session_id: UUID
     tree_id: UUID
     agent_kind: str = Field(min_length=1, max_length=MAX_LABEL)
     kind_version: int = Field(ge=1)
@@ -36,13 +36,13 @@ class CallLabels(Platform):
 
 class CallSite(Platform):
     """Where a billed call sat and how long its provider took to answer:
-    what its caller knows of it that the gate does not. `step_id` is the
+    what its caller knows of it that the gate does not. `agent_step_id` is the
     call's response step. `labels` names a call the settling gate never
     held, a lost run's, read back from its request step and its session;
     such a call's latency is unknown, and is 0."""
 
     loop_id: UUID
-    step_id: UUID
+    agent_step_id: UUID
     latency_ms: int = Field(ge=0)
     labels: CallLabels | None = None
 
@@ -52,7 +52,7 @@ class UsageRecord(Identifiable, Created):
     session, the session's tree, its loop, its step), the agent kind and
     version that made it, what served it, its tokens in disjoint classes,
     its reference cost, and how long the provider took. Written once per
-    hold. `step_id` is the call's response step, which a stale run may
+    hold. `agent_step_id` is the call's response step, which a stale run may
     never land; the provider billed the call all the same.
     `settled_whole` marks a call whose usage was never reported whole: a
     broken stream, or a run lost before its reply. Its cost is its whole
@@ -60,10 +60,10 @@ class UsageRecord(Identifiable, Created):
     reported, else none."""
 
     hold_id: UUID
-    session_id: UUID
+    agent_session_id: UUID
     tree_id: UUID
     loop_id: UUID
-    step_id: UUID
+    agent_step_id: UUID
     agent_kind: str = Field(min_length=1, max_length=MAX_LABEL)
     kind_version: int = Field(ge=1)
     role: str = Field(min_length=1, max_length=MAX_LABEL)
@@ -106,7 +106,7 @@ class LoopUsage(Platform):
     rollup: UsageRollup
 
 
-class SessionUsage(Platform):
+class AgentSessionUsage(Platform):
     """A page of a session's records, in the order they were written, a
     rollup per loop, in the order each loop first called, and the rollup of
     every record of the session. With `has_more`, the next page starts after
@@ -114,7 +114,7 @@ class SessionUsage(Platform):
     than are rolled up here. Neither the loops nor the total depend on the
     page."""
 
-    session_id: UUID
+    agent_session_id: UUID
     records: tuple[UsageRecord, ...]
     has_more: bool
     loops: tuple[LoopUsage, ...]

@@ -13,7 +13,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.agent_session_storage import make_session
+from contracts.agent_session_storage import make_agent_session
 from contracts.doubles import context
 from contracts.factories import make_org
 from contracts.tools import Tools, stand_ins, tools_over
@@ -36,11 +36,11 @@ from acme.infra.workspaces import (
     WorkspaceProviderInterface,
 )
 from acme.infra.workspaces.vm import WORKSPACE, WorkspaceVmImpl, machine_name
+from acme.om.agent_steps.types.agent_step import AgentStep
+from acme.om.agent_steps.types.header import SnapshotHeader, WorkspaceSnapshot
 from acme.om.base import new_id
 from acme.om.context import Role
 from acme.om.root import build_managers
-from acme.om.steps.types.header import SnapshotHeader, WorkspaceSnapshot
-from acme.om.steps.types.step import Step
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.tools.impl.bases import base_key, base_workspace_id
 from acme.om.tools.tool import TakenSnapshot
@@ -94,7 +94,7 @@ class Vms:
         return named(step)
 
 
-def named(step: Step) -> WorkspaceSnapshot:
+def named(step: AgentStep) -> WorkspaceSnapshot:
     assert isinstance(step.header, SnapshotHeader)
     return step.header.snapshot
 
@@ -108,17 +108,17 @@ async def test_a_vm_snapshot_names_its_disk_and_the_scan_reads_the_disk(
     is not kept."""
     vms = Vms(tmp_path)
     await vms.secrets.put(vms.ctx.org_id, "SERVICE_TOKEN", "tok-0123456789abcdef")
-    session_id = new_id()
-    workspace = await vms.tools.manager.prepare_workspace(vms.ctx, session_id, KEPT)
-    (vms.folder(session_id) / WORKSPACE / "notes.txt").write_text("clean")
+    agent_session_id = new_id()
+    workspace = await vms.tools.manager.prepare_workspace(vms.ctx, agent_session_id, KEPT)
+    (vms.folder(agent_session_id) / WORKSPACE / "notes.txt").write_text("clean")
 
     snapshot = await vms.snapshot(workspace)
     assert snapshot.size < 512, "a name and a digest, never the disk"
 
-    (vms.folder(session_id) / "etc-profile").write_text("export T=tok-0123456789abcdef\n")
+    (vms.folder(agent_session_id) / "etc-profile").write_text("export T=tok-0123456789abcdef\n")
     with pytest.raises(SnapshotRefused, match="SERVICE_TOKEN"):
         await vms.snapshot(workspace)
-    disks = await vms.machines.names(f"{machine_name(PREFIX, session_id)}-")
+    disks = await vms.machines.names(f"{machine_name(PREFIX, agent_session_id)}-")
     assert len(disks) == 1, "the refused snapshot's disk went; the kept one stays"
 
 
@@ -153,13 +153,13 @@ async def test_a_vm_base_outlives_its_build_and_goes_with_the_tenants_purge(
     vms = Vms(tmp_path)
     kept_under = machine_name(PREFIX, base_workspace_id(vms.ctx.org_id, base_key(ON_BASE)))
 
-    session_id = new_id()
-    await vms.tools.manager.prepare_workspace(vms.ctx, session_id, ON_BASE)
+    agent_session_id = new_id()
+    await vms.tools.manager.prepare_workspace(vms.ctx, agent_session_id, ON_BASE)
 
-    built = (vms.folder(session_id) / WORKSPACE / "base.txt").read_text()
+    built = (vms.folder(agent_session_id) / WORKSPACE / "base.txt").read_text()
     assert built == "from-the-base\n"
     (base,) = [name for name in vms.machines.machines if name.startswith(kept_under)]
-    assert set(vms.machines.machines) == {base, machine_name(PREFIX, session_id)}, (
+    assert set(vms.machines.machines) == {base, machine_name(PREFIX, agent_session_id)}, (
         "the build's own machine went"
     )
     vms.tools.members.expired = True
@@ -192,12 +192,13 @@ async def test_a_revoked_key_destroys_the_disks_kept_for_its_snapshots_and_no_ot
     managers = build_managers(StorageMemoryImpl(), infra, tool_catalog=stand_ins("read_log"))
     ctx = context(Role.MEMBER)
     parent, child = [
-        (await managers.agent_sessions.create_session(ctx, make_session())).id for _ in range(2)
+        (await managers.agent_sessions.create_agent_session(ctx, make_agent_session())).id
+        for _ in range(2)
     ]
     workspace = await managers.tools.prepare_workspace(ctx, parent, KEPT)
     folder = infra.machines.machines[machine_name(PREFIX, parent)].folder / WORKSPACE
     (folder / "state.txt").write_text("the parent's")
-    epoch = await managers.steps.begin_run(ctx, parent)
+    epoch = await managers.agent_steps.begin_run(ctx, parent)
     for _ in range(2):
         await managers.tools.snapshot_workspace(
             ctx, parent, workspace, epoch=epoch, loop_id=new_id()

@@ -17,9 +17,9 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from uuid import UUID
 
+from acme.om.agent_steps.types.agent_step import AgentStep
 from acme.om.context import TenantContext
 from acme.om.models.types.fill import MAIN, ModelRole
-from acme.om.steps.types.step import Step
 from acme.om.windows.types.artifact import ArtifactPage
 from acme.om.windows.types.kind import KindPrompts
 from acme.om.windows.types.window import RenderedRequest
@@ -30,14 +30,14 @@ class WindowsManagerInterface(ABC):
     async def render_request(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         epoch: int,
         loop_id: UUID,
         kind: KindPrompts,
         role: ModelRole = MAIN,
         *,
         plan: str | None = None,
-        history: Sequence[Step] | None = None,
+        history: Sequence[AgentStep] | None = None,
     ) -> RenderedRequest:
         """The next request of `role` over the session's history, rendered
         with the fill the session's fill set names for it; the caller records
@@ -61,14 +61,14 @@ class WindowsManagerInterface(ABC):
     async def render_after_overflow(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         epoch: int,
         loop_id: UUID,
         kind: KindPrompts,
         refused: RenderedRequest,
         *,
         plan: str | None = None,
-        history: Sequence[Step] | None = None,
+        history: Sequence[AgentStep] | None = None,
     ) -> RenderedRequest:
         """The one retry a main request gets after its provider refused it as
         too long: a compaction, then the request rendered again and marked as
@@ -79,7 +79,9 @@ class WindowsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def bound_tool_response(self, ctx: TenantContext, session_id: UUID, step: Step) -> Step:
+    async def bound_tool_response(
+        self, ctx: TenantContext, agent_session_id: UUID, step: AgentStep
+    ) -> AgentStep:
         """A `tool_response` as the history keeps it: as given when its
         result is within the size bound; above it, its whole text kept as an
         artifact of the session and the step holding the head, the tail, and
@@ -87,9 +89,11 @@ class WindowsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def bound_report(self, ctx: TenantContext, session_id: UUID, step: Step) -> Step:
+    async def bound_report(
+        self, ctx: TenantContext, agent_session_id: UUID, step: AgentStep
+    ) -> AgentStep:
         """A child's report to its parent, an input an agent wrote into
-        `session_id`, as the history keeps it: as given when its text is
+        `agent_session_id`, as the history keeps it: as given when its text is
         within the size bound a tool result has; above it, its whole text
         kept as an artifact of the session and the step holding the head,
         the tail, and the artifact's handle. Any other step is
@@ -98,7 +102,7 @@ class WindowsManagerInterface(ABC):
 
     @abstractmethod
     async def get_artifact(
-        self, ctx: TenantContext, session_id: UUID, artifact_id: UUID, offset: int, limit: int
+        self, ctx: TenantContext, agent_session_id: UUID, artifact_id: UUID, offset: int, limit: int
     ) -> ArtifactPage:
         """A page of an artifact: its characters from `offset`, at most
         `limit` and the policy's page. An artifact the tenant's session does
@@ -108,7 +112,7 @@ class WindowsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def purge_artifacts(self, org_id: UUID, session_id: UUID) -> int:
+    async def purge_artifacts(self, org_id: UUID, agent_session_id: UUID) -> int:
         """Platform-internal: the artifacts of a session the sweep has
         claimed for its purge go with its history, before its row, under the
         purge login, in the tenant named; for no principal. Each object goes

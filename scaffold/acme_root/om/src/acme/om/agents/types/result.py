@@ -7,8 +7,8 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
+from acme.om.agent_steps.types.header import LoopOutcome
 from acme.om.base import Platform
-from acme.om.steps.types.header import LoopOutcome
 
 
 class Turn(StrEnum):

@@ -2,6 +2,8 @@
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.storage.impl.memory import AgentSessionStorageMemoryImpl
+from acme.om.agent_steps.storage import AgentStepStorageInterface
+from acme.om.agent_steps.storage.impl.memory import AgentStepStorageMemoryImpl
 from acme.om.agents.storage import AgentStorageInterface
 from acme.om.agents.storage.impl.memory import AgentStorageMemoryImpl
 from acme.om.attribution.storage import AttributionStorageInterface
@@ -24,8 +26,6 @@ from acme.om.outbox.storage import OutboxStorageInterface
 from acme.om.outbox.storage.impl.memory import OutboxStorageMemoryImpl
 from acme.om.privacy.storage import PrivacyStorageInterface
 from acme.om.privacy.storage.impl.memory import PrivacyStorageMemoryImpl
-from acme.om.steps.storage import StepStorageInterface
-from acme.om.steps.storage.impl.memory import StepStorageMemoryImpl
 from acme.om.storage.root import StorageInterface
 from acme.om.tenancy.storage import TenancyStorageInterface
 from acme.om.tenancy.storage.impl.memory import TenancyStorageMemoryImpl
@@ -52,7 +52,7 @@ class StorageMemoryImpl(StorageInterface):
         self._leases = LeasesStorageMemoryImpl(self._outbox, self._orchestrations)
         self._media = MediaStorageMemoryImpl(self._outbox)
         self._events = EventStorageMemoryImpl()
-        self._steps = StepStorageMemoryImpl()
+        self._steps = AgentStepStorageMemoryImpl()
         self._agent_sessions = AgentSessionStorageMemoryImpl(self._outbox)
         self._agents = AgentStorageMemoryImpl(self._outbox)
         self._attribution = AttributionStorageMemoryImpl(self._outbox)
@@ -87,7 +87,7 @@ class StorageMemoryImpl(StorageInterface):
     def get_lease_storage(self) -> LeasesStorageInterface:
         return self._leases
 
-    def get_step_storage(self) -> StepStorageInterface:
+    def get_agent_step_storage(self) -> AgentStepStorageInterface:
         return self._steps
 
     def get_agent_session_storage(self) -> AgentSessionStorageInterface:

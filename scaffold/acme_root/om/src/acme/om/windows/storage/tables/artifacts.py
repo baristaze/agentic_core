@@ -17,8 +17,8 @@ class Artifacts(IdentifiableMixin, CreatedMixin, Base):
     # A purge reads a session's records, or a tenant's: org_id leads the one
     # compound index, so it gets none of its own.
     __org_id_index__ = False
-    __table_args__ = (Index("ix_artifacts_org_id_session_id", "org_id", "session_id"),)
-    session_id: Mapped[UUID]
-    step_id: Mapped[UUID]
+    __table_args__ = (Index("ix_artifacts_org_id_agent_session_id", "org_id", "agent_session_id"),)
+    agent_session_id: Mapped[UUID]
+    agent_step_id: Mapped[UUID]
     # A step's sizes are the same width as its seq.
     characters: Mapped[int] = mapped_column(BigInteger)

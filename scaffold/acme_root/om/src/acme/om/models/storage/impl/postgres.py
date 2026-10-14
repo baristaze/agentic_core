@@ -15,16 +15,18 @@ class FillSetStoragePostgresImpl(PgStorageBase, FillSetStorageInterface):
         try:
             return await self._insert(FillSets, org_id, fill_set)
         except UniqueKeyTaken as error:
-            # The unique (org_id, session_id, version): another writer made
+            # The unique (org_id, agent_session_id, version): another writer made
             # this version first.
             raise PreconditionFailed(
-                f"session {fill_set.session_id} holds version {fill_set.version} already"
+                f"session {fill_set.agent_session_id} holds version {fill_set.version} already"
             ) from error
 
     async def read_fill_set(
-        self, org_id: UUID, session_id: UUID, version: int | None
+        self, org_id: UUID, agent_session_id: UUID, version: int | None
     ) -> FillSet | None:
-        stmt = select(FillSets).where(FillSets.org_id == org_id, FillSets.session_id == session_id)
+        stmt = select(FillSets).where(
+            FillSets.org_id == org_id, FillSets.agent_session_id == agent_session_id
+        )
         if version is not None:
             stmt = stmt.where(FillSets.version == version)
         stmt = stmt.order_by(FillSets.version.desc()).limit(1)

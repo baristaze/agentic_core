@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
+from acme.om.agent_steps.storage import AgentStepStorageInterface
 from acme.om.agents.storage import AgentStorageInterface
 from acme.om.attribution.storage import AttributionStorageInterface
 from acme.om.budgets.storage import BudgetStorageInterface, LedgerStorageInterface
@@ -14,7 +15,6 @@ from acme.om.models.storage import FillSetStorageInterface
 from acme.om.orchestrations.storage import OrchestrationsStorageInterface
 from acme.om.outbox.storage import OutboxStorageInterface
 from acme.om.privacy.storage import PrivacyStorageInterface
-from acme.om.steps.storage import StepStorageInterface
 from acme.om.tenancy.storage import TenancyStorageInterface
 from acme.om.tools.storage import ToolStorageInterface
 from acme.om.windows.storage import WindowStorageInterface
@@ -47,7 +47,7 @@ class StorageInterface(ABC):
     def get_lease_storage(self) -> LeasesStorageInterface: ...
 
     @abstractmethod
-    def get_step_storage(self) -> StepStorageInterface: ...
+    def get_agent_step_storage(self) -> AgentStepStorageInterface: ...
 
     @abstractmethod
     def get_agent_session_storage(self) -> AgentSessionStorageInterface: ...

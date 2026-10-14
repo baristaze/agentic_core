@@ -14,9 +14,9 @@ from datetime import datetime
 from uuid import UUID
 
 from acme.om.context import TenantContext
-from acme.om.privacy.types.session_privacy import SessionPrivacy, StoragePolicy
+from acme.om.privacy.types.agent_session_privacy import AgentSessionPrivacy, StoragePolicy
 
-SessionRevoked = Callable[[TenantContext, UUID], Awaitable[None]]
+AgentSessionRevoked = Callable[[TenantContext, UUID], Awaitable[None]]
 """What other namespaces keep of a session outside its seal, destroyed with
 its key's revocation: given the revoking context and the session's id. The
 root binds it to the tools' erasure of what the session's snapshots keep
@@ -25,7 +25,7 @@ outside their archives, such as a VM's disks."""
 
 class PrivacyManagerInterface(ABC):
     @abstractmethod
-    async def get_privacy(self, ctx: TenantContext, session_id: UUID) -> SessionPrivacy:
+    async def get_privacy(self, ctx: TenantContext, agent_session_id: UUID) -> AgentSessionPrivacy:
         """The session's record; a session with none is answered the
         default, sealed and never revoked. `NotFound` for a session the
         tenant does not hold."""
@@ -33,8 +33,8 @@ class PrivacyManagerInterface(ABC):
 
     @abstractmethod
     async def set_policy(
-        self, ctx: TenantContext, session_id: UUID, policy: StoragePolicy
-    ) -> SessionPrivacy:
+        self, ctx: TenantContext, agent_session_id: UUID, policy: StoragePolicy
+    ) -> AgentSessionPrivacy:
         """The session's storage policy, chosen once, before its history
         begins, and announced. The same policy chosen again is answered as
         stored; another is `PolicyFixed`, and so is any policy once a run or
@@ -42,7 +42,7 @@ class PrivacyManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def revoke_key(self, ctx: TenantContext, session_id: UUID) -> SessionPrivacy:
+    async def revoke_key(self, ctx: TenantContext, agent_session_id: UUID) -> AgentSessionPrivacy:
         """Erases the session's content: every version of its key is
         destroyed, and the session takes no content again. What its
         snapshots keep outside the seal, such as a VM's disks, is destroyed
@@ -54,7 +54,7 @@ class PrivacyManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def rotate_key(self, ctx: TenantContext, session_id: UUID) -> int:
+    async def rotate_key(self, ctx: TenantContext, agent_session_id: UUID) -> int:
         """A new version of the session's key, which new content is sealed
         under from now on; content sealed before keeps its version. Returns
         the version. `KeyRevoked` when the key is revoked."""
@@ -69,7 +69,7 @@ class PrivacyManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def keyed_hash(self, ctx: TenantContext, session_id: UUID, value: bytes) -> str:
+    async def keyed_hash(self, ctx: TenantContext, agent_session_id: UUID, value: bytes) -> str:
         """A hash of `value` keyed by the session, for the shape to carry in
         place of content: two equal values in one session hash alike, and
         once the session's key is revoked nothing can confirm what a hash

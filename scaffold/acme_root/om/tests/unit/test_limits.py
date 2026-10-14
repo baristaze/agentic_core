@@ -7,7 +7,7 @@ from datetime import timedelta
 from uuid import UUID
 
 import pytest
-from contracts.step_storage import a_person, make_message, make_request
+from contracts.agent_step_storage import a_person, make_message, make_request
 from pydantic import ValidationError
 
 from acme.om.agent_sessions.limits import (
@@ -26,14 +26,9 @@ from acme.om.agent_sessions.limits import (
     tripped,
 )
 from acme.om.agent_sessions.rules import parked_step
-from acme.om.attribution.types.authority import AuthorityMode
-from acme.om.attribution.types.principal import AgentRef
-from acme.om.base import new_id, utcnow
-from acme.om.budgets.rules import budget_park
-from acme.om.budgets.types.amount import AmountUnit
-from acme.om.budgets.types.breach import Breach, BreachAction, Refusal
-from acme.om.steps.types.content import Content, TextBlock, ToolResultBlock, ToolUseBlock
-from acme.om.steps.types.header import (
+from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
+from acme.om.agent_steps.types.content import Content, TextBlock, ToolResultBlock, ToolUseBlock
+from acme.om.agent_steps.types.header import (
     LoopOutcome,
     ModelResponseHeader,
     Park,
@@ -41,7 +36,12 @@ from acme.om.steps.types.header import (
     ToolRequestHeader,
     ToolResponseHeader,
 )
-from acme.om.steps.types.step import Actor, Origin, Step, StepType
+from acme.om.attribution.types.authority import AuthorityMode
+from acme.om.attribution.types.principal import AgentRef
+from acme.om.base import new_id, utcnow
+from acme.om.budgets.rules import budget_park
+from acme.om.budgets.types.amount import AmountUnit
+from acme.om.budgets.types.breach import Breach, BreachAction, Refusal
 
 SESSION = new_id()
 NOW = utcnow()
@@ -174,25 +174,27 @@ def test_the_step_guard_is_on_by_default() -> None:
 EMPTY = Content()
 
 
-def a_step(loop_id: UUID, step_type: StepType, header: object, content: Content = EMPTY) -> Step:
-    return Step.model_validate(
+def a_step(
+    loop_id: UUID, step_type: AgentStepType, header: object, content: Content = EMPTY
+) -> AgentStep:
+    return AgentStep.model_validate(
         {
             "id": new_id(),
             "created_at": NOW,
-            "session_id": SESSION,
+            "agent_session_id": SESSION,
             "loop_id": loop_id,
             "type": step_type,
-            "actor": Actor.AGENT if step_type is StepType.TOOL_REQUEST else Actor.ENGINE,
+            "actor": Actor.AGENT if step_type is AgentStepType.TOOL_REQUEST else Actor.ENGINE,
             "origin": Origin.ENGINE,
             "responds_to": new_id() if step_type.is_response() else None,
-            "refs": (new_id(),) if step_type is StepType.TOOL_REQUEST else (),
+            "refs": (new_id(),) if step_type is AgentStepType.TOOL_REQUEST else (),
             "header": header,
             "content": content,
         }
     )
 
 
-def numbered(steps: list[Step]) -> list[Step]:
+def numbered(steps: list[AgentStep]) -> list[AgentStep]:
     return [step.model_copy(update={"seq": n}) for n, step in enumerate(steps, start=1)]
 
 
@@ -221,28 +223,30 @@ def test_a_persons_look_restarts_the_step_guard_and_no_other_park_does() -> None
 # The streaks.
 
 
-def response(loop: UUID, *, calls: bool, truncated: bool = False) -> Step:
+def response(loop: UUID, *, calls: bool, truncated: bool = False) -> AgentStep:
     blocks = (ToolUseBlock(id="c", name="read_log"),) if calls else (TextBlock(text="done?"),)
     header = ModelResponseHeader(truncated=truncated)
-    return a_step(loop, StepType.MODEL_RESPONSE, header, Content(blocks=blocks))
+    return a_step(loop, AgentStepType.MODEL_RESPONSE, header, Content(blocks=blocks))
 
 
-def tool_request(loop: UUID, input_hash: str) -> Step:
+def tool_request(loop: UUID, input_hash: str) -> AgentStep:
     header = ToolRequestHeader(
         tool="read_log",
         tool_use_id="c",
         input_hash=input_hash,
         principal=a_person(),
         authority=AuthorityMode.STEADY,
-        agent=AgentRef(kind="delivery", version=1, session_id=SESSION),
+        agent=AgentRef(kind="delivery", version=1, agent_session_id=SESSION),
         authorization_class="read",
     )
-    return a_step(loop, StepType.TOOL_REQUEST, header)
+    return a_step(loop, AgentStepType.TOOL_REQUEST, header)
 
 
-def tool_response(loop: UUID, *, failed: bool) -> Step:
+def tool_response(loop: UUID, *, failed: bool) -> AgentStep:
     result = ToolResultBlock(tool_use_id="c", is_error=failed)
-    return a_step(loop, StepType.TOOL_RESPONSE, ToolResponseHeader(), Content(blocks=(result,)))
+    return a_step(
+        loop, AgentStepType.TOOL_RESPONSE, ToolResponseHeader(), Content(blocks=(result,))
+    )
 
 
 def test_consecutive_tool_errors_end_the_loop_and_a_success_resets_them() -> None:

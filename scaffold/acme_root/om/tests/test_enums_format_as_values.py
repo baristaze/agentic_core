@@ -21,7 +21,9 @@ from acme.integrations.model_providers.types import (
     StopReason,
 )
 from acme.om.agent_sessions.limits import Limit, LimitKind
-from acme.om.agent_sessions.types.agent_session import SessionStatus
+from acme.om.agent_sessions.types.agent_session import AgentSessionStatus
+from acme.om.agent_steps.types.agent_step import Actor, AgentStepFamily, AgentStepType, Origin
+from acme.om.agent_steps.types.header import ControlCommand, LoopOutcome, ParkReason, ToolFailure
 from acme.om.agents.types.kind import DoneRule
 from acme.om.agents.types.result import Claim, Turn
 from acme.om.attribution.types.authority import AuthorityMode, Trust
@@ -42,8 +44,6 @@ from acme.om.context import (
 from acme.om.media.types.file import FilePurpose, FileStatus
 from acme.om.models.types.fill import OutputShape, SwitchReason
 from acme.om.orchestrations.types.orchestration import OrchestrationKind, OrchestrationStatus
-from acme.om.steps.types.header import ControlCommand, LoopOutcome, ParkReason, ToolFailure
-from acme.om.steps.types.step import Actor, Origin, StepFamily, StepType
 from acme.om.storage.roles import DatabaseRole
 from acme.om.storage.scopes import ScopeKind
 from acme.om.tools.types.call import GateOutcome, Verdict
@@ -70,9 +70,9 @@ ENUMS = [
     OrchestrationStatus,
     WorkKind,
     WorkStatus,
-    SessionStatus,
-    StepType,
-    StepFamily,
+    AgentSessionStatus,
+    AgentStepType,
+    AgentStepFamily,
     Actor,
     Origin,
     ControlCommand,

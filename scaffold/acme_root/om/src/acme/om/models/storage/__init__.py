@@ -18,7 +18,7 @@ class FillSetStorageInterface(ABC):
 
     @abstractmethod
     async def read_fill_set(
-        self, org_id: UUID, session_id: UUID, version: int | None
+        self, org_id: UUID, agent_session_id: UUID, version: int | None
     ) -> FillSet | None:
         """One version of the session's fill set, or its latest when
         `version` is None; None when there is no such version."""

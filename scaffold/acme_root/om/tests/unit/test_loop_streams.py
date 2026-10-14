@@ -12,11 +12,11 @@ from contracts.loops import Loop, loop_over, reply, said, use
 
 from acme.integrations.model_providers.scripted import ScriptedFailure
 from acme.integrations.model_providers.types import ErrorKind
+from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
+from acme.om.agent_steps.types.header import LoopOutcome
+from acme.om.agent_steps.types.stream import StreamPart
 from acme.om.agents.impl.sink import StreamSinkMemoryImpl
 from acme.om.context import TenantContext
-from acme.om.steps.types.header import LoopOutcome
-from acme.om.steps.types.step import Step, StepType
-from acme.om.steps.types.stream import StreamPart
 from acme.om.tools.tool import ToolRuntime
 from acme.om.tools.types.tool import ToolInput
 
@@ -33,29 +33,29 @@ class Told(StreamSinkMemoryImpl):
 
     def emit(self, part: StreamPart) -> None:
         super().emit(part)
-        self.told.append((PART, part.step_id))
+        self.told.append((PART, part.agent_step_id))
 
-    def opened(self, ctx: TenantContext, session_id: UUID, step_id: UUID) -> None:
-        self.told.append((OPENED, step_id))
+    def opened(self, ctx: TenantContext, agent_session_id: UUID, agent_step_id: UUID) -> None:
+        self.told.append((OPENED, agent_step_id))
 
-    def completed(self, ctx: TenantContext, session_id: UUID, step_id: UUID) -> None:
-        self.told.append((COMPLETED, step_id))
+    def completed(self, ctx: TenantContext, agent_session_id: UUID, agent_step_id: UUID) -> None:
+        self.told.append((COMPLETED, agent_step_id))
 
-    def of(self, step_id: UUID) -> list[str]:
-        return [what for what, told in self.told if told == step_id]
+    def of(self, agent_step_id: UUID) -> list[str]:
+        return [what for what, told in self.told if told == agent_step_id]
 
 
 class Deaf(StreamSinkMemoryImpl):
     """A carrier that fails whenever it is told a stream opened or completed."""
 
-    def opened(self, ctx: TenantContext, session_id: UUID, step_id: UUID) -> None:
+    def opened(self, ctx: TenantContext, agent_session_id: UUID, agent_step_id: UUID) -> None:
         raise ConnectionError("the carrier is down")
 
-    def completed(self, ctx: TenantContext, session_id: UUID, step_id: UUID) -> None:
+    def completed(self, ctx: TenantContext, agent_session_id: UUID, agent_step_id: UUID) -> None:
         raise ConnectionError("the carrier is down")
 
 
-def of_type(steps: list[Step], step_type: StepType) -> list[Step]:
+def of_type(steps: list[AgentStep], step_type: AgentStepType) -> list[AgentStep]:
     return [step for step in steps if step.type is step_type]
 
 
@@ -67,9 +67,9 @@ def opened_then_completed(told: list[str]) -> bool:
 
 
 async def asked(loop: Loop, text: str = "What is the total?") -> UUID:
-    session_id = await loop.start()
-    await loop.say(session_id, text)
-    return session_id
+    agent_session_id = await loop.start()
+    await loop.say(agent_session_id, text)
+    return agent_session_id
 
 
 async def test_a_model_stream_and_a_tool_call_open_before_their_parts_and_complete_after(
@@ -77,15 +77,15 @@ async def test_a_model_stream_and_a_tool_call_open_before_their_parts_and_comple
 ) -> None:
     sink = Told()
     loop = loop_over(tmp_path, sink=sink)
-    session_id = await asked(loop)
+    agent_session_id = await asked(loop)
     loop.anthropic.add(reply(use("lookup")), reply(said("The total is 12.")))
 
-    run = await loop.loops.run(loop.owner, session_id)
+    run = await loop.loops.run(loop.owner, agent_session_id)
 
     assert run.outcome is LoopOutcome.SUCCEEDED
-    steps = await loop.history(session_id)
-    responses = of_type(steps, StepType.MODEL_RESPONSE)
-    (answer,) = of_type(steps, StepType.TOOL_RESPONSE)
+    steps = await loop.history(agent_session_id)
+    responses = of_type(steps, AgentStepType.MODEL_RESPONSE)
+    (answer,) = of_type(steps, AgentStepType.TOOL_RESPONSE)
     assert len(responses) == 2
     for step in (*responses, answer):
         assert opened_then_completed(sink.of(step.id)), (step.type, sink.of(step.id))
@@ -97,14 +97,14 @@ async def test_a_model_stream_and_a_tool_call_open_before_their_parts_and_comple
 async def test_a_model_call_that_fails_still_completes_its_stream(tmp_path: Path) -> None:
     sink = Told()
     loop = loop_over(tmp_path, sink=sink)
-    session_id = await asked(loop)
+    agent_session_id = await asked(loop)
     broken = reply(said("The total"))
     loop.anthropic.add(ScriptedFailure(kind=ErrorKind.PERMANENT, partial=broken))
 
-    run = await loop.loops.run(loop.owner, session_id)
+    run = await loop.loops.run(loop.owner, agent_session_id)
 
     assert run.outcome is LoopOutcome.ERRORED
-    (closing,) = of_type(await loop.history(session_id), StepType.MODEL_RESPONSE)
+    (closing,) = of_type(await loop.history(agent_session_id), AgentStepType.MODEL_RESPONSE)
     told = sink.of(closing.id)
     assert opened_then_completed(told) and PART in told, told
 
@@ -120,12 +120,12 @@ async def test_a_tool_call_that_fails_still_completes_its_stream(
         raise RuntimeError("the lookup broke")
 
     monkeypatch.setattr(lookup, "run", broken)
-    session_id = await asked(loop)
+    agent_session_id = await asked(loop)
     loop.anthropic.add(reply(use("lookup")), reply(said("It failed.")))
 
-    await loop.loops.run(loop.owner, session_id)
+    await loop.loops.run(loop.owner, agent_session_id)
 
-    (answer,) = of_type(await loop.history(session_id), StepType.TOOL_RESPONSE)
+    (answer,) = of_type(await loop.history(agent_session_id), AgentStepType.TOOL_RESPONSE)
     assert answer.as_tool_response().is_error, "the call failed"
     assert opened_then_completed(sink.of(answer.id)), sink.of(answer.id)
 
@@ -135,13 +135,13 @@ async def test_a_carrier_that_fails_to_hear_a_stream_open_or_complete_stops_noth
 ) -> None:
     sink = Deaf()
     loop = loop_over(tmp_path, sink=sink)
-    session_id = await asked(loop)
+    agent_session_id = await asked(loop)
     loop.anthropic.add(reply(use("lookup")), reply(said("The total is 12.")))
 
-    run = await loop.loops.run(loop.owner, session_id)
+    run = await loop.loops.run(loop.owner, agent_session_id)
 
     assert run.outcome is LoopOutcome.SUCCEEDED
     assert loop.tools["lookup"].ran_as == [loop.owner.user_id], "the tool ran"
-    steps = await loop.history(session_id)
-    assert len(of_type(steps, StepType.MODEL_RESPONSE)) == 2
+    steps = await loop.history(agent_session_id)
+    assert len(of_type(steps, AgentStepType.MODEL_RESPONSE)) == 2
     assert sink.parts, "the parts still reached the carrier"

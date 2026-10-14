@@ -8,10 +8,8 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from contracts.agent_session_storage import make_session
-from contracts.doubles import context
-from contracts.factories import make_org
-from contracts.step_storage import (
+from contracts.agent_session_storage import make_agent_session
+from contracts.agent_step_storage import (
     a_person,
     make_event,
     make_message,
@@ -19,6 +17,8 @@ from contracts.step_storage import (
     make_request,
     make_response,
 )
+from contracts.doubles import context
+from contracts.factories import make_org
 from contracts.tools import stand_ins
 
 from acme.infra.impl.local import InfraLocalImpl
@@ -30,23 +30,16 @@ from acme.om.agent_sessions.impl.manager import (
 from acme.om.agent_sessions.rules import Projection, after_step, announces, projected
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.storage.impl.memory import AgentSessionStorageMemoryImpl
-from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
-from acme.om.attribution.types.authority import AuthorityMode, Visibility
-from acme.om.attribution.types.principal import Principal, PrincipalKind
-from acme.om.base import new_id, utcnow
-from acme.om.context import AppContext, AppType, RequestContext, Role, TenantContext
-from acme.om.exceptions import NotAuthorized, NotFound, PreconditionFailed, ValidationFailed
-from acme.om.outbox.storage.impl.memory import OutboxStorageMemoryImpl
-from acme.om.outbox.types.row import OutboxRow
-from acme.om.root import Managers, build_managers
-from acme.om.steps.impl.manager import (
-    StepsManagerImpl,
-    StepsOptions,
+from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus
+from acme.om.agent_steps.impl.manager import (
+    AgentStepsManagerImpl,
+    AgentStepsOptions,
     no_registry,
     no_session,
     no_steerer,
 )
-from acme.om.steps.types.header import (
+from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
+from acme.om.agent_steps.types.header import (
     ControlCommand,
     ControlHeader,
     DecidedCall,
@@ -59,11 +52,18 @@ from acme.om.steps.types.header import (
     ParkedHeader,
     ParkReason,
 )
-from acme.om.steps.types.page import StepCursor
-from acme.om.steps.types.step import Actor, Origin, Step, StepType
+from acme.om.agent_steps.types.page import AgentStepCursor
+from acme.om.attribution.types.authority import AuthorityMode, Visibility
+from acme.om.attribution.types.principal import Principal, PrincipalKind
+from acme.om.base import new_id, utcnow
+from acme.om.context import AppContext, AppType, RequestContext, Role, TenantContext
+from acme.om.exceptions import NotAuthorized, NotFound, PreconditionFailed, ValidationFailed
+from acme.om.outbox.storage.impl.memory import OutboxStorageMemoryImpl
+from acme.om.outbox.types.row import OutboxRow
+from acme.om.root import Managers, build_managers
 from acme.om.storage.impl.memory import StorageMemoryImpl
 
-# What `make_session` names, so the agents manager classes every tool it
+# What `make_agent_session` names, so the agents manager classes every tool it
 # offers.
 TOOLS = stand_ins("read_log", "run_tests")
 
@@ -73,11 +73,11 @@ LOOP = new_id()
 APP = AppContext(type=AppType.PORTAL, version="portal@test")
 
 
-def a_step(step_type: StepType, header: Any, seq: int = 0) -> Step:
-    return Step(
+def a_step(step_type: AgentStepType, header: Any, seq: int = 0) -> AgentStep:
+    return AgentStep(
         id=new_id(),
         created_at=utcnow(),
-        session_id=SESSION,
+        agent_session_id=SESSION,
         seq=seq,
         loop_id=LOOP,
         type=step_type,
@@ -87,7 +87,7 @@ def a_step(step_type: StepType, header: Any, seq: int = 0) -> Step:
     )
 
 
-def control(command: ControlCommand) -> Step:
+def control(command: ControlCommand) -> AgentStep:
     """A control step; an approve or a deny names the call it decides."""
     call = None
     if command in (ControlCommand.APPROVE, ControlCommand.DENY):
@@ -95,20 +95,20 @@ def control(command: ControlCommand) -> Step:
         call = DecidedCall(
             tool="t", input_hash="h", decided_by=new_id(), role=Role.OWNER, expires_at=expires
         )
-    return a_step(StepType.CONTROL, ControlHeader(command=command, call=call))
+    return a_step(AgentStepType.CONTROL, ControlHeader(command=command, call=call))
 
 
-def parked_for(reason: ParkReason) -> Step:
-    return a_step(StepType.PARKED, ParkedHeader(park=Park(reason=reason, unlock="x")))
+def parked_for(reason: ParkReason) -> AgentStep:
+    return a_step(AgentStepType.PARKED, ParkedHeader(park=Park(reason=reason, unlock="x")))
 
 
-IDLE = Projection(SessionStatus.IDLE, None, archived=False)
-PENDING = Projection(SessionStatus.PENDING, None, archived=False)
-RUNNING = Projection(SessionStatus.RUNNING, None, archived=False)
+IDLE = Projection(AgentSessionStatus.IDLE, None, archived=False)
+PENDING = Projection(AgentSessionStatus.PENDING, None, archived=False)
+RUNNING = Projection(AgentSessionStatus.RUNNING, None, archived=False)
 
 
 def parked_state(reason: ParkReason) -> Projection:
-    return Projection(SessionStatus.PARKED, Park(reason=reason, unlock="x"), archived=False)
+    return Projection(AgentSessionStatus.PARKED, Park(reason=reason, unlock="x"), archived=False)
 
 
 # The projection, one step at a time.
@@ -116,12 +116,12 @@ def parked_state(reason: ParkReason) -> Projection:
 
 def test_an_input_that_wakes_starts_a_loop_on_an_idle_session_and_no_other() -> None:
     message = make_message(SESSION)
-    quiet = a_step(StepType.EVENT, InputHeader(waking=False, principal=a_person()))
+    quiet = a_step(AgentStepType.EVENT, InputHeader(waking=False, principal=a_person()))
     woken = after_step(IDLE, message)
-    assert (woken.status, woken.pending_input) == (SessionStatus.PENDING, message.id)
+    assert (woken.status, woken.pending_input) == (AgentSessionStatus.PENDING, message.id)
     assert after_step(IDLE, quiet) == IDLE
-    assert after_step(RUNNING, message).status is SessionStatus.RUNNING
-    assert after_step(parked_state(ParkReason.BUDGET), message).status is SessionStatus.PARKED
+    assert after_step(RUNNING, message).status is AgentSessionStatus.RUNNING
+    assert after_step(parked_state(ParkReason.BUDGET), message).status is AgentSessionStatus.PARKED
 
 
 def test_an_event_built_with_no_word_on_waking_leaves_an_idle_session_idle() -> None:
@@ -131,24 +131,28 @@ def test_an_event_built_with_no_word_on_waking_leaves_an_idle_session_idle() -> 
     assert isinstance(event.header, InputHeader) and event.header.waking is False
     assert after_step(IDLE, event) == IDLE
     unsaid = InputHeader(principal=a_person())
-    assert after_step(IDLE, a_step(StepType.EVENT, unsaid)) == IDLE
-    assert after_step(IDLE, a_step(StepType.MESSAGE, unsaid)).status is (SessionStatus.PENDING)
+    assert after_step(IDLE, a_step(AgentStepType.EVENT, unsaid)) == IDLE
+    assert after_step(IDLE, a_step(AgentStepType.MESSAGE, unsaid)).status is (
+        AgentSessionStatus.PENDING
+    )
 
 
-def fold(steps: list[Step]) -> Projection:
+def fold(steps: list[AgentStep]) -> Projection:
     state = IDLE
     for step in steps:
         state = after_step(state, step)
     return state
 
 
-def response_to(request: Step, *, truncated: bool = False, abandoned: bool = False) -> Step:
+def response_to(
+    request: AgentStep, *, truncated: bool = False, abandoned: bool = False
+) -> AgentStep:
     header = ModelResponseHeader(truncated=truncated, abandoned=abandoned)
     return make_response(SESSION, LOOP, request.id).model_copy(update={"header": header})
 
 
-def loop_ended() -> Step:
-    return a_step(StepType.LOOP_ENDED, LoopEndedHeader(outcome=LoopOutcome.SUCCEEDED))
+def loop_ended() -> AgentStep:
+    return a_step(AgentStepType.LOOP_ENDED, LoopEndedHeader(outcome=LoopOutcome.SUCCEEDED))
 
 
 def test_a_loop_that_ends_with_a_waking_input_undelivered_leaves_the_session_pending() -> None:
@@ -159,20 +163,20 @@ def test_a_loop_that_ends_with_a_waking_input_undelivered_leaves_the_session_pen
     request = make_request(SESSION, first.id, (first.id,))
     answered = response_to(request)
     late = make_message(SESSION, "and the monthly one?")
-    assert fold([first, request, answered, loop_ended()]).status is SessionStatus.IDLE
+    assert fold([first, request, answered, loop_ended()]).status is AgentSessionStatus.IDLE
     waiting = fold([first, request, answered, late, loop_ended()])
-    assert (waiting.status, waiting.pending_input) == (SessionStatus.PENDING, late.id)
+    assert (waiting.status, waiting.pending_input) == (AgentSessionStatus.PENDING, late.id)
     carried = make_request(SESSION, first.id, (late.id,))
     delivered = fold([first, request, answered, late, carried, response_to(carried), loop_ended()])
-    assert (delivered.status, delivered.pending_input) == (SessionStatus.IDLE, None)
+    assert (delivered.status, delivered.pending_input) == (AgentSessionStatus.IDLE, None)
     other = make_request(SESSION, first.id, (first.id,))
     passed_by = fold([first, request, answered, late, other, response_to(other), loop_ended()])
-    assert passed_by.status is SessionStatus.PENDING, "a request that does not carry it"
+    assert passed_by.status is AgentSessionStatus.PENDING, "a request that does not carry it"
     for cut_short in (response_to(request, truncated=True), response_to(request, abandoned=True)):
         cut = fold([first, request, cut_short, loop_ended()])
-        assert cut.status is SessionStatus.PENDING, cut_short.header
+        assert cut.status is AgentSessionStatus.PENDING, cut_short.header
     quiet = fold([first, request, answered, make_event(SESSION), loop_ended()])
-    assert quiet.status is SessionStatus.IDLE, "an input that does not wake waits quietly"
+    assert quiet.status is AgentSessionStatus.IDLE, "an input that does not wake waits quietly"
 
 
 def test_a_run_holds_the_loop_until_it_parks_or_ends() -> None:
@@ -182,8 +186,8 @@ def test_a_run_holds_the_loop_until_it_parks_or_ends() -> None:
     held = after_step(RUNNING, parked_for(ParkReason.JOB))
     assert held == parked_state(ParkReason.JOB)
     assert after_step(held, request) == held, "a parked loop stays parked until it resumes"
-    assert after_step(held, a_step(StepType.RESUMED, MarkHeader())) == RUNNING
-    ended = a_step(StepType.LOOP_ENDED, LoopEndedHeader(outcome=LoopOutcome.SUCCEEDED))
+    assert after_step(held, a_step(AgentStepType.RESUMED, MarkHeader())) == RUNNING
+    ended = a_step(AgentStepType.LOOP_ENDED, LoopEndedHeader(outcome=LoopOutcome.SUCCEEDED))
     assert after_step(RUNNING, ended) == IDLE
 
 
@@ -216,15 +220,15 @@ def test_a_held_hand_over_is_cleared_by_its_holders_own_unlock_in_person_or_a_ca
     another member's, and the holder's on an API key clear nothing."""
     holder, other = new_id(), new_id()
     held = Projection(
-        SessionStatus.PARKED,
+        AgentSessionStatus.PARKED,
         Park(reason=ParkReason.HANDOVER, unlock="give_back", holder=holder),
         archived=False,
     )
 
-    def sent(by: UUID, actor: Actor = Actor.PERSON, key: UUID | None = None) -> Step:
+    def sent(by: UUID, actor: Actor = Actor.PERSON, key: UUID | None = None) -> AgentStep:
         sender = Principal(kind=PrincipalKind.PERSON, id=by, key_id=key)
         header = ControlHeader(command=ControlCommand.UNLOCK, principal=sender)
-        return a_step(StepType.CONTROL, header).model_copy(update={"actor": actor})
+        return a_step(AgentStepType.CONTROL, header).model_copy(update={"actor": actor})
 
     for step in (
         control(ControlCommand.UNLOCK),
@@ -239,53 +243,53 @@ def test_a_held_hand_over_is_cleared_by_its_holders_own_unlock_in_person_or_a_ca
 
 
 def test_an_archived_session_records_events_and_a_message_unarchives_it() -> None:
-    archived = Projection(SessionStatus.IDLE, None, archived=True)
-    event = a_step(StepType.EVENT, InputHeader(waking=True, principal=a_person()))
+    archived = Projection(AgentSessionStatus.IDLE, None, archived=True)
+    event = a_step(AgentStepType.EVENT, InputHeader(waking=True, principal=a_person()))
     assert after_step(archived, event) == archived
     back = after_step(archived, make_message(SESSION))
-    assert (back.status, back.archived) == (SessionStatus.PENDING, False)
+    assert (back.status, back.archived) == (AgentSessionStatus.PENDING, False)
 
 
 # The projection over a history.
 
 
-def a_history() -> list[Step]:
+def a_history() -> list[AgentStep]:
     message = make_message(SESSION)
     request = make_request(SESSION, message.id, (message.id,))
     response = make_response(SESSION, message.id, request.id)
     steps = [message, request, response, make_parked(SESSION, message.id)]
     steps += [
         control(ControlCommand.APPROVE),
-        a_step(StepType.RESUMED, MarkHeader()),
-        a_step(StepType.LOOP_ENDED, LoopEndedHeader(outcome=LoopOutcome.SUCCEEDED)),
+        a_step(AgentStepType.RESUMED, MarkHeader()),
+        a_step(AgentStepType.LOOP_ENDED, LoopEndedHeader(outcome=LoopOutcome.SUCCEEDED)),
         make_message(SESSION, "and the monthly one?"),
     ]
     return [step.model_copy(update={"seq": n}) for n, step in enumerate(steps, start=1)]
 
 
 def test_the_status_is_rebuilt_from_the_steps_whatever_the_batches() -> None:
-    session = make_session()
+    session = make_agent_session()
     history = a_history()
     whole = projected(session, history, utcnow(), session.created_by)
     by_one = session
     for step in history:
         by_one = projected(by_one, [step], utcnow(), session.created_by)
-    assert (whole.status, whole.park, whole.status_seq) == (SessionStatus.PENDING, None, 8)
+    assert (whole.status, whole.park, whole.status_seq) == (AgentSessionStatus.PENDING, None, 8)
     assert (by_one.status, by_one.park, by_one.status_seq) == (whole.status, whole.park, 8)
     assert whole.version == session.version + 1
 
 
 def test_a_step_read_already_changes_nothing() -> None:
-    session = make_session()
+    session = make_agent_session()
     history = a_history()
     caught_up = projected(session, history[:4], utcnow(), session.created_by)
-    assert caught_up.status is SessionStatus.PARKED and caught_up.status_seq == 4
+    assert caught_up.status is AgentSessionStatus.PARKED and caught_up.status_seq == 4
     assert projected(caught_up, history[:4], utcnow(), session.created_by) is caught_up
     assert projected(caught_up, [], utcnow(), session.created_by) is caught_up
 
 
 def test_a_change_of_status_or_the_end_of_a_loop_is_announced_and_no_step_alone() -> None:
-    session = make_session()
+    session = make_agent_session()
     history = a_history()
     woken = projected(session, history[:1], utcnow(), session.created_by)
     assert announces(session, woken, history[:1])
@@ -296,16 +300,16 @@ def test_a_change_of_status_or_the_end_of_a_loop_is_announced_and_no_step_alone(
     # A loop that ends and a new one that begins within one read leave the
     # status where it was, and the end is still announced.
     resumed = projected(still, history[3:6], utcnow(), session.created_by)
-    assert resumed.status is SessionStatus.RUNNING
+    assert resumed.status is AgentSessionStatus.RUNNING
     again = projected(resumed, history[6:], utcnow(), session.created_by)
-    assert again.status is SessionStatus.PENDING
+    assert again.status is AgentSessionStatus.PENDING
     assert announces(resumed, again, history[6:])
 
 
 def test_a_session_carries_a_park_exactly_while_parked() -> None:
-    session = make_session()
+    session = make_agent_session()
     with pytest.raises(ValueError, match="exactly while it is parked"):
-        AgentSession.model_validate({**session.model_dump(), "status": SessionStatus.PARKED})
+        AgentSession.model_validate({**session.model_dump(), "status": AgentSessionStatus.PARKED})
     with pytest.raises(ValueError, match="exactly while it is parked"):
         AgentSession.model_validate(
             {**session.model_dump(), "park": {"reason": "budget", "unlock": "raise"}}
@@ -330,41 +334,50 @@ async def test_a_session_lands_idle_at_its_own_root_and_a_child_joins_its_tree(
     managers: Managers,
 ) -> None:
     ctx = context(Role.MEMBER)
-    sent = make_session().model_copy(update={"status_seq": 9, "version": 4, "root_id": new_id()})
-    root = await managers.agent_sessions.create_session(ctx, sent)
-    assert (root.status, root.status_seq, root.version) == (SessionStatus.IDLE, 0, 1)
+    sent = make_agent_session().model_copy(
+        update={"status_seq": 9, "version": 4, "root_id": new_id()}
+    )
+    root = await managers.agent_sessions.create_agent_session(ctx, sent)
+    assert (root.status, root.status_seq, root.version) == (AgentSessionStatus.IDLE, 0, 1)
     assert root.root_id == root.id and root.created_by == ctx.user_id
-    child = await managers.agent_sessions.create_session(ctx, make_session(parent=root))
+    child = await managers.agent_sessions.create_agent_session(ctx, make_agent_session(parent=root))
     assert (child.parent_id, child.root_id) == (root.id, root.id)
-    grandchild = await managers.agent_sessions.create_session(ctx, make_session(parent=child))
+    grandchild = await managers.agent_sessions.create_agent_session(
+        ctx, make_agent_session(parent=child)
+    )
     assert grandchild.root_id == root.id
-    assert await managers.agent_sessions.create_session(ctx, root) == root
+    assert await managers.agent_sessions.create_agent_session(ctx, root) == root
     assert await kinds(managers, ctx, root.id) == ["created"]
-    orphan = make_session().model_copy(update={"parent_id": new_id()})
+    orphan = make_agent_session().model_copy(update={"parent_id": new_id()})
     with pytest.raises(ValidationFailed):
-        await managers.agent_sessions.create_session(ctx, orphan)
+        await managers.agent_sessions.create_agent_session(ctx, orphan)
 
 
 async def test_another_tenant_finds_no_session(managers: Managers) -> None:
     ctx = context(Role.MEMBER)
-    session = await managers.agent_sessions.create_session(ctx, make_session())
+    session = await managers.agent_sessions.create_agent_session(ctx, make_agent_session())
     other = context(Role.OWNER)
     with pytest.raises(NotFound):
-        await managers.agent_sessions.get_session(other, session.id)
+        await managers.agent_sessions.get_agent_session(other, session.id)
     with pytest.raises(ValidationFailed):
-        await managers.agent_sessions.create_session(other, make_session(parent=session))
-    assert (await managers.agent_sessions.get_sessions(other, None, None, 10)).items == ()
+        await managers.agent_sessions.create_agent_session(
+            other, make_agent_session(parent=session)
+        )
+    assert (await managers.agent_sessions.get_agent_sessions(other, None, None, 10)).items == ()
 
 
 async def test_sessions_page_by_status(managers: Managers) -> None:
     ctx = context(Role.MEMBER)
-    made = [await managers.agent_sessions.create_session(ctx, make_session()) for _ in range(3)]
-    page = await managers.agent_sessions.get_sessions(ctx, SessionStatus.IDLE, None, 2)
+    made = [
+        await managers.agent_sessions.create_agent_session(ctx, make_agent_session())
+        for _ in range(3)
+    ]
+    page = await managers.agent_sessions.get_agent_sessions(ctx, AgentSessionStatus.IDLE, None, 2)
     assert page.items == tuple(made[:2]) and page.has_more
-    rest = await managers.agent_sessions.get_sessions(ctx, None, made[1].id, 10)
+    rest = await managers.agent_sessions.get_agent_sessions(ctx, None, made[1].id, 10)
     assert rest.items == (made[2],) and not rest.has_more
     assert (
-        await managers.agent_sessions.get_sessions(ctx, SessionStatus.RUNNING, None, 10)
+        await managers.agent_sessions.get_agent_sessions(ctx, AgentSessionStatus.RUNNING, None, 10)
     ).items == ()
 
 
@@ -372,46 +385,50 @@ async def test_the_status_follows_the_history_and_announces_each_change(
     managers: Managers,
 ) -> None:
     ctx = context(Role.MEMBER)
-    session = await managers.agent_sessions.create_session(ctx, make_session())
+    session = await managers.agent_sessions.create_agent_session(ctx, make_agent_session())
     sid = session.id
-    steps, sessions = managers.steps, managers.agent_sessions
+    steps, sessions = managers.agent_steps, managers.agent_sessions
     (message,) = await steps.append_inputs(ctx, sid, [make_message(sid)])
     woken = await sessions.project_status(ctx, sid)
-    assert (woken.status, woken.status_seq) == (SessionStatus.PENDING, 1)
+    assert (woken.status, woken.status_seq) == (AgentSessionStatus.PENDING, 1)
     epoch = await steps.begin_run(ctx, sid)
     request = make_request(sid, message.id, (message.id,))
-    await steps.append_steps(ctx, sid, epoch, [request, make_parked(sid, message.id)])
+    await steps.append_agent_steps(ctx, sid, epoch, [request, make_parked(sid, message.id)])
     held = await sessions.project_status(ctx, sid)
-    assert held.status is SessionStatus.PARKED and held.park is not None
+    assert held.status is AgentSessionStatus.PARKED and held.park is not None
     assert held.park.reason is ParkReason.PERSON and held.status_seq == 3
     assert await sessions.project_status(ctx, sid) == held, "nothing new, nothing written"
     assert await kinds(managers, ctx, sid) == ["created", "updated", "updated"]
-    assert (await sessions.get_sessions(ctx, SessionStatus.PARKED, None, 10)).items == (held,)
+    assert (await sessions.get_agent_sessions(ctx, AgentSessionStatus.PARKED, None, 10)).items == (
+        held,
+    )
 
 
 async def test_an_input_still_undelivered_when_a_loop_ends_is_kept_across_projections(
     managers: Managers,
 ) -> None:
     ctx = context(Role.MEMBER)
-    sid = (await managers.agent_sessions.create_session(ctx, make_session())).id
-    steps, sessions = managers.steps, managers.agent_sessions
+    sid = (await managers.agent_sessions.create_agent_session(ctx, make_agent_session())).id
+    steps, sessions = managers.agent_steps, managers.agent_sessions
     (first,) = await steps.append_inputs(ctx, sid, [make_message(sid)])
     epoch = await steps.begin_run(ctx, sid)
     request = make_request(sid, first.id, (first.id,))
-    await steps.append_steps(ctx, sid, epoch, [request, make_response(sid, first.id, request.id)])
+    await steps.append_agent_steps(
+        ctx, sid, epoch, [request, make_response(sid, first.id, request.id)]
+    )
     (late,) = await steps.append_inputs(ctx, sid, [make_message(sid, "and the monthly one?")])
     running = await sessions.project_status(ctx, sid)
-    assert (running.status, running.pending_input) == (SessionStatus.RUNNING, late.id)
-    ended = Step.model_validate(
+    assert (running.status, running.pending_input) == (AgentSessionStatus.RUNNING, late.id)
+    ended = AgentStep.model_validate(
         {
             **loop_ended().model_dump(),
-            "session_id": sid,
+            "agent_session_id": sid,
             "loop_id": first.id,
         }
     )
-    await steps.append_steps(ctx, sid, epoch, [ended])
+    await steps.append_agent_steps(ctx, sid, epoch, [ended])
     after = await sessions.project_status(ctx, sid)
-    assert (after.status, after.pending_input) == (SessionStatus.PENDING, late.id)
+    assert (after.status, after.pending_input) == (AgentSessionStatus.PENDING, late.id)
 
 
 async def test_the_sweep_purges_no_living_tenants_sessions_or_history(managers: Managers) -> None:
@@ -422,24 +439,24 @@ async def test_the_sweep_purges_no_living_tenants_sessions_or_history(managers: 
         f"a-{new_id().hex[-8:]}@x.test",
         "Ann",
     )
-    session = await managers.agent_sessions.create_session(owner, make_session())
-    await managers.steps.append_inputs(owner, session.id, [make_message(session.id)])
+    session = await managers.agent_sessions.create_agent_session(owner, make_agent_session())
+    await managers.agent_steps.append_inputs(owner, session.id, [make_message(session.id)])
     assert await managers.agent_sessions.purge_tenant(owner) == 0
-    assert await managers.steps.purge_tenant(owner) == 0
-    assert await managers.agent_sessions.get_session(owner, session.id) == session
+    assert await managers.agent_steps.purge_tenant(owner) == 0
+    assert await managers.agent_sessions.get_agent_session(owner, session.id) == session
 
 
 async def test_a_long_history_is_folded_a_batch_at_a_time(managers: Managers) -> None:
     ctx = context(Role.MEMBER)
-    sid = (await managers.agent_sessions.create_session(ctx, make_session())).id
+    sid = (await managers.agent_sessions.create_agent_session(ctx, make_agent_session())).id
     for _ in range(5):
-        await managers.steps.append_inputs(ctx, sid, [make_message(sid) for _ in range(100)])
+        await managers.agent_steps.append_inputs(ctx, sid, [make_message(sid) for _ in range(100)])
     projected_session = await managers.agent_sessions.project_status(ctx, sid)
     assert projected_session.status_seq == 500
-    assert projected_session.status is SessionStatus.PENDING
+    assert projected_session.status is AgentSessionStatus.PENDING
 
 
-async def nothing_held(org_id: UUID, session_id: UUID, tree_id: UUID | None) -> None:
+async def nothing_held(org_id: UUID, agent_session_id: UUID, tree_id: UUID | None) -> None:
     """A session that no other namespace holds anything of."""
 
 
@@ -449,7 +466,7 @@ class Overtaken(AgentSessionStorageMemoryImpl):
 
     jumps = 0
 
-    async def write_session(
+    async def write_agent_session(
         self,
         org_id: UUID,
         session: AgentSession,
@@ -458,11 +475,11 @@ class Overtaken(AgentSessionStorageMemoryImpl):
     ) -> None:
         if self.jumps:
             self.jumps -= 1
-            current = await self.read_session(org_id, session.id)
+            current = await self.read_agent_session(org_id, session.id)
             if current is not None:
                 moved = current.model_copy(update={"version": current.version + 1})
-                await super().write_session(org_id, moved, current.version, ())
-        await super().write_session(org_id, session, expected_version, outbox_rows)
+                await super().write_agent_session(org_id, moved, current.version, ())
+        await super().write_agent_session(org_id, session, expected_version, outbox_rows)
 
 
 async def test_a_projection_behind_another_writer_reads_again_and_folds_on(
@@ -478,23 +495,23 @@ async def test_a_projection_behind_another_writer_reads_again_and_folds_on(
     overtaken = Overtaken(outbox)
     sessions = AgentSessionsManagerImpl(
         overtaken,
-        managers.steps,
+        managers.agent_steps,
         managers.tenancy,
         managers.outbox,
         AgentSessionsOptions(project_attempts=2),
         purged=nothing_held,
     )
     ctx = context(Role.MEMBER)
-    created = await sessions.create_session(ctx, make_session())
-    await managers.steps.append_inputs(ctx, created.id, [make_message(created.id)])
+    created = await sessions.create_agent_session(ctx, make_agent_session())
+    await managers.agent_steps.append_inputs(ctx, created.id, [make_message(created.id)])
     overtaken.jumps = 1
     after = await sessions.project_status(ctx, created.id)
-    assert (after.status, after.status_seq, after.version) == (SessionStatus.PENDING, 1, 3)
-    await managers.steps.append_inputs(ctx, created.id, [make_message(created.id)])
+    assert (after.status, after.status_seq, after.version) == (AgentSessionStatus.PENDING, 1, 3)
+    await managers.agent_steps.append_inputs(ctx, created.id, [make_message(created.id)])
     overtaken.jumps = 2
     with pytest.raises(PreconditionFailed):
         await sessions.project_status(ctx, created.id)
-    assert (await sessions.get_session(ctx, created.id)).status_seq == 1
+    assert (await sessions.get_agent_session(ctx, created.id)).status_seq == 1
 
 
 async def test_a_deleted_tenants_purge_takes_up_at_most_a_batch_of_sessions_a_call(
@@ -507,12 +524,12 @@ async def test_a_deleted_tenants_purge_takes_up_at_most_a_batch_of_sessions_a_ca
     managers = build_managers(storage, InfraLocalImpl(tmp_path), tool_catalog=TOOLS)
     taken: list[UUID] = []
 
-    async def held(org_id: UUID, session_id: UUID, tree_id: UUID | None) -> None:
-        taken.append(session_id)
+    async def held(org_id: UUID, agent_session_id: UUID, tree_id: UUID | None) -> None:
+        taken.append(agent_session_id)
 
     sessions = AgentSessionsManagerImpl(
         storage.get_agent_session_storage(),
-        managers.steps,
+        managers.agent_steps,
         managers.tenancy,
         managers.outbox,
         AgentSessionsOptions(purge_batch=1000, purge_sessions=2),
@@ -520,7 +537,7 @@ async def test_a_deleted_tenants_purge_takes_up_at_most_a_batch_of_sessions_a_ca
     )
     ctx = context(Role.MEMBER)
     for _ in range(3):
-        await sessions.create_session(ctx, make_session())
+        await sessions.create_agent_session(ctx, make_agent_session())
 
     async def expired(asked: TenantContext) -> bool:
         return asked.org_id == ctx.org_id
@@ -534,32 +551,32 @@ async def test_only_an_idle_session_is_archived_and_a_message_brings_it_back(
     managers: Managers,
 ) -> None:
     ctx = context(Role.MEMBER)
-    sid = (await managers.agent_sessions.create_session(ctx, make_session())).id
-    archived = await managers.agent_sessions.archive_session(ctx, sid)
+    sid = (await managers.agent_sessions.create_agent_session(ctx, make_agent_session())).id
+    archived = await managers.agent_sessions.archive_agent_session(ctx, sid)
     assert archived.archived_at is not None and archived.version == 2
-    assert await managers.agent_sessions.archive_session(ctx, sid) == archived
-    await managers.steps.append_inputs(ctx, sid, [make_event(sid)])
+    assert await managers.agent_sessions.archive_agent_session(ctx, sid) == archived
+    await managers.agent_steps.append_inputs(ctx, sid, [make_event(sid)])
     quiet = await managers.agent_sessions.project_status(ctx, sid)
-    assert quiet.archived_at is not None and quiet.status is SessionStatus.IDLE
-    await managers.steps.append_inputs(ctx, sid, [make_message(sid)])
+    assert quiet.archived_at is not None and quiet.status is AgentSessionStatus.IDLE
+    await managers.agent_steps.append_inputs(ctx, sid, [make_message(sid)])
     back = await managers.agent_sessions.project_status(ctx, sid)
-    assert back.archived_at is None and back.status is SessionStatus.PENDING
+    assert back.archived_at is None and back.status is AgentSessionStatus.PENDING
     with pytest.raises(ValidationFailed):
-        await managers.agent_sessions.archive_session(ctx, sid)
+        await managers.agent_sessions.archive_agent_session(ctx, sid)
 
 
 async def test_a_viewer_reads_and_writes_nothing(managers: Managers) -> None:
     org = make_org()
     member, viewer = context(Role.MEMBER, org), context(Role.VIEWER, org)
-    seen = make_session(visibility=Visibility.ORG_WIDE)
-    session = await managers.agent_sessions.create_session(member, seen)
-    assert await managers.agent_sessions.get_session(viewer, session.id) == session
+    seen = make_agent_session(visibility=Visibility.ORG_WIDE)
+    session = await managers.agent_sessions.create_agent_session(member, seen)
+    assert await managers.agent_sessions.get_agent_session(viewer, session.id) == session
     with pytest.raises(NotAuthorized):
-        await managers.agent_sessions.create_session(viewer, make_session())
+        await managers.agent_sessions.create_agent_session(viewer, make_agent_session())
     with pytest.raises(NotAuthorized):
         await managers.agent_sessions.project_status(viewer, session.id)
     with pytest.raises(NotAuthorized):
-        await managers.agent_sessions.archive_session(viewer, session.id)
+        await managers.agent_sessions.archive_agent_session(viewer, session.id)
 
 
 async def test_a_deleted_session_is_hidden_from_every_read_and_comes_back_whole(
@@ -570,34 +587,34 @@ async def test_a_deleted_session_is_hidden_from_every_read_and_comes_back_whole(
     was, content and shape, and so does every field of the session. Unmarked,
     it comes back as it was, and the delete and the return are announced."""
     ctx = context(Role.MEMBER)
-    sessions, steps = managers.agent_sessions, managers.steps
-    sid = (await sessions.create_session(ctx, make_session())).id
+    sessions, steps = managers.agent_sessions, managers.agent_steps
+    sid = (await sessions.create_agent_session(ctx, make_agent_session())).id
     history = await steps.append_inputs(ctx, sid, [make_event(sid), make_event(sid)])
     idle = await sessions.project_status(ctx, sid)
-    deleted = await sessions.delete_session(ctx, sid)
+    deleted = await sessions.delete_agent_session(ctx, sid)
     assert deleted.deleted_at is not None and deleted.deleted_by == ctx.user_id
     reads = (
-        sessions.get_session,
+        sessions.get_agent_session,
         sessions.project_status,
-        sessions.archive_session,
-        sessions.delete_session,
+        sessions.archive_agent_session,
+        sessions.delete_agent_session,
     )
     for read in reads:
         with pytest.raises(NotFound):
             await read(ctx, sid)
-    assert (await sessions.get_sessions(ctx, None, None, 10)).items == ()
+    assert (await sessions.get_agent_sessions(ctx, None, None, 10)).items == ()
     with pytest.raises(ValidationFailed):
-        await sessions.create_session(ctx, make_session(parent=deleted))
-    assert (await steps.get_steps(ctx, sid, 0, 10)).items == history
+        await sessions.create_agent_session(ctx, make_agent_session(parent=deleted))
+    assert (await steps.get_agent_steps(ctx, sid, 0, 10)).items == history
 
-    restored = await sessions.restore_session(ctx, sid)
+    restored = await sessions.restore_agent_session(ctx, sid)
     changed = {"version", "updated_at", "updated_by"}
     assert restored.model_dump(exclude=changed) == idle.model_dump(exclude=changed)
     assert restored.version == idle.version + 2
-    assert await sessions.get_session(ctx, sid) == restored
-    assert (await sessions.get_sessions(ctx, None, None, 10)).items == (restored,)
-    assert (await steps.get_steps(ctx, sid, 0, 10)).items == history
-    assert await sessions.restore_session(ctx, sid) == restored, "not marked: as it is"
+    assert await sessions.get_agent_session(ctx, sid) == restored
+    assert (await sessions.get_agent_sessions(ctx, None, None, 10)).items == (restored,)
+    assert (await steps.get_agent_steps(ctx, sid, 0, 10)).items == history
+    assert await sessions.restore_agent_session(ctx, sid) == restored, "not marked: as it is"
     assert await kinds(managers, ctx, sid) == ["created", "deleted", "updated"]
 
 
@@ -607,14 +624,14 @@ async def test_a_deleted_session_comes_back_only_for_one_who_sees_it(managers: M
     org = make_org()
     ctx, other = context(Role.MEMBER, org), context(Role.MEMBER, org)
     sessions = managers.agent_sessions
-    sid = (await sessions.create_session(ctx, make_session())).id
-    await sessions.delete_session(ctx, sid)
+    sid = (await sessions.create_agent_session(ctx, make_agent_session())).id
+    await sessions.delete_agent_session(ctx, sid)
 
     with pytest.raises(NotFound):
-        await sessions.restore_session(other, sid)
+        await sessions.restore_agent_session(other, sid)
     with pytest.raises(NotFound):
-        await sessions.get_session(ctx, sid)
-    assert (await sessions.restore_session(ctx, sid)).deleted_at is None
+        await sessions.get_agent_session(ctx, sid)
+    assert (await sessions.restore_agent_session(ctx, sid)).deleted_at is None
     assert await kinds(managers, ctx, sid) == ["created", "deleted", "updated"]
 
 
@@ -627,7 +644,7 @@ async def test_a_switch_of_visibility_and_a_move_of_the_steer_are_each_announced
     org = make_org()
     ctx, mia = context(Role.MEMBER, org), context(Role.MEMBER, org)
     sessions = managers.agent_sessions
-    sid = (await sessions.create_session(ctx, make_session())).id
+    sid = (await sessions.create_agent_session(ctx, make_agent_session())).id
     await managers.attribution.open_authority(ctx, sid, AuthorityMode.STEADY)
     await sessions.add_participant(ctx, sid, mia.user_id)
 
@@ -639,7 +656,7 @@ async def test_a_switch_of_visibility_and_a_move_of_the_steer_are_each_announced
     switched = await sessions.switch_visibility(ctx, sid, Visibility.ORG_WIDE)
     after_switch = await updates()
     await managers.attribution.assign_principal(ctx, sid, mia.user_id)
-    handed = await sessions.get_session(ctx, sid)
+    handed = await sessions.get_agent_session(ctx, sid)
 
     assert switched.visibility is Visibility.ORG_WIDE
     assert after_switch == joined + 1, "the switch is announced"
@@ -649,13 +666,13 @@ async def test_a_switch_of_visibility_and_a_move_of_the_steer_are_each_announced
 
 async def test_only_an_idle_session_is_deleted(managers: Managers) -> None:
     ctx = context(Role.MEMBER)
-    sid = (await managers.agent_sessions.create_session(ctx, make_session())).id
-    await managers.steps.append_inputs(ctx, sid, [make_message(sid)])
+    sid = (await managers.agent_sessions.create_agent_session(ctx, make_agent_session())).id
+    await managers.agent_steps.append_inputs(ctx, sid, [make_message(sid)])
     await managers.agent_sessions.project_status(ctx, sid)
     with pytest.raises(ValidationFailed):
-        await managers.agent_sessions.delete_session(ctx, sid)
+        await managers.agent_sessions.delete_agent_session(ctx, sid)
     with pytest.raises(NotAuthorized):
-        await managers.agent_sessions.delete_session(context(Role.VIEWER), sid)
+        await managers.agent_sessions.delete_agent_session(context(Role.VIEWER), sid)
 
 
 async def test_a_loop_open_below_a_session_refuses_its_delete(tmp_path: Path) -> None:
@@ -668,30 +685,33 @@ async def test_a_loop_open_below_a_session_refuses_its_delete(tmp_path: Path) ->
     managers = build_managers(storage, InfraLocalImpl(tmp_path), tool_catalog=TOOLS)
     sessions = AgentSessionsManagerImpl(
         storage.get_agent_session_storage(),
-        managers.steps,
+        managers.agent_steps,
         managers.tenancy,
         managers.outbox,
         AgentSessionsOptions(max_limit=1),
         purged=nothing_held,
     )
     ctx = context(Role.MEMBER)
-    root = await sessions.create_session(ctx, make_session())
+    root = await sessions.create_agent_session(ctx, make_agent_session())
     first, second = sorted(
-        [await sessions.create_session(ctx, make_session(parent=root)) for _ in range(2)],
+        [
+            await sessions.create_agent_session(ctx, make_agent_session(parent=root))
+            for _ in range(2)
+        ],
         key=lambda child: child.id,
     )
-    below = await sessions.create_session(ctx, make_session(parent=second))
-    await sessions.delete_session(ctx, second.id)
-    await managers.steps.append_inputs(ctx, below.id, [make_message(below.id)])
-    assert (await sessions.project_status(ctx, below.id)).status is SessionStatus.PENDING
+    below = await sessions.create_agent_session(ctx, make_agent_session(parent=second))
+    await sessions.delete_agent_session(ctx, second.id)
+    await managers.agent_steps.append_inputs(ctx, below.id, [make_message(below.id)])
+    assert (await sessions.project_status(ctx, below.id)).status is AgentSessionStatus.PENDING
 
     with pytest.raises(ValidationFailed) as refused:
-        await sessions.delete_session(ctx, root.id)
+        await sessions.delete_agent_session(ctx, root.id)
 
     assert refused.value.message == f"agent session {root.id} has sub-agent {below.id} pending"
-    assert (await sessions.delete_session(ctx, first.id)).deleted_at is not None
+    assert (await sessions.delete_agent_session(ctx, first.id)).deleted_at is not None
     above = await sessions.get_ancestors(ctx, below.id)
-    assert [(agent.session_id, agent.kind) for agent in above] == [
+    assert [(agent.agent_session_id, agent.kind) for agent in above] == [
         (second.id, second.kind),
         (root.id, root.kind),
     ]
@@ -719,10 +739,10 @@ def purging(
     retention and a history purged `batch` steps at a time."""
     return AgentSessionsManagerImpl(
         sessions or storage.get_agent_session_storage(),
-        StepsManagerImpl(
-            storage.get_step_storage(),
+        AgentStepsManagerImpl(
+            storage.get_agent_step_storage(),
             managers.tenancy,
-            StepsOptions(purge_batch=batch),
+            AgentStepsOptions(purge_batch=batch),
             instructs=no_registry,
             steers=no_steerer,
             opens=no_session,
@@ -747,30 +767,30 @@ async def test_a_purge_before_the_retention_ends_is_refused_and_one_after_takes_
     clock = Clock()
     sessions = purging(managers, storage, clock)
     ctx = context(Role.MEMBER)
-    gone, kept = [await sessions.create_session(ctx, make_session()) for _ in range(2)]
+    gone, kept = [await sessions.create_agent_session(ctx, make_agent_session()) for _ in range(2)]
     for sid in (gone.id, kept.id):
-        await managers.steps.append_inputs(ctx, sid, [make_message(sid)])
-    rows, history = storage.get_agent_session_storage(), storage.get_step_storage()
+        await managers.agent_steps.append_inputs(ctx, sid, [make_message(sid)])
+    rows, history = storage.get_agent_session_storage(), storage.get_agent_step_storage()
 
-    await sessions.delete_session(ctx, gone.id)
+    await sessions.delete_agent_session(ctx, gone.id)
     clock.now += timedelta(days=29)
     assert await sessions.purge_across_tenants() == 0
-    found = await rows.read_session(ctx.org_id, gone.id)
+    found = await rows.read_agent_session(ctx.org_id, gone.id)
     assert found is not None and found.purge_started_at is None
-    assert len(await history.read_steps(ctx.org_id, gone.id, 0, 10)) == 1
-    await sessions.restore_session(ctx, gone.id)
-    await sessions.delete_session(ctx, gone.id)
+    assert len(await history.read_agent_steps(ctx.org_id, gone.id, 0, 10)) == 1
+    await sessions.restore_agent_session(ctx, gone.id)
+    await sessions.delete_agent_session(ctx, gone.id)
     clock.now += timedelta(days=29)
     assert await sessions.purge_across_tenants() == 0, "the retention counts from the last mark"
 
     clock.now += timedelta(days=2)
     assert await sessions.purge_across_tenants() == 1
-    assert await rows.read_session(ctx.org_id, gone.id) is None
-    assert await history.read_steps(ctx.org_id, gone.id, 0, 10) == []
-    assert await history.read_cursor(ctx.org_id, gone.id) == StepCursor()
+    assert await rows.read_agent_session(ctx.org_id, gone.id) is None
+    assert await history.read_agent_steps(ctx.org_id, gone.id, 0, 10) == []
+    assert await history.read_cursor(ctx.org_id, gone.id) == AgentStepCursor()
     assert await sessions.purge_across_tenants() == 0
-    assert (await sessions.get_session(ctx, kept.id)).deleted_at is None
-    assert len(await history.read_steps(ctx.org_id, kept.id, 0, 10)) == 1
+    assert (await sessions.get_agent_session(ctx, kept.id)).deleted_at is None
+    assert len(await history.read_agent_steps(ctx.org_id, kept.id, 0, 10)) == 1
 
 
 async def test_a_claimed_session_cannot_come_back_and_its_long_history_goes_in_batches(
@@ -784,24 +804,24 @@ async def test_a_claimed_session_cannot_come_back_and_its_long_history_goes_in_b
     clock = Clock()
     sessions = purging(managers, storage, clock, batch=2)
     ctx = context(Role.MEMBER)
-    sid = (await sessions.create_session(ctx, make_session())).id
-    await managers.steps.append_inputs(ctx, sid, [make_event(sid) for _ in range(3)])
-    rows, history = storage.get_agent_session_storage(), storage.get_step_storage()
-    await sessions.delete_session(ctx, sid)
+    sid = (await sessions.create_agent_session(ctx, make_agent_session())).id
+    await managers.agent_steps.append_inputs(ctx, sid, [make_event(sid) for _ in range(3)])
+    rows, history = storage.get_agent_session_storage(), storage.get_agent_step_storage()
+    await sessions.delete_agent_session(ctx, sid)
     clock.now += timedelta(days=31)
 
     assert await sessions.purge_across_tenants() == 1
-    claimed = await rows.read_session(ctx.org_id, sid)
+    claimed = await rows.read_agent_session(ctx.org_id, sid)
     assert claimed is not None and claimed.purge_started_at == clock.now
-    assert len(await history.read_steps(ctx.org_id, sid, 0, 10)) == 1
+    assert len(await history.read_agent_steps(ctx.org_id, sid, 0, 10)) == 1
     with pytest.raises(NotFound):
-        await sessions.restore_session(ctx, sid)
+        await sessions.restore_agent_session(ctx, sid)
     with pytest.raises(NotFound):
-        await sessions.get_session(ctx, sid)
+        await sessions.get_agent_session(ctx, sid)
     assert await sessions.purge_across_tenants() == 1, "the last step and the cursor"
-    assert await rows.read_session(ctx.org_id, sid) is not None
+    assert await rows.read_agent_session(ctx.org_id, sid) is not None
     assert await sessions.purge_across_tenants() == 1, "nothing left of the history"
-    assert await rows.read_session(ctx.org_id, sid) is None
+    assert await rows.read_agent_session(ctx.org_id, sid) is None
     assert await sessions.purge_across_tenants() == 0
 
 
@@ -817,7 +837,7 @@ class RestoredMeanwhile(AgentSessionStorageMemoryImpl):
             back = session.model_copy(
                 update={"deleted_at": None, "deleted_by": None, "version": session.version + 1}
             )
-            await self.write_session(org_id, back, session.version, ())
+            await self.write_agent_session(org_id, back, session.version, ())
         return found
 
 
@@ -830,11 +850,11 @@ async def test_an_unmark_that_lands_before_the_claim_keeps_the_session(tmp_path:
     rows = RestoredMeanwhile(outbox)
     sessions = purging(managers, storage, clock, sessions=rows)
     ctx = context(Role.MEMBER)
-    sid = (await sessions.create_session(ctx, make_session())).id
-    (step,) = await managers.steps.append_inputs(ctx, sid, [make_message(sid)])
-    await sessions.delete_session(ctx, sid)
+    sid = (await sessions.create_agent_session(ctx, make_agent_session())).id
+    (step,) = await managers.agent_steps.append_inputs(ctx, sid, [make_message(sid)])
+    await sessions.delete_agent_session(ctx, sid)
     clock.now += timedelta(days=31)
     assert await sessions.purge_across_tenants() == 1, "taken up, and found unmarked"
-    back = await sessions.get_session(ctx, sid)
+    back = await sessions.get_agent_session(ctx, sid)
     assert back.deleted_at is None and back.purge_started_at is None
-    assert (await managers.steps.get_steps(ctx, sid, 0, 10)).items == (step,)
+    assert (await managers.agent_steps.get_agent_steps(ctx, sid, 0, 10)).items == (step,)

@@ -4,6 +4,7 @@ from uuid import UUID
 
 from pydantic import Field
 
+from acme.om.agent_steps.types.header import ParkReason
 from acme.om.base import Platform, utcnow
 from acme.om.budgets.manager import BudgetsManagerInterface
 from acme.om.budgets.rules import raises, window_bounds
@@ -16,9 +17,8 @@ from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import NotFound, PreconditionFailed, TenantMismatch
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.types.row import OutboxRow, outbox_row, versioned_row
-from acme.om.steps.types.header import ParkReason
 from acme.om.tenancy import TenancyManagerInterface
-from acme.om.work.types.work_item import WakeSessionsPayload, WorkKind, work_row_kind
+from acme.om.work.types.work_item import WakeAgentSessionsPayload, WorkKind, work_row_kind
 
 CREATED = "budgets.budget.created"
 UPDATED = "budgets.budget.updated"
@@ -58,7 +58,7 @@ class BudgetsManagerImpl(BudgetsManagerInterface):
         return await self._create(ctx, budget)
 
     async def cap_session(
-        self, ctx: TenantContext, session_id: UUID, budget_id: UUID, amount: Amount
+        self, ctx: TenantContext, agent_session_id: UUID, budget_id: UUID, amount: Amount
     ) -> Budget:
         ctx.require(Permission.WRITE)
         now = self._clock()
@@ -69,7 +69,7 @@ class BudgetsManagerImpl(BudgetsManagerInterface):
             created_by=ctx.user_id,
             updated_by=ctx.user_id,
             scope_kind=BudgetScopeKind.SESSION,
-            scope_key=str(session_id),
+            scope_key=str(agent_session_id),
             window_kind=WindowKind.LIFE,
             cost_micros=amount.cost_micros,
             tokens=amount.tokens,
@@ -129,11 +129,11 @@ class BudgetsManagerImpl(BudgetsManagerInterface):
         if raises(stored.amount, amount):
             # Raising a budget is the instruction to continue: every session
             # of the org parked on a budget is woken, and its gate runs again.
-            wake = WakeSessionsPayload(reason=ParkReason.BUDGET)
+            wake = WakeAgentSessionsPayload(reason=ParkReason.BUDGET)
             rows += (
                 outbox_row(
                     ctx,
-                    work_row_kind(WorkKind.WAKE_SESSIONS),
+                    work_row_kind(WorkKind.WAKE_AGENT_SESSIONS),
                     ctx.org_id,
                     wake.model_dump(mode="json", exclude_none=True),
                 ),
@@ -169,12 +169,12 @@ class BudgetsManagerImpl(BudgetsManagerInterface):
         )
         # A closed budget binds nothing, so a session it parked can go on:
         # the ones whose park names it are woken, and ask again.
-        wake = WakeSessionsPayload(reason=ParkReason.BUDGET, unlock=str(closed.id))
+        wake = WakeAgentSessionsPayload(reason=ParkReason.BUDGET, unlock=str(closed.id))
         rows = (
             versioned_row(ctx, UPDATED, closed.id, closed.version),
             outbox_row(
                 ctx,
-                work_row_kind(WorkKind.WAKE_SESSIONS),
+                work_row_kind(WorkKind.WAKE_AGENT_SESSIONS),
                 ctx.org_id,
                 wake.model_dump(mode="json"),
             ),

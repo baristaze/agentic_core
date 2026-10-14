@@ -15,11 +15,11 @@ class WindowStoragePostgresImpl(PgStorageBase, WindowStorageInterface):
         return await self._insert(Artifacts, org_id, artifact)
 
     async def read_artifact(
-        self, org_id: UUID, session_id: UUID, artifact_id: UUID
+        self, org_id: UUID, agent_session_id: UUID, artifact_id: UUID
     ) -> Artifact | None:
         stmt = select(Artifacts).where(
             Artifacts.org_id == org_id,
-            Artifacts.session_id == session_id,
+            Artifacts.agent_session_id == agent_session_id,
             Artifacts.id == artifact_id,
         )
         async with self._session_for(stmt, org_id=org_id) as session:
@@ -27,11 +27,11 @@ class WindowStoragePostgresImpl(PgStorageBase, WindowStorageInterface):
             return None if row is None else to_model(row, Artifact)
 
     async def read_artifacts(
-        self, org_id: UUID, session_id: UUID | None, limit: int
+        self, org_id: UUID, agent_session_id: UUID | None, limit: int
     ) -> list[Artifact]:
         stmt = select(Artifacts).where(Artifacts.org_id == org_id)
-        if session_id is not None:
-            stmt = stmt.where(Artifacts.session_id == session_id)
+        if agent_session_id is not None:
+            stmt = stmt.where(Artifacts.agent_session_id == agent_session_id)
         stmt = stmt.order_by(Artifacts.id).limit(limit)
         async with self._session_for(stmt, org_id=org_id) as session:
             rows = (await session.execute(stmt)).scalars().all()

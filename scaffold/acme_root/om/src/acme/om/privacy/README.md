@@ -63,8 +63,8 @@ of](../../../../README.md).
   session finds nothing of it.
 
 <!-- agents-only
-The sealing layer is `impl/sealed_steps.py`, the memory-only layer
-`impl/memory_only_steps.py`, and the router `impl/routed_steps.py`;
+The sealing layer is `impl/sealed_agent_steps.py`, the memory-only layer
+`impl/memory_only_agent_steps.py`, and the router `impl/routed_agent_steps.py`;
 `root.private_history` wires all three over the one history. The
 artifacts' seal is `impl/artifacts.py`, which the root wires behind the
 windows' `ArtifactSealInterface`. A command's record takes the same blob

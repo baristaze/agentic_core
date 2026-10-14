@@ -18,8 +18,8 @@ from acme.infra.exceptions import InfraException, SecretNotFound
 from acme.infra.secrets import SecretsInterface
 from acme.infra.transports import secret_held
 from acme.infra.workspaces import SnapshotRefused, WorkspaceLost
+from acme.om.agent_steps.types.header import HASH_SCHEME, WorkspaceSnapshot
 from acme.om.context import TenantContext
-from acme.om.steps.types.header import HASH_SCHEME, WorkspaceSnapshot
 from acme.om.tools.manager import KeyedHash
 from acme.om.tools.seal import SnapshotSealInterface
 
@@ -27,20 +27,20 @@ BUCKET = Buckets.SNAPSHOTS
 CONTENT_TYPE = "application/octet-stream"
 
 
-def session_prefix(session_id: UUID) -> str:
+def session_prefix(agent_session_id: UUID) -> str:
     """Where a session's snapshots sit in the bucket, under its tenant."""
-    return f"agent-sessions/{session_id}/"
+    return f"agent-sessions/{agent_session_id}/"
 
 
-def snapshot_key(session_id: UUID, digest: str) -> str:
+def snapshot_key(agent_session_id: UUID, digest: str) -> str:
     """A snapshot's key: its session, then its keyed hash, so a session that
     keeps the same bytes twice stores them once."""
-    return session_prefix(session_id) + digest.removeprefix(HASH_SCHEME)
+    return session_prefix(agent_session_id) + digest.removeprefix(HASH_SCHEME)
 
 
-def _unkept(session_id: UUID) -> SnapshotRefused:
+def _unkept(agent_session_id: UUID) -> SnapshotRefused:
     return SnapshotRefused(
-        f"agent session {session_id} keeps no content at rest, so it keeps no snapshot"
+        f"agent session {agent_session_id} keeps no content at rest, so it keeps no snapshot"
     )
 
 
@@ -64,17 +64,17 @@ class SnapshotStore:
         self._secret_names = tuple(sorted(set(secret_names)))
         self._purge_batch = purge_batch
 
-    async def at_rest(self, ctx: TenantContext, session_id: UUID) -> None:
+    async def at_rest(self, ctx: TenantContext, agent_session_id: UUID) -> None:
         """Refuses (`SnapshotRefused`) a session that keeps no content at
         rest, before anything of its workspace is taken: no snapshot of it
         is kept, its own or a sub-agent's copy."""
-        if not await self._seal.keeps(ctx, session_id):
-            raise _unkept(session_id)
+        if not await self._seal.keeps(ctx, agent_session_id):
+            raise _unkept(agent_session_id)
 
     async def keep(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         snapshot_id: UUID,
         workspace_id: UUID,
         archive: bytes,
@@ -82,11 +82,11 @@ class SnapshotStore:
         """`archive` kept as the session's snapshot under `snapshot_id`,
         taken of the workspace under `workspace_id`. Nothing is stored when
         the session keeps no content at rest (`SnapshotRefused`)."""
-        digest = HASH_SCHEME + await self._keyed_hash(ctx, session_id, archive)
-        sealed = await self._seal.seal(ctx, session_id, digest, archive)
+        digest = HASH_SCHEME + await self._keyed_hash(ctx, agent_session_id, archive)
+        sealed = await self._seal.seal(ctx, agent_session_id, digest, archive)
         if sealed is None:
-            raise _unkept(session_id)
-        key = snapshot_key(session_id, digest)
+            raise _unkept(agent_session_id)
+        key = snapshot_key(agent_session_id, digest)
         await self._buckets.put(
             ctx.org_id, BUCKET, key, sealed, CONTENT_TYPE, deadline=ctx.deadline
         )
@@ -95,27 +95,30 @@ class SnapshotStore:
         )
 
     async def load(
-        self, ctx: TenantContext, session_id: UUID, snapshot: WorkspaceSnapshot
+        self, ctx: TenantContext, agent_session_id: UUID, snapshot: WorkspaceSnapshot
     ) -> bytes:
         """The bytes of a snapshot the session keeps, trusted only once they
         open under its key and hash to what its step names. Anything else
         loses the workspace that would start from it (`WorkspaceLost`)."""
-        what = f"snapshot {snapshot.id} of agent session {session_id}"
+        what = f"snapshot {snapshot.id} of agent session {agent_session_id}"
         try:
             sealed = await self._buckets.get(
-                ctx.org_id, BUCKET, snapshot_key(session_id, snapshot.hash), deadline=ctx.deadline
+                ctx.org_id,
+                BUCKET,
+                snapshot_key(agent_session_id, snapshot.hash),
+                deadline=ctx.deadline,
             )
         except InfraException as error:
             if error.code != BlobNotFound.code:
                 raise
             raise WorkspaceLost(f"{what} is gone from the store") from error
         try:
-            archive = await self._seal.open(ctx, session_id, snapshot.hash, sealed)
+            archive = await self._seal.open(ctx, agent_session_id, snapshot.hash, sealed)
         except ValueError as error:
             raise WorkspaceLost(f"{what} does not open: its stored bytes were altered") from error
         if archive is None:
             raise WorkspaceLost(f"{what} was erased with its session's key")
-        digest = HASH_SCHEME + await self._keyed_hash(ctx, session_id, archive)
+        digest = HASH_SCHEME + await self._keyed_hash(ctx, agent_session_id, archive)
         if digest != snapshot.hash or len(archive) != snapshot.size:
             raise WorkspaceLost(f"{what} does not match its hash")
         return archive
@@ -139,9 +142,9 @@ class SnapshotStore:
                 f"the workspace holds the secret {found!r}, so no snapshot is kept"
             )
 
-    async def purge(self, org_id: UUID, session_id: UUID) -> None:
+    async def purge(self, org_id: UUID, agent_session_id: UUID) -> None:
         """Every snapshot the session keeps, a page at a time."""
-        prefix = session_prefix(session_id)
+        prefix = session_prefix(agent_session_id)
         while True:
             keys = await self._buckets.list(org_id, BUCKET, prefix, self._purge_batch)
             for key in keys:

@@ -11,9 +11,9 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.pool import QueuePool
 
+from acme.om.agent_steps.storage.impl.postgres import AgentStepStoragePostgresImpl
+from acme.om.agent_steps.storage.tables.agent_steps import AgentSteps
 from acme.om.base import EMPTY_UUID, new_id
-from acme.om.steps.storage.impl.postgres import StepStoragePostgresImpl
-from acme.om.steps.storage.tables.steps import Steps
 from acme.om.storage.impl.postgres import (
     POOL_RECYCLE_SECONDS,
     PURGE_POOL_SIZE,
@@ -121,7 +121,9 @@ async def test_only_a_root_that_names_the_purge_login_can_purge_and_never_the_sy
     serving, opened = login_sessions(urls, pools, system_urls=urls)
     assert serving.purge is None and len(opened) == 1
     with pytest.raises(RuntimeError, match="holds no purge login"):
-        async with StepStoragePostgresImpl(serving)._purge_session_for(Steps, org_id=new_id()):
+        async with AgentStepStoragePostgresImpl(serving)._purge_session_for(
+            AgentSteps, org_id=new_id()
+        ):
             pass
     worker, engines = login_sessions(
         urls, pools, system_urls=urls, purge_urls=dict.fromkeys(DatabaseRole, PURGE_URL)
@@ -130,7 +132,9 @@ async def test_only_a_root_that_names_the_purge_login_can_purge_and_never_the_sy
     sizes = sorted(cast(QueuePool, engine.pool).size() for engine in engines.values())
     assert sizes == [PURGE_POOL_SIZE, 4]
     with pytest.raises(RuntimeError, match="the system scope purges nothing"):
-        async with StepStoragePostgresImpl(worker)._purge_session_for(Steps, org_id=EMPTY_UUID):
+        async with AgentStepStoragePostgresImpl(worker)._purge_session_for(
+            AgentSteps, org_id=EMPTY_UUID
+        ):
             pass
     for engine in (*opened.values(), *engines.values()):
         await engine.dispose()

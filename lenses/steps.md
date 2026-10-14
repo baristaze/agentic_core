@@ -84,8 +84,8 @@ tool-use block instead of referencing it and carrying its input's hash.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/steps/types/step.py` and
-`scaffold/acme_root/om/src/acme/om/steps/types/header.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_steps/types/agent_step.py` and
+`scaffold/acme_root/om/src/acme/om/agent_steps/types/header.py`
 
 **Check.** review
 
@@ -111,8 +111,8 @@ response object or raw token text passed out of the engine.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/steps/types/step.py` and
-`scaffold/acme_root/om/src/acme/om/steps/types/content.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_steps/types/agent_step.py` and
+`scaffold/acme_root/om/src/acme/om/agent_steps/types/content.py`
 
 **Check.** review
 
@@ -138,7 +138,7 @@ STP-11).
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/steps/storage/impl/postgres.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_steps/storage/impl/postgres.py`
 and `scaffold/acme_root/om/src/acme/om/base.py`
 
 **Check.** review
@@ -165,7 +165,7 @@ different bytes.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/steps/types/content.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_steps/types/content.py`
 
 **Check.** review
 
@@ -189,7 +189,7 @@ steps.
 
 **Shape.**
 `scaffold/acme_root/om/migrations/sql/activity/202610020101_steps.up.sql` and
-`scaffold/acme_root/om/src/acme/om/steps/storage/__init__.py`
+`scaffold/acme_root/om/src/acme/om/agent_steps/storage/__init__.py`
 
 **Check.** `agentic-check` decides that no SQLAlchemy statement or SQL text
 updates the steps table, and that none deletes from it outside a `purge`
@@ -218,7 +218,7 @@ loop; a table of loops holding state the steps do not.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/steps/types/header.py` and
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_steps/types/header.py` and
 `scaffold/acme_root/om/src/acme/om/agent_sessions/limits.py`
 
 **Check.** review
@@ -336,7 +336,7 @@ from a lower epoch.
 
 **Severity.** high
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/steps/storage/impl/postgres.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_steps/storage/impl/postgres.py`
 and `scaffold/acme_root/infra/src/acme/infra/transports/records.py`
 
 **Check.** review
@@ -365,7 +365,7 @@ compaction that deletes or rewrites the steps it summarizes.
 **Severity.** medium
 
 **Shape.** `scaffold/acme_root/om/src/acme/om/agent_sessions/rules.py` and
-`scaffold/acme_root/om/src/acme/om/steps/manager.py`
+`scaffold/acme_root/om/src/acme/om/agent_steps/manager.py`
 
 **Check.** review
 

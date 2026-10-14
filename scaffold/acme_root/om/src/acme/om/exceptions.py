@@ -5,8 +5,8 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from acme.om.agent_steps.types.header import Park, ToolFailure
     from acme.om.budgets.types.breach import Refusal
-    from acme.om.steps.types.header import Park, ToolFailure
 
 
 class PlatformException(Exception):
@@ -299,10 +299,10 @@ class InvitationClosed(TenancyException, Conflict):
     code = "invitation_closed"
 
 
-class StepsException(PlatformException): ...
+class AgentStepsException(PlatformException): ...
 
 
-class StaleWriter(StepsException, PreconditionFailed):
+class StaleWriter(AgentStepsException, PreconditionFailed):
     """An append under a writer epoch the session's cursor row no longer
     holds: a run that lost its claim to another run, or one that never took
     it. Refused with nothing written, never trusted to stop on its own; the

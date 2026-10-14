@@ -19,16 +19,14 @@ on a mark the model's reading has outrun."""
 from collections.abc import Iterable, Sequence
 from uuid import UUID
 
-from acme.om.attribution.types.authority import (
-    AuthorityMode,
-    CallReach,
-    SessionAuthority,
-    Trust,
-    Visibility,
+from acme.om.agent_steps.types.agent_step import (
+    Actor,
+    AgentStep,
+    AgentStepType,
+    Origin,
+    switches_standing,
 )
-from acme.om.attribution.types.principal import Principal, PrincipalKind
-from acme.om.context import CredentialKind, Role, TenantContext
-from acme.om.steps.types.header import (
+from acme.om.agent_steps.types.header import (
     ControlHeader,
     InputHeader,
     ModelRequestHeader,
@@ -36,7 +34,15 @@ from acme.om.steps.types.header import (
     ParkReason,
     SwitchedHeader,
 )
-from acme.om.steps.types.step import Actor, Origin, Step, StepType, switches_standing
+from acme.om.attribution.types.authority import (
+    AgentSessionAuthority,
+    AuthorityMode,
+    CallReach,
+    Trust,
+    Visibility,
+)
+from acme.om.attribution.types.principal import Principal, PrincipalKind
+from acme.om.context import CredentialKind, Role, TenantContext
 
 PRINCIPAL_ACTORS = frozenset({Actor.PERSON, Actor.PROGRAM})
 """The actors that speak for a principal: a person, or a program a person or
@@ -46,7 +52,7 @@ PRINCIPAL_PARK = Park(reason=ParkReason.PERSON, unlock="principal")
 """The park of a loop whose tool calls run under a principal who no longer
 holds: a person who assigns themselves clears it (`assign_principal`)."""
 
-DATA_TYPES = frozenset({StepType.EVENT, StepType.TOOL_RESPONSE, StepType.SUMMARY})
+DATA_TYPES = frozenset({AgentStepType.EVENT, AgentStepType.TOOL_RESPONSE, AgentStepType.SUMMARY})
 """What a model reads as data whoever wrote it: an event from outside, a
 tool's output, and a summary of the window."""
 
@@ -66,14 +72,14 @@ def visibility_of(mode: AuthorityMode) -> Visibility:
     return VISIBILITY[mode]
 
 
-def person_written(step: Step) -> bool:
+def person_written(step: AgentStep) -> bool:
     """A message a person or a program wrote, through a product surface or
     as an automation's trigger, whether or not its author steers the
     session."""
-    return step.type is StepType.MESSAGE and step.actor in PRINCIPAL_ACTORS
+    return step.type is AgentStepType.MESSAGE and step.actor in PRINCIPAL_ACTORS
 
 
-def principal_authored(step: Step) -> bool:
+def principal_authored(step: AgentStep) -> bool:
     """A message a principal wrote: the session's steerer, through a product
     surface or as an automation's trigger. A participant who does not steer
     it writes data (`InputHeader.participant`), and an agent's message, an
@@ -84,7 +90,7 @@ def principal_authored(step: Step) -> bool:
     return person_written(step) and not participant
 
 
-def trust_of(step: Step) -> Trust | None:
+def trust_of(step: AgentStep) -> Trust | None:
     """The tier of what a step tells a model. A principal's message, a
     parent's message to its child, the session's standing text its maker
     pinned, and the engine's notices (a nudge, and the notice that the
@@ -92,26 +98,26 @@ def trust_of(step: Step) -> Trust | None:
     summary are data. None for a step a model does not read as content:
     its own requests and responses, a control, and the other marks of a
     loop. Only a run writes the engine's message, under its epoch: the
-    inbox refuses one (`steps.rules.batch_refusal`)."""
-    if step.type is StepType.MESSAGE:
+    inbox refuses one (`agent_steps.rules.batch_refusal`)."""
+    if step.type is AgentStepType.MESSAGE:
         from_parent = step.actor is Actor.AGENT and step.origin is Origin.PARENT
         notice = step.actor is Actor.ENGINE
         instructs = principal_authored(step) or from_parent or notice
         return Trust.INSTRUCTION if instructs else Trust.DATA
-    if step.type is StepType.ENVIRONMENT_CHANGED or switches_standing(step):
+    if step.type is AgentStepType.ENVIRONMENT_CHANGED or switches_standing(step):
         return Trust.INSTRUCTION
     if step.type in DATA_TYPES:
         return Trust.DATA
     return None
 
 
-def instructs(step: Step) -> bool:
+def instructs(step: AgentStep) -> bool:
     """Whether an input instructs on someone's word: one a model reads as an
     instruction, a principal's message, a parent's to its child, or the
     standing text a maker pins, however its actor is labelled, and not the
     engine's own notice, which a run writes under its epoch and the inbox
     refuses. Its sender may make every kind of call the session's registry
-    offers (`steps.manager.InstructCheck`)."""
+    offers (`agent_steps.manager.InstructCheck`)."""
     return (
         (step.type.is_input() or switches_standing(step))
         and step.actor is not Actor.ENGINE
@@ -119,7 +125,7 @@ def instructs(step: Step) -> bool:
     )
 
 
-def marks(step: Step) -> bool:
+def marks(step: AgentStep) -> bool:
     """Whether a step marks the session it lands in: it is data, or it is an
     input whose header carries the mark: one from an agent whose session
     carried it, or one that carries a file, which is data whoever attached
@@ -143,7 +149,7 @@ def principal_of(ctx: TenantContext) -> Principal:
     return Principal(kind=PrincipalKind.PERSON, id=ctx.user_id, key_id=key)
 
 
-def said_by(step: Step, principal: Principal, *, steers: bool = True) -> Step:
+def said_by(step: AgentStep, principal: Principal, *, steers: bool = True) -> AgentStep:
     """A message a person or a program wrote as the context that appends it
     said it: its principal is that context's (`principal_of`), key
     included, whatever the caller wrote, so no one speaks, or pays, or asks,
@@ -161,7 +167,7 @@ def said_by(step: Step, principal: Principal, *, steers: bool = True) -> Step:
     return step.model_copy(update={"header": header.model_copy(update=said)})
 
 
-def switched_by(step: Step, principal: Principal) -> Step:
+def switched_by(step: AgentStep, principal: Principal) -> AgentStep:
     """A switch of the session's steerer or of who sees it as the context
     that appends it made it: its `by` is that context's principal, whatever
     the caller wrote. Any other step is answered as it is."""
@@ -177,7 +183,7 @@ def switched_by(step: Step, principal: Principal) -> Step:
     return step
 
 
-def decided_by(step: Step, user_id: UUID, role: Role) -> Step:
+def decided_by(step: AgentStep, user_id: UUID, role: Role) -> AgentStep:
     """A person's decision on a tool call as the context that appends it made
     it: its decider is that context's user, in the role they hold, whatever
     the caller wrote, so no one decides in another's name or above their own
@@ -192,7 +198,7 @@ def decided_by(step: Step, user_id: UUID, role: Role) -> Step:
 
 
 def fold(
-    speaker: Principal | None, marked: bool, steps: Iterable[Step]
+    speaker: Principal | None, marked: bool, steps: Iterable[AgentStep]
 ) -> tuple[Principal | None, bool]:
     """The speaker and the mark once `steps` are read, in `seq` order. The
     speaker is the one the latest model request recorded; an input that
@@ -205,7 +211,7 @@ def fold(
     return speaker, marked
 
 
-def speaker_after(previous: Principal | None, delivered: Sequence[Step]) -> Principal | None:
+def speaker_after(previous: Principal | None, delivered: Sequence[AgentStep]) -> Principal | None:
     """The speaker a model request records: the principal behind the latest
     principal-authored input among those it delivers, in `seq` order, else
     the one the request before it recorded."""
@@ -223,7 +229,7 @@ def spender_of(passed: Principal | None, speaker: Principal | None) -> Principal
 
 
 def call_principal(
-    authority: SessionAuthority, speaker: Principal | None, *, child: bool
+    authority: AgentSessionAuthority, speaker: Principal | None, *, child: bool
 ) -> Principal:
     """Whose authority a tool call runs under: a steady session's fixed
     principal; a delegated session's latest speaker, or its own principal
@@ -236,7 +242,7 @@ def call_principal(
 
 
 def inherited(
-    source: SessionAuthority, speaker: Principal | None, *, from_child: bool, child: bool
+    source: AgentSessionAuthority, speaker: Principal | None, *, from_child: bool, child: bool
 ) -> tuple[Principal, Principal | None]:
     """The principal and the spender a session takes from the one it came
     from, whose speaker is `speaker` and which is a child itself when

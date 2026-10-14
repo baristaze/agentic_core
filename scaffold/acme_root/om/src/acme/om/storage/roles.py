@@ -35,11 +35,11 @@ TABLE_ROLES: dict[str, DatabaseRole] = {
     "platform_sizes": DatabaseRole.ADMIN,
     "agent_sessions": DatabaseRole.CORE,
     "agent_trees": DatabaseRole.CORE,
-    "session_authorities": DatabaseRole.CORE,
-    "steps": DatabaseRole.ACTIVITY,
-    "step_cursors": DatabaseRole.ACTIVITY,
-    "session_privacy": DatabaseRole.CORE,
-    "session_keys": DatabaseRole.CORE,
+    "agent_session_authorities": DatabaseRole.CORE,
+    "agent_steps": DatabaseRole.ACTIVITY,
+    "agent_step_cursors": DatabaseRole.ACTIVITY,
+    "agent_session_privacy": DatabaseRole.CORE,
+    "agent_session_keys": DatabaseRole.CORE,
     "budgets": DatabaseRole.CORE,
     "budget_tallies": DatabaseRole.ACTIVITY,
     "budget_holds": DatabaseRole.ACTIVITY,
@@ -51,7 +51,7 @@ TABLE_ROLES: dict[str, DatabaseRole] = {
 }
 
 APPEND_ONLY_TABLES: frozenset[str] = frozenset(
-    {"steps", "budget_holds", "budget_settlements", "usage_records", "artifacts"}
+    {"agent_steps", "budget_holds", "budget_settlements", "usage_records", "artifacts"}
 )
 """Tables whose rows are written once: the serving logins hold SELECT and
 INSERT on them and never UPDATE or DELETE. The migration that creates one
@@ -62,10 +62,10 @@ takes them back again after each grant it makes (ADR 1002, ADR 1006, ADR
 PURGED_TABLES: frozenset[str] = frozenset(
     {
         "agent_sessions",
-        "steps",
-        "step_cursors",
+        "agent_steps",
+        "agent_step_cursors",
         "artifacts",
-        "session_authorities",
+        "agent_session_authorities",
         "agent_trees",
     }
 )

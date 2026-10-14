@@ -20,13 +20,13 @@ class UsageRecords(IdentifiableMixin, CreatedMixin, Base):
         # A call is recorded once: a second record of its hold meets this index.
         Index("uq_usage_records_org_id_hold_id", "org_id", "hold_id", unique=True),
         # A session's records, in the order they were written, and its rollups.
-        Index("ix_usage_records_org_id_session_id_id", "org_id", "session_id", "id"),
+        Index("ix_usage_records_org_id_agent_session_id_id", "org_id", "agent_session_id", "id"),
     )
     hold_id: Mapped[UUID]
-    session_id: Mapped[UUID]
+    agent_session_id: Mapped[UUID]
     tree_id: Mapped[UUID]
     loop_id: Mapped[UUID]
-    step_id: Mapped[UUID]
+    agent_step_id: Mapped[UUID]
     agent_kind: Mapped[str]
     kind_version: Mapped[int]
     role: Mapped[str]

@@ -48,11 +48,15 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
-from acme.om.attribution.rules import fold, principal_authored
-from acme.om.attribution.types.authority import Visibility
-from acme.om.context import Permission, TenantContext
-from acme.om.steps.types.header import (
+from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus
+from acme.om.agent_steps.types.agent_step import (
+    Actor,
+    AgentStep,
+    AgentStepType,
+    Origin,
+    switches_session,
+)
+from acme.om.agent_steps.types.header import (
     ControlCommand,
     ControlHeader,
     InputHeader,
@@ -66,7 +70,9 @@ from acme.om.steps.types.header import (
     ParkReason,
     SwitchedHeader,
 )
-from acme.om.steps.types.step import Actor, Origin, Step, StepType, switches_session
+from acme.om.attribution.rules import fold, principal_authored
+from acme.om.attribution.types.authority import Visibility
+from acme.om.context import Permission, TenantContext
 
 EVERY_PARK = frozenset(ParkReason)
 
@@ -85,7 +91,7 @@ QUESTION = Park(reason=ParkReason.PERSON, unlock="answer")
 down and said what it needs: a principal's message is the answer, and
 clears it."""
 
-RUN_ENDS = frozenset({StepType.PARKED, StepType.LOOP_ENDED})
+RUN_ENDS = frozenset({AgentStepType.PARKED, AgentStepType.LOOP_ENDED})
 """The steps after which a run holds its session no longer."""
 
 STOPPED = frozenset({LoopOutcome.ERRORED, LoopOutcome.CANCELLED})
@@ -94,7 +100,7 @@ error no park can clear would meet the same input again, and a principal
 who cancelled did not ask for another run."""
 
 
-def clears(park: Park, control: Step) -> bool:
+def clears(park: Park, control: AgentStep) -> bool:
     """Whether a control clears `park`: its command clears the park's reason
     (`UNPARKS`), and a hand-over that names its holder is unlocked by that
     holder alone, in person, never on an API key: the engine's own unlock,
@@ -120,14 +126,14 @@ def clears(park: Park, control: Step) -> bool:
 
 @dataclass(frozen=True)
 class Projection:
-    status: SessionStatus
+    status: AgentSessionStatus
     park: Park | None
     archived: bool
     pending_input: UUID | None = None  # the latest waking input not yet delivered
     delivering_request: UUID | None = None  # the request that carries it
 
 
-def after_step(state: Projection, step: Step) -> Projection:
+def after_step(state: Projection, step: AgentStep) -> Projection:
     """The projection once `step` is read. Each type holds the header its
     type fixes, so the header says which rule applies."""
     state = delivered(state, step)
@@ -138,9 +144,9 @@ def after_step(state: Projection, step: Step) -> Projection:
         archived = state.archived and not principal_authored(step)
         if not header.waking or archived:
             return replace(state, archived=archived)
-        idle = state.status is SessionStatus.IDLE
+        idle = state.status is AgentSessionStatus.IDLE
         answered = state.park == QUESTION and principal_authored(step)
-        status = SessionStatus.PENDING if idle or answered else state.status
+        status = AgentSessionStatus.PENDING if idle or answered else state.status
         return replace(
             state,
             status=status,
@@ -152,27 +158,27 @@ def after_step(state: Projection, step: Step) -> Projection:
     if isinstance(header, ControlHeader):
         cleared = state.park is not None and clears(state.park, step)
         if cleared:
-            return replace(state, status=SessionStatus.PENDING, park=None)
+            return replace(state, status=AgentSessionStatus.PENDING, park=None)
         return state
     if isinstance(header, ParkedHeader):
-        return replace(state, status=SessionStatus.PARKED, park=header.park)
-    if step.type is StepType.SNAPSHOTTED or switches_session(step):
+        return replace(state, status=AgentSessionStatus.PARKED, park=header.park)
+    if step.type is AgentStepType.SNAPSHOTTED or switches_session(step):
         # Taken whenever its caller takes one, a loop's end included, or
         # switched by a person through the inbox: it says nothing of a run.
         return state
     if isinstance(header, LoopEndedHeader):
         waiting = state.pending_input is not None and header.outcome not in STOPPED
-        status = SessionStatus.PENDING if waiting else SessionStatus.IDLE
+        status = AgentSessionStatus.PENDING if waiting else AgentSessionStatus.IDLE
         pending = state.pending_input if waiting else None
         return replace(
             state, status=status, park=None, pending_input=pending, delivering_request=None
         )
-    if step.type is StepType.RESUMED or state.status is SessionStatus.PENDING:
-        return replace(state, status=SessionStatus.RUNNING, park=None)
+    if step.type is AgentStepType.RESUMED or state.status is AgentSessionStatus.PENDING:
+        return replace(state, status=AgentSessionStatus.RUNNING, park=None)
     return state
 
 
-def delivered(state: Projection, step: Step) -> Projection:
+def delivered(state: Projection, step: AgentStep) -> Projection:
     """The undelivered input once `step` is read: a model request that
     references it carries it, and that request's complete response
     delivers it."""
@@ -190,7 +196,7 @@ def delivered(state: Projection, step: Step) -> Projection:
 
 
 def projected(
-    session: AgentSession, steps: Sequence[Step], now: datetime, by: UUID
+    session: AgentSession, steps: Sequence[AgentStep], now: datetime, by: UUID
 ) -> AgentSession:
     """The session with its cached status brought up to the steps after
     `status_seq`, read in `seq` order; steps at or below it are read
@@ -232,7 +238,7 @@ def projected(
     )
 
 
-def seen_as(session: AgentSession, steps: Iterable[Step]) -> Visibility:
+def seen_as(session: AgentSession, steps: Iterable[AgentStep]) -> Visibility:
     """Who sees a session once `steps` are read: its creator's latest switch
     among them, or what it held. A switch anyone else wrote counts for
     nothing, and a sub-agent's, which is seen as its root is, neither."""
@@ -246,7 +252,7 @@ def seen_as(session: AgentSession, steps: Iterable[Step]) -> Visibility:
     return visibility
 
 
-def steered_by(steerer: UUID | None, steps: Iterable[Step]) -> UUID | None:
+def steered_by(steerer: UUID | None, steps: Iterable[AgentStep]) -> UUID | None:
     """Who steers a session once `steps` are read, as its latest recorded
     move of the steer names them: a person by id."""
     for step in steps:
@@ -259,19 +265,19 @@ def steered_by(steerer: UUID | None, steps: Iterable[Step]) -> UUID | None:
 def sees(ctx: TenantContext, root: AgentSession) -> bool:
     """Whether a person sees a session and opens its content, read off the
     root of its tree, since a sub-agent is seen as its root is: one who
-    holds `manage_sessions`, for audit; any member of the org when it is
+    holds `manage_agent_sessions`, for audit; any member of the org when it is
     org-wide; and when it is private, its creator and its participants. The
     steerer is always one of them: its creator, a participant it was
-    handed to, or a holder of `manage_sessions` who took it."""
+    handed to, or a holder of `manage_agent_sessions` who took it."""
     return (
-        ctx.has(Permission.MANAGE_SESSIONS)
+        ctx.has(Permission.MANAGE_AGENT_SESSIONS)
         or root.visibility is Visibility.ORG_WIDE
         or ctx.user_id == root.created_by
         or ctx.user_id in root.participants
     )
 
 
-def held_private(held: bool, steps: Iterable[Step]) -> bool:
+def held_private(held: bool, steps: Iterable[AgentStep]) -> bool:
     """Whether a session holds private data once `steps` are read: it held
     it, or an input among them carries it from the session that wrote it,
     as a child's report does. Once set, it stays."""
@@ -280,14 +286,16 @@ def held_private(held: bool, steps: Iterable[Step]) -> bool:
     )
 
 
-def announces(before: AgentSession, after: AgentSession, steps: Sequence[Step]) -> bool:
+def announces(before: AgentSession, after: AgentSession, steps: Sequence[AgentStep]) -> bool:
     """Whether a projection is announced: its status, its park, its
     archive flag, its visibility, or its steerer changed, or a loop ended
     among the steps it read. A step is never announced on its own."""
     return (
         (before.status, before.park, before.archived_at, before.visibility, before.steerer)
         != (after.status, after.park, after.archived_at, after.visibility, after.steerer)
-    ) or any(step.type is StepType.LOOP_ENDED and step.seq > before.status_seq for step in steps)
+    ) or any(
+        step.type is AgentStepType.LOOP_ENDED and step.seq > before.status_seq for step in steps
+    )
 
 
 def lineage(source: AgentSession | None, session: AgentSession) -> dict[str, Any]:
@@ -325,7 +333,7 @@ def lineage(source: AgentSession | None, session: AgentSession) -> dict[str, Any
     }
 
 
-def asks_for_run(before: AgentSession, after: AgentSession, steps: Sequence[Step]) -> bool:
+def asks_for_run(before: AgentSession, after: AgentSession, steps: Sequence[AgentStep]) -> bool:
     """Whether a projection asks for a run of the session's loop: it made the
     session pending, from idle, parked, or running, or it read a run's end
     among `steps`, a park or a loop's end, and left the session pending. An
@@ -336,73 +344,77 @@ def asks_for_run(before: AgentSession, after: AgentSession, steps: Sequence[Step
     that writes its steps. Read off the steps, as `wakes_at` is, so an
     answer that lands between a run's last step and its projection still
     asks."""
-    if after.status is not SessionStatus.PENDING:
+    if after.status is not AgentSessionStatus.PENDING:
         return False
-    if before.status is not SessionStatus.PENDING:
+    if before.status is not AgentSessionStatus.PENDING:
         return True
     return any(step.type in RUN_ENDS and step.seq > before.status_seq for step in steps)
 
 
-def wakes_at(before: AgentSession, after: AgentSession, steps: Sequence[Step]) -> Park | None:
+def wakes_at(before: AgentSession, after: AgentSession, steps: Sequence[AgentStep]) -> Park | None:
     """The park a projection asks to be woken from at its retry time: one a
     `parked` step among the steps it read set, which the session still waits
     on, when it carries a retry time. A park only a person clears carries
     none and asks for nothing. Read off the steps, not the status, so a loop
     that parks, wakes, and parks again within one read is still woken."""
     park = after.park
-    if after.status is not SessionStatus.PARKED or park is None or park.retry_at is None:
+    if after.status is not AgentSessionStatus.PARKED or park is None or park.retry_at is None:
         return None
-    if any(step.type is StepType.PARKED and step.seq > before.status_seq for step in steps):
+    if any(step.type is AgentStepType.PARKED and step.seq > before.status_seq for step in steps):
         return park
     return None
 
 
-def parked_step(step_id: UUID, session_id: UUID, loop_id: UUID, park: Park, now: datetime) -> Step:
+def parked_step(
+    agent_step_id: UUID, agent_session_id: UUID, loop_id: UUID, park: Park, now: datetime
+) -> AgentStep:
     """The step a run writes when its loop parks: no outcome, only the park."""
-    return Step(
-        id=step_id,
+    return AgentStep(
+        id=agent_step_id,
         created_at=now,
-        session_id=session_id,
+        agent_session_id=agent_session_id,
         loop_id=loop_id,
-        type=StepType.PARKED,
+        type=AgentStepType.PARKED,
         actor=Actor.ENGINE,
         origin=Origin.ENGINE,
         header=ParkedHeader(park=park),
     )
 
 
-def resumed_step(step_id: UUID, session_id: UUID, loop_id: UUID, now: datetime) -> Step:
+def resumed_step(
+    agent_step_id: UUID, agent_session_id: UUID, loop_id: UUID, now: datetime
+) -> AgentStep:
     """The step that starts a new run of a loop whose unlock happened."""
-    return Step(
-        id=step_id,
+    return AgentStep(
+        id=agent_step_id,
         created_at=now,
-        session_id=session_id,
+        agent_session_id=agent_session_id,
         loop_id=loop_id,
-        type=StepType.RESUMED,
+        type=AgentStepType.RESUMED,
         actor=Actor.ENGINE,
         origin=Origin.ENGINE,
         header=MarkHeader(),
     )
 
 
-def unlock_step(step_id: UUID, session_id: UUID, now: datetime) -> Step:
+def unlock_step(agent_step_id: UUID, agent_session_id: UUID, now: datetime) -> AgentStep:
     """The control the engine writes when a park's unlock happens by itself:
     its retry time came, or the reason it waited on is gone. It arrives
     through the inbox, as every control does, outside any run, so its loop id
     is its own."""
-    return Step(
-        id=step_id,
+    return AgentStep(
+        id=agent_step_id,
         created_at=now,
-        session_id=session_id,
-        loop_id=step_id,
-        type=StepType.CONTROL,
+        agent_session_id=agent_session_id,
+        loop_id=agent_step_id,
+        type=AgentStepType.CONTROL,
         actor=Actor.ENGINE,
         origin=Origin.ENGINE,
         header=ControlHeader(command=ControlCommand.UNLOCK),
     )
 
 
-def _seq(step: Step) -> int:
+def _seq(step: AgentStep) -> int:
     return step.seq
 
 

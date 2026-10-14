@@ -75,7 +75,7 @@ def a_hold(
         id=new_id(),
         created_at=utcnow(),
         spender_id=new_id(),
-        session_id=new_id(),
+        agent_session_id=new_id(),
         purpose="main",
         exposure=Spend(cost_micros=cost_micros, tokens=tokens),
         own=own,
@@ -84,7 +84,7 @@ def a_hold(
 
 
 def a_record(
-    session_id: UUID,
+    agent_session_id: UUID,
     loop_id: UUID,
     *,
     hold_id: UUID | None = None,
@@ -96,10 +96,10 @@ def a_record(
         id=new_id(),
         created_at=utcnow(),
         hold_id=hold_id or new_id(),
-        session_id=session_id,
-        tree_id=session_id,
+        agent_session_id=agent_session_id,
+        tree_id=agent_session_id,
         loop_id=loop_id,
-        step_id=new_id(),
+        agent_step_id=new_id(),
         agent_kind="assistant",
         kind_version=1,
         role="main",

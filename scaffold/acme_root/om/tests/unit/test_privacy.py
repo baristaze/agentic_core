@@ -12,36 +12,36 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.agent_session_storage import make_session
-from contracts.doubles import context
-from contracts.factories import make_org
-from contracts.step_storage import (
-    StepStorageContract,
+from contracts.agent_session_storage import make_agent_session
+from contracts.agent_step_storage import (
+    AgentStepStorageContract,
     a_loop,
     make_message,
     make_parked,
 )
+from contracts.doubles import context
+from contracts.factories import make_org
 from contracts.tools import stand_ins
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.infra.keys.memory import KeyServiceMemoryImpl
+from acme.om.agent_steps.storage import AgentStepStorageInterface
+from acme.om.agent_steps.storage.impl.memory import AgentStepStorageMemoryImpl
+from acme.om.agent_steps.types.agent_step import AgentStep
+from acme.om.agent_steps.types.content import Children, Content, ContentState
 from acme.om.base import new_id, utcnow
 from acme.om.context import Role, TenantContext
 from acme.om.exceptions import KeyRevoked, NotAuthorized, NotFound, PolicyFixed, ValidationFailed
-from acme.om.privacy.impl.keys import SessionKeysImpl
-from acme.om.privacy.impl.memory_only_steps import StepStorageShapeOnlyImpl
-from acme.om.privacy.impl.routed_steps import StepStorageRoutedImpl
-from acme.om.privacy.impl.sealed_steps import StepStorageSealedImpl, opened, sealed
+from acme.om.privacy.impl.keys import AgentSessionKeysImpl
+from acme.om.privacy.impl.memory_only_agent_steps import AgentStepStorageShapeOnlyImpl
+from acme.om.privacy.impl.routed_agent_steps import AgentStepStorageRoutedImpl
+from acme.om.privacy.impl.sealed_agent_steps import AgentStepStorageSealedImpl, opened, sealed
 from acme.om.privacy.storage.impl.memory import PrivacyStorageMemoryImpl
-from acme.om.privacy.types.session_privacy import StorageMode, StoragePolicy
+from acme.om.privacy.types.agent_session_privacy import StorageMode, StoragePolicy
 from acme.om.root import Managers, build_managers
-from acme.om.steps.storage import StepStorageInterface
-from acme.om.steps.storage.impl.memory import StepStorageMemoryImpl
-from acme.om.steps.types.content import Children, Content, ContentState
-from acme.om.steps.types.step import Step
 from acme.om.storage.impl.memory import StorageMemoryImpl
 
-# What `make_session` names, so the agents manager classes every tool it
+# What `make_agent_session` names, so the agents manager classes every tool it
 # offers.
 TOOLS = stand_ins("read_log", "run_tests")
 
@@ -59,56 +59,58 @@ MEMORY_ONLY = StoragePolicy(mode=StorageMode.MEMORY_ONLY, keep_shape=False)
 SHAPE_KEPT = StoragePolicy(mode=StorageMode.MEMORY_ONLY, keep_shape=True)
 
 
-def keys_over(privacy: PrivacyStorageMemoryImpl) -> SessionKeysImpl:
-    return SessionKeysImpl(privacy, KeyServiceMemoryImpl())
+def keys_over(privacy: PrivacyStorageMemoryImpl) -> AgentSessionKeysImpl:
+    return AgentSessionKeysImpl(privacy, KeyServiceMemoryImpl())
 
 
-def shape_of(step: Step) -> dict[str, object]:
+def shape_of(step: AgentStep) -> dict[str, object]:
     """Everything a step holds but what it says."""
     return step.model_dump(exclude={"content", "children"})
 
 
-def in_the_clear(steps: list[Step]) -> str:
+def in_the_clear(steps: list[AgentStep]) -> str:
     """The history as a reader of the store sees it."""
     return json.dumps([step.model_dump(mode="json") for step in steps])
 
 
-class TestSealedStepStorage(StepStorageContract):
+class TestSealedStepStorage(AgentStepStorageContract):
     @pytest.fixture
-    def storage(self) -> StepStorageInterface:
-        return StepStorageSealedImpl(StepStorageMemoryImpl(), keys_over(PrivacyStorageMemoryImpl()))
+    def storage(self) -> AgentStepStorageInterface:
+        return AgentStepStorageSealedImpl(
+            AgentStepStorageMemoryImpl(), keys_over(PrivacyStorageMemoryImpl())
+        )
 
 
-class TestRoutedStepStorage(StepStorageContract):
+class TestRoutedStepStorage(AgentStepStorageContract):
     @pytest.fixture
-    def storage(self) -> StepStorageInterface:
+    def storage(self) -> AgentStepStorageInterface:
         privacy = PrivacyStorageMemoryImpl()
-        history = StepStorageMemoryImpl()
-        return StepStorageRoutedImpl(
-            sealed=StepStorageSealedImpl(history, keys_over(privacy)),
-            shape_only=StepStorageShapeOnlyImpl(history),
-            transient=StepStorageMemoryImpl(),
+        history = AgentStepStorageMemoryImpl()
+        return AgentStepStorageRoutedImpl(
+            sealed=AgentStepStorageSealedImpl(history, keys_over(privacy)),
+            shape_only=AgentStepStorageShapeOnlyImpl(history),
+            transient=AgentStepStorageMemoryImpl(),
             policies=privacy,
         )
 
 
-class TestShapeOnlyStepStorage(StepStorageContract):
+class TestShapeOnlyStepStorage(AgentStepStorageContract):
     @pytest.fixture
-    def storage(self) -> StepStorageInterface:
-        return StepStorageShapeOnlyImpl(StepStorageMemoryImpl())
+    def storage(self) -> AgentStepStorageInterface:
+        return AgentStepStorageShapeOnlyImpl(AgentStepStorageMemoryImpl())
 
 
 # The sealing layer.
 
 
 async def test_the_history_under_the_sealing_layer_holds_no_content_in_the_clear() -> None:
-    history, privacy = StepStorageMemoryImpl(), PrivacyStorageMemoryImpl()
-    storage = StepStorageSealedImpl(history, keys_over(privacy))
+    history, privacy = AgentStepStorageMemoryImpl(), PrivacyStorageMemoryImpl()
+    storage = AgentStepStorageSealedImpl(history, keys_over(privacy))
     org, session = new_id(), new_id()
     loop = a_loop(session)
     epoch = await storage.begin_run(org, session)
-    appended = await storage.append_steps(org, session, epoch, loop)
-    stored = await history.read_steps(org, session, 0, 10)
+    appended = await storage.append_agent_steps(org, session, epoch, loop)
+    stored = await history.read_agent_steps(org, session, 0, 10)
     assert [shape_of(step) for step in stored] == [shape_of(step) for step in appended]
     said = [step for step in loop if step.content.blocks or step.children != Children()]
     assert [step.content.state for step in stored if step.id in {s.id for s in said}] == [
@@ -118,28 +120,32 @@ async def test_the_history_under_the_sealing_layer_holds_no_content_in_the_clear
     reader = in_the_clear(stored)
     assert all(phrase in in_the_clear(loop) for phrase in SAID), "what the loop says"
     assert not [phrase for phrase in SAID if phrase in reader]
-    assert await storage.read_steps(org, session, 0, 10) == list(appended)
+    assert await storage.read_agent_steps(org, session, 0, 10) == list(appended)
     ring = await privacy.read_keys(org, session)
     assert [key.version for key in ring.keys] == [1]
 
 
 async def test_a_step_that_says_nothing_takes_no_key() -> None:
     privacy = PrivacyStorageMemoryImpl()
-    storage = StepStorageSealedImpl(StepStorageMemoryImpl(), keys_over(privacy))
+    storage = AgentStepStorageSealedImpl(AgentStepStorageMemoryImpl(), keys_over(privacy))
     org, session = new_id(), new_id()
     epoch = await storage.begin_run(org, session)
-    (mark,) = await storage.append_steps(org, session, epoch, [make_parked(session, new_id())])
+    (mark,) = await storage.append_agent_steps(
+        org, session, epoch, [make_parked(session, new_id())]
+    )
     assert mark.content == Content()
     assert (await privacy.read_keys(org, session)).keys == ()
 
 
 async def test_content_sealed_above_storage_is_refused() -> None:
-    storage = StepStorageSealedImpl(StepStorageMemoryImpl(), keys_over(PrivacyStorageMemoryImpl()))
+    storage = AgentStepStorageSealedImpl(
+        AgentStepStorageMemoryImpl(), keys_over(PrivacyStorageMemoryImpl())
+    )
     org, session = new_id(), new_id()
     forged = sealed(org, make_message(session), 1, bytes(32))
     with pytest.raises(ValidationFailed):
         await storage.append_inputs(org, session, [forged])
-    assert await storage.read_steps(org, session, 0, 10) == []
+    assert await storage.read_agent_steps(org, session, 0, 10) == []
 
 
 def test_a_sealed_step_opens_as_itself_alone() -> None:
@@ -161,16 +167,16 @@ def test_a_sealed_step_opens_as_itself_alone() -> None:
 
 
 async def test_a_new_version_seals_what_comes_after_and_leaves_what_came_before() -> None:
-    history, privacy = StepStorageMemoryImpl(), PrivacyStorageMemoryImpl()
+    history, privacy = AgentStepStorageMemoryImpl(), PrivacyStorageMemoryImpl()
     keys = keys_over(privacy)
-    storage = StepStorageSealedImpl(history, keys)
+    storage = AgentStepStorageSealedImpl(history, keys)
     org, session = new_id(), new_id()
     (before,) = await storage.append_inputs(org, session, [make_message(session, "first")])
     assert await keys.add_version(org, session) == 2
     (after,) = await storage.append_inputs(org, session, [make_message(session, "second")])
-    stored = await history.read_steps(org, session, 0, 10)
+    stored = await history.read_agent_steps(org, session, 0, 10)
     assert [step.content.sealed.version for step in stored if step.content.sealed] == [1, 2]
-    assert await storage.read_steps(org, session, 0, 10) == [before, after]
+    assert await storage.read_agent_steps(org, session, 0, 10) == [before, after]
     assert (before.as_text(), after.as_text()) == ("first", "second")
 
 
@@ -187,8 +193,8 @@ def managers(infra: InfraLocalImpl) -> Managers:
     return build_managers(StorageMemoryImpl(), infra, tool_catalog=TOOLS)
 
 
-async def a_session(managers: Managers, ctx: TenantContext) -> UUID:
-    return (await managers.agent_sessions.create_session(ctx, make_session())).id
+async def an_agent_session(managers: Managers, ctx: TenantContext) -> UUID:
+    return (await managers.agent_sessions.create_agent_session(ctx, make_agent_session())).id
 
 
 async def test_a_revoked_key_leaves_every_steps_shape_and_none_of_its_content(
@@ -201,17 +207,17 @@ async def test_a_revoked_key_leaves_every_steps_shape_and_none_of_its_content(
     can end. A second revocation changes nothing, and it is announced
     once."""
     ctx = context(Role.MEMBER)
-    session = await a_session(managers, ctx)
-    epoch = await managers.steps.begin_run(ctx, session)
+    session = await an_agent_session(managers, ctx)
+    epoch = await managers.agent_steps.begin_run(ctx, session)
     loop = a_loop(session)
-    written = await managers.steps.append_steps(ctx, session, epoch, loop)
-    before = (await managers.steps.get_steps(ctx, session, 0, 50)).items
+    written = await managers.agent_steps.append_agent_steps(ctx, session, epoch, loop)
+    before = (await managers.agent_steps.get_agent_steps(ctx, session, 0, 50)).items
     assert before == written
 
     revoked = await managers.privacy.revoke_key(ctx, session)
     assert revoked.revoked_by == ctx.user_id
 
-    after = (await managers.steps.get_steps(ctx, session, 0, 50)).items
+    after = (await managers.agent_steps.get_agent_steps(ctx, session, 0, 50)).items
     assert [shape_of(step) for step in after] == [shape_of(step) for step in before]
     said = {step.id for step in loop if step.content.blocks or step.children != Children()}
     for step in after:
@@ -224,12 +230,12 @@ async def test_a_revoked_key_leaves_every_steps_shape_and_none_of_its_content(
     assert not [phrase for phrase in SAID if phrase in reader]
 
     with pytest.raises(KeyRevoked):
-        await managers.steps.append_inputs(ctx, session, [make_message(session)])
+        await managers.agent_steps.append_inputs(ctx, session, [make_message(session)])
     with pytest.raises(KeyRevoked):
         await managers.privacy.keyed_hash(ctx, session, b"input")
     with pytest.raises(KeyRevoked):
         await managers.privacy.rotate_key(ctx, session)
-    (closing,) = await managers.steps.append_steps(
+    (closing,) = await managers.agent_steps.append_agent_steps(
         ctx, session, epoch, [make_parked(session, loop[0].id)]
     )
     assert closing.seq == len(loop) + 1
@@ -237,13 +243,13 @@ async def test_a_revoked_key_leaves_every_steps_shape_and_none_of_its_content(
 
 async def test_a_revocation_is_announced_once(managers: Managers) -> None:
     ctx = context(Role.MEMBER)
-    session = await a_session(managers, ctx)
-    await managers.steps.append_inputs(ctx, session, [make_message(session)])
+    session = await an_agent_session(managers, ctx)
+    await managers.agent_steps.append_inputs(ctx, session, [make_message(session)])
     first = await managers.privacy.revoke_key(ctx, session)
     assert await managers.privacy.revoke_key(ctx, session) == first
     events = await managers.events.get_events(ctx, 0, 100)
     assert [e.kind for e in events if e.target_id == session].count(
-        "privacy.session_privacy.updated"
+        "privacy.agent_session_privacy.updated"
     ) == 1
 
 
@@ -255,12 +261,14 @@ async def test_a_memory_only_session_keeps_what_it_says_out_of_the_history(
     nothing it said. Either way the engine in this process reads it all."""
     ctx = context(Role.MEMBER)
     for policy in (MEMORY_ONLY, SHAPE_KEPT):
-        session = await a_session(managers, ctx)
+        session = await an_agent_session(managers, ctx)
         chosen = await managers.privacy.set_policy(ctx, session, policy)
         assert chosen.policy == policy
-        epoch = await managers.steps.begin_run(ctx, session)
-        written = await managers.steps.append_steps(ctx, session, epoch, a_loop(session))
-        assert (await managers.steps.get_steps(ctx, session, 0, 50)).items == written
+        epoch = await managers.agent_steps.begin_run(ctx, session)
+        written = await managers.agent_steps.append_agent_steps(
+            ctx, session, epoch, a_loop(session)
+        )
+        assert (await managers.agent_steps.get_agent_steps(ctx, session, 0, 50)).items == written
 
 
 async def test_a_revoked_memory_only_session_answers_nothing_it_said(
@@ -271,18 +279,18 @@ async def test_a_revoked_memory_only_session_answers_nothing_it_said(
     session takes no content again, as a sealed one does not."""
     ctx = context(Role.MEMBER)
     for policy in (MEMORY_ONLY, SHAPE_KEPT):
-        session = await a_session(managers, ctx)
+        session = await an_agent_session(managers, ctx)
         await managers.privacy.set_policy(ctx, session, policy)
-        epoch = await managers.steps.begin_run(ctx, session)
+        epoch = await managers.agent_steps.begin_run(ctx, session)
         loop = a_loop(session)
-        written = await managers.steps.append_steps(ctx, session, epoch, loop)
+        written = await managers.agent_steps.append_agent_steps(ctx, session, epoch, loop)
         await managers.privacy.revoke_key(ctx, session)
-        after = (await managers.steps.get_steps(ctx, session, 0, 50)).items
+        after = (await managers.agent_steps.get_agent_steps(ctx, session, 0, 50)).items
         assert [shape_of(step) for step in after] == [shape_of(step) for step in written]
         assert not [phrase for phrase in SAID if phrase in in_the_clear(list(after))]
         with pytest.raises(KeyRevoked):
-            await managers.steps.append_inputs(ctx, session, [make_message(session)])
-        (mark,) = await managers.steps.append_steps(
+            await managers.agent_steps.append_inputs(ctx, session, [make_message(session)])
+        (mark,) = await managers.agent_steps.append_agent_steps(
             ctx, session, epoch, [make_parked(session, loop[0].id)]
         )
         assert mark.seq == len(loop) + 1
@@ -290,25 +298,25 @@ async def test_a_revoked_memory_only_session_answers_nothing_it_said(
 
 async def test_a_policy_is_chosen_once_before_the_history_begins(managers: Managers) -> None:
     ctx = context(Role.MEMBER)
-    session = await a_session(managers, ctx)
+    session = await an_agent_session(managers, ctx)
     chosen = await managers.privacy.set_policy(ctx, session, SHAPE_KEPT)
     assert await managers.privacy.set_policy(ctx, session, SHAPE_KEPT) == chosen
     with pytest.raises(PolicyFixed):
         await managers.privacy.set_policy(ctx, session, StoragePolicy())
-    begun = await a_session(managers, ctx)
-    await managers.steps.append_inputs(ctx, begun, [make_message(begun)])
+    begun = await an_agent_session(managers, ctx)
+    await managers.agent_steps.append_inputs(ctx, begun, [make_message(begun)])
     assert (await managers.privacy.get_privacy(ctx, begun)).policy == StoragePolicy()
     with pytest.raises(PolicyFixed):
         await managers.privacy.set_policy(ctx, begun, MEMORY_ONLY)
-    running = await a_session(managers, ctx)
-    await managers.steps.begin_run(ctx, running)
+    running = await an_agent_session(managers, ctx)
+    await managers.agent_steps.begin_run(ctx, running)
     with pytest.raises(PolicyFixed):
         await managers.privacy.set_policy(ctx, running, MEMORY_ONLY)
 
 
 async def test_a_keyed_hash_is_the_sessions_own(managers: Managers) -> None:
     ctx = context(Role.MEMBER)
-    one, two = await a_session(managers, ctx), await a_session(managers, ctx)
+    one, two = await an_agent_session(managers, ctx), await an_agent_session(managers, ctx)
     first = await managers.privacy.keyed_hash(ctx, one, b"lines 1-200")
     assert await managers.privacy.keyed_hash(ctx, one, b"lines 1-200") == first
     assert await managers.privacy.keyed_hash(ctx, two, b"lines 1-200") != first
@@ -320,7 +328,7 @@ async def test_privacy_takes_its_permissions_and_its_tenants_sessions(
 ) -> None:
     org = make_org()
     ctx = context(Role.MEMBER, org)
-    session = await a_session(managers, ctx)
+    session = await an_agent_session(managers, ctx)
     viewer = context(Role.VIEWER, org)
     for call in (
         managers.privacy.revoke_key(viewer, session),
@@ -345,10 +353,12 @@ async def test_a_rotation_rewraps_every_key_and_rewrites_no_step(
     managers: Managers, infra: InfraLocalImpl
 ) -> None:
     ctx = context(Role.MEMBER)
-    sessions = [await a_session(managers, ctx) for _ in range(3)]
+    sessions = [await an_agent_session(managers, ctx) for _ in range(3)]
     for session in sessions:
-        await managers.steps.append_inputs(ctx, session, [make_message(session)])
-    before = {s: (await managers.steps.get_steps(ctx, s, 0, 10)).items for s in sessions}
+        await managers.agent_steps.append_inputs(ctx, session, [make_message(session)])
+    before = {
+        s: (await managers.agent_steps.get_agent_steps(ctx, s, 0, 10)).items for s in sessions
+    }
     service = infra.get_keys()
     assert isinstance(service, KeyServiceMemoryImpl)
     rotated = utcnow()
@@ -356,4 +366,6 @@ async def test_a_rotation_rewraps_every_key_and_rewrites_no_step(
     assert await managers.privacy.rewrap_keys(ctx, rotated) == 3
     assert await managers.privacy.rewrap_keys(ctx, rotated) == 0
     for session in sessions:
-        assert (await managers.steps.get_steps(ctx, session, 0, 10)).items == before[session]
+        assert (await managers.agent_steps.get_agent_steps(ctx, session, 0, 10)).items == before[
+            session
+        ]

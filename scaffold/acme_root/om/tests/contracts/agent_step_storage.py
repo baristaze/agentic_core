@@ -1,0 +1,620 @@
+"""The step storage contract: the history, its gapless numbers, and the writer
+epoch that fences a run's appends. The cases named in `CROSS_TENANT_CASES`
+are the tenant fence's evidence: each one presents another tenant's
+identifier and asserts that nothing is found and nothing changes."""
+
+from uuid import UUID
+
+import pytest
+
+from acme.om.agent_steps.storage import AgentStepStorageInterface
+from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
+from acme.om.agent_steps.types.content import (
+    Attachment,
+    Children,
+    Content,
+    ImageBlock,
+    TextBlock,
+    ThinkingBlock,
+    ToolResultBlock,
+    ToolUseBlock,
+)
+from acme.om.agent_steps.types.header import (
+    InputHeader,
+    LoopEndedHeader,
+    LoopOutcome,
+    ModelRequestHeader,
+    ModelResponseHeader,
+    Park,
+    ParkedHeader,
+    ParkReason,
+    ToolRequestHeader,
+    ToolResponseHeader,
+)
+from acme.om.agent_steps.types.page import AgentStepCursor
+from acme.om.attribution.types.authority import AuthorityMode
+from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
+from acme.om.base import new_id, utcnow
+from acme.om.exceptions import StaleWriter, TenantMismatch, UniqueKeyTaken, ValidationFailed
+from contracts.racing import race
+
+CROSS_TENANT_CASES: frozenset[str] = frozenset(
+    {
+        "append_inputs",
+        "append_agent_steps",
+        "begin_run",
+        "purge_history",
+        "purge_tenant",
+        "read_cursor",
+        "read_agent_steps",
+    }
+)
+"""Every method of `AgentStepStorageInterface` that takes a tenant has a case in
+this module that presents another tenant's. `test_storage_exceptions.py`
+holds the two sets to each other, so a new method arrives with its case."""
+
+
+def a_person() -> Principal:
+    return Principal(kind=PrincipalKind.PERSON, id=new_id())
+
+
+def make_message(
+    agent_session_id: UUID,
+    text: str = "the weekly report is missing a total",
+    *,
+    principal: Principal | None = None,
+) -> AgentStep:
+    """A principal's message: the first step of its loop."""
+    agent_step_id = new_id()
+    return AgentStep(
+        id=agent_step_id,
+        created_at=utcnow(),
+        agent_session_id=agent_session_id,
+        loop_id=agent_step_id,
+        type=AgentStepType.MESSAGE,
+        actor=Actor.PERSON,
+        origin=Origin.PORTAL,
+        header=InputHeader(principal=principal or a_person()),
+        content=Content(blocks=(TextBlock(text=text),)),
+    )
+
+
+def make_event(agent_session_id: UUID, *, principal: Principal | None = None) -> AgentStep:
+    """An event from outside, built with no word on whether it wakes, on
+    the authority the adopter's routing delivers it under."""
+    agent_step_id = new_id()
+    return AgentStep(
+        id=agent_step_id,
+        created_at=utcnow(),
+        agent_session_id=agent_session_id,
+        loop_id=agent_step_id,
+        type=AgentStepType.EVENT,
+        actor=Actor.EXTERNAL,
+        origin=Origin.INTEGRATION,
+        header=InputHeader(principal=principal or a_person()),
+        content=Content(blocks=(TextBlock(text="the nightly import finished"),)),
+    )
+
+
+def make_request(
+    agent_session_id: UUID,
+    loop_id: UUID,
+    carried: tuple[UUID, ...] = (),
+    *,
+    spender: Principal | None = None,
+    speaker: Principal | None = None,
+) -> AgentStep:
+    """A model request: it references what it carried, and copies nothing."""
+    return AgentStep(
+        id=new_id(),
+        created_at=utcnow(),
+        agent_session_id=agent_session_id,
+        loop_id=loop_id,
+        type=AgentStepType.MODEL_REQUEST,
+        actor=Actor.ENGINE,
+        origin=Origin.ENGINE,
+        refs=carried,
+        header=ModelRequestHeader(
+            role="main",
+            spender=spender or a_person(),
+            speaker=speaker,
+            fill="anthropic/claude-sonnet-5-5",
+            fill_set_version=1,
+            left_edge=1,
+            prompt_hash="k:prompt",
+        ),
+    )
+
+
+def make_response(agent_session_id: UUID, loop_id: UUID, request_id: UUID) -> AgentStep:
+    """A model response with text, a tool use, and its thinking."""
+    return AgentStep(
+        id=new_id(),
+        created_at=utcnow(),
+        agent_session_id=agent_session_id,
+        loop_id=loop_id,
+        type=AgentStepType.MODEL_RESPONSE,
+        actor=Actor.MODEL,
+        origin=Origin.ENGINE,
+        responds_to=request_id,
+        header=ModelResponseHeader(),
+        content=Content(
+            blocks=(
+                TextBlock(text="reading the import log"),
+                ToolUseBlock(id="call_1", name="read_log", input={"lines": [1, 200]}),
+            )
+        ),
+        children=Children(
+            thinking=(ThinkingBlock(text="the total is summed before the import ends"),)
+        ),
+    )
+
+
+def make_tool_request(
+    agent_session_id: UUID,
+    loop_id: UUID,
+    response_id: UUID,
+    *,
+    principal: Principal | None = None,
+) -> AgentStep:
+    """The agent's call of a tool, on a principal's authority."""
+    return AgentStep(
+        id=new_id(),
+        created_at=utcnow(),
+        agent_session_id=agent_session_id,
+        loop_id=loop_id,
+        type=AgentStepType.TOOL_REQUEST,
+        actor=Actor.AGENT,
+        origin=Origin.ENGINE,
+        refs=(response_id,),
+        header=ToolRequestHeader(
+            tool="read_log",
+            tool_use_id="call_1",
+            input_hash="h:1",
+            principal=principal or a_person(),
+            authority=AuthorityMode.STEADY,
+            agent=AgentRef(kind="delivery", version=1, agent_session_id=agent_session_id),
+            authorization_class="read",
+        ),
+    )
+
+
+def make_tool_response(agent_session_id: UUID, loop_id: UUID, request_id: UUID) -> AgentStep:
+    """A tool response whose result holds text and an image, by placeholder."""
+    plot = Attachment(id=new_id(), name="plot.png", media_type="image/png", size=2048, hash="k:9")
+    return AgentStep(
+        id=new_id(),
+        created_at=utcnow(),
+        agent_session_id=agent_session_id,
+        loop_id=loop_id,
+        type=AgentStepType.TOOL_RESPONSE,
+        actor=Actor.ENGINE,
+        origin=Origin.ENGINE,
+        responds_to=request_id,
+        header=ToolResponseHeader(),
+        content=Content(
+            blocks=(
+                ToolResultBlock(
+                    tool_use_id="call_1",
+                    parts=(TextBlock(text="200 lines"), ImageBlock(attachment_id=plot.id)),
+                ),
+            )
+        ),
+        children=Children(attachments=(plot,)),
+    )
+
+
+def make_parked(agent_session_id: UUID, loop_id: UUID) -> AgentStep:
+    return AgentStep(
+        id=new_id(),
+        created_at=utcnow(),
+        agent_session_id=agent_session_id,
+        loop_id=loop_id,
+        type=AgentStepType.PARKED,
+        actor=Actor.ENGINE,
+        origin=Origin.ENGINE,
+        header=ParkedHeader(park=Park(reason=ParkReason.PERSON, unlock="approval")),
+    )
+
+
+def a_loop(agent_session_id: UUID) -> list[AgentStep]:
+    """One of each kind a loop writes, each referencing the one before it."""
+    message = make_message(agent_session_id)
+    request = make_request(agent_session_id, message.id, (message.id,))
+    response = make_response(agent_session_id, message.id, request.id)
+    call = make_tool_request(agent_session_id, message.id, response.id)
+    result = make_tool_response(agent_session_id, message.id, call.id)
+    return [message, request, response, call, result, make_parked(agent_session_id, message.id)]
+
+
+def attributed(step: AgentStep) -> Principal | None:
+    """Whom a step names: the principal of an input or a tool call, the
+    spender of a model request, and nobody for the rest."""
+    header = step.header
+    if isinstance(header, InputHeader | ToolRequestHeader):
+        return header.principal
+    if isinstance(header, ModelRequestHeader):
+        return header.spender
+    return None
+
+
+class AgentStepStorageContract:
+    @pytest.fixture
+    def storage(self) -> AgentStepStorageInterface:
+        raise NotImplementedError("the concrete test class provides the storage")
+
+    async def test_append_assigns_a_gapless_seq_per_session(
+        self, storage: AgentStepStorageInterface
+    ) -> None:
+        org, session, other = new_id(), new_id(), new_id()
+        epoch = await storage.begin_run(org, session)
+        first = await storage.append_agent_steps(org, session, epoch, [make_message(session)])
+        loop = first[0].id
+        rest = await storage.append_agent_steps(
+            org, session, epoch, [make_request(session, loop), make_request(session, loop)]
+        )
+        appended = [*first, *rest]
+        assert [s.seq for s in appended] == [1, 2, 3]
+        assert await storage.read_cursor(org, session) == AgentStepCursor(head=3, epoch=epoch)
+        elsewhere = await storage.append_agent_steps(
+            org, other, await storage.begin_run(org, other), [make_message(other)]
+        )
+        assert [s.seq for s in elsewhere] == [1]
+        assert await storage.read_agent_steps(org, session, 0, 10) == appended
+        assert await storage.read_agent_steps(org, session, 1, 10) == appended[1:]
+        assert await storage.read_agent_steps(org, session, 0, 2) == appended[:2]
+        assert await storage.read_agent_steps(org, session, 3, 10) == []
+        assert await storage.read_agent_steps(org, other, 0, 10) == list(elsewhere)
+
+    async def test_a_step_comes_back_as_it_was_appended(
+        self, storage: AgentStepStorageInterface
+    ) -> None:
+        """Every field of every kind a loop writes survives the round trip:
+        the header, the blocks, the thinking, the placeholders, and the
+        references. Only `seq` is storage's."""
+        org, session = new_id(), new_id()
+        loop = a_loop(session)
+        epoch = await storage.begin_run(org, session)
+        appended = await storage.append_agent_steps(org, session, epoch, loop)
+        assert list(appended) == [
+            step.model_copy(update={"seq": n}) for n, step in enumerate(loop, start=1)
+        ]
+        assert await storage.read_agent_steps(org, session, 0, 10) == list(appended)
+
+    async def test_a_cause_comes_back_as_it_was_appended(
+        self, storage: AgentStepStorageInterface
+    ) -> None:
+        """The cause a park or a loop's end names is header: it survives the
+        round trip as it was written."""
+        org, session = new_id(), new_id()
+        message = make_message(session)
+        waits = Park(
+            reason=ParkReason.RESOURCE,
+            unlock="workspace",
+            retry_at=utcnow(),
+            cause="the workspace base is being built",
+        )
+        parked = make_parked(session, message.id).model_copy(
+            update={"header": ParkedHeader(park=waits)}
+        )
+        failed = "the base's setup command 1, 'pip install acme-tools', exited 2"
+        ended = parked.model_copy(
+            update={
+                "id": new_id(),
+                "type": AgentStepType.LOOP_ENDED,
+                "header": LoopEndedHeader(outcome=LoopOutcome.ERRORED, cause=failed),
+            }
+        )
+        epoch = await storage.begin_run(org, session)
+        appended = await storage.append_agent_steps(org, session, epoch, [message, parked, ended])
+        read = await storage.read_agent_steps(org, session, 0, 10)
+
+        assert read == list(appended)
+        assert isinstance(read[1].header, ParkedHeader) and isinstance(
+            read[2].header, LoopEndedHeader
+        )
+        assert (read[1].header.park.cause, read[2].header.cause) == (waits.cause, failed)
+
+    async def test_a_loop_keeps_who_acted_on_whose_authority_and_who_paid(
+        self, storage: AgentStepStorageInterface
+    ) -> None:
+        """What an audit reads survives the round trip: the actor of every
+        step, the principal of every input and tool call, the spender of
+        every model request, and the agent behind a tool call."""
+        org, session = new_id(), new_id()
+        asker, routed = a_person(), a_person()
+        message = make_message(session, principal=asker)
+        request = make_request(session, message.id, (message.id,), spender=asker)
+        response = make_response(session, message.id, request.id)
+        call = make_tool_request(session, message.id, response.id, principal=asker)
+        result = make_tool_response(session, message.id, call.id)
+        epoch = await storage.begin_run(org, session)
+        await storage.append_agent_steps(
+            org, session, epoch, [message, request, response, call, result]
+        )
+        await storage.append_inputs(org, session, [make_event(session, principal=routed)])
+        stored = await storage.read_agent_steps(org, session, 0, 10)
+        assert [(step.actor, attributed(step)) for step in stored] == [
+            (Actor.PERSON, asker),
+            (Actor.ENGINE, asker),
+            (Actor.MODEL, None),
+            (Actor.AGENT, asker),
+            (Actor.ENGINE, None),
+            (Actor.EXTERNAL, routed),
+        ]
+        acted = stored[3].header
+        assert isinstance(acted, ToolRequestHeader)
+        assert acted.agent == AgentRef(kind="delivery", version=1, agent_session_id=session)
+
+    async def test_begin_run_takes_an_epoch_above_every_before(
+        self, storage: AgentStepStorageInterface
+    ) -> None:
+        org, session = new_id(), new_id()
+        assert await storage.read_cursor(org, session) == AgentStepCursor(head=0, epoch=0)
+        assert [await storage.begin_run(org, session) for _ in range(3)] == [1, 2, 3]
+        assert await storage.read_cursor(org, session) == AgentStepCursor(head=0, epoch=3)
+        assert await storage.begin_run(org, new_id()) == 1
+
+    async def test_an_append_under_a_stale_epoch_is_refused_and_writes_nothing(
+        self, storage: AgentStepStorageInterface
+    ) -> None:
+        """The run that lost its claim cannot write a step: not one more
+        number is taken, and the run that holds the session goes on from
+        where the history stands."""
+        org, session = new_id(), new_id()
+        lost = await storage.begin_run(org, session)
+        landed = await storage.append_agent_steps(org, session, lost, [make_message(session)])
+        held = await storage.begin_run(org, session)
+        assert held > lost
+        for stale in (lost, held + 1, 0):
+            with pytest.raises(StaleWriter):
+                await storage.append_agent_steps(org, session, stale, [make_message(session)])
+        assert await storage.read_agent_steps(org, session, 0, 10) == list(landed)
+        assert await storage.read_cursor(org, session) == AgentStepCursor(head=1, epoch=held)
+        (next_step,) = await storage.append_agent_steps(org, session, held, [make_message(session)])
+        assert next_step.seq == 2
+
+    async def test_a_run_that_never_began_is_refused(
+        self, storage: AgentStepStorageInterface
+    ) -> None:
+        org, session = new_id(), new_id()
+        with pytest.raises(StaleWriter):
+            await storage.append_agent_steps(org, session, 1, [make_message(session)])
+        await storage.append_inputs(org, session, [make_message(session)])
+        with pytest.raises(StaleWriter):
+            await storage.append_agent_steps(org, session, 1, [make_message(session)])
+        assert await storage.read_cursor(org, session) == AgentStepCursor(head=1, epoch=0)
+
+    async def test_the_inbox_appends_inputs_with_no_epoch_on_the_same_numbers(
+        self, storage: AgentStepStorageInterface
+    ) -> None:
+        org, session = new_id(), new_id()
+        (first,) = await storage.append_inputs(org, session, [make_message(session)])
+        assert first.seq == 1
+        epoch = await storage.begin_run(org, session)
+        (request,) = await storage.append_agent_steps(
+            org, session, epoch, [make_request(session, first.id, (first.id,))]
+        )
+        (steer,) = await storage.append_inputs(org, session, [make_message(session, "not that")])
+        assert (request.seq, steer.seq) == (2, 3)
+        assert await storage.read_cursor(org, session) == AgentStepCursor(head=3, epoch=epoch)
+
+    async def test_the_inbox_refuses_what_a_run_writes(
+        self, storage: AgentStepStorageInterface
+    ) -> None:
+        org, session = new_id(), new_id()
+        message = make_message(session)
+        with pytest.raises(ValidationFailed):
+            await storage.append_inputs(
+                org, session, [message, make_request(session, message.id, (message.id,))]
+            )
+        assert await storage.read_agent_steps(org, session, 0, 10) == []
+        assert await storage.read_cursor(org, session) == AgentStepCursor()
+
+    async def test_append_is_idempotent_on_the_id(self, storage: AgentStepStorageInterface) -> None:
+        org, session = new_id(), new_id()
+        epoch = await storage.begin_run(org, session)
+        message = make_message(session)
+        (first,) = await storage.append_agent_steps(org, session, epoch, [message])
+        again = await storage.append_agent_steps(
+            org, session, epoch, [message.model_copy(update={"origin": Origin.CLI})]
+        )
+        assert again == (first,)
+        (by_inbox,) = await storage.append_inputs(org, session, [message])
+        assert by_inbox == first
+        assert await storage.read_cursor(org, session) == AgentStepCursor(head=1, epoch=epoch)
+
+    async def test_a_batch_that_names_an_id_twice_or_another_session_is_refused(
+        self, storage: AgentStepStorageInterface
+    ) -> None:
+        org, session = new_id(), new_id()
+        epoch = await storage.begin_run(org, session)
+        message = make_message(session)
+        with pytest.raises(ValidationFailed):
+            await storage.append_agent_steps(org, session, epoch, [message, message])
+        with pytest.raises(ValidationFailed):
+            await storage.append_agent_steps(org, session, epoch, [make_message(new_id())])
+        assert await storage.read_cursor(org, session) == AgentStepCursor(head=0, epoch=epoch)
+
+    async def test_an_id_another_session_holds_is_refused_whole(
+        self, storage: AgentStepStorageInterface
+    ) -> None:
+        org, session, other = new_id(), new_id(), new_id()
+        held = make_message(other)
+        await storage.append_inputs(org, other, [held])
+        epoch = await storage.begin_run(org, session)
+        with pytest.raises(UniqueKeyTaken):
+            await storage.append_agent_steps(
+                org,
+                session,
+                epoch,
+                [make_message(session), held.model_copy(update={"agent_session_id": session})],
+            )
+        assert await storage.read_agent_steps(org, session, 0, 10) == []
+        assert await storage.read_cursor(org, session) == AgentStepCursor(head=0, epoch=epoch)
+
+    async def test_an_id_another_tenant_appended_is_never_written_over(
+        self, storage: AgentStepStorageInterface
+    ) -> None:
+        """Ids are unique across tenants, and a repeat from another tenant is
+        not the same step: it is refused, both ways in, and spends nothing."""
+        org_a, org_b, session = new_id(), new_id(), new_id()
+        step = make_message(session)
+        (appended,) = await storage.append_inputs(org_a, session, [step])
+        stolen = step.model_copy(update={"origin": Origin.API})
+        with pytest.raises(TenantMismatch):
+            await storage.append_inputs(org_b, session, [stolen])
+        epoch = await storage.begin_run(org_b, session)
+        with pytest.raises(TenantMismatch):
+            await storage.append_agent_steps(org_b, session, epoch, [stolen])
+        assert await storage.read_agent_steps(org_a, session, 0, 10) == [appended]
+        assert await storage.read_agent_steps(org_b, session, 0, 10) == []
+        assert (await storage.read_cursor(org_b, session)).head == 0
+
+    async def test_another_tenant_naming_the_session_reaches_none_of_it(
+        self, storage: AgentStepStorageInterface
+    ) -> None:
+        """A session id is the tenant's: another tenant that names it reads
+        no step and no cursor, and the run it begins there takes nothing
+        from the holder's, whose appends go on landing."""
+        org_a, org_b, session = new_id(), new_id(), new_id()
+        epoch = await storage.begin_run(org_a, session)
+        (step,) = await storage.append_agent_steps(org_a, session, epoch, [make_message(session)])
+        assert await storage.read_agent_steps(org_b, session, 0, 10) == []
+        assert await storage.read_cursor(org_b, session) == AgentStepCursor()
+        assert await storage.begin_run(org_b, session) == 1
+        assert await storage.read_cursor(org_a, session) == AgentStepCursor(head=1, epoch=epoch)
+        (later,) = await storage.append_agent_steps(org_a, session, epoch, [make_message(session)])
+        assert later.seq == 2
+        assert await storage.read_agent_steps(org_a, session, 0, 10) == [step, later]
+
+    async def test_what_postgres_refuses_in_a_string_is_replaced_when_a_step_is_built(
+        self, storage: AgentStepStorageInterface
+    ) -> None:
+        """A NUL and a lone surrogate, which jsonb and UTF-8 refuse, become
+        U+FFFD in every string a block holds, and a float JSON has no word
+        for becomes None, so both impls keep the step as it was built and
+        neither append fails."""
+        org, session = new_id(), new_id()
+        odd = f"a\x00b{chr(0xD800)}c"  # a NUL, and a lone surrogate
+        file = Attachment(id=new_id(), name=odd, media_type="text/plain", size=1, hash="k:1")
+        message = make_message(session).model_copy(
+            update={
+                "content": Content(blocks=(TextBlock(text=odd), ImageBlock(attachment_id=file.id))),
+                "children": Children(attachments=(file,)),
+            }
+        )
+        built = AgentStep.model_validate(message.model_dump())
+        request = make_request(session, built.id, (built.id,))
+        response = AgentStep.model_validate(
+            {
+                **make_response(session, built.id, request.id).model_dump(),
+                "content": {
+                    "blocks": [
+                        {
+                            "kind": "tool_use",
+                            "id": "call\x00",
+                            "name": "read_log",
+                            "input": {odd: [odd, float("nan")], "n": float("inf")},
+                        }
+                    ]
+                },
+                "children": {"thinking": [{"kind": "thinking", "text": odd}]},
+            }
+        )
+        clean = "a\ufffdb\ufffdc"
+        assert built.as_text() == clean and built.children.attachments[0].name == clean
+        (use,) = response.as_tool_uses()
+        assert use.id == "call\ufffd"
+        assert use.input == {clean: (clean, None), "n": None}
+        assert response.children.thinking[0].text == clean
+        epoch = await storage.begin_run(org, session)
+        appended = await storage.append_agent_steps(org, session, epoch, [built, request, response])
+        assert [s.model_copy(update={"seq": 0}) for s in appended] == [built, request, response]
+        assert await storage.read_agent_steps(org, session, 0, 10) == list(appended)
+
+    async def test_purge_history_takes_one_sessions_steps_a_batch_at_a_time_then_its_cursor(
+        self, storage: AgentStepStorageInterface
+    ) -> None:
+        """The purge of one session's history: a batch of its steps at most
+        a call, then its cursor row once none is left, and fewer than the
+        batch once the history is gone. Its tenant's other sessions, and
+        another tenant's session under the same id, keep theirs."""
+        org, other, session, beside = new_id(), new_id(), new_id(), new_id()
+        await storage.append_inputs(org, session, [make_message(session) for _ in range(3)])
+        (kept,) = await storage.append_inputs(org, beside, [make_message(beside)])
+        (theirs,) = await storage.append_inputs(other, session, [make_message(session)])
+        assert await storage.purge_history(org, session, 2) == 2
+        assert await storage.read_cursor(org, session) == AgentStepCursor(head=3, epoch=0)
+        assert await storage.purge_history(org, session, 2) == 2, "the last step and the cursor"
+        assert await storage.purge_history(org, session, 2) == 0
+        assert await storage.read_agent_steps(org, session, 0, 10) == []
+        assert await storage.read_cursor(org, session) == AgentStepCursor()
+        assert await storage.read_agent_steps(org, beside, 0, 10) == [kept]
+        assert await storage.read_agent_steps(other, session, 0, 10) == [theirs]
+        assert await storage.read_cursor(other, session) == AgentStepCursor(head=1, epoch=0)
+
+    async def test_purge_tenant_takes_the_tenants_steps_then_its_cursors(
+        self, storage: AgentStepStorageInterface
+    ) -> None:
+        """The purge of a tenant's history: its steps a batch at most a call,
+        then its cursor rows once no step is left, a session with a cursor
+        and no step among them, and nothing of another tenant."""
+        org, other, first, second = new_id(), new_id(), new_id(), new_id()
+        await storage.append_inputs(org, first, [make_message(first) for _ in range(3)])
+        await storage.begin_run(org, second)
+        (theirs,) = await storage.append_inputs(other, first, [make_message(first)])
+        assert await storage.purge_tenant(org, 2) == 2
+        assert await storage.purge_tenant(org, 2) == 2, "the last step and one cursor"
+        assert await storage.purge_tenant(org, 2) == 1
+        assert await storage.purge_tenant(org, 2) == 0
+        assert await storage.read_agent_steps(org, first, 0, 10) == []
+        assert await storage.read_cursor(org, first) == AgentStepCursor()
+        assert await storage.read_cursor(org, second) == AgentStepCursor()
+        assert await storage.read_agent_steps(other, first, 0, 10) == [theirs]
+        assert await storage.read_cursor(other, first) == AgentStepCursor(head=1, epoch=0)
+
+    async def test_many_appends_never_share_or_skip_a_seq(
+        self, storage: AgentStepStorageInterface
+    ) -> None:
+        """N appends reach one session's cursor at once, a run's and the
+        inbox's mixed, and leave with 1..N: no gap, no duplicate, and the head
+        is the last of them. See contracts/racing.py for what each impl's run
+        of this proves."""
+        org, session, n = new_id(), new_id(), 32
+        epoch = await storage.begin_run(org, session)
+
+        async def one(by_run: bool) -> AgentStep:
+            step = make_message(session)
+            if by_run:
+                (appended,) = await storage.append_agent_steps(org, session, epoch, [step])
+            else:
+                (appended,) = await storage.append_inputs(org, session, [step])
+            return appended
+
+        run = await race(*(one(i % 2 == 0) for i in range(n)))
+        assert sorted(s.seq for s in run.outcomes) == list(range(1, n + 1)), run.summary()
+        history = await storage.read_agent_steps(org, session, 0, n * 2)
+        assert [s.seq for s in history] == list(range(1, n + 1))
+        assert {s.id for s in history} == {s.id for s in run.outcomes}
+        assert await storage.read_cursor(org, session) == AgentStepCursor(head=n, epoch=epoch)
+        (after,) = await storage.append_agent_steps(org, session, epoch, [make_message(session)])
+        assert after.seq == n + 1
+
+    async def test_many_appends_keep_one_cursor_per_session(
+        self, storage: AgentStepStorageInterface
+    ) -> None:
+        org, first, second, n = new_id(), new_id(), new_id(), 16
+        epochs = {first: await storage.begin_run(org, first)}
+        epochs[second] = await storage.begin_run(org, second)
+
+        async def one(session: UUID) -> AgentStep:
+            (appended,) = await storage.append_agent_steps(
+                org, session, epochs[session], [make_message(session)]
+            )
+            return appended
+
+        run = await race(*(one(session) for session in (first, second) * n))
+        for session in (first, second):
+            seqs = sorted(s.seq for s in run.outcomes if s.agent_session_id == session)
+            assert seqs == list(range(1, n + 1)), run.summary()

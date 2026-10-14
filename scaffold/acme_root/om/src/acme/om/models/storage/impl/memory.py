@@ -11,9 +11,13 @@ class FillSetStorageMemoryImpl(MemoryStorageBase, FillSetStorageInterface):
         super().__init__()
         self._fill_sets: MemoryTable[FillSet] = {}
 
-    def _versions(self, org_id: UUID, session_id: UUID) -> list[FillSet]:
+    def _versions(self, org_id: UUID, agent_session_id: UUID) -> list[FillSet]:
         return sorted(
-            (f for f in self._rows(self._fill_sets, org_id) if f.session_id == session_id),
+            (
+                f
+                for f in self._rows(self._fill_sets, org_id)
+                if f.agent_session_id == agent_session_id
+            ),
             key=lambda f: f.version,
         )
 
@@ -24,18 +28,19 @@ class FillSetStorageMemoryImpl(MemoryStorageBase, FillSetStorageInterface):
             # The unique version is per tenant, as the index makes it in
             # Postgres: another tenant's session holds nothing here.
             taken = any(
-                f.version == fill_set.version for f in self._versions(org_id, fill_set.session_id)
+                f.version == fill_set.version
+                for f in self._versions(org_id, fill_set.agent_session_id)
             )
             if taken:
                 raise PreconditionFailed(
-                    f"session {fill_set.session_id} holds version {fill_set.version} already"
+                    f"session {fill_set.agent_session_id} holds version {fill_set.version} already"
                 )
             return self._insert(self._fill_sets, org_id, fill_set)
 
     async def read_fill_set(
-        self, org_id: UUID, session_id: UUID, version: int | None
+        self, org_id: UUID, agent_session_id: UUID, version: int | None
     ) -> FillSet | None:
-        versions = self._versions(org_id, session_id)
+        versions = self._versions(org_id, agent_session_id)
         if version is None:
             return versions[-1] if versions else None
         return next((f for f in versions if f.version == version), None)

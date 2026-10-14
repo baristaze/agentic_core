@@ -38,10 +38,10 @@ from acme.integrations.mcp import (
     McpStdio,
     McpToolRefused,
 )
+from acme.om.agent_steps.types.header import ToolFailure
 from acme.om.base import Platform
 from acme.om.context import TenantContext
 from acme.om.exceptions import McpDefinitionChanged, ToolFailed, ValidationFailed
-from acme.om.steps.types.header import ToolFailure
 from acme.om.tools.rules import unreviewed
 from acme.om.tools.tool import ToolInterface, ToolRuntime
 from acme.om.tools.types.mcp import McpBinding, McpOutput, McpToolDefinition

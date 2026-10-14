@@ -245,7 +245,9 @@ context: a transition does, in the adopter.
 
 A **step** is the smallest thing the engine records: a record of an
 event, never an orchestration's step. A loop, a session, a window, a
-trace, and a history are series of steps or references to them.
+trace, and a history are series of steps or references to them. In code
+it is `AgentStep`, in `agent_steps`, never the guideline's orchestration
+`Step`.
 
 ### One Event, One Step
 
@@ -287,10 +289,10 @@ is shape and stays readable, and **content**, which is sealed at rest
 
 ```python
 class Step(Identifiable, Created):          # the base chain; tenancy as the guideline's
-    session_id: UUID
+    agent_session_id: UUID
     seq: int                    # gapless per session, from the session's cursor row
     loop_id: UUID               # the id of its loop's first step
-    type: StepType
+    type: AgentStepType
     actor: Actor                # person | program | agent | model | engine | external
     origin: Origin              # portal | cli | api | integration | automation | parent | engine
     responds_to: UUID | None    # a response points at its request
@@ -1230,11 +1232,11 @@ no axis between the two. An org-wide session is seen by every member of
 its org, and any member may join it, since a session may be revived
 months later; joining makes them a **participant**. A private session is
 seen by its creator, the participants its creator adds, and
-`manage_sessions`, an admin's permission, for audit. An audit read is
+`manage_agent_sessions`, an admin's permission, for audit. An audit read is
 not a membership: a member joins only an org-wide session on their own,
 and a private one's participants are its creator's to add. Its creator
 removes a participant, and a participant leaves on their own. Removed
-from a private session, a person without `manage_sessions` no longer
+from a private session, a person without `manage_agent_sessions` no longer
 sees it. The default follows the kind's authority mode: a steady kind's
 sessions are org-wide, and a delegated kind's private, since its tools
 run with one person's own permissions and its results may hold what
@@ -1247,7 +1249,7 @@ One **steerer** at a time instructs a session: its principal, its
 creator until a hand-off. The steerer hands it to a participant
 explicitly, and the hand-off is a recorded step. When the steerer lapses,
 gone from the org or in a role too low, someone who holds
-`manage_sessions` takes it over through the route that assigns a
+`manage_agent_sessions` takes it over through the route that assigns a
 principal, and takes part from then on: the one way into a private
 session its creator did not give. The steerer is removed only once they
 hand the steer on, so a session's steerer always sees it. A participant
@@ -1756,7 +1758,7 @@ interface ([Composition by decoration][g-decoration]). A database reader
 sees ciphertext. Opening content takes the session's key, which opens to
 whom the session is visible ([Who Is Who](#who-is-who)): every member of
 its org when it is org-wide, its creator and its participants when it is
-private, and `manage_sessions`, a permission of its own, an admin's, for
+private, and `manage_agent_sessions`, a permission of its own, an admin's, for
 audit, everywhere. To anyone else, its history and its artifacts answer
 as a session that never existed.
 
@@ -1880,14 +1882,17 @@ it reproducible.
 
 The engine's nouns are the namespaces of its object model, each in the
 guideline's shape ([Namespaces as Swimlanes][g-namespaces]). Names never
-reuse the guideline's: the session is `AgentSession`, the window
-namespace is `windows` beside the guideline's `context` module, and
-attribution is `attribution` beside its identity plane.
+reuse the guideline's: the session is `AgentSession`, the step
+`AgentStep`, the window namespace is `windows` beside the guideline's
+`context` module, and attribution is `attribution` beside its identity
+plane. Nor do they take a word a copy's own product needs: a noun a
+product could own is named for the agent or the mechanism it serves, on
+every surface a copy shares, so the bare word stays the product's.
 
 | Namespace | Holds |
 |---|---|
 | `agent_sessions` | The session, its status projection, its parks, who sees it and takes part in it |
-| `steps` | The step, its types, actors and origins, headers, content blocks, children, stream parts |
+| `agent_steps` | The step, its types, actors and origins, headers, content blocks, children, stream parts |
 | `windows` | Rendering, windows, the pinned zone, compaction policy, summaries |
 | `models` | Model roles, model sizes and asks, fills, fill sets, the resolver, error kinds, usage |
 | `tools` | The tool contract, the registry, classes, effects, policy, approvals, failure classes, jobs, workspace snapshots |

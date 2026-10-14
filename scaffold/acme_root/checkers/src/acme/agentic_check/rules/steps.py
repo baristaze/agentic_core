@@ -18,12 +18,12 @@ from acme.agentic_check.project import (
 )
 from acme.agentic_check.registry import rule
 
-TABLE = "steps"
+TABLE = "agent_steps"
 """The history's table, as its table class names it in `__tablename__`."""
 PURGE = "purge"
 """The prefix of the function names that make the purge: the one path that deletes a step."""
 STATEMENTS = {"update", "delete"}
-"""The statement builders that rewrite or remove rows, called on a table (`update(Steps)`) or as its method."""
+"""The statement builders that rewrite or remove rows, called on a table (`update(AgentSteps)`) or as its method."""
 UPSERT = "on_conflict_do_update"
 """An insert that rewrites the row it meets: an update, whatever builds it."""
 
@@ -119,8 +119,8 @@ def statement(project: Project, file: SourceFile, call: ast.Call) -> tuple[str, 
 )
 def steps_are_written_once(project: Project) -> Iterator[Violation]:
     """The steps table is the class under the OM whose `__tablename__`
-    is `steps`. Anywhere in the source, an SQLAlchemy `update()` of it
-    (`update(Steps)`, `Steps.__table__.update()`, or a local name
+    is `agent_steps`. Anywhere in the source, an SQLAlchemy `update()` of it
+    (`update(AgentSteps)`, `AgentSteps.__table__.update()`, or a local name
     assigned either), and SQL text that updates it, are findings. A
     `delete()` of it, or SQL text that deletes from it, is a finding
     outside a function whose name starts with `purge`. A docstring is

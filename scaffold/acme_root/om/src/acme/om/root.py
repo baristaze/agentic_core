@@ -16,12 +16,16 @@ from acme.integrations.model_providers.registry import absent_model_providers
 from acme.integrations.root import IntegrationsInterface
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.impl.manager import AgentSessionsManagerImpl, AgentSessionsOptions
+from acme.om.agent_steps import AgentStepsManagerInterface
+from acme.om.agent_steps.impl.manager import AgentStepsManagerImpl, AgentStepsOptions
+from acme.om.agent_steps.storage import AgentStepStorageInterface
+from acme.om.agent_steps.storage.impl.memory import AgentStepStorageMemoryImpl
 from acme.om.agents import AgentsManagerInterface, ResultGateInterface
 from acme.om.agents.impl.gate import ResultGateNullImpl
 from acme.om.agents.impl.loop import LoopManagerImpl, LoopOptions
 from acme.om.agents.impl.manager import AgentsManagerImpl, AgentsOptions
 from acme.om.agents.impl.sink import StreamSinkNullImpl
-from acme.om.agents.impl.waiter import SessionWaiterImpl
+from acme.om.agents.impl.waiter import AgentSessionWaiterImpl
 from acme.om.agents.loop import LoopManagerInterface
 from acme.om.agents.sink import StreamSinkInterface
 from acme.om.agents.types.kind import AgentKind, AgentKindCatalog
@@ -68,18 +72,14 @@ from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.impl.relay import OutboxRelayImpl
 from acme.om.privacy import PrivacyManagerInterface
 from acme.om.privacy.impl.artifacts import ArtifactSealKeysImpl
-from acme.om.privacy.impl.keys import SessionKeysImpl
+from acme.om.privacy.impl.keys import AgentSessionKeysImpl
 from acme.om.privacy.impl.manager import PrivacyManagerImpl, PrivacyOptions
-from acme.om.privacy.impl.memory_only_steps import StepStorageShapeOnlyImpl
+from acme.om.privacy.impl.memory_only_agent_steps import AgentStepStorageShapeOnlyImpl
 from acme.om.privacy.impl.records import RecordSealKeysImpl
-from acme.om.privacy.impl.routed_steps import StepStorageRoutedImpl
-from acme.om.privacy.impl.sealed_steps import StepStorageSealedImpl
+from acme.om.privacy.impl.routed_agent_steps import AgentStepStorageRoutedImpl
+from acme.om.privacy.impl.sealed_agent_steps import AgentStepStorageSealedImpl
 from acme.om.privacy.impl.snapshots import SnapshotSealKeysImpl
-from acme.om.privacy.keys import SessionKeysInterface
-from acme.om.steps import StepsManagerInterface
-from acme.om.steps.impl.manager import StepsManagerImpl, StepsOptions
-from acme.om.steps.storage import StepStorageInterface
-from acme.om.steps.storage.impl.memory import StepStorageMemoryImpl
+from acme.om.privacy.keys import AgentSessionKeysInterface
 from acme.om.storage.root import StorageInterface
 from acme.om.tenancy import TenancyManagerInterface, TenancyOperatorManagerInterface
 from acme.om.tenancy.impl.credentials import TenancyCredentialsManagerImpl
@@ -129,7 +129,7 @@ class Managers:
     outbox: OutboxRelayInterface
     orchestrations: OrchestrationsManagerInterface
     leases: LeasesManagerInterface
-    steps: StepsManagerInterface
+    agent_steps: AgentStepsManagerInterface
     agent_sessions: AgentSessionsManagerInterface
     privacy: PrivacyManagerInterface
     budgets: BudgetsManagerInterface
@@ -164,24 +164,24 @@ def refuse_quiet_spend(environment: str, *capabilities: object) -> None:
 
 
 async def purge_held(
-    managers: Managers, org_id: UUID, session_id: UUID, tree_id: UUID | None
+    managers: Managers, org_id: UUID, agent_session_id: UUID, tree_id: UUID | None
 ) -> None:
     """What the windows, the tools, attribution, and the agents hold of a
     session the sweep purges: its artifacts, and its workspace with its
     transport's records, which go with its history, its authority, and its
     tree when it was the tree's last session."""
-    await managers.windows.purge_artifacts(org_id, session_id)
-    await managers.tools.purge_workspace(org_id, session_id)
-    await managers.attribution.purge_authority(org_id, session_id)
+    await managers.windows.purge_artifacts(org_id, agent_session_id)
+    await managers.tools.purge_workspace(org_id, agent_session_id)
+    await managers.attribution.purge_authority(org_id, agent_session_id)
     if tree_id is not None:
         await managers.agents.purge_tree(org_id, tree_id)
 
 
-async def opens(managers: Managers, ctx: TenantContext, session_id: UUID) -> None:
+async def opens(managers: Managers, ctx: TenantContext, agent_session_id: UUID) -> None:
     """A history, or what its session keeps outside it, opens to whom the
     session is visible: one it is not visible to finds nothing there."""
-    if not await managers.agent_sessions.is_visible(ctx, session_id):
-        raise NotFound(f"agent session {session_id} not found")
+    if not await managers.agent_sessions.is_visible(ctx, agent_session_id):
+        raise NotFound(f"agent session {agent_session_id} not found")
 
 
 def build_tenancy(
@@ -232,16 +232,16 @@ def build_tenancy(
 
 
 def private_history(
-    storage: StorageInterface, keys: SessionKeysInterface, transient: StepStorageInterface
-) -> StepStorageInterface:
+    storage: StorageInterface, keys: AgentSessionKeysInterface, transient: AgentStepStorageInterface
+) -> AgentStepStorageInterface:
     """The history as the engine reaches it: every session routed by its
     storage policy to content sealed at rest, to a shape at rest and its
     content in this process, or to nothing at rest (`transient`). Each impl
     is wired here, at boot; the steps manager sees one interface."""
-    history = storage.get_step_storage()
-    return StepStorageRoutedImpl(
-        sealed=StepStorageSealedImpl(history, keys),
-        shape_only=StepStorageShapeOnlyImpl(history),
+    history = storage.get_agent_step_storage()
+    return AgentStepStorageRoutedImpl(
+        sealed=AgentStepStorageSealedImpl(history, keys),
+        shape_only=AgentStepStorageShapeOnlyImpl(history),
         transient=transient,
         policies=storage.get_privacy_storage(),
     )
@@ -260,7 +260,7 @@ def build_managers(
     work_options: WorkOptions | None = None,
     orchestrations_options: OrchestrationsOptions | None = None,
     leases_options: LeasesOptions | None = None,
-    steps_options: StepsOptions | None = None,
+    steps_options: AgentStepsOptions | None = None,
     agent_sessions_options: AgentSessionsOptions | None = None,
     budgets_options: BudgetsOptions | None = None,
     models_options: ModelsOptions | None = None,
@@ -390,24 +390,26 @@ def build_managers(
         # so that edge is bound at call time.
         waiters={
             WaiterKind.ORCHESTRATION: OrchestrationWaiterImpl(orchestrations),
-            WaiterKind.SESSION: SessionWaiterImpl(lambda: managers.agent_sessions),
+            WaiterKind.AGENT_SESSION: AgentSessionWaiterImpl(lambda: managers.agent_sessions),
         },
         work=work,
     )
     # The history first: a session's status is read off its steps. What a
     # step says reaches it through the sealing layer, by the session's policy.
-    session_keys = SessionKeysImpl(storage.get_privacy_storage(), infra.get_keys())
-    steps = StepsManagerImpl(
-        private_history(storage, session_keys, StepStorageMemoryImpl()),
+    agent_session_keys = AgentSessionKeysImpl(storage.get_privacy_storage(), infra.get_keys())
+    steps = AgentStepsManagerImpl(
+        private_history(storage, agent_session_keys, AgentStepStorageMemoryImpl()),
         tenancy,
-        steps_options or StepsOptions(),
+        steps_options or AgentStepsOptions(),
         # Who may instruct a session is the agents' to answer, from its
         # registry; who steers it is attribution's, and who sees it the
         # sessions'. Each is built below on this manager, so the edges are
         # bound at call time.
-        instructs=lambda ctx, session_id: managers.agents.require_instructor(ctx, session_id),
-        steers=lambda ctx, session_id: managers.attribution.steers(ctx, session_id),
-        opens=lambda ctx, session_id: opens(managers, ctx, session_id),
+        instructs=lambda ctx, agent_session_id: managers.agents.require_instructor(
+            ctx, agent_session_id
+        ),
+        steers=lambda ctx, agent_session_id: managers.attribution.steers(ctx, agent_session_id),
+        opens=lambda ctx, agent_session_id: opens(managers, ctx, agent_session_id),
     )
     agent_sessions = AgentSessionsManagerImpl(
         storage.get_agent_session_storage(),
@@ -418,13 +420,13 @@ def build_managers(
         # What attribution and the agents hold of a purged session goes with
         # it. Both are built below on this manager, so the edge is bound at
         # call time.
-        purged=lambda org_id, session_id, tree_id: purge_held(
-            managers, org_id, session_id, tree_id
+        purged=lambda org_id, agent_session_id, tree_id: purge_held(
+            managers, org_id, agent_session_id, tree_id
         ),
     )
     privacy = PrivacyManagerImpl(
         storage.get_privacy_storage(),
-        session_keys,
+        agent_session_keys,
         steps,
         agent_sessions,
         tenancy,
@@ -433,7 +435,7 @@ def build_managers(
         # What the tools keep of a session outside its seal goes with its
         # key. They are built below on this manager, so the edge is bound at
         # call time.
-        revoked=lambda ctx, session_id: managers.tools.erase_snapshots(ctx, session_id),
+        revoked=lambda ctx, agent_session_id: managers.tools.erase_snapshots(ctx, agent_session_id),
     )
     # The gate reads the budgets of a call's scopes and holds on the ledger.
     budgets = BudgetsManagerImpl(
@@ -496,10 +498,10 @@ def build_managers(
         infra.get_buckets(),
         calls,
         prompt_hash or PromptHashPrivacyImpl(privacy),
-        artifact_seal or ArtifactSealKeysImpl(session_keys, storage.get_privacy_storage()),
+        artifact_seal or ArtifactSealKeysImpl(agent_session_keys, storage.get_privacy_storage()),
         compaction_policy or CompactionPolicy(),
         WindowsOptions(),
-        opens=lambda ctx, session_id: opens(managers, ctx, session_id),
+        opens=lambda ctx, agent_session_id: opens(managers, ctx, agent_session_id),
     )
     # The read tool pages through what windows keeps. The spawn tool starts
     # sub-agents through the agents manager, which is built below on this
@@ -520,7 +522,7 @@ def build_managers(
     tools_settings = tools_options or ToolsOptions()
     snapshots = SnapshotStore(
         infra.get_buckets(),
-        snapshot_seal or SnapshotSealKeysImpl(session_keys, storage.get_privacy_storage()),
+        snapshot_seal or SnapshotSealKeysImpl(agent_session_keys, storage.get_privacy_storage()),
         privacy.keyed_hash,
         infra.get_secrets(),
         injected_secrets(catalog),
@@ -536,7 +538,8 @@ def build_managers(
         infra.get_transport(),
         tools_settings,
         keyed_hash=privacy.keyed_hash,
-        record_seal=record_seal or RecordSealKeysImpl(session_keys, storage.get_privacy_storage()),
+        record_seal=record_seal
+        or RecordSealKeysImpl(agent_session_keys, storage.get_privacy_storage()),
         attribution=attribution,
         broker=infra.get_broker(),
         snapshots=snapshots,
@@ -593,7 +596,7 @@ def build_managers(
         outbox=outbox,
         orchestrations=orchestrations,
         leases=leases,
-        steps=steps,
+        agent_steps=steps,
         agent_sessions=agent_sessions,
         privacy=privacy,
         budgets=budgets,
@@ -641,7 +644,7 @@ def injected_secrets(catalog: Iterable[ToolInterface]) -> frozenset[str]:
 
 
 def engine_tools(
-    steps: StepsManagerInterface,
+    steps: AgentStepsManagerInterface,
     sessions: AgentSessionsManagerInterface,
     attachments: AttachmentReaderInterface,
     windows: WindowsManagerInterface,

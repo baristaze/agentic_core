@@ -11,11 +11,11 @@ class ArtifactSealNullImpl(ArtifactSealInterface):
     content, so it refuses and says why."""
 
     async def seal(
-        self, ctx: TenantContext, session_id: UUID, artifact_id: UUID, data: bytes
+        self, ctx: TenantContext, agent_session_id: UUID, artifact_id: UUID, data: bytes
     ) -> SealedArtifact:
         raise Unavailable("no key service is wired, so no artifact is kept")
 
     async def open(
-        self, ctx: TenantContext, session_id: UUID, artifact_id: UUID, sealed: bytes
+        self, ctx: TenantContext, agent_session_id: UUID, artifact_id: UUID, sealed: bytes
     ) -> bytes | None:
         raise Unavailable("no key service is wired, so no artifact is opened")

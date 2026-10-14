@@ -14,10 +14,10 @@ from contracts.histories import History
 
 from acme.integrations.model_providers.calls import ModelCall, ToolSpec
 from acme.integrations.model_providers.types import ProviderName
+from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
+from acme.om.agent_steps.types.content import ToolResultBlock, ToolUseBlock
+from acme.om.agent_steps.types.header import ToolRequestHeader
 from acme.om.models.types.fill import Fill
-from acme.om.steps.types.content import ToolResultBlock, ToolUseBlock
-from acme.om.steps.types.header import ToolRequestHeader
-from acme.om.steps.types.step import Step, StepType
 from acme.om.windows import rules
 from acme.om.windows.types.kind import KindPrompts
 from acme.om.windows.types.policy import CompactionPolicy
@@ -74,7 +74,7 @@ def generated(seed: int) -> History:
     return history
 
 
-def pairs(steps: Sequence[Step]) -> list[tuple[int, int]]:
+def pairs(steps: Sequence[AgentStep]) -> list[tuple[int, int]]:
     """Every pair a window must keep together, as indexes, earlier first: a
     response and its request, a tool request and the response that asked
     for it, a tool response and its request, a request and each input it
@@ -84,7 +84,7 @@ def pairs(steps: Sequence[Step]) -> list[tuple[int, int]]:
     for index, step in enumerate(steps):
         if step.responds_to is not None:
             found.append((at[step.responds_to], index))
-        if step.type in (StepType.TOOL_REQUEST, StepType.MODEL_REQUEST):
+        if step.type in (AgentStepType.TOOL_REQUEST, AgentStepType.MODEL_REQUEST):
             found.extend((at[ref], index) for ref in step.refs)
     return found
 
@@ -131,7 +131,7 @@ def test_a_main_window_after_a_summary_at_any_cut_renders_a_request_the_provider
     steps = generated(seed).steps
     assert_taken(rules.render_main(steps, KIND, fill(100_000), 1, "plan", POLICY).call)
     for cut in sorted(rules.consistent_cuts(steps) - {0}):
-        history = History(steps[0].session_id)
+        history = History(steps[0].agent_session_id)
         history.steps = list(steps)
         summary = history.summarize(steps[cut - 1].seq, "folded")
         draft = rules.render_main(history.steps, KIND, fill(100_000), 1, None, POLICY)

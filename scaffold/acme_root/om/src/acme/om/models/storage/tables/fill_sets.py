@@ -19,10 +19,14 @@ class FillSets(IdentifiableMixin, CreatedMixin, Base):
     __org_id_index__ = False
     __table_args__ = (
         Index(
-            "uq_fill_sets_org_id_session_id_version", "org_id", "session_id", "version", unique=True
+            "uq_fill_sets_org_id_agent_session_id_version",
+            "org_id",
+            "agent_session_id",
+            "version",
+            unique=True,
         ),
     )
-    session_id: Mapped[UUID]
+    agent_session_id: Mapped[UUID]
     version: Mapped[int]
     roles: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
     eligibility: Mapped[dict[str, Any]]

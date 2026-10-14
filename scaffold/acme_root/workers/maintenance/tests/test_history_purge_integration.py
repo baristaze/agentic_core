@@ -17,11 +17,11 @@ from worker_support import request
 
 from acme.om.agent_sessions.storage.tables.agent_sessions import AgentSessions
 from acme.om.agent_sessions.types.agent_session import AgentSession
+from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
+from acme.om.agent_steps.types.header import InputHeader
+from acme.om.agent_steps.types.page import AgentStepCursor
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
-from acme.om.steps.types.header import InputHeader
-from acme.om.steps.types.page import StepCursor
-from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.storage.impl.pg_base import hold_purge, set_scope
 from acme.om.storage.impl.postgres import login_sessions
 from acme.om.storage.roles import DatabaseRole
@@ -73,10 +73,10 @@ async def deleted_org(container: WorkerContainer) -> UUID:
     return org.id
 
 
-def a_session() -> AgentSession:
-    now, by, session_id = utcnow(), new_id(), new_id()
+def an_agent_session() -> AgentSession:
+    now, by, agent_session_id = utcnow(), new_id(), new_id()
     return AgentSession(
-        id=session_id,
+        id=agent_session_id,
         created_at=now,
         updated_at=now,
         created_by=by,
@@ -84,18 +84,18 @@ def a_session() -> AgentSession:
         title="the weekly report",
         kind="delivery",
         kind_version=1,
-        root_id=session_id,
+        root_id=agent_session_id,
     )
 
 
-def a_message(session_id: UUID) -> Step:
-    step_id = new_id()
-    return Step(
-        id=step_id,
+def a_message(agent_session_id: UUID) -> AgentStep:
+    agent_step_id = new_id()
+    return AgentStep(
+        id=agent_step_id,
         created_at=utcnow(),
-        session_id=session_id,
-        loop_id=step_id,
-        type=StepType.MESSAGE,
+        agent_session_id=agent_session_id,
+        loop_id=agent_step_id,
+        type=AgentStepType.MESSAGE,
         actor=Actor.PERSON,
         origin=Origin.PORTAL,
         header=InputHeader(principal=Principal(kind=PrincipalKind.PERSON, id=new_id())),
@@ -116,17 +116,17 @@ async def test_a_deleted_tenants_sessions_steps_and_cursors_go_before_it_is_mark
     await loop._sweep_once()  # pyright: ignore[reportPrivateUsage]
 
     sessions = container.storage.get_agent_session_storage()
-    history = container.storage.get_step_storage()
+    history = container.storage.get_agent_step_storage()
     made = await with_history(container, org_id, sessions=2, steps=3)
     before = await tenancy.read_org(org_id)
     assert before is not None and before.purged_at is None
 
     await loop._sweep_once()  # pyright: ignore[reportPrivateUsage]
-    assert await sessions.read_sessions(org_id, None, None, 10) == []
+    assert await sessions.read_agent_sessions(org_id, None, None, 10) == []
     for session in made:
-        assert await sessions.read_session(org_id, session.id) is None
-        assert await history.read_steps(org_id, session.id, 0, 10) == []
-        assert await history.read_cursor(org_id, session.id) == StepCursor()
+        assert await sessions.read_agent_session(org_id, session.id) is None
+        assert await history.read_agent_steps(org_id, session.id, 0, 10) == []
+        assert await history.read_cursor(org_id, session.id) == AgentStepCursor()
     taken = await tenancy.read_org(org_id)
     assert taken is not None and taken.purged_at is None, "its history was there to delete"
 
@@ -140,10 +140,10 @@ async def with_history(
 ) -> list[AgentSession]:
     """Sessions of the tenant, each with a history of `steps` and a cursor."""
     rows = container.storage.get_agent_session_storage()
-    history = container.storage.get_step_storage()
-    made = [a_session() for _ in range(sessions)]
+    history = container.storage.get_agent_step_storage()
+    made = [an_agent_session() for _ in range(sessions)]
     for session in made:
-        assert await rows.create_session(org_id, session, ())
+        assert await rows.create_agent_session(org_id, session, ())
         if steps:
             await history.append_inputs(
                 org_id, session.id, [a_message(session.id) for _ in range(steps)]
@@ -155,12 +155,12 @@ async def with_history(
 async def left_of(container: WorkerContainer, org_id: UUID, made: list[AgentSession]) -> int:
     """The sessions, steps, and cursor rows of the tenant still there."""
     rows = container.storage.get_agent_session_storage()
-    history = container.storage.get_step_storage()
+    history = container.storage.get_agent_step_storage()
     left = 0
     for session in made:
-        left += await rows.read_session(org_id, session.id) is not None
-        left += len(await history.read_steps(org_id, session.id, 0, 100))
-        left += await history.read_cursor(org_id, session.id) != StepCursor()
+        left += await rows.read_agent_session(org_id, session.id) is not None
+        left += len(await history.read_agent_steps(org_id, session.id, 0, 100))
+        left += await history.read_cursor(org_id, session.id) != AgentStepCursor()
     return left
 
 

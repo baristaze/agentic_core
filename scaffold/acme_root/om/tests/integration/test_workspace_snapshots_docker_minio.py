@@ -55,14 +55,14 @@ from acme.infra.workspaces import (
 )
 from acme.infra.workspaces.container import WorkspaceContainerImpl, container_name
 from acme.om.agent_sessions.rules import QUESTION
-from acme.om.base import new_id, utcnow
-from acme.om.steps.types.content import TextBlock
-from acme.om.steps.types.header import (
+from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
+from acme.om.agent_steps.types.content import TextBlock
+from acme.om.agent_steps.types.header import (
     LoopOutcome,
     SnapshotHeader,
     WorkspaceSnapshot,
 )
-from acme.om.steps.types.step import Step, StepType
+from acme.om.base import new_id, utcnow
 from acme.om.tools.impl.snapshots import BUCKET, session_prefix, snapshot_key
 from acme.om.tools.native.ask_person import ASK_PERSON
 from acme.om.tools.native.spawn_sub_agent import SPAWN_SUB_AGENT
@@ -213,14 +213,14 @@ def on_docker(
     return loop, infra
 
 
-async def snapshot_of(loop: Loop, session_id: UUID, workspace: Workspace) -> Step:
-    epoch = await loop.managers.steps.begin_run(loop.owner, session_id)
+async def snapshot_of(loop: Loop, agent_session_id: UUID, workspace: Workspace) -> AgentStep:
+    epoch = await loop.managers.agent_steps.begin_run(loop.owner, agent_session_id)
     return await loop.managers.tools.snapshot_workspace(
-        loop.owner, session_id, workspace, epoch=epoch, loop_id=new_id()
+        loop.owner, agent_session_id, workspace, epoch=epoch, loop_id=new_id()
     )
 
 
-def named(step: Step) -> WorkspaceSnapshot:
+def named(step: AgentStep) -> WorkspaceSnapshot:
     assert isinstance(step.header, SnapshotHeader)
     return step.header.snapshot
 
@@ -241,30 +241,32 @@ async def restores_and_refuses_an_altered_one(
     starts."""
     loop, infra = on_docker(tmp_path, buckets)
     tools, ctx = loop.managers.tools, loop.owner
-    session_id = await loop.start(BOXED.name)
-    workspace = await tools.prepare_workspace(ctx, session_id, BOXED_SPEC)
+    agent_session_id = await loop.start(BOXED.name)
+    workspace = await tools.prepare_workspace(ctx, agent_session_id, BOXED_SPEC)
     try:
         await inside(workspace, "sh", "-c", "echo kept > /workspace/a.txt && echo kept > /opt/b")
-        step = await snapshot_of(loop, session_id, workspace)
+        step = await snapshot_of(loop, agent_session_id, workspace)
         # The step the history names is what the restore reads.
-        (read,) = [s for s in await loop.history(session_id) if s.id == step.id]
+        (read,) = [s for s in await loop.history(agent_session_id) if s.id == step.id]
         snapshot = named(read)
         await inside(workspace, "sh", "-c", "echo later > /workspace/a.txt && rm /opt/b")
         await tools.release_workspace(ctx, workspace)
 
-        restored = await tools.prepare_workspace(ctx, session_id, BOXED_SPEC, restore=snapshot)
+        restored = await tools.prepare_workspace(
+            ctx, agent_session_id, BOXED_SPEC, restore=snapshot
+        )
         assert await inside(restored, "cat", "/workspace/a.txt", "/opt/b") == (0, "kept\nkept\n")
 
         await tools.release_workspace(ctx, restored)
-        key = snapshot_key(session_id, snapshot.hash)
+        key = snapshot_key(agent_session_id, snapshot.hash)
         sealed = bytearray(await infra.buckets.get(ctx.org_id, BUCKET, key))
         sealed[len(sealed) // 2] ^= 0x01
         await infra.buckets.put(ctx.org_id, BUCKET, key, bytes(sealed), "application/octet-stream")
         with pytest.raises(WorkspaceLost, match="altered"):
-            await tools.prepare_workspace(ctx, session_id, BOXED_SPEC, restore=snapshot)
-        assert not await container_runs(session_id), "no workspace started"
+            await tools.prepare_workspace(ctx, agent_session_id, BOXED_SPEC, restore=snapshot)
+        assert not await container_runs(agent_session_id), "no workspace started"
     finally:
-        await tools.purge_workspace(ctx.org_id, session_id)
+        await tools.purge_workspace(ctx.org_id, agent_session_id)
 
 
 async def test_a_snapshot_on_the_local_buckets_restores_and_an_altered_one_starts_nothing(
@@ -290,8 +292,8 @@ async def test_a_snapshot_holds_no_credential_the_broker_attached_and_no_secrets
     loop, infra = on_docker(tmp_path)
     tools, ctx = loop.managers.tools, loop.owner
     await infra.get_secrets().put(ctx.org_id, TOKEN, f"tok-{tokens.token_hex(12)}")
-    session_id = await loop.start(BOXED.name)
-    workspace = await tools.prepare_workspace(ctx, session_id, BOXED_SPEC)
+    agent_session_id = await loop.start(BOXED.name)
+    workspace = await tools.prepare_workspace(ctx, agent_session_id, BOXED_SPEC)
     seal = RecordSealTwin().seal
 
     def command(script: str) -> CommandSpec:
@@ -312,9 +314,11 @@ async def test_a_snapshot_holds_no_credential_the_broker_attached_and_no_secrets
         await infra.broker.attach(workspace, new_id(), BROKERED)
         assert (await inside(workspace, "test", "-e", credential))[0] == 0
 
-        snapshot = named(await snapshot_of(loop, session_id, workspace))
+        snapshot = named(await snapshot_of(loop, agent_session_id, workspace))
         await tools.release_workspace(ctx, workspace)
-        restored = await tools.prepare_workspace(ctx, session_id, BOXED_SPEC, restore=snapshot)
+        restored = await tools.prepare_workspace(
+            ctx, agent_session_id, BOXED_SPEC, restore=snapshot
+        )
 
         assert (await inside(restored, "test", "-e", credential))[0] == 1, "no credential"
         assert (await inside(restored, "printenv", TOKEN))[0] == 1, "no secret's variable"
@@ -324,9 +328,9 @@ async def test_a_snapshot_holds_no_credential_the_broker_attached_and_no_secrets
         )
         assert leak.exit_code == 0
         with pytest.raises(SnapshotRefused, match=TOKEN):
-            await snapshot_of(loop, session_id, restored)
+            await snapshot_of(loop, agent_session_id, restored)
     finally:
-        await tools.purge_workspace(ctx.org_id, session_id)
+        await tools.purge_workspace(ctx.org_id, agent_session_id)
 
 
 async def test_a_child_forked_in_its_parents_run_sees_its_workspace_at_the_spawn(
@@ -380,9 +384,9 @@ async def test_a_child_forked_in_its_parents_run_sees_its_workspace_at_the_spawn
             await tools.purge_workspace(ctx.org_id, child)
 
 
-def printed(history: list[Step]) -> str:
+def printed(history: list[AgentStep]) -> str:
     """What the last command the loop ran printed."""
-    last = [step for step in history if step.type is StepType.TOOL_RESPONSE][-1]
+    last = [step for step in history if step.type is AgentStepType.TOOL_RESPONSE][-1]
     (part,) = last.as_tool_response().parts
     assert isinstance(part, TextBlock)
     return json.loads(part.text)["stdout"]
@@ -399,38 +403,43 @@ async def test_a_kept_workspace_holds_what_a_loop_wrote_outside_its_volume_acros
     loop, infra = on_docker(tmp_path)
     tools, ctx = loop.managers.tools, loop.owner
     await infra.get_secrets().put(ctx.org_id, TOKEN, f"tok-{tokens.token_hex(12)}")
-    session_id = await loop.start(BOXED.name)
+    agent_session_id = await loop.start(BOXED.name)
     install = "mkdir -p /opt/tool && echo 1.0 > /opt/tool/version"
     try:
-        await loop.say(session_id, "Install the tool, then ask me which version.")
+        await loop.say(agent_session_id, "Install the tool, then ask me which version.")
         loop.anthropic.add(
             reply(call("run_command", argv=["sh", "-c", install])),
             reply(call(ASK_PERSON, question="Which version?")),
         )
-        parked = await loop.loops.run(ctx, session_id)
+        parked = await loop.loops.run(ctx, agent_session_id)
         assert parked.park == QUESTION
-        assert not await container_runs(session_id), "released once its snapshot held it"
+        assert not await container_runs(agent_session_id), "released once its snapshot held it"
 
         for text in ("Version 1.", "Check it again."):
-            await loop.say(session_id, text)
+            await loop.say(agent_session_id, text)
             loop.anthropic.add(
                 reply(call("run_command", argv=["cat", "/opt/tool/version"])),
                 reply(said("It is there.")),
             )
-            assert (await loop.loops.run(ctx, session_id)).outcome is LoopOutcome.SUCCEEDED
-            assert printed(await loop.history(session_id)) == "1.0\n"
-        assert not await container_runs(session_id)
+            assert (await loop.loops.run(ctx, agent_session_id)).outcome is LoopOutcome.SUCCEEDED
+            assert printed(await loop.history(agent_session_id)) == "1.0\n"
+        assert not await container_runs(agent_session_id)
 
-        history = await loop.history(session_id)
-        stored = await infra.buckets.list(ctx.org_id, BUCKET, session_prefix(session_id), 100)
+        history = await loop.history(agent_session_id)
+        stored = await infra.buckets.list(ctx.org_id, BUCKET, session_prefix(agent_session_id), 100)
         released = Workspace(
-            id=session_id, org_id=ctx.org_id, spec=BOXED_SPEC, location=container_name(session_id)
+            id=agent_session_id,
+            org_id=ctx.org_id,
+            spec=BOXED_SPEC,
+            location=container_name(agent_session_id),
         )
-        epoch = await loop.managers.steps.begin_run(ctx, session_id)
+        epoch = await loop.managers.agent_steps.begin_run(ctx, agent_session_id)
         with pytest.raises(SnapshotRefused, match="no instance"):
-            await tools.snapshot_workspace(ctx, session_id, released, epoch=epoch, loop_id=new_id())
-        after = await infra.buckets.list(ctx.org_id, BUCKET, session_prefix(session_id), 100)
+            await tools.snapshot_workspace(
+                ctx, agent_session_id, released, epoch=epoch, loop_id=new_id()
+            )
+        after = await infra.buckets.list(ctx.org_id, BUCKET, session_prefix(agent_session_id), 100)
         assert after == stored, "nothing stored"
-        assert await loop.history(session_id) == history, "no step names one"
+        assert await loop.history(agent_session_id) == history, "no step names one"
     finally:
-        await tools.purge_workspace(ctx.org_id, session_id)
+        await tools.purge_workspace(ctx.org_id, agent_session_id)

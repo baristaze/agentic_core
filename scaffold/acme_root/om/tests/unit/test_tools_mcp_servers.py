@@ -27,7 +27,7 @@ from pathlib import Path
 
 import httpx2
 import pytest
-from contracts.agent_session_storage import make_session
+from contracts.agent_session_storage import make_agent_session
 from contracts.doubles import context
 from contracts.factories import make_org
 from contracts.tools import (
@@ -49,13 +49,13 @@ from acme.infra.transports import SecretVia
 from acme.infra.transports.redaction import forms
 from acme.integrations.mcp import McpHttp, McpServer, McpServerFailed, McpStdio, sdk
 from acme.integrations.mcp.sdk import McpClientSdkImpl
+from acme.om.agent_steps.types.agent_step import AgentStep
+from acme.om.agent_steps.types.header import ToolFailure
 from acme.om.agents.loop_rules import holds_private
 from acme.om.agents.types.kind import AgentKind, DoneRule
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.context import Role, TenantContext
 from acme.om.exceptions import McpDefinitionChanged
-from acme.om.steps.types.header import ToolFailure
-from acme.om.steps.types.step import Step
 from acme.om.tools.impl.manager import SECRET_USED
 from acme.om.tools.mcp import McpServers, McpToolImpl, definition_of, toolset_of
 from acme.om.tools.rules import definition_hash
@@ -218,7 +218,9 @@ async def review(at: Engine) -> dict[str, str]:
     return {name: definition_hash(each) for name, each in (await listed(at)).items()}
 
 
-async def call(tmp_path: Path, at: Engine, tool: McpToolImpl, call_input: dict[str, str]) -> Step:
+async def call(
+    tmp_path: Path, at: Engine, tool: McpToolImpl, call_input: dict[str, str]
+) -> AgentStep:
     """One call through the tools manager, as the loop makes it, its
     response appended to the session's history."""
     response, _ = await call_on(tmp_path, at, tool, call_input)
@@ -227,7 +229,7 @@ async def call(tmp_path: Path, at: Engine, tool: McpToolImpl, call_input: dict[s
 
 async def call_on(
     tmp_path: Path, at: Engine, tool: McpToolImpl, call_input: dict[str, str]
-) -> tuple[Step, Tools]:
+) -> tuple[AgentStep, Tools]:
     """`call`, with the tools manager it went through."""
     transport, _ = twin_transport(tmp_path)
     tools = tools_over(transport)
@@ -244,8 +246,8 @@ async def call_on(
         epoch=found.epoch,
         tree_deadline=None,
     )
-    await tools.steps.append_steps(at.ctx, found.session_id, found.epoch, [response])
-    held = await tools.steps.get_steps(at.ctx, found.session_id, 0, 100)
+    await tools.steps.append_agent_steps(at.ctx, found.agent_session_id, found.epoch, [response])
+    held = await tools.steps.get_agent_steps(at.ctx, found.agent_session_id, 0, 100)
     assert held.items[-1].id == response.id
     return response, tools
 
@@ -255,7 +257,7 @@ def named(tools: tuple[McpToolImpl, ...], name: str) -> McpToolImpl:
     return tool
 
 
-def output_of(response: Step) -> str:
+def output_of(response: AgentStep) -> str:
     """The text the response quotes as the server's answer."""
     return McpOutput.model_validate_json(result_text(response)).text
 
@@ -413,7 +415,7 @@ async def test_each_tool_declares_its_servers_secret_and_a_call_audits_it_by_nam
         authority=AuthorityMode.STEADY,
         private_data=False,
     )
-    session = make_session().model_copy(update={"holds_private": False})
+    session = make_agent_session().model_copy(update={"holds_private": False})
     assert holds_private(session, kind, registry_of(*tools), ())
     # A call audits the secret's use by its name, never its value.
     response, through = await call_on(tmp_path, at, named(tools, "words_whoami"), {})

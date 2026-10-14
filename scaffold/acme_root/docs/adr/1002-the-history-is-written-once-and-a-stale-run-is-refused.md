@@ -21,7 +21,7 @@ the login command a deploy runs before every migration.
 ## Decision
 
 **A step is written once, and the database holds it.** The serving logins
-keep SELECT and INSERT on `activity.steps` and lose UPDATE and DELETE.
+keep SELECT and INSERT on `activity.agent_steps` and lose UPDATE and DELETE.
 The migration that creates the table takes the two back from the role's
 default privileges, and the login command takes them back after each
 grant it makes, for every table in `APPEND_ONLY_TABLES`. The storage

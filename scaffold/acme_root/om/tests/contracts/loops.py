@@ -22,6 +22,9 @@ from acme.integrations.model_providers.registry import ModelProvidersOverImpl
 from acme.integrations.model_providers.scripted import ModelProviderScriptedImpl, ScriptedFailure
 from acme.integrations.model_providers.types import ErrorKind, ProviderName, StopReason, Usage
 from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
+from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
+from acme.om.agent_steps.types.content import TextBlock, ToolUseBlock
+from acme.om.agent_steps.types.header import LoopOutcome, ParkReason
 from acme.om.agents.impl.loop import LoopManagerImpl, LoopOptions
 from acme.om.agents.impl.sink import StreamSinkMemoryImpl
 from acme.om.agents.types.kind import AgentKind, AgentKindCatalog, DoneRule, TreeLimits
@@ -36,9 +39,6 @@ from acme.om.context import CredentialKind, RequestContext, Role, TenantContext,
 from acme.om.models.impl.credentials import CallCredentialsPlatformImpl
 from acme.om.models.layer import ModelsLayer
 from acme.om.root import Managers, build_managers, engine_tools
-from acme.om.steps.types.content import TextBlock, ToolUseBlock
-from acme.om.steps.types.header import LoopOutcome, ParkReason
-from acme.om.steps.types.step import Step, StepType
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.storage.root import StorageInterface
 from acme.om.tenancy.rules import permissions_of
@@ -51,9 +51,9 @@ from acme.om.tools.types.policy import Decision, Target, ToolPolicyLayer, ToolPo
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolMode, ToolSpec
 from acme.om.windows.gate import CallGateInterface
 from acme.om.windows.impl.gate import CallGateBudgetImpl
+from contracts.agent_step_storage import make_message
 from contracts.doubles import APP, context
 from contracts.factories import make_org
-from contracts.step_storage import make_message
 
 SONNET = "claude-sonnet-5-5"
 """The main role's model in the resolver's default table."""
@@ -314,24 +314,28 @@ class Loop:
     credential: str  # the name of the platform's own key, as the signal keys it
 
     async def start(self, kind: str = "assistant") -> UUID:
-        session = await self.managers.agents.start_session(
+        session = await self.managers.agents.start_agent_session(
             self.owner, Start(id=new_id(), kind=kind, title="a question")
         )
         return session.id
 
-    async def say(self, session_id: UUID, text: str, ctx: TenantContext | None = None) -> Step:
+    async def say(
+        self, agent_session_id: UUID, text: str, ctx: TenantContext | None = None
+    ) -> AgentStep:
         """A principal's message, durable when this returns."""
         ctx = ctx or self.owner
         person = Principal(kind=PrincipalKind.PERSON, id=ctx.user_id)
-        message = make_message(session_id, text, principal=person)
-        (stored,) = await self.managers.steps.append_inputs(ctx, session_id, [message])
+        message = make_message(agent_session_id, text, principal=person)
+        (stored,) = await self.managers.agent_steps.append_inputs(ctx, agent_session_id, [message])
         return stored
 
-    async def history(self, session_id: UUID) -> list[Step]:
-        steps: list[Step] = []
+    async def history(self, agent_session_id: UUID) -> list[AgentStep]:
+        steps: list[AgentStep] = []
         while True:
             after = steps[-1].seq if steps else 0
-            page = await self.managers.steps.get_steps(self.owner, session_id, after, 200)
+            page = await self.managers.agent_steps.get_agent_steps(
+                self.owner, agent_session_id, after, 200
+            )
             steps.extend(page.items)
             if not page.has_more or not page.items:
                 return steps
@@ -414,7 +418,7 @@ def loop_over(
     sink = sink or StreamSinkMemoryImpl()
     options = options or LoopOptions(control_poll=timedelta(milliseconds=1))
     loops = LoopManagerImpl(
-        managers.steps,
+        managers.agent_steps,
         managers.agent_sessions,
         managers.agents,
         AgentKindCatalog(kinds=kinds),
@@ -441,7 +445,7 @@ def loop_over(
         signal,
         sink,
         engine_tools(
-            managers.steps,
+            managers.agent_steps,
             managers.agent_sessions,
             reader,
             managers.windows,
@@ -524,10 +528,10 @@ async def outage_parks_at_once_and_resumes_at_the_retry_time(loop: Loop) -> None
     assert parked.park.reason is ParkReason.PROVIDER and parked.park.unlock == "anthropic"
     assert parked.park.retry_at == mark.retry_at, "it waits out the mark, no less"
     assert len(loop.anthropic.calls) == 3, "parked at once: no call, no retry"
-    assert [s for s in await loop.history(second) if s.type is StepType.MODEL_REQUEST] == []
+    assert [s for s in await loop.history(second) if s.type is AgentStepType.MODEL_REQUEST] == []
 
     loop.clock.now = mark.retry_at
-    await loop.managers.agent_sessions.wake_session(loop.owner, second, parked.park)
+    await loop.managers.agent_sessions.wake_agent_session(loop.owner, second, parked.park)
     loop.anthropic.add(reply(said("The average is 3.")))
     resumed = await loop.loops.run(loop.owner, second)
 
@@ -535,4 +539,4 @@ async def outage_parks_at_once_and_resumes_at_the_retry_time(loop: Loop) -> None
     assert len(loop.anthropic.calls) == 4, "one call, at the retry time"
     assert await loop.outages.current(*pair) is None, "the call that answered cleared the mark"
     types = [step.type for step in await loop.history(second)]
-    assert types.count(StepType.RESUMED) == 1 and len(loop.anthropic.calls) == 4
+    assert types.count(AgentStepType.RESUMED) == 1 and len(loop.anthropic.calls) == 4

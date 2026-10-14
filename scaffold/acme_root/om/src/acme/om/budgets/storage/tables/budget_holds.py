@@ -14,7 +14,7 @@ class BudgetHolds(IdentifiableMixin, CreatedMixin, Base):
 
     __tablename__ = "budget_holds"
     spender_id: Mapped[UUID]
-    session_id: Mapped[UUID | None]
+    agent_session_id: Mapped[UUID | None]
     purpose: Mapped[str]
     exposure: Mapped[dict[str, Any]]
     own: Mapped[dict[str, Any] | None]

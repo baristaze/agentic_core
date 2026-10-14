@@ -37,6 +37,17 @@ from acme.infra.workspaces import (
     WorkspaceProviderInterface,
 )
 from acme.infra.workspaces.twin import WorkspaceTwinImpl
+from acme.om.agent_steps import AgentStepsManagerInterface
+from acme.om.agent_steps.impl.manager import (
+    AgentStepsManagerImpl,
+    AgentStepsOptions,
+    no_registry,
+    no_session,
+    no_steerer,
+)
+from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
+from acme.om.agent_steps.types.content import Content, TextBlock, ToolUseBlock
+from acme.om.agent_steps.types.header import ModelResponseHeader, ToolFailure, ToolResponseHeader
 from acme.om.attribution import AttributionManagerInterface
 from acme.om.attribution.types.authority import AuthorityMode, CallAuthority, CallReach
 from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
@@ -46,20 +57,9 @@ from acme.om.events import EventsManagerInterface
 from acme.om.events.impl.manager import EventsManagerImpl, EventsOptions
 from acme.om.exceptions import ToolFailed
 from acme.om.outbox.impl.relay import OutboxRelayImpl
-from acme.om.privacy.impl.keys import SessionKeysImpl
+from acme.om.privacy.impl.keys import AgentSessionKeysImpl
 from acme.om.privacy.impl.records import RecordSealKeysImpl
 from acme.om.privacy.impl.snapshots import SnapshotSealKeysImpl
-from acme.om.steps import StepsManagerInterface
-from acme.om.steps.impl.manager import (
-    StepsManagerImpl,
-    StepsOptions,
-    no_registry,
-    no_session,
-    no_steerer,
-)
-from acme.om.steps.types.content import Content, TextBlock, ToolUseBlock
-from acme.om.steps.types.header import ModelResponseHeader, ToolFailure, ToolResponseHeader
-from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.tenancy.rules import permissions_of
 from acme.om.tools.impl.bases import WorkspaceBases
@@ -72,8 +72,8 @@ from acme.om.tools.tool import ToolInterface, ToolRuntime
 from acme.om.tools.types.policy import Decision, Target, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolMode, ToolSpec
 from acme.om.windows.impl.hashes import PromptHashMemoryImpl
+from contracts.agent_step_storage import a_person, make_message, make_request
 from contracts.doubles import Members
-from contracts.step_storage import a_person, make_message, make_request
 
 TWIN_SPEC = IsolationSpec(mode=IsolationMode.TWIN, egress=EgressPolicy(mode=EgressMode.NONE))
 HOST_SPEC = IsolationSpec(mode=IsolationMode.HOST, egress=EgressPolicy(mode=EgressMode.OPEN))
@@ -235,7 +235,7 @@ class Answering(AttributionManagerInterface):
         self.reaches: list[CallReach] = []
 
     async def authorize_call(
-        self, ctx: TenantContext, session_id: UUID, reach: CallReach
+        self, ctx: TenantContext, agent_session_id: UUID, reach: CallReach
     ) -> CallAuthority:
         self.reaches.append(reach)
         live = ctx
@@ -262,7 +262,7 @@ Answering.__abstractmethods__ = frozenset()
 @dataclass
 class Tools:
     manager: ToolsManagerImpl
-    steps: StepsManagerInterface
+    steps: AgentStepsManagerInterface
     events: EventsManagerInterface
     storage: StorageMemoryImpl
     clock: Clock
@@ -284,10 +284,10 @@ def tools_over(
 ) -> Tools:
     storage = StorageMemoryImpl()
     members = Members()  # pyright: ignore[reportAbstractUsage] (a partial double)
-    steps = StepsManagerImpl(
-        storage.get_step_storage(),
+    steps = AgentStepsManagerImpl(
+        storage.get_agent_step_storage(),
         members,
-        StepsOptions(),
+        AgentStepsOptions(),
         instructs=no_registry,
         steers=no_steerer,
         opens=no_session,
@@ -299,7 +299,7 @@ def tools_over(
     clock = Clock()
     attribution = Answering()  # pyright: ignore[reportAbstractUsage] (a partial double)
     waits: list[float] = []
-    keys = SessionKeysImpl(storage.get_privacy_storage(), KeyServiceMemoryImpl())
+    keys = AgentSessionKeysImpl(storage.get_privacy_storage(), KeyServiceMemoryImpl())
     hashes = PromptHashMemoryImpl()
 
     async def sleep(seconds: float) -> None:
@@ -361,41 +361,43 @@ def twin_transport(
 
 @dataclass
 class Call:
-    session_id: UUID
+    agent_session_id: UUID
     epoch: int
-    request: Step
+    request: AgentStep
     call_input: dict[str, Any]
 
 
 async def put_call(
     tools: ToolsManagerInterface,
-    steps: StepsManagerInterface,
+    steps: AgentStepsManagerInterface,
     ctx: TenantContext,
     tool: str,
     call_input: dict[str, Any],
     authorization_class: str,
-    session_id: UUID | None = None,
+    agent_session_id: UUID | None = None,
     epoch: int | None = None,
 ) -> Call:
     """A model's tool use and its request step in the history, written and
     numbered as the loop writes them: the request is persisted, its input
     hashed by `tools` under the session's key, before any operation of the
     tools manager sees it."""
-    session_id = session_id or new_id()
+    agent_session_id = agent_session_id or new_id()
     if epoch is None:
-        (message,) = await steps.append_inputs(ctx, session_id, [make_message(session_id)])
-        epoch = await steps.begin_run(ctx, session_id)
+        (message,) = await steps.append_inputs(
+            ctx, agent_session_id, [make_message(agent_session_id)]
+        )
+        epoch = await steps.begin_run(ctx, agent_session_id)
         loop_id = message.id
     else:
-        loop_id = (await steps.get_steps(ctx, session_id, 0, 1)).items[0].loop_id
-    model_request = make_request(session_id, loop_id)
+        loop_id = (await steps.get_agent_steps(ctx, agent_session_id, 0, 1)).items[0].loop_id
+    model_request = make_request(agent_session_id, loop_id)
     use = ToolUseBlock(id=f"call_{new_id().hex[:8]}", name=tool, input=call_input)
-    model_response = Step(
+    model_response = AgentStep(
         id=new_id(),
         created_at=utcnow(),
-        session_id=session_id,
+        agent_session_id=agent_session_id,
         loop_id=loop_id,
-        type=StepType.MODEL_RESPONSE,
+        type=AgentStepType.MODEL_RESPONSE,
         actor=Actor.MODEL,
         origin=Origin.ENGINE,
         responds_to=model_request.id,
@@ -408,15 +410,15 @@ async def put_call(
         model_response,
         use,
         authorization_class,
-        input_hash=await tools.input_hash(ctx, session_id, call_input),
+        input_hash=await tools.input_hash(ctx, agent_session_id, call_input),
         principal=a_person(),
         authority=AuthorityMode.STEADY,
-        agent=AgentRef(kind="delivery", version=1, session_id=session_id),
+        agent=AgentRef(kind="delivery", version=1, agent_session_id=agent_session_id),
     )
-    stored = await steps.append_steps(
-        ctx, session_id, epoch, [model_request, model_response, request]
+    stored = await steps.append_agent_steps(
+        ctx, agent_session_id, epoch, [model_request, model_response, request]
     )
-    return Call(session_id, epoch, stored[-1], call_input)
+    return Call(agent_session_id, epoch, stored[-1], call_input)
 
 
 def registry_of(*tools: ToolInterface) -> ToolRegistry:
@@ -450,14 +452,14 @@ def echoing(env_name: str | None = None) -> TwinHandler:
     return handler
 
 
-def result_text(response: Step) -> str:
+def result_text(response: AgentStep) -> str:
     """The text a tool response gives the model."""
     return "\n".join(
         part.text for part in response.as_tool_response().parts if isinstance(part, TextBlock)
     )
 
 
-def failure_of(response: Step) -> ToolFailure | None:
+def failure_of(response: AgentStep) -> ToolFailure | None:
     header = response.header
     assert isinstance(header, ToolResponseHeader)
     return header.failure

@@ -21,7 +21,7 @@ way in and opens it on its way out, unseen by the rest of the engine. A
 database reader sees ciphertext. Opening content takes the session's
 key, which opens to whom the session is visible: its org when it is
 org-wide, its creator and participants when private, and
-`manage_sessions`, an admin's permission of its own, for audit.
+`manage_agent_sessions`, an admin's permission of its own, for audit.
 
 **Source.** Privacy, A Key per Session; Identity, Trust, and
 Attribution, Who Is Who.
@@ -36,13 +36,13 @@ tenant; sealing done in the engine's own code instead of a decorator
 over step storage; a read of a session's history or artifacts that does
 not ask whom the session is visible to, or serves a private one to a
 member who is neither its creator nor a participant; a member who makes
-themselves a participant of a private session, `manage_sessions`
+themselves a participant of a private session, `manage_agent_sessions`
 included, other than by taking a lapsed steer; a participant no route
 removes.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/privacy/impl/sealed_steps.py` and
+**Shape.** `scaffold/acme_root/om/src/acme/om/privacy/impl/sealed_agent_steps.py` and
 `scaffold/acme_root/om/src/acme/om/privacy/impl/keys.py`
 
 **Check.** review
@@ -96,8 +96,8 @@ billing or audit that reads content.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/steps/types/header.py` and
-`scaffold/acme_root/om/src/acme/om/steps/types/content.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_steps/types/header.py` and
+`scaffold/acme_root/om/src/acme/om/agent_steps/types/content.py`
 
 **Check.** review
 
@@ -153,8 +153,8 @@ declared time.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/privacy/impl/routed_steps.py` and
-`scaffold/acme_root/om/src/acme/om/privacy/types/session_privacy.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/privacy/impl/routed_agent_steps.py` and
+`scaffold/acme_root/om/src/acme/om/privacy/types/agent_session_privacy.py`
 
 **Check.** review
 

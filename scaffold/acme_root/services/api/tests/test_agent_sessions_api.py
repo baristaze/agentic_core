@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 from api_support import add_member, build_container, seed_request, sign_in_as
-from contracts.step_storage import (
+from contracts.agent_step_storage import (
     make_request,
     make_response,
     make_tool_request,
@@ -63,11 +63,13 @@ async def start(client: httpx.AsyncClient, headers: dict[str, str]) -> dict[str,
     return answered.json()
 
 
-def runs_of(container: AppContainer, session_id: str) -> int:
+def runs_of(container: AppContainer, agent_session_id: str) -> int:
     work = container.storage.get_work_storage()
     assert isinstance(work, WorkStorageMemoryImpl)
     items = [item for _, item in work._items.values()]  # pyright: ignore[reportPrivateUsage]
-    return len([i for i in items if i.kind is WorkKind.LOOP and str(i.target_id) == session_id])
+    return len(
+        [i for i in items if i.kind is WorkKind.LOOP and str(i.target_id) == agent_session_id]
+    )
 
 
 async def test_a_session_is_started_spoken_to_steered_and_read(
@@ -175,8 +177,10 @@ async def test_a_history_whose_key_is_revoked_reads_as_its_shape_alone(
     response = make_response(sid, loop_id, request.id)
     call = make_tool_request(sid, loop_id, response.id)
     answer = make_tool_response(sid, loop_id, call.id)
-    epoch = await managers.steps.begin_run(ctx, sid)
-    await managers.steps.append_steps(ctx, sid, epoch, [request, response, call, answer])
+    epoch = await managers.agent_steps.begin_run(ctx, sid)
+    await managers.agent_steps.append_agent_steps(
+        ctx, sid, epoch, [request, response, call, answer]
+    )
     await managers.privacy.revoke_key(ctx, sid)
 
     read = await client.get(f"{path}/steps", headers=owner)

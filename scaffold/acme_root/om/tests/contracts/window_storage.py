@@ -19,12 +19,12 @@ CROSS_TENANT_CASES: frozenset[str] = frozenset(
 in this module that presents another tenant's."""
 
 
-def make_artifact(session_id: UUID, characters: int = 30_000) -> Artifact:
+def make_artifact(agent_session_id: UUID, characters: int = 30_000) -> Artifact:
     return Artifact(
         id=new_id(),
         created_at=utcnow(),
-        session_id=session_id,
-        step_id=new_id(),
+        agent_session_id=agent_session_id,
+        agent_step_id=new_id(),
         characters=characters,
     )
 

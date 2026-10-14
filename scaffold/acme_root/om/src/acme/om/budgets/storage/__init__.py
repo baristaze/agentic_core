@@ -114,7 +114,7 @@ class LedgerStorageInterface(ABC):
 
     @abstractmethod
     async def read_usage_records(
-        self, org_id: UUID, session_id: UUID, after: UUID | None, limit: int
+        self, org_id: UUID, agent_session_id: UUID, after: UUID | None, limit: int
     ) -> list[UsageRecord]:
         """A page of a session's records, in the order they were written (by
         id), after the id named."""
@@ -122,14 +122,14 @@ class LedgerStorageInterface(ABC):
 
     @abstractmethod
     async def read_usage_rollups(
-        self, org_id: UUID, session_id: UUID, limit: int
+        self, org_id: UUID, agent_session_id: UUID, limit: int
     ) -> list[LoopUsage]:
         """The session's rollups, one per loop, of the first `limit` loops in
         the order each loop's first record was written."""
         ...
 
     @abstractmethod
-    async def read_usage_total(self, org_id: UUID, session_id: UUID) -> UsageRollup:
+    async def read_usage_total(self, org_id: UUID, agent_session_id: UUID) -> UsageRollup:
         """The rollup of every record of the session: no calls when it has
         none."""
         ...

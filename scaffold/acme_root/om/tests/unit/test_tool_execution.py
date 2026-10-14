@@ -51,12 +51,12 @@ from acme.infra.workspaces import (
     Workspace,
 )
 from acme.infra.workspaces.host import WorkspaceHostImpl
+from acme.om.agent_steps.types.agent_step import AgentStep
+from acme.om.agent_steps.types.content import UNPARSED
+from acme.om.agent_steps.types.header import ToolFailure
 from acme.om.base import Platform, new_id, utcnow
 from acme.om.context import Role, TenantContext
 from acme.om.exceptions import StaleWriter, ToolFailed
-from acme.om.steps.types.content import UNPARSED
-from acme.om.steps.types.header import ToolFailure
-from acme.om.steps.types.step import Step
 from acme.om.tools.impl.manager import SECRET_USED, ToolsOptions
 from acme.om.tools.rules import ADVICE, call_deadline, command_text, recovered_text
 from acme.om.tools.tool import ToolRuntime
@@ -115,7 +115,7 @@ async def test_a_secret_is_audited_by_name_and_never_reaches_a_step_or_an_event(
     assert audit.payload["secret"] == "api_token" and audit.payload["tool"] == "call_api"
     stored = [
         step.model_dump_json()
-        for step in (await tools.steps.get_steps(ctx, found.session_id, 0, 100)).items
+        for step in (await tools.steps.get_agent_steps(ctx, found.agent_session_id, 0, 100)).items
     ]
     for held in (
         response.model_dump_json(),
@@ -419,7 +419,7 @@ async def test_a_stale_run_is_refused_by_the_transport(tmp_path: Path) -> None:
     found = await put_call(
         tools.manager, tools.steps, ctx, "run_command", {"argv": ["ls"]}, "execute"
     )
-    later = await tools.steps.begin_run(ctx, found.session_id)
+    later = await tools.steps.begin_run(ctx, found.agent_session_id)
     await tools.manager.execute(
         ctx, registry, found.request, found.call_input, workspace, epoch=later, tree_deadline=None
     )
@@ -557,7 +557,7 @@ class Flaky(Command):
         return CommandOutput(exit_code=0, stdout="answered", stderr="")
 
 
-async def flaky_call(tmp_path: Path, tool: Flaky) -> tuple[Tools, Step]:
+async def flaky_call(tmp_path: Path, tool: Flaky) -> tuple[Tools, AgentStep]:
     transport, _ = twin_transport(tmp_path)
     tools = tools_over(transport)
     ctx = context(Role.SERVICE, make_org())

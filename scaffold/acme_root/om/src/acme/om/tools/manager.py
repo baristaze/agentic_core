@@ -24,9 +24,9 @@ from uuid import UUID
 
 from acme.infra.transports import OutputSink
 from acme.infra.workspaces import IsolationSpec, Workspace
+from acme.om.agent_steps.types.agent_step import AgentStep
+from acme.om.agent_steps.types.header import WorkspaceSnapshot
 from acme.om.context import TenantContext
-from acme.om.steps.types.header import WorkspaceSnapshot
-from acme.om.steps.types.step import Step
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.tool import TakenSnapshot
 from acme.om.tools.types.call import Gate, JobHandle, JobNotStarted
@@ -56,7 +56,7 @@ class ToolsManagerInterface(ABC):
     async def prepare_workspace(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         spec: IsolationSpec,
         restore: WorkspaceSnapshot | None = None,
     ) -> Workspace:
@@ -92,12 +92,12 @@ class ToolsManagerInterface(ABC):
     async def snapshot_workspace(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         workspace: Workspace,
         *,
         epoch: int,
         loop_id: UUID,
-    ) -> Step:
+    ) -> AgentStep:
         """A snapshot of the session's live workspace, kept, and the
         `snapshotted` step that names it, appended in the loop under
         `loop_id` and under the run's `epoch`. The loop takes one at the end
@@ -127,7 +127,7 @@ class ToolsManagerInterface(ABC):
 
     @abstractmethod
     async def find_snapshot(
-        self, ctx: TenantContext, session_id: UUID, snapshot_id: UUID
+        self, ctx: TenantContext, agent_session_id: UUID, snapshot_id: UUID
     ) -> WorkspaceSnapshot:
         """The snapshot under `snapshot_id` that the session's history names:
         one it took, or one a restore started it from. `NotFound` when no
@@ -136,7 +136,7 @@ class ToolsManagerInterface(ABC):
 
     @abstractmethod
     async def input_hash(
-        self, ctx: TenantContext, session_id: UUID, call_input: Mapping[str, Any]
+        self, ctx: TenantContext, agent_session_id: UUID, call_input: Mapping[str, Any]
     ) -> str:
         """The hash a call's request records of its input, which an approval
         binds: keyed by the session, so equal inputs hash alike within it,
@@ -150,7 +150,7 @@ class ToolsManagerInterface(ABC):
         ctx: TenantContext,
         registry: ToolRegistry,
         defaults: ToolPolicyLayer,
-        request: Step,
+        request: AgentStep,
         call_input: Mapping[str, Any],
         workspace: Workspace,
         *,
@@ -184,14 +184,14 @@ class ToolsManagerInterface(ABC):
         self,
         ctx: TenantContext,
         registry: ToolRegistry,
-        request: Step,
+        request: AgentStep,
         call_input: Mapping[str, Any],
         workspace: Workspace,
         *,
         epoch: int,
         tree_deadline: datetime | None,
         on_output: OutputSink | None = None,
-    ) -> Step:
+    ) -> AgentStep:
         """Runs a call its gate let run, under the request's id as its key and
         the run's epoch, and answers it with its response step: a result, or
         a failure with its class. Its time is the least of its tool's
@@ -208,14 +208,14 @@ class ToolsManagerInterface(ABC):
         self,
         ctx: TenantContext,
         registry: ToolRegistry,
-        request: Step,
+        request: AgentStep,
         call_input: Mapping[str, Any],
         workspace: Workspace,
         *,
         epoch: int,
         tree_deadline: datetime | None,
         on_output: OutputSink | None = None,
-    ) -> Step:
+    ) -> AgentStep:
         """Settles a request a lost run left without a response, after its
         gate let it run. A `read_only` or `idempotent` call runs again under
         the same key. An `unsafe` one is never repeated: its response is the
@@ -230,13 +230,13 @@ class ToolsManagerInterface(ABC):
         self,
         ctx: TenantContext,
         registry: ToolRegistry,
-        request: Step,
+        request: AgentStep,
         call_input: Mapping[str, Any],
         workspace: Workspace,
         *,
         epoch: int,
         tree_deadline: datetime | None,
-    ) -> JobHandle | JobNotStarted | Step:
+    ) -> JobHandle | JobNotStarted | AgentStep:
         """Starts a `job` call its gate let run, under the request's id, by a
         deadline of its own never later than the tree's, and answers the
         handle the loop parks on. A start refused before any work began, its
@@ -254,12 +254,12 @@ class ToolsManagerInterface(ABC):
     async def decide_call(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         request_seq: int,
         *,
         approve: bool,
         note: str = "",
-    ) -> Step:
+    ) -> AgentStep:
         """A person's decision on the tool request at `request_seq`, bound to
         its tool and its input's hash, recorded as a control step in the
         session's history. An approval expires; a denial's note is what the
@@ -271,7 +271,7 @@ class ToolsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def purge_workspace(self, org_id: UUID, session_id: UUID) -> None:
+    async def purge_workspace(self, org_id: UUID, agent_session_id: UUID) -> None:
         """Platform-internal: what a session the sweep has claimed for its
         purge left where its tools ran goes with its history: its workspace,
         files and instance, the transport's records of how each command
@@ -281,7 +281,7 @@ class ToolsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def erase_snapshots(self, ctx: TenantContext, session_id: UUID) -> None:
+    async def erase_snapshots(self, ctx: TenantContext, agent_session_id: UUID) -> None:
         """What the session's snapshots keep outside their sealed archives,
         such as a VM's disks, destroyed with the revocation of its key,
         which leaves every archive noise. A copy kept for another session,

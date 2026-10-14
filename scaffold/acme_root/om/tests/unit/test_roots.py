@@ -4,6 +4,8 @@ from acme.infra.impl.local import InfraLocalImpl
 from acme.integrations.impl.configured import absent_integrations
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
+from acme.om.agent_steps import AgentStepsManagerInterface
+from acme.om.agent_steps.storage import AgentStepStorageInterface
 from acme.om.agents import AgentsManagerInterface
 from acme.om.agents.storage import AgentStorageInterface
 from acme.om.attribution import AttributionManagerInterface
@@ -28,8 +30,6 @@ from acme.om.outbox.storage import OutboxStorageInterface
 from acme.om.privacy import PrivacyManagerInterface
 from acme.om.privacy.storage import PrivacyStorageInterface
 from acme.om.root import build_managers
-from acme.om.steps import StepsManagerInterface
-from acme.om.steps.storage import StepStorageInterface
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.storage.impl.postgres import StoragePostgresImpl
 from acme.om.storage.roles import DatabaseRole
@@ -61,7 +61,7 @@ async def test_memory_root_serves_every_storage() -> None:
     assert isinstance(root.get_outbox_storage(), OutboxStorageInterface)
     assert isinstance(root.get_orchestrations_storage(), OrchestrationsStorageInterface)
     assert isinstance(root.get_lease_storage(), LeasesStorageInterface)
-    assert isinstance(root.get_step_storage(), StepStorageInterface)
+    assert isinstance(root.get_agent_step_storage(), AgentStepStorageInterface)
     assert isinstance(root.get_agent_session_storage(), AgentSessionStorageInterface)
     assert isinstance(root.get_agent_storage(), AgentStorageInterface)
     assert isinstance(root.get_attribution_storage(), AttributionStorageInterface)
@@ -147,7 +147,7 @@ def test_business_root_has_a_field_per_manager(tmp_path: Path) -> None:
     assert isinstance(managers.outbox, OutboxRelayInterface)
     assert isinstance(managers.orchestrations, OrchestrationsManagerInterface)
     assert isinstance(managers.leases, LeasesManagerInterface)
-    assert isinstance(managers.steps, StepsManagerInterface)
+    assert isinstance(managers.agent_steps, AgentStepsManagerInterface)
     assert isinstance(managers.agent_sessions, AgentSessionsManagerInterface)
     assert isinstance(managers.attribution, AttributionManagerInterface)
     assert isinstance(managers.agents, AgentsManagerInterface)

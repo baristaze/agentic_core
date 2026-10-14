@@ -59,7 +59,7 @@ three.
 **Severity.** medium
 
 **Shape.** `scaffold/acme_root/om/src/acme/om/attribution/types/principal.py`
-and `scaffold/acme_root/om/src/acme/om/steps/types/header.py`
+and `scaffold/acme_root/om/src/acme/om/agent_steps/types/header.py`
 
 **Check.** review
 
@@ -96,7 +96,7 @@ manager, never the system's, and the engine records the re-check as a
 decision. Steady: tools run under one principal fixed at the session's
 creation, its creator or a service principal the tenant grants; when
 that principal is no longer valid, its tool calls park until someone who
-holds `manage_sessions` takes the session over, which wakes the loop. A
+holds `manage_agent_sessions` takes the session over, which wakes the loop. A
 session's principal is its one steerer: its creator until it hands the
 session to a participant, a recorded step.
 

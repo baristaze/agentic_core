@@ -6,13 +6,13 @@ from collections.abc import Sequence
 from uuid import UUID
 
 from acme.client.types import (
+    AgentSessionStatus,
     AgentSessionView,
+    AgentStepType,
+    AgentStepView,
     LoopOutcome,
     MembershipChoiceView,
     OrgKind,
-    SessionStatus,
-    StepType,
-    StepView,
 )
 
 
@@ -76,17 +76,17 @@ def one_line(text: str) -> str:
     return said if len(said) <= LINE_TEXT else said[: LINE_TEXT - 1] + "…"
 
 
-def step_line(step: StepView) -> str:
+def step_line(step: AgentStepView) -> str:
     """One line for a step of a session's history: its seq, its type, and
     what it says or did, the text cut to one line. A park and a loop's end
     say their cause after a colon, when the engine names one."""
     said = one_line(step.text)
     detail = said
-    if step.type is StepType.model_response and step.tools:
+    if step.type is AgentStepType.model_response and step.tools:
         detail = f"{said} [calls {', '.join(step.tools)}]".strip()
-    elif step.type is StepType.tool_request:
+    elif step.type is AgentStepType.tool_request:
         detail = step.tool or ""
-    elif step.type is StepType.tool_response and step.failure is not None:
+    elif step.type is AgentStepType.tool_response and step.failure is not None:
         detail = f"{step.failure.value}: {said}"
     elif step.command is not None:
         detail = step.command.value
@@ -104,14 +104,14 @@ def step_line(step: StepView) -> str:
 def settled(session: AgentSessionView) -> bool:
     """Whether a session's loop has stopped moving: it ended, or it waits on
     an unlock."""
-    return session.status in (SessionStatus.idle, SessionStatus.parked)
+    return session.status in (AgentSessionStatus.idle, AgentSessionStatus.parked)
 
 
-def follow_succeeded(session: AgentSessionView, steps: Sequence[StepView]) -> bool:
+def follow_succeeded(session: AgentSessionView, steps: Sequence[AgentStepView]) -> bool:
     """Whether a followed loop came to what was asked: the session is idle
     and the last loop it ended succeeded. A park, or any other outcome, is
     not."""
-    if session.status is not SessionStatus.idle:
+    if session.status is not AgentSessionStatus.idle:
         return False
-    ended = [step for step in steps if step.type is StepType.loop_ended]
+    ended = [step for step in steps if step.type is AgentStepType.loop_ended]
     return bool(ended) and ended[-1].outcome is LoopOutcome.succeeded

@@ -29,10 +29,10 @@ from acme.infra.workspaces import (
     IsolationSpec,
     Workspace,
 )
+from acme.om.agent_steps.types.header import ToolFailure, ToolResponseHeader
 from acme.om.base import new_id
 from acme.om.context import Permission, Role
 from acme.om.exceptions import NotAuthorized, PreconditionFailed
-from acme.om.steps.types.header import ToolFailure, ToolResponseHeader
 from acme.om.tools.rules import (
     DEFAULT_CEILINGS,
     UNMATCHED,

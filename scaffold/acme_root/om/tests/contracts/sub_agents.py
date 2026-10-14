@@ -17,7 +17,20 @@ import pytest
 
 from acme.om.agent_sessions.limits import deadline_park
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
-from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
+from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus
+from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
+from acme.om.agent_steps.types.content import TextBlock, ToolUseBlock
+from acme.om.agent_steps.types.header import (
+    ControlCommand,
+    ControlHeader,
+    InputHeader,
+    LoopOutcome,
+    Park,
+    ParkReason,
+    ToolFailure,
+    ToolRequestHeader,
+    ToolResponseHeader,
+)
 from acme.om.agents.loop_rules import APPROVAL_UNLOCK
 from acme.om.agents.rules import CHILDREN_PARK
 from acme.om.agents.types.kind import AgentKind, DoneRule
@@ -29,19 +42,6 @@ from acme.om.budgets.types.amount import Amount
 from acme.om.budgets.types.budget import BudgetScope, BudgetScopeKind, WindowKind
 from acme.om.context import TenantContext
 from acme.om.exceptions import NotFound, ValidationFailed
-from acme.om.steps.types.content import TextBlock, ToolUseBlock
-from acme.om.steps.types.header import (
-    ControlCommand,
-    ControlHeader,
-    InputHeader,
-    LoopOutcome,
-    Park,
-    ParkReason,
-    ToolFailure,
-    ToolRequestHeader,
-    ToolResponseHeader,
-)
-from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.tools.native.spawn_sub_agent import SPAWN_SUB_AGENT
 from acme.om.tools.native.wait_for_sub_agents import WAIT_FOR_SUB_AGENTS
 from acme.om.tools.tool import TakeSnapshot
@@ -118,10 +118,12 @@ def spawn(title: str, kind: str | None = None) -> ToolUseBlock:
     return ToolUseBlock(id=f"use_spawn_{new_id().hex[-12:]}", name=SPAWN_SUB_AGENT, input=asked)
 
 
-def answers(steps: list[Step], tool: str) -> list[Step]:
+def answers(steps: list[AgentStep], tool: str) -> list[AgentStep]:
     """The answers to every call of `tool` in the history, in the order the
     calls were made."""
-    by_request = {step.responds_to: step for step in steps if step.type is StepType.TOOL_RESPONSE}
+    by_request = {
+        step.responds_to: step for step in steps if step.type is AgentStepType.TOOL_RESPONSE
+    }
     return [
         by_request[step.id]
         for step in steps
@@ -129,20 +131,20 @@ def answers(steps: list[Step], tool: str) -> list[Step]:
     ]
 
 
-def failure_of(answer: Step) -> ToolFailure | None:
+def failure_of(answer: AgentStep) -> ToolFailure | None:
     header = answer.header
     assert isinstance(header, ToolResponseHeader)
     return header.failure
 
 
-def text_of(answer: Step) -> str:
+def text_of(answer: AgentStep) -> str:
     return "\n".join(
         part.text for part in answer.as_tool_response().parts if isinstance(part, TextBlock)
     )
 
 
-async def children_of(loop: Loop, session_id: UUID) -> list[AgentSession]:
-    page = await loop.managers.agent_sessions.get_children(loop.owner, session_id, None, 50)
+async def children_of(loop: Loop, agent_session_id: UUID) -> list[AgentSession]:
+    page = await loop.managers.agent_sessions.get_children(loop.owner, agent_session_id, None, 50)
     return list(page.items)
 
 
@@ -249,11 +251,11 @@ async def children_together_spend_no_more_than_the_trees_budget(loop: Loop) -> N
     assert sum(spent) < tally.spent_cost_micros, "and the root spent from it too"
 
 
-async def child_spend(loop: Loop, session_id: UUID) -> int:
+async def child_spend(loop: Loop, agent_session_id: UUID) -> int:
     """What a child spent, as its share's budget on its own session counts
     it."""
     page = await loop.managers.budgets.get_budgets(loop.owner, None, 50)
-    scope = BudgetScope(kind=BudgetScopeKind.SESSION, key=str(session_id))
+    scope = BudgetScope(kind=BudgetScopeKind.SESSION, key=str(agent_session_id))
     (share,) = [budget for budget in page.items if budget.scope == scope]
     tally = await loop.managers.budgets.get_spend(loop.owner, share.id)
     return tally.spent_cost_micros + tally.held_cost_micros
@@ -270,8 +272,8 @@ async def a_parent_parks_on_its_children_and_a_report_wakes_it(loop: Loop) -> No
     parked = await loop.loops.run(loop.owner, root)
 
     assert parked.end is RunEnd.PARKED and parked.park == CHILDREN_PARK
-    session = await loop.managers.agent_sessions.get_session(loop.owner, root)
-    assert (session.status, session.park) == (SessionStatus.PARKED, CHILDREN_PARK)
+    session = await loop.managers.agent_sessions.get_agent_session(loop.owner, root)
+    assert (session.status, session.park) == (AgentSessionStatus.PARKED, CHILDREN_PARK)
     (child,) = await children_of(loop, root)
     (waited,) = answers(await loop.history(root), WAIT_FOR_SUB_AGENTS)
     assert failure_of(waited) is None and str(child.id) in text_of(waited)
@@ -282,8 +284,8 @@ async def a_parent_parks_on_its_children_and_a_report_wakes_it(loop: Loop) -> No
 
     assert done.outcome is LoopOutcome.SUCCEEDED
     assert len(loop.anthropic.calls) == calls + 1, "the child's call alone"
-    woken = await loop.managers.agent_sessions.get_session(loop.owner, root)
-    assert (woken.status, woken.park) == (SessionStatus.PENDING, None)
+    woken = await loop.managers.agent_sessions.get_agent_session(loop.owner, root)
+    assert (woken.status, woken.park) == (AgentSessionStatus.PENDING, None)
     loop.anthropic.add(reply(call(WAIT_FOR_SUB_AGENTS)), reply(said("The total is 12.")))
 
     resumed = await loop.loops.run(loop.owner, root)
@@ -359,8 +361,8 @@ async def the_deadline_ends_a_wait_on_children(loop: Loop) -> None:
 
     assert stopped.park == deadline_park()
     sessions = loop.managers.agent_sessions
-    woken = await sessions.get_session(loop.owner, root)
-    assert (woken.status, woken.park) == (SessionStatus.PENDING, None), "its wait ended"
+    woken = await sessions.get_agent_session(loop.owner, root)
+    assert (woken.status, woken.park) == (AgentSessionStatus.PENDING, None), "its wait ended"
 
     parked = await loop.loops.run(loop.owner, root)
 
@@ -406,12 +408,12 @@ async def a_report_that_lands_before_the_park_still_wakes_the_parent(
     loop.anthropic.add(reply(spawn("the total")), reply(call(WAIT_FOR_SUB_AGENTS)))
     sessions = loop.managers.agent_sessions
     park = sessions.park
-    reported: list[Step] = []
+    reported: list[AgentStep] = []
 
     async def report_first(
-        ctx: TenantContext, session_id: UUID, epoch: int, loop_id: UUID, held: Park
+        ctx: TenantContext, agent_session_id: UUID, epoch: int, loop_id: UUID, held: Park
     ) -> AgentSession:
-        if session_id == root and not reported:
+        if agent_session_id == root and not reported:
             (child,) = await children_of(loop, root)
             loop.anthropic.add(reply(said("The total is 12.")))
             await loop.loops.run(loop.owner, child.id)
@@ -420,15 +422,15 @@ async def a_report_that_lands_before_the_park_still_wakes_the_parent(
                 for step in await loop.history(root)
                 if isinstance(step.header, InputHeader) and step.header.agent is not None
             )
-        return await park(ctx, session_id, epoch, loop_id, held)
+        return await park(ctx, agent_session_id, epoch, loop_id, held)
 
     monkeypatch.setattr(sessions, "park", report_first)
 
     parked = await loop.loops.run(loop.owner, root)
 
     assert parked.park == CHILDREN_PARK and len(reported) == 1, "the report came first"
-    woken = await sessions.get_session(loop.owner, root)
-    assert (woken.status, woken.park) == (SessionStatus.PENDING, None)
+    woken = await sessions.get_agent_session(loop.owner, root)
+    assert (woken.status, woken.park) == (AgentSessionStatus.PENDING, None)
 
 
 async def a_spawn_asked_twice_starts_one_child(loop: Loop, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -485,19 +487,19 @@ async def a_strict_tree(loop: Loop) -> tuple[AgentSession, AgentSession]:
     loop.anthropic.add(reply(spawn("the note's line")), reply(said("Mine notes it.")))
     await loop.loops.run(loop.owner, child.id)
     (grandchild,) = await children_of(loop, child.id)
-    child = await loop.managers.agent_sessions.get_session(loop.owner, child.id)
-    assert (child.status, grandchild.depth) == (SessionStatus.IDLE, 3)
+    child = await loop.managers.agent_sessions.get_agent_session(loop.owner, child.id)
+    assert (child.status, grandchild.depth) == (AgentSessionStatus.IDLE, 3)
     return child, grandchild
 
 
-async def mark_deleted(loop: Loop, session_id: UUID, *, claimed: bool = False) -> None:
+async def mark_deleted(loop: Loop, agent_session_id: UUID, *, claimed: bool = False) -> None:
     """The session marked deleted under the storage, and claimed for its
     purge when `claimed`, whatever the manager would refuse."""
     storage = loop.storage.get_agent_session_storage()
-    found = await storage.read_session(loop.owner.org_id, session_id)
+    found = await storage.read_agent_session(loop.owner.org_id, agent_session_id)
     assert found is not None
     gone = marked(found, found.version + 1, loop.clock(), claimed=claimed)
-    await storage.write_session(loop.owner.org_id, gone, found.version, ())
+    await storage.write_agent_session(loop.owner.org_id, gone, found.version, ())
 
 
 async def a_session_with_a_sub_agent_at_work_below_it_is_not_deleted(loop: Loop) -> None:
@@ -513,16 +515,16 @@ async def a_session_with_a_sub_agent_at_work_below_it_is_not_deleted(loop: Loop)
     await lookup.started.wait()
 
     with pytest.raises(ValidationFailed) as refused:
-        await sessions.delete_session(loop.owner, child.id)
+        await sessions.delete_agent_session(loop.owner, child.id)
 
     assert f"has sub-agent {grandchild.id}" in refused.value.message
-    assert (await sessions.get_session(loop.owner, child.id)).deleted_at is None
+    assert (await sessions.get_agent_session(loop.owner, child.id)).deleted_at is None
     lookup.release.set()
     assert (await running).outcome is LoopOutcome.SUCCEEDED
     # The report of its sub-agent's end woke it: its own loop ends first.
     loop.anthropic.add(reply(said("The note is made.")))
     await loop.loops.run(loop.owner, child.id)
-    assert (await sessions.delete_session(loop.owner, child.id)).deleted_at is not None
+    assert (await sessions.delete_agent_session(loop.owner, child.id)).deleted_at is not None
 
 
 async def a_deleted_session_still_holds_the_sub_agents_below_it_to_its_kind(
@@ -534,7 +536,7 @@ async def a_deleted_session_still_holds_the_sub_agents_below_it_to_its_kind(
     child, grandchild = await a_strict_tree(loop)
     await mark_deleted(loop, child.id)
     with pytest.raises(NotFound):
-        await loop.managers.agent_sessions.get_session(loop.owner, child.id)
+        await loop.managers.agent_sessions.get_agent_session(loop.owner, child.id)
     loop.anthropic.add(reply(use("note", "the total")), reply(said("I cannot note it.")))
 
     run = await loop.loops.run(loop.owner, grandchild.id)
@@ -554,7 +556,7 @@ async def a_sub_agent_whose_ancestor_is_purged_runs_no_loop(
     purge login, which the loop's own storage does not."""
     child, grandchild = await a_strict_tree(loop)
     await mark_deleted(loop, child.id, claimed=True)
-    assert await purging.purge_session(loop.owner.org_id, child.id)
+    assert await purging.purge_agent_session(loop.owner.org_id, child.id)
     calls = len(loop.anthropic.calls)
 
     run = await loop.loops.run(loop.owner, grandchild.id)
@@ -577,20 +579,22 @@ async def a_cancel_reaches_a_child_past_a_deleted_sibling(loop: Loop) -> None:
     loop.anthropic.add(reply(said("The total is 12.")))
     assert (await loop.loops.run(loop.owner, first.id)).outcome is LoopOutcome.SUCCEEDED
     sessions = loop.managers.agent_sessions
-    await sessions.delete_session(loop.owner, first.id)
-    assert (await sessions.get_session(loop.owner, second.id)).status is SessionStatus.PENDING
+    await sessions.delete_agent_session(loop.owner, first.id)
+    assert (
+        await sessions.get_agent_session(loop.owner, second.id)
+    ).status is AgentSessionStatus.PENDING
     calls = len(loop.anthropic.calls)
-    cancel = Step(
+    cancel = AgentStep(
         id=new_id(),
         created_at=loop.clock(),
-        session_id=root,
+        agent_session_id=root,
         loop_id=new_id(),
-        type=StepType.CONTROL,
+        type=AgentStepType.CONTROL,
         actor=Actor.PERSON,
         origin=Origin.PORTAL,
         header=ControlHeader(command=ControlCommand.CANCEL),
     )
-    await loop.managers.steps.append_inputs(loop.owner, root, [cancel])
+    await loop.managers.agent_steps.append_inputs(loop.owner, root, [cancel])
 
     cancelled = await loop.loops.run(loop.owner, root)
 

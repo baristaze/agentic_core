@@ -16,27 +16,27 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from contracts.agent_session_storage import make_session
-from contracts.step_storage import StepStorageContract, a_loop, make_message
+from contracts.agent_session_storage import make_agent_session
+from contracts.agent_step_storage import AgentStepStorageContract, a_loop, make_message
 from contracts.tools import stand_ins
 from sqlalchemy import text
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.infra.keys.memory import KeyServiceMemoryImpl
+from acme.om.agent_steps.storage import AgentStepStorageInterface
+from acme.om.agent_steps.storage.impl.memory import AgentStepStorageMemoryImpl
+from acme.om.agent_steps.storage.impl.postgres import AgentStepStoragePostgresImpl
+from acme.om.agent_steps.types.agent_step import AgentStep
+from acme.om.agent_steps.types.content import Children, ContentState
 from acme.om.base import new_id, utcnow
 from acme.om.context import AppContext, AppType, RequestContext, TenantContext
-from acme.om.privacy.impl.keys import SessionKeysImpl
-from acme.om.privacy.impl.memory_only_steps import StepStorageShapeOnlyImpl
-from acme.om.privacy.impl.routed_steps import StepStorageRoutedImpl
-from acme.om.privacy.impl.sealed_steps import StepStorageSealedImpl
+from acme.om.privacy.impl.keys import AgentSessionKeysImpl
+from acme.om.privacy.impl.memory_only_agent_steps import AgentStepStorageShapeOnlyImpl
+from acme.om.privacy.impl.routed_agent_steps import AgentStepStorageRoutedImpl
+from acme.om.privacy.impl.sealed_agent_steps import AgentStepStorageSealedImpl
 from acme.om.privacy.storage.impl.postgres import PrivacyStoragePostgresImpl
-from acme.om.privacy.types.session_privacy import StorageMode, StoragePolicy
+from acme.om.privacy.types.agent_session_privacy import StorageMode, StoragePolicy
 from acme.om.root import Managers, build_managers
-from acme.om.steps.storage import StepStorageInterface
-from acme.om.steps.storage.impl.memory import StepStorageMemoryImpl
-from acme.om.steps.storage.impl.postgres import StepStoragePostgresImpl
-from acme.om.steps.types.content import Children, ContentState
-from acme.om.steps.types.step import Step
 from acme.om.storage.impl.pg_base import LoginSessions, set_scope
 from acme.om.storage.impl.postgres import StoragePostgresImpl
 from acme.om.storage.roles import DatabaseRole
@@ -55,26 +55,28 @@ SAID = (
 """What the loop the contract writes says, and no shape repeats."""
 
 
-def sealing(pg_sessions: LoginSessions) -> StepStorageSealedImpl:
-    keys = SessionKeysImpl(PrivacyStoragePostgresImpl(pg_sessions), KeyServiceMemoryImpl())
-    return StepStorageSealedImpl(StepStoragePostgresImpl(pg_sessions), keys)
+def sealing(pg_sessions: LoginSessions) -> AgentStepStorageSealedImpl:
+    keys = AgentSessionKeysImpl(PrivacyStoragePostgresImpl(pg_sessions), KeyServiceMemoryImpl())
+    return AgentStepStorageSealedImpl(AgentStepStoragePostgresImpl(pg_sessions), keys)
 
 
-class TestSealedStepStoragePostgres(StepStorageContract):
+class TestSealedStepStoragePostgres(AgentStepStorageContract):
     @pytest.fixture
-    def storage(self, pg_sessions: LoginSessions) -> StepStorageInterface:
+    def storage(self, pg_sessions: LoginSessions) -> AgentStepStorageInterface:
         return sealing(pg_sessions)
 
 
-class TestRoutedStepStoragePostgres(StepStorageContract):
+class TestRoutedStepStoragePostgres(AgentStepStorageContract):
     @pytest.fixture
-    def storage(self, pg_sessions: LoginSessions) -> StepStorageInterface:
-        history = StepStoragePostgresImpl(pg_sessions)
+    def storage(self, pg_sessions: LoginSessions) -> AgentStepStorageInterface:
+        history = AgentStepStoragePostgresImpl(pg_sessions)
         privacy = PrivacyStoragePostgresImpl(pg_sessions)
-        return StepStorageRoutedImpl(
-            sealed=StepStorageSealedImpl(history, SessionKeysImpl(privacy, KeyServiceMemoryImpl())),
-            shape_only=StepStorageShapeOnlyImpl(history),
-            transient=StepStorageMemoryImpl(),
+        return AgentStepStorageRoutedImpl(
+            sealed=AgentStepStorageSealedImpl(
+                history, AgentSessionKeysImpl(privacy, KeyServiceMemoryImpl())
+            ),
+            shape_only=AgentStepStorageShapeOnlyImpl(history),
+            transient=AgentStepStorageMemoryImpl(),
             policies=privacy,
         )
 
@@ -92,7 +94,7 @@ async def storage(
     await root.close()
 
 
-# What `make_session` names, so the agents manager classes every tool it
+# What `make_agent_session` names, so the agents manager classes every tool it
 # offers.
 TOOLS = stand_ins("read_log", "run_tests")
 
@@ -115,8 +117,8 @@ async def an_org(managers: Managers) -> TenantContext:
     return owner
 
 
-async def a_session(managers: Managers, ctx: TenantContext) -> UUID:
-    return (await managers.agent_sessions.create_session(ctx, make_session())).id
+async def an_agent_session(managers: Managers, ctx: TenantContext) -> UUID:
+    return (await managers.agent_sessions.create_agent_session(ctx, make_agent_session())).id
 
 
 async def rows(
@@ -129,15 +131,17 @@ async def rows(
         return [dict(row) for row in result.mappings()]
 
 
-async def history_rows(pg_sessions: LoginSessions, org_id: UUID, session_id: UUID) -> list[dict]:
+async def history_rows(
+    pg_sessions: LoginSessions, org_id: UUID, agent_session_id: UUID
+) -> list[dict]:
     return await rows(
         pg_sessions,
         DatabaseRole.ACTIVITY,
         "SELECT id, seq, type, header::text AS header, content::text AS content,"
-        " children::text AS children FROM activity.steps"
-        " WHERE org_id = :org AND session_id = :session ORDER BY seq",
+        " children::text AS children FROM activity.agent_steps"
+        " WHERE org_id = :org AND agent_session_id = :session ORDER BY seq",
         org_id,
-        session=session_id,
+        session=agent_session_id,
     )
 
 
@@ -145,13 +149,13 @@ async def key_rows(pg_sessions: LoginSessions, org_id: UUID) -> list[dict]:
     return await rows(
         pg_sessions,
         DatabaseRole.CORE,
-        "SELECT session_id, version, wrapped, wrapping, destroyed_at FROM core.session_keys"
-        " WHERE org_id = :org ORDER BY session_id, version",
+        "SELECT agent_session_id, version, wrapped, wrapping, destroyed_at FROM core.agent_session_keys"
+        " WHERE org_id = :org ORDER BY agent_session_id, version",
         org_id,
     )
 
 
-def says_something(step: Step) -> bool:
+def says_something(step: AgentStep) -> bool:
     return bool(step.content.blocks) or step.children != Children()
 
 
@@ -159,10 +163,10 @@ async def test_a_steps_content_row_holds_ciphertext_and_reads_back_plain(
     managers: Managers, pg_sessions: LoginSessions
 ) -> None:
     ctx = await an_org(managers)
-    session = await a_session(managers, ctx)
-    epoch = await managers.steps.begin_run(ctx, session)
+    session = await an_agent_session(managers, ctx)
+    epoch = await managers.agent_steps.begin_run(ctx, session)
     loop = a_loop(session)
-    written = await managers.steps.append_steps(ctx, session, epoch, loop)
+    written = await managers.agent_steps.append_agent_steps(ctx, session, epoch, loop)
 
     raw = await history_rows(pg_sessions, ctx.org_id, session)
     said = {step.id for step in loop if says_something(step)}
@@ -181,7 +185,7 @@ async def test_a_steps_content_row_holds_ciphertext_and_reads_back_plain(
     reader = json.dumps(raw, default=str)
     assert not [phrase for phrase in SAID if phrase in reader]
 
-    read = (await managers.steps.get_steps(ctx, session, 0, 50)).items
+    read = (await managers.agent_steps.get_agent_steps(ctx, session, 0, 50)).items
     assert read == written
     assert read[0].as_text() == "the weekly report is missing a total"
 
@@ -190,47 +194,53 @@ async def test_a_revoked_key_leaves_the_history_rows_and_none_of_their_content(
     managers: Managers, pg_sessions: LoginSessions
 ) -> None:
     ctx = await an_org(managers)
-    session, other = await a_session(managers, ctx), await a_session(managers, ctx)
-    epoch = await managers.steps.begin_run(ctx, session)
+    session, other = await an_agent_session(managers, ctx), await an_agent_session(managers, ctx)
+    epoch = await managers.agent_steps.begin_run(ctx, session)
     loop = a_loop(session)
-    await managers.steps.append_steps(ctx, session, epoch, loop)
+    await managers.agent_steps.append_agent_steps(ctx, session, epoch, loop)
     await managers.privacy.rotate_key(ctx, session)
-    await managers.steps.append_inputs(ctx, session, [make_message(session, "after the rotation")])
-    await managers.steps.append_inputs(ctx, other, [make_message(other, "kept")])
+    await managers.agent_steps.append_inputs(
+        ctx, session, [make_message(session, "after the rotation")]
+    )
+    await managers.agent_steps.append_inputs(ctx, other, [make_message(other, "kept")])
     before = await history_rows(pg_sessions, ctx.org_id, session)
     shape = [
         step.model_dump(exclude={"content", "children"})
-        for step in (await managers.steps.get_steps(ctx, session, 0, 50)).items
+        for step in (await managers.agent_steps.get_agent_steps(ctx, session, 0, 50)).items
     ]
 
     await managers.privacy.revoke_key(ctx, session)
 
     assert await history_rows(pg_sessions, ctx.org_id, session) == before
     keys = await key_rows(pg_sessions, ctx.org_id)
-    revoked = [key for key in keys if key["session_id"] == session]
+    revoked = [key for key in keys if key["agent_session_id"] == session]
     assert [key["version"] for key in revoked] == [1, 2]
     assert all(key["wrapped"] is None and key["wrapping"] is None for key in revoked)
     assert all(key["destroyed_at"] is not None for key in revoked)
-    assert [key["wrapped"] is not None for key in keys if key["session_id"] == other] == [True]
+    assert [key["wrapped"] is not None for key in keys if key["agent_session_id"] == other] == [
+        True
+    ]
 
-    after = (await managers.steps.get_steps(ctx, session, 0, 50)).items
+    after = (await managers.agent_steps.get_agent_steps(ctx, session, 0, 50)).items
     assert [step.model_dump(exclude={"content", "children"}) for step in after] == shape
     assert {step.content.state for step in after} == {ContentState.ABSENT, ContentState.PLAIN}
     assert all(step.content.blocks == () for step in after)
-    assert (await managers.steps.get_steps(ctx, other, 0, 10)).items[0].as_text() == "kept"
+    assert (await managers.agent_steps.get_agent_steps(ctx, other, 0, 10)).items[
+        0
+    ].as_text() == "kept"
 
 
 async def test_a_rotation_rewraps_the_keys_and_rewrites_no_content_row(
     managers: Managers, pg_sessions: LoginSessions, infra: InfraLocalImpl
 ) -> None:
     ctx = await an_org(managers)
-    sessions = [await a_session(managers, ctx) for _ in range(2)]
+    sessions = [await an_agent_session(managers, ctx) for _ in range(2)]
     for session in sessions:
-        await managers.steps.append_inputs(ctx, session, [make_message(session)])
+        await managers.agent_steps.append_inputs(ctx, session, [make_message(session)])
     await managers.privacy.rotate_key(ctx, sessions[0])
-    await managers.steps.append_inputs(ctx, sessions[0], [make_message(sessions[0], "later")])
+    await managers.agent_steps.append_inputs(ctx, sessions[0], [make_message(sessions[0], "later")])
     history = {s: await history_rows(pg_sessions, ctx.org_id, s) for s in sessions}
-    read = {s: (await managers.steps.get_steps(ctx, s, 0, 10)).items for s in sessions}
+    read = {s: (await managers.agent_steps.get_agent_steps(ctx, s, 0, 10)).items for s in sessions}
     keys = await key_rows(pg_sessions, ctx.org_id)
     assert {key["wrapping"] for key in keys} == {"memory:1"}
 
@@ -246,7 +256,9 @@ async def test_a_rotation_rewraps_the_keys_and_rewrites_no_content_row(
     assert all(old["wrapped"] != new["wrapped"] for old, new in zip(keys, rewrapped, strict=True))
     for session in sessions:
         assert await history_rows(pg_sessions, ctx.org_id, session) == history[session]
-        assert (await managers.steps.get_steps(ctx, session, 0, 10)).items == read[session]
+        assert (await managers.agent_steps.get_agent_steps(ctx, session, 0, 10)).items == read[
+            session
+        ]
 
 
 async def test_a_memory_only_session_writes_no_content_row(
@@ -264,22 +276,22 @@ async def test_a_memory_only_session_writes_no_content_row(
     shape = StoragePolicy(mode=StorageMode.MEMORY_ONLY, keep_shape=True)
     sessions: dict[str, UUID] = {}
     for name, policy in (("nothing", nothing), ("shape", shape)):
-        session = await a_session(managers, ctx)
+        session = await an_agent_session(managers, ctx)
         await managers.privacy.set_policy(ctx, session, policy)
-        epoch = await managers.steps.begin_run(ctx, session)
+        epoch = await managers.agent_steps.begin_run(ctx, session)
         loop = a_loop(session)
-        written = await managers.steps.append_steps(ctx, session, epoch, loop)
-        assert (await managers.steps.get_steps(ctx, session, 0, 50)).items == written
+        written = await managers.agent_steps.append_agent_steps(ctx, session, epoch, loop)
+        assert (await managers.agent_steps.get_agent_steps(ctx, session, 0, 50)).items == written
         sessions[name] = session
 
     assert await history_rows(pg_sessions, ctx.org_id, sessions["nothing"]) == []
     cursors = await rows(
         pg_sessions,
         DatabaseRole.ACTIVITY,
-        "SELECT session_id FROM activity.step_cursors WHERE org_id = :org",
+        "SELECT agent_session_id FROM activity.agent_step_cursors WHERE org_id = :org",
         ctx.org_id,
     )
-    assert [row["session_id"] for row in cursors] == [sessions["shape"]]
+    assert [row["agent_session_id"] for row in cursors] == [sessions["shape"]]
 
     kept = await history_rows(pg_sessions, ctx.org_id, sessions["shape"])
     assert len(kept) == 6
@@ -295,7 +307,7 @@ async def test_a_memory_only_session_writes_no_content_row(
     assert await key_rows(pg_sessions, ctx.org_id) == []
 
     elsewhere = build_managers(storage, infra, tool_catalog=TOOLS)
-    shapes = (await elsewhere.steps.get_steps(ctx, sessions["shape"], 0, 50)).items
+    shapes = (await elsewhere.agent_steps.get_agent_steps(ctx, sessions["shape"], 0, 50)).items
     assert [step.seq for step in shapes] == list(range(1, 7))
     assert ContentState.ABSENT in {step.content.state for step in shapes}
     assert all(step.content.blocks == () for step in shapes)

@@ -40,7 +40,7 @@ class CallGateNullImpl(CallGateInterface):
     async def authorize(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         spender: Principal,
         role: ModelRole,
         fill: Fill,
@@ -65,7 +65,7 @@ class CallGateNullImpl(CallGateInterface):
     async def authorize_job(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         spender: Principal,
         tool: str,
         rate_micros_per_hour: int,
@@ -120,7 +120,7 @@ class CallGateBudgetImpl(CallGateInterface):
     async def authorize(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         spender: Principal,
         role: ModelRole,
         fill: Fill,
@@ -128,13 +128,13 @@ class CallGateBudgetImpl(CallGateInterface):
         *,
         credential: str,
     ) -> UUID:
-        session = await self._sessions.get_session(ctx, session_id)
+        session = await self._sessions.get_agent_session(ctx, agent_session_id)
         price = self._pricing.price_of(fill.provider.value, fill.model)
         request = HoldRequest(
             spender_id=spender.id,
-            scopes=scopes_of(ctx.org_id, session_id, session.root_id, spender),
+            scopes=scopes_of(ctx.org_id, agent_session_id, session.root_id, spender),
             exposure=call_exposure(call_shape(call, fill), price),
-            session_id=session_id,
+            agent_session_id=agent_session_id,
             purpose=role,
         )
         answer = await self._gate.authorize(ctx, request)
@@ -143,7 +143,7 @@ class CallGateBudgetImpl(CallGateInterface):
         self._held[answer.id] = _Held(
             price=price,
             labels=CallLabels(
-                session_id=session_id,
+                agent_session_id=agent_session_id,
                 tree_id=session.root_id,
                 agent_kind=session.kind,
                 kind_version=session.kind_version,
@@ -199,18 +199,18 @@ class CallGateBudgetImpl(CallGateInterface):
     async def authorize_job(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         spender: Principal,
         tool: str,
         rate_micros_per_hour: int,
         deadline: datetime,
     ) -> UUID:
-        session = await self._sessions.get_session(ctx, session_id)
+        session = await self._sessions.get_agent_session(ctx, agent_session_id)
         request = HoldRequest(
             spender_id=spender.id,
-            scopes=scopes_of(ctx.org_id, session_id, session.root_id, spender),
+            scopes=scopes_of(ctx.org_id, agent_session_id, session.root_id, spender),
             exposure=job_exposure(rate_micros_per_hour, self._clock(), deadline),
-            session_id=session_id,
+            agent_session_id=agent_session_id,
             purpose=tool,
         )
         answer = await self._gate.authorize(ctx, request)
@@ -249,10 +249,10 @@ def _record(
         id=new_id(),
         created_at=at,
         hold_id=hold_id,
-        session_id=labels.session_id,
+        agent_session_id=labels.agent_session_id,
         tree_id=labels.tree_id,
         loop_id=site.loop_id,
-        step_id=site.step_id,
+        agent_step_id=site.agent_step_id,
         agent_kind=labels.agent_kind,
         kind_version=labels.kind_version,
         role=labels.role,
@@ -270,13 +270,13 @@ def _record(
 
 
 def scopes_of(
-    org_id: UUID, session_id: UUID, tree_id: UUID, spender: Principal
+    org_id: UUID, agent_session_id: UUID, tree_id: UUID, spender: Principal
 ) -> tuple[BudgetScope, ...]:
     """The scopes a model call of a session is charged to: the session, the
     tree it draws on, the person who pays, and the tenant. A project's or a
     team's are the platform's to add."""
     return (
-        BudgetScope(kind=BudgetScopeKind.SESSION, key=str(session_id)),
+        BudgetScope(kind=BudgetScopeKind.SESSION, key=str(agent_session_id)),
         BudgetScope(kind=BudgetScopeKind.TREE, key=str(tree_id)),
         BudgetScope(kind=BudgetScopeKind.PERSON, key=str(spender.id)),
         BudgetScope(kind=BudgetScopeKind.TENANT, key=str(org_id)),

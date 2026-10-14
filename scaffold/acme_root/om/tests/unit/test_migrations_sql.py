@@ -50,6 +50,34 @@ def test_a_table_the_chain_dropped_is_known_to_its_own_chain_alone() -> None:
                         check_role_of_sql(other, f"CREATE TABLE {other.value}.{table} (id uuid)")
 
 
+def test_a_table_the_chain_renamed_is_known_by_its_old_name_to_its_own_chain_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rename keeps the rows, and the chain's earlier files still name the
+    table as it was: an up file's rename makes the old name known to its own
+    role, and neither a down file's rename back nor a renamed constraint does."""
+    sql = tmp_path / "sql" / "core"
+    sql.mkdir(parents=True)
+    (sql / "202601010000_rename.up.sql").write_text(
+        "ALTER TABLE core.ledgers RENAME TO kept_ledgers;\n"
+        "ALTER TABLE core.kept_ledgers RENAME CONSTRAINT pk_ledgers TO pk_kept_ledgers;\n"
+    )
+    (sql / "202601010000_rename.down.sql").write_text(
+        "ALTER TABLE core.ghosts RENAME TO ledgers;\n"
+    )
+    monkeypatch.setattr("acme.om.storage.migrate.MIGRATIONS_DIR", tmp_path)
+    dropped_tables.cache_clear()
+    try:
+        assert dropped_tables(DatabaseRole.CORE) == {"ledgers"}
+        check_role_of_sql(DatabaseRole.CORE, "CREATE TABLE core.ledgers (id uuid)")
+        with pytest.raises(LookupError):
+            check_role_of_sql(DatabaseRole.QUEUE, "CREATE TABLE queue.ledgers (id uuid)")
+        with pytest.raises(LookupError):
+            check_role_of_sql(DatabaseRole.CORE, "CREATE TABLE core.ghosts (id uuid)")
+    finally:
+        dropped_tables.cache_clear()
+
+
 def test_split_statements_drops_comments_and_blanks() -> None:
     sql = (
         "-- header\nCREATE TABLE core.orgs (id uuid);\n\n"
@@ -151,8 +179,8 @@ def test_role_metadata_holds_only_that_role() -> None:
     assert {t.name for t in role_metadata(DatabaseRole.ACTIVITY).tables.values()} == {
         "events",
         "event_cursors",
-        "steps",
-        "step_cursors",
+        "agent_steps",
+        "agent_step_cursors",
         "budget_tallies",
         "budget_holds",
         "budget_settlements",

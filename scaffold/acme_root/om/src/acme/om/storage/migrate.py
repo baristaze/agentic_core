@@ -54,8 +54,10 @@ _INDEX_REF = re.compile(
     r"|\bFUNCTION\s+(?:IF EXISTS\s+)?(core|activity|queue|admin)\.([a-z_][a-z0-9_]*)",
     re.IGNORECASE,
 )
-_DROP_TABLE = re.compile(
-    r"\bDROP TABLE\s+(?:IF EXISTS\s+)?(core|activity|queue|admin)\.([a-z_][a-z0-9_]*)",
+_TABLE_LEFT = re.compile(
+    r"\bDROP TABLE\s+(?:IF EXISTS\s+)?(core|activity|queue|admin)\.([a-z_][a-z0-9_]*)"
+    r"|\bALTER TABLE\s+(?:IF EXISTS\s+)?(core|activity|queue|admin)\.([a-z_][a-z0-9_]*)"
+    r"\s+RENAME TO\b",
     re.IGNORECASE,
 )
 LOCK_NOT_AVAILABLE = "55P03"
@@ -113,14 +115,18 @@ def split_statements(sql: str) -> list[str]:
 @functools.cache
 def dropped_tables(role: DatabaseRole) -> frozenset[str]:
     """Tables the role's chain made and later dropped: each one an up file of
-    the chain drops and the role map does not hold. No process reaches them,
-    so `role_for` does not know them; the chain names them, so the role check
-    reads them off the chain."""
-    return frozenset(
-        table
+    the chain drops, or renames away, and the role map does not hold. No
+    process reaches them, so `role_for` does not know them; the chain names
+    them, so the role check reads them off the chain."""
+    left = (
+        (drop_schema or rename_schema, drop_table or rename_table)
         for path in (MIGRATIONS_DIR / "sql" / role.value).glob("*.up.sql")
-        for schema, table in _DROP_TABLE.findall(path.read_text())
-        if schema == role.value and table not in TABLE_ROLES
+        for drop_schema, drop_table, rename_schema, rename_table in _TABLE_LEFT.findall(
+            path.read_text()
+        )
+    )
+    return frozenset(
+        table for schema, table in left if schema == role.value and table not in TABLE_ROLES
     )
 
 

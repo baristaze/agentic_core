@@ -15,8 +15,8 @@ class Artifact(Identifiable, Created):
     derived from that response, so keeping one response twice keeps one
     artifact."""
 
-    session_id: UUID
-    step_id: UUID
+    agent_session_id: UUID
+    agent_step_id: UUID
     characters: int = Field(gt=0)
 
 

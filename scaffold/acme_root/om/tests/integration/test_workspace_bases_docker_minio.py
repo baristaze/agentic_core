@@ -223,16 +223,18 @@ class OnDocker:
         self.sessions: list[UUID] = []
 
     async def prepare(self, spec: IsolationSpec) -> Workspace:
-        session_id = await self.loop.start(ASSISTANT.name)
-        self.sessions.append(session_id)
-        return await self.loop.managers.tools.prepare_workspace(self.loop.owner, session_id, spec)
+        agent_session_id = await self.loop.start(ASSISTANT.name)
+        self.sessions.append(agent_session_id)
+        return await self.loop.managers.tools.prepare_workspace(
+            self.loop.owner, agent_session_id, spec
+        )
 
     async def kept(self) -> list[str]:
         return await self.infra.buckets.list(self.loop.owner.org_id, BUCKET, PREFIX, 100)
 
     async def close(self) -> None:
-        for session_id in self.sessions:
-            await self.loop.managers.tools.purge_workspace(self.loop.owner.org_id, session_id)
+        for agent_session_id in self.sessions:
+            await self.loop.managers.tools.purge_workspace(self.loop.owner.org_id, agent_session_id)
         left = await docker(
             "ps",
             "--all",
@@ -313,12 +315,12 @@ async def test_the_setups_environment_holds_no_credential_and_no_session_content
     monkeypatch.setenv("ACME_PLATFORM_CREDENTIAL", credential)
     loop = on_docker.loop
     await on_docker.infra.get_secrets().put(loop.owner.org_id, TOKEN, secret)
-    session_id = await loop.start(ASSISTANT.name)
-    on_docker.sessions.append(session_id)
-    await loop.say(session_id, content)
+    agent_session_id = await loop.start(ASSISTANT.name)
+    on_docker.sessions.append(agent_session_id)
+    await loop.say(agent_session_id, content)
 
     workspace = await loop.managers.tools.prepare_workspace(
-        loop.owner, session_id, on_base("env > /opt/setup-env")
+        loop.owner, agent_session_id, on_base("env > /opt/setup-env")
     )
 
     code, environment = await inside(workspace, "cat", "/opt/setup-env")

@@ -71,12 +71,12 @@ async def test_two_sessions_at_the_gate_at_once_never_both_pass_when_one_fits(
     line = make_budget(tenant.kind, tenant.key, cost_micros=1_500)
     assert await budgets.create_budget(ctx.org_id, line, ())
 
-    def asked(session_id: UUID) -> HoldRequest:
+    def asked(agent_session_id: UUID) -> HoldRequest:
         return HoldRequest(
             spender_id=ctx.user_id,
-            scopes=(tenant, BudgetScope(kind=BudgetScopeKind.SESSION, key=str(session_id))),
+            scopes=(tenant, BudgetScope(kind=BudgetScopeKind.SESSION, key=str(agent_session_id))),
             exposure=Spend(cost_micros=1_000, tokens=4_000),
-            session_id=session_id,
+            agent_session_id=agent_session_id,
             purpose="main",
         )
 

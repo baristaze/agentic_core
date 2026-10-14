@@ -31,7 +31,7 @@ one made on a session's scope just before a run caps that run alone.
 What it counted stays readable after its close.
 
 **A close wakes the sessions parked on it.** Its commit lands a
-`WAKE_SESSIONS` item that names the budget, and only the sessions whose
+`WAKE_AGENT_SESSIONS` item that names the budget, and only the sessions whose
 park names it are unlocked. A raise still wakes every session parked on
 a budget. A run's close is frequent, and a wake writes to each session it
 reaches, so a close reaches only the parks it can clear.

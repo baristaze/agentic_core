@@ -11,7 +11,7 @@ from acme.agentic_check.registry import rule
 
 ENGINE = [
     "om.agent_sessions",
-    "om.steps",
+    "om.agent_steps",
     "om.windows",
     "om.models",
     "om.tools",

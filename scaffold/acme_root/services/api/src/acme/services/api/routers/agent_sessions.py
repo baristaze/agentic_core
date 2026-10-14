@@ -20,13 +20,15 @@ from uuid import UUID
 
 from fastapi import APIRouter, Body, Query, Response
 
-from acme.om.agent_sessions.types.agent_session import Among, SessionStatus
+from acme.om.agent_sessions.types.agent_session import AgentSessionStatus, Among
 from acme.services.api.gateway.auth import Ctx
 from acme.services.api.gateway.idempotency import Idem
 from acme.services.api.gateway.resolve import AgentSessionsService
 from acme.services.api.types.agent_sessions import (
     AgentSessionPageView,
     AgentSessionView,
+    AgentStepPageView,
+    AgentStepView,
     ArtifactPageView,
     ControlRequest,
     DeadlineRequest,
@@ -35,9 +37,7 @@ from acme.services.api.types.agent_sessions import (
     JobCompletionRequest,
     MessageRequest,
     PrincipalRequest,
-    StartSessionRequest,
-    StepPageView,
-    StepView,
+    StartAgentSessionRequest,
     VisibilityRequest,
 )
 from acme.services.api.types.common import LIMIT_DEFAULT
@@ -46,11 +46,13 @@ router = APIRouter(prefix="/agent-sessions", tags=["agent_sessions"])
 
 
 @router.post("", response_model=AgentSessionView, status_code=201)
-async def start_session(
-    ctx: Ctx, sessions: AgentSessionsService, body: StartSessionRequest, idem: Idem
+async def start_agent_session(
+    ctx: Ctx, sessions: AgentSessionsService, body: StartAgentSessionRequest, idem: Idem
 ) -> Response:
     """A session on the kind, idle until a message wakes it."""
-    return await idem.run(201, lambda attempt: sessions.start_session(ctx, body, attempt.target_id))
+    return await idem.run(
+        201, lambda attempt: sessions.start_agent_session(ctx, body, attempt.target_id)
+    )
 
 
 @router.get("", response_model=AgentSessionPageView)
@@ -58,7 +60,7 @@ async def list_sessions(
     ctx: Ctx,
     sessions: AgentSessionsService,
     among: Among = Among.VISIBLE,
-    status: SessionStatus | None = None,
+    status: AgentSessionStatus | None = None,
     after: UUID | None = None,
     limit: int = LIMIT_DEFAULT,
 ) -> AgentSessionPageView:
@@ -67,166 +69,174 @@ async def list_sessions(
     return await sessions.list_sessions(ctx, among, status, after, limit)
 
 
-@router.get("/{session_id}", response_model=AgentSessionView)
-async def get_session(
-    ctx: Ctx, sessions: AgentSessionsService, session_id: UUID
+@router.get("/{agent_session_id}", response_model=AgentSessionView)
+async def get_agent_session(
+    ctx: Ctx, sessions: AgentSessionsService, agent_session_id: UUID
 ) -> AgentSessionView:
-    return await sessions.get_session(ctx, session_id)
+    return await sessions.get_agent_session(ctx, agent_session_id)
 
 
-@router.post("/{session_id}/messages", response_model=StepView, status_code=201)
+@router.post("/{agent_session_id}/messages", response_model=AgentStepView, status_code=201)
 async def send_message(
     ctx: Ctx,
     sessions: AgentSessionsService,
-    session_id: UUID,
+    agent_session_id: UUID,
     body: MessageRequest,
     idem: Idem,
 ) -> Response:
     """The message as stored, durable when this answers."""
     return await idem.run(
-        201, lambda attempt: sessions.send_message(ctx, session_id, body, attempt.target_id)
+        201, lambda attempt: sessions.send_message(ctx, agent_session_id, body, attempt.target_id)
     )
 
 
-@router.post("/{session_id}/controls", response_model=StepView, status_code=201)
+@router.post("/{agent_session_id}/controls", response_model=AgentStepView, status_code=201)
 async def send_control(
     ctx: Ctx,
     sessions: AgentSessionsService,
-    session_id: UUID,
+    agent_session_id: UUID,
     body: ControlRequest,
     idem: Idem,
 ) -> Response:
     """The control as stored, out of band: it never waits behind a message."""
     return await idem.run(
-        201, lambda attempt: sessions.send_control(ctx, session_id, body, attempt.target_id)
+        201, lambda attempt: sessions.send_control(ctx, agent_session_id, body, attempt.target_id)
     )
 
 
-@router.post("/{session_id}/calls/{request_seq}/decision", response_model=StepView, status_code=201)
+@router.post(
+    "/{agent_session_id}/calls/{request_seq}/decision",
+    response_model=AgentStepView,
+    status_code=201,
+)
 async def decide_call(
     ctx: Ctx,
     sessions: AgentSessionsService,
-    session_id: UUID,
+    agent_session_id: UUID,
     request_seq: int,
     body: DecisionRequest,
     idem: Idem,
 ) -> Response:
     """An approval or a denial of the tool call at `request_seq`, as stored."""
     return await idem.run(
-        201, lambda attempt: sessions.decide_call(ctx, session_id, request_seq, body)
+        201, lambda attempt: sessions.decide_call(ctx, agent_session_id, request_seq, body)
     )
 
 
 # A deadline is set whole by a PUT, so a retry after a lost answer sets the
 # same deadline again and the route takes no Idempotency-Key.
-@router.put("/{session_id}/deadline", response_model=AgentSessionView)
+@router.put("/{agent_session_id}/deadline", response_model=AgentSessionView)
 async def set_deadline(
-    ctx: Ctx, sessions: AgentSessionsService, session_id: UUID, body: DeadlineRequest
+    ctx: Ctx, sessions: AgentSessionsService, agent_session_id: UUID, body: DeadlineRequest
 ) -> AgentSessionView:
     """The deadline of the session's tree, moved for every session of it.
     One past now, or null, unlocks each session parked on the deadline."""
-    return await sessions.set_deadline(ctx, session_id, body)
+    return await sessions.set_deadline(ctx, agent_session_id, body)
 
 
 # Who takes part, who sees it, and who steers it are each set whole by a
 # PUT or a DELETE, so a retry after a lost answer sets the same again and
 # the routes take no Idempotency-Key.
-@router.put("/{session_id}/participants/{user_id}", response_model=AgentSessionView)
+@router.put("/{agent_session_id}/participants/{user_id}", response_model=AgentSessionView)
 async def add_participant(
-    ctx: Ctx, sessions: AgentSessionsService, session_id: UUID, user_id: UUID
+    ctx: Ctx, sessions: AgentSessionsService, agent_session_id: UUID, user_id: UUID
 ) -> AgentSessionView:
     """`user_id` takes part in the session: any member joins an org-wide
     one, and its creator adds anyone. A private one is joined only by whom
     its creator adds and by its steerer: 403 for any other self-join,
-    `manage_sessions` included, and for anyone else's add."""
-    return await sessions.add_participant(ctx, session_id, user_id)
+    `manage_agent_sessions` included, and for anyone else's add."""
+    return await sessions.add_participant(ctx, agent_session_id, user_id)
 
 
-@router.delete("/{session_id}/participants/{user_id}", response_model=AgentSessionView)
+@router.delete("/{agent_session_id}/participants/{user_id}", response_model=AgentSessionView)
 async def remove_participant(
-    ctx: Ctx, sessions: AgentSessionsService, session_id: UUID, user_id: UUID
+    ctx: Ctx, sessions: AgentSessionsService, agent_session_id: UUID, user_id: UUID
 ) -> AgentSessionView:
     """`user_id` takes no part in the session: its creator removes anyone,
     and a participant leaves on their own. 403 for anyone else, 409 for
     its steerer until the steer is handed on."""
-    return await sessions.remove_participant(ctx, session_id, user_id)
+    return await sessions.remove_participant(ctx, agent_session_id, user_id)
 
 
-@router.put("/{session_id}/visibility", response_model=AgentSessionView)
+@router.put("/{agent_session_id}/visibility", response_model=AgentSessionView)
 async def switch_visibility(
-    ctx: Ctx, sessions: AgentSessionsService, session_id: UUID, body: VisibilityRequest
+    ctx: Ctx, sessions: AgentSessionsService, agent_session_id: UUID, body: VisibilityRequest
 ) -> AgentSessionView:
     """Its creator switches who sees the session, recorded as a step: 403
     for anyone else."""
-    return await sessions.switch_visibility(ctx, session_id, body)
+    return await sessions.switch_visibility(ctx, agent_session_id, body)
 
 
-@router.put("/{session_id}/principal", response_model=AgentSessionView)
+@router.put("/{agent_session_id}/principal", response_model=AgentSessionView)
 async def assign_principal(
     ctx: Ctx,
     sessions: AgentSessionsService,
-    session_id: UUID,
+    agent_session_id: UUID,
     body: Annotated[PrincipalRequest | None, Body()] = None,
 ) -> AgentSessionView:
     """The steer moves, recorded as a step: its steerer hands it to the
     participant the body names, or with no body the caller takes it, for a
-    steerer who lapsed with `manage_sessions`. Its tool calls run under the
+    steerer who lapsed with `manage_agent_sessions`. Its tool calls run under the
     steerer, and a loop parked on a principal who no longer holds goes on.
     403 for anyone else, 422 for one who takes no part in it."""
-    return await sessions.assign_principal(ctx, session_id, body)
+    return await sessions.assign_principal(ctx, agent_session_id, body)
 
 
-@router.post("/{session_id}/take-over", response_model=AgentSessionView)
-async def take_over(ctx: Ctx, sessions: AgentSessionsService, session_id: UUID) -> AgentSessionView:
+@router.post("/{agent_session_id}/take-over", response_model=AgentSessionView)
+async def take_over(
+    ctx: Ctx, sessions: AgentSessionsService, agent_session_id: UUID
+) -> AgentSessionView:
     """The caller, in person, takes the environment to work by hand: the
     loop parks on a hand-over they hold. 409 when another person holds it."""
-    return await sessions.take_over(ctx, session_id)
+    return await sessions.take_over(ctx, agent_session_id)
 
 
-@router.post("/{session_id}/give-back", response_model=AgentSessionView)
+@router.post("/{agent_session_id}/give-back", response_model=AgentSessionView)
 async def give_back(
     ctx: Ctx,
     sessions: AgentSessionsService,
-    session_id: UUID,
+    agent_session_id: UUID,
     body: GiveBackRequest,
     idem: Idem,
 ) -> Response:
     """The holder, in person, gives the environment back with what they
     did there, and the loop goes on: 403 for anyone else."""
-    return await idem.run(200, lambda attempt: sessions.give_back(ctx, session_id, body))
+    return await idem.run(200, lambda attempt: sessions.give_back(ctx, agent_session_id, body))
 
 
-@router.post("/{session_id}/jobs/{key}/completion", response_model=AgentSessionView)
+@router.post("/{agent_session_id}/jobs/{key}/completion", response_model=AgentSessionView)
 async def complete_job(
     ctx: Ctx,
     sessions: AgentSessionsService,
-    session_id: UUID,
+    agent_session_id: UUID,
     key: UUID,
     body: JobCompletionRequest,
     idem: Idem,
 ) -> Response:
     """How the job of `key` ended, from the system it ran on: the loop that
     waits on it goes on. 404 for a job the session does not wait on."""
-    return await idem.run(200, lambda attempt: sessions.complete_job(ctx, session_id, key, body))
+    return await idem.run(
+        200, lambda attempt: sessions.complete_job(ctx, agent_session_id, key, body)
+    )
 
 
-@router.get("/{session_id}/steps", response_model=StepPageView)
-async def get_steps(
+@router.get("/{agent_session_id}/steps", response_model=AgentStepPageView)
+async def get_agent_steps(
     ctx: Ctx,
     sessions: AgentSessionsService,
-    session_id: UUID,
+    agent_session_id: UUID,
     after_seq: Annotated[int, Query(ge=0)] = 0,
     limit: int = LIMIT_DEFAULT,
-) -> StepPageView:
+) -> AgentStepPageView:
     """The history in order, strictly after `after_seq`."""
-    return await sessions.get_steps(ctx, session_id, after_seq, limit)
+    return await sessions.get_agent_steps(ctx, agent_session_id, after_seq, limit)
 
 
-@router.get("/{session_id}/artifacts/{artifact_id}", response_model=ArtifactPageView)
+@router.get("/{agent_session_id}/artifacts/{artifact_id}", response_model=ArtifactPageView)
 async def get_artifact(
     ctx: Ctx,
     sessions: AgentSessionsService,
-    session_id: UUID,
+    agent_session_id: UUID,
     artifact_id: UUID,
     start: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1)] = 10_000,
@@ -234,4 +244,4 @@ async def get_artifact(
     """A page of what the session keeps whole outside its window, from the
     character at `start`: an artifact is written once, so no character's
     place moves between pages. The policy's page bounds `limit`."""
-    return await sessions.get_artifact(ctx, session_id, artifact_id, start, limit)
+    return await sessions.get_artifact(ctx, agent_session_id, artifact_id, start, limit)

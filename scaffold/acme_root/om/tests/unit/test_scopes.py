@@ -105,9 +105,16 @@ def test_a_tenant_scope_carries_org_id_and_its_declared_person_column() -> None:
 
 
 def chain(role: DatabaseRole) -> str:
-    return "\n".join(
+    """The role's up files in order, each table named as the chain leaves
+    it: a rename keeps the table, its fence, and its policy, so what an
+    earlier file says of the table holds under its new name."""
+    sql = "\n".join(
         path.read_text() for path in sorted((MIGRATIONS_DIR / "sql" / role.value).glob("*.up.sql"))
     )
+    schema = role.value
+    for old, new in re.findall(rf"ALTER TABLE {schema}\.(\w+)\s+RENAME TO (\w+)", sql):
+        sql = re.sub(rf"\b{schema}\.{old}\b", f"{schema}.{new}", sql)
+    return sql
 
 
 def policy_in(sql: str, qualified: str, name: str = POLICY_NAME) -> str | None:

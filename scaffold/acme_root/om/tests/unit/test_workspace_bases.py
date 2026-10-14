@@ -35,9 +35,9 @@ from acme.infra.workspaces import (
     WorkspaceLost,
 )
 from acme.infra.workspaces.twin import WorkspaceTwinImpl
+from acme.om.agent_steps.types.header import SnapshotHeader
 from acme.om.base import new_id
 from acme.om.context import Role, TenantContext
-from acme.om.steps.types.header import SnapshotHeader
 from acme.om.tools.impl.bases import BUCKET, PREFIX, base_key
 from acme.om.tools.impl.manager import ToolsOptions
 
@@ -290,11 +290,11 @@ async def test_a_base_is_its_tenants_alone(tmp_path: Path) -> None:
 
 async def test_a_restore_starts_from_its_snapshot_and_reads_no_base(tmp_path: Path) -> None:
     bases = Bases(tmp_path)
-    session_id = new_id()
-    workspace = await bases.tools.manager.prepare_workspace(bases.ctx, session_id, ON_BASE)
-    epoch = await bases.tools.steps.begin_run(bases.ctx, session_id)
+    agent_session_id = new_id()
+    workspace = await bases.tools.manager.prepare_workspace(bases.ctx, agent_session_id, ON_BASE)
+    epoch = await bases.tools.steps.begin_run(bases.ctx, agent_session_id)
     step = await bases.tools.manager.snapshot_workspace(
-        bases.ctx, session_id, workspace, epoch=epoch, loop_id=new_id()
+        bases.ctx, agent_session_id, workspace, epoch=epoch, loop_id=new_id()
     )
     assert isinstance(step.header, SnapshotHeader)
     snapshot = step.header.snapshot
@@ -303,11 +303,11 @@ async def test_a_restore_starts_from_its_snapshot_and_reads_no_base(tmp_path: Pa
     ran = len(bases.setup.ran)
 
     restored = await bases.tools.manager.prepare_workspace(
-        bases.ctx, session_id, ON_BASE, restore=snapshot
+        bases.ctx, agent_session_id, ON_BASE, restore=snapshot
     )
 
     assert len(bases.setup.ran) == ran, "no base is built for a restore"
-    assert restored.id == session_id
+    assert restored.id == agent_session_id
 
 
 async def test_a_base_the_provider_cannot_bring_in_is_built_again(tmp_path: Path) -> None:
@@ -371,7 +371,7 @@ async def test_the_tenants_purge_removes_its_bases(tmp_path: Path) -> None:
 def test_a_long_setup_command_keeps_how_it_ended_in_its_cause(
     exit_code: int | None, ended: str
 ) -> None:
-    from acme.om.steps.types.header import MAX_CAUSE, LoopEndedHeader
+    from acme.om.agent_steps.types.header import MAX_CAUSE, LoopEndedHeader
 
     failed = BaseSetupFailed(0, "x" * 600, exit_code)
     assert failed.cause is not None

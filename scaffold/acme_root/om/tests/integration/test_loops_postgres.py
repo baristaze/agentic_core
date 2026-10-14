@@ -30,14 +30,14 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from acme.infra.impl.configured import InfraConfiguredImpl
 from acme.infra.impl.settings import InfraSettings
 from acme.om.agent_sessions.storage.impl.postgres import AgentSessionStoragePostgresImpl
+from acme.om.agent_steps.types.agent_step import AgentStepType
+from acme.om.agent_steps.types.content import TextBlock
+from acme.om.agent_steps.types.header import InputHeader, LoopOutcome, ParkReason
 from acme.om.agents.types.request import Spawn
 from acme.om.agents.types.run import RunEnd
 from acme.om.base import new_id
 from acme.om.context import AppContext, AppType, RequestContext, TenantContext
 from acme.om.root import build_managers
-from acme.om.steps.types.content import TextBlock
-from acme.om.steps.types.header import InputHeader, LoopOutcome, ParkReason
-from acme.om.steps.types.step import StepType
 from acme.om.storage.impl.pg_base import LoginSessions
 from acme.om.storage.impl.postgres import StoragePostgresImpl
 from acme.om.storage.roles import DatabaseRole
@@ -83,23 +83,23 @@ async def test_a_loop_over_postgres_persists_each_step_first_and_seals_what_it_s
 ) -> None:
     owner = await an_owner(storage, tmp_path)
     loop = loop_over(tmp_path, storage=storage, owner=owner)
-    session_id = await loop.start()
-    await loop.say(session_id, "What is the quarterly total?")
+    agent_session_id = await loop.start()
+    await loop.say(agent_session_id, "What is the quarterly total?")
     loop.anthropic.add(reply(said("Looking."), use("lookup")), reply(said("The total is 12.")))
 
-    run = await loop.loops.run(owner, session_id)
+    run = await loop.loops.run(owner, agent_session_id)
 
     assert (run.end, run.outcome) == (RunEnd.ENDED, LoopOutcome.SUCCEEDED)
-    steps = await loop.history(session_id)
+    steps = await loop.history(agent_session_id)
     assert [step.type for step in steps] == [
-        StepType.MESSAGE,
-        StepType.MODEL_REQUEST,
-        StepType.MODEL_RESPONSE,
-        StepType.TOOL_REQUEST,
-        StepType.TOOL_RESPONSE,
-        StepType.MODEL_REQUEST,
-        StepType.MODEL_RESPONSE,
-        StepType.LOOP_ENDED,
+        AgentStepType.MESSAGE,
+        AgentStepType.MODEL_REQUEST,
+        AgentStepType.MODEL_RESPONSE,
+        AgentStepType.TOOL_REQUEST,
+        AgentStepType.TOOL_RESPONSE,
+        AgentStepType.MODEL_REQUEST,
+        AgentStepType.MODEL_RESPONSE,
+        AgentStepType.LOOP_ENDED,
     ]
     assert [step.seq for step in steps] == list(range(1, 9))
     assert steps[-2].as_text() == "The total is 12."
@@ -111,10 +111,10 @@ async def test_a_loop_over_postgres_persists_each_step_first_and_seals_what_it_s
         async with engine.connect() as connection:
             plain = await connection.scalar(
                 text(
-                    "SELECT count(*) FROM activity.steps WHERE session_id = :s "
+                    "SELECT count(*) FROM activity.agent_steps WHERE agent_session_id = :s "
                     "AND content::text LIKE '%total%'"
                 ),
-                {"s": session_id},
+                {"s": agent_session_id},
             )
     finally:
         await engine.dispose()
@@ -126,23 +126,25 @@ async def test_a_new_run_over_postgres_refuses_the_lost_one_and_settles_its_call
 ) -> None:
     owner = await an_owner(storage, tmp_path)
     loop = loop_over(tmp_path, storage=storage, owner=owner)
-    session_id = await loop.start()
-    await loop.say(session_id, "Note the fix.")
+    agent_session_id = await loop.start()
+    await loop.say(agent_session_id, "Note the fix.")
     loop.anthropic.add(
         reply(use("slow", use_id="use_slow"), use("note", use_id="use_note")),
         reply(said("The note did not finish; I checked.")),
     )
     slow, note = loop.tools["slow"], loop.tools["note"]
-    lost = asyncio.ensure_future(loop.loops.run(owner, session_id))
+    lost = asyncio.ensure_future(loop.loops.run(owner, agent_session_id))
     await slow.started.wait()
 
-    run = await loop.loops.run(owner, session_id)
+    run = await loop.loops.run(owner, agent_session_id)
     slow.release.set()
     stale = await lost
 
     assert run.outcome is LoopOutcome.SUCCEEDED and stale.end is RunEnd.STALE
     assert note.ran_as == [] and len(slow.ran_as) == 2
-    answers = [s for s in await loop.history(session_id) if s.type is StepType.TOOL_RESPONSE]
+    answers = [
+        s for s in await loop.history(agent_session_id) if s.type is AgentStepType.TOOL_RESPONSE
+    ]
     assert len(answers) == 2
 
 
@@ -153,24 +155,26 @@ async def test_a_job_park_and_its_completion_round_trip_through_postgres(
     the completion read back answers the call."""
     owner = await an_owner(storage, tmp_path)
     loop = loop_over(tmp_path, storage=storage, owner=owner, kinds=(ASSISTANT, DELIVERY, BUILDER))
-    session_id = await loop.start("builder")
-    await loop.say(session_id, "Start it.")
+    agent_session_id = await loop.start("builder")
+    await loop.say(agent_session_id, "Start it.")
     loop.anthropic.add(reply(call("build", q="everything")), reply(said("It is done.")))
 
-    parked = await loop.loops.run(owner, session_id)
+    parked = await loop.loops.run(owner, agent_session_id)
 
     assert parked.park is not None and parked.park.reason is ParkReason.JOB
-    (request,) = [s for s in await loop.history(session_id) if s.type is StepType.TOOL_REQUEST]
-    session = await loop.managers.agent_sessions.get_session(owner, session_id)
+    (request,) = [
+        s for s in await loop.history(agent_session_id) if s.type is AgentStepType.TOOL_REQUEST
+    ]
+    session = await loop.managers.agent_sessions.get_agent_session(owner, agent_session_id)
     assert session.park == parked.park
     job = parked.park.job
     assert job is not None and (job.key, job.handle) == (request.id, "build-1")
     completion = JobCompletion(key=request.id, handle="build-1", text="3 targets built")
-    await loop.loops.complete_job(owner, session_id, completion)
-    done = await loop.loops.run(owner, session_id)
+    await loop.loops.complete_job(owner, agent_session_id, completion)
+    done = await loop.loops.run(owner, agent_session_id)
 
     assert done.outcome is LoopOutcome.SUCCEEDED
-    steps = await loop.history(session_id)
+    steps = await loop.history(agent_session_id)
     answer = next(s for s in steps if s.responds_to == request.id)
     assert answer.as_tool_response().parts[0].text == "3 targets built"  # type: ignore[union-attr]
 
@@ -207,7 +211,7 @@ async def test_a_childs_report_wakes_its_parent_over_postgres_whole_or_by_its_ha
         (report,) = (await loop.history(parent_id))[before:]
         header = report.header
         assert isinstance(header, InputHeader) and header.waking is True
-        assert header.agent is not None and header.agent.session_id == child.id
+        assert header.agent is not None and header.agent.agent_session_id == child.id
         reports.append(report)
 
     whole, kept = reports

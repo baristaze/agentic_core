@@ -21,6 +21,8 @@ from acme.integrations.model_providers import ModelProvidersInterface
 from acme.integrations.model_providers.calls import ModelCall
 from acme.integrations.model_providers.scripted import ScriptedFailure
 from acme.integrations.model_providers.types import ErrorKind, ProviderName
+from acme.om.agent_steps.types.agent_step import AgentStepType
+from acme.om.agent_steps.types.header import LoopOutcome, ParkReason
 from acme.om.agents.impl.loop import LoopOptions
 from acme.om.agents.types.run import RunEnd
 from acme.om.attribution.types.principal import Principal
@@ -30,11 +32,9 @@ from acme.om.models.credentials import PLATFORM_CREDENTIAL, CallClient, CallCred
 from acme.om.models.layer import ModelsLayer
 from acme.om.models.types.fill import Fill, ModelRole
 from acme.om.root import Managers
-from acme.om.steps.types.header import LoopOutcome, ParkReason
-from acme.om.steps.types.step import StepType
 from acme.om.windows.impl.gate import CallGateBudgetImpl
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
-from acme.om.work.types.work_item import WakeSessionPayload, WorkKind
+from acme.om.work.types.work_item import WakeAgentSessionPayload, WorkKind
 
 KEY = "key-1"
 """The reference a tenant's own key is named by: never the key."""
@@ -52,7 +52,7 @@ class Told(CallGateBudgetImpl):
     async def authorize(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         spender: Principal,
         role: ModelRole,
         fill: Fill,
@@ -62,7 +62,7 @@ class Told(CallGateBudgetImpl):
     ) -> UUID:
         self.credentials.append(credential)
         return await super().authorize(
-            ctx, session_id, spender, role, fill, call, credential=credential
+            ctx, agent_session_id, spender, role, fill, call, credential=credential
         )
 
 
@@ -115,11 +115,11 @@ async def test_a_call_whose_key_cannot_be_had_parks_on_its_provider_and_spends_n
     tmp_path: Path,
 ) -> None:
     loop, gate = keyed_loop(tmp_path, ModelsLayer(credentials=lambda providers: Keyless()))
-    session_id = await loop.start()
-    await loop.say(session_id, "What is the total?")
+    agent_session_id = await loop.start()
+    await loop.say(agent_session_id, "What is the total?")
     loop.anthropic.add(reply(said("Never asked.")))
 
-    run = await loop.loops.run(loop.owner, session_id)
+    run = await loop.loops.run(loop.owner, agent_session_id)
 
     assert run.end is RunEnd.PARKED and run.park is not None
     assert (run.park.reason, run.park.unlock, run.park.retry_at) == (
@@ -130,10 +130,10 @@ async def test_a_call_whose_key_cannot_be_had_parks_on_its_provider_and_spends_n
     assert run.park.cause == "the org holds no anthropic key: an admin of the org saves one"
     assert gate.credentials == [], "nothing was held"
     assert loop.anthropic.calls == [] and loop.anthropic.remaining == 1, "no call was made"
-    steps = await loop.history(session_id)
-    assert not [step for step in steps if step.type is StepType.MODEL_REQUEST]
+    steps = await loop.history(agent_session_id)
+    assert not [step for step in steps if step.type is AgentStepType.MODEL_REQUEST]
     ledger = loop.storage.get_ledger_storage()
-    assert await ledger.read_usage_records(loop.owner.org_id, session_id, None, 10) == []
+    assert await ledger.read_usage_records(loop.owner.org_id, agent_session_id, None, 10) == []
 
 
 @pytest.mark.parametrize(
@@ -153,11 +153,11 @@ async def test_a_key_its_provider_refuses_is_marked_refused_and_no_outage_is_rep
 ) -> None:
     keys = OwnKey()
     loop, gate = keyed_loop(tmp_path, ModelsLayer(credentials=keys.over))
-    session_id = await loop.start()
-    await loop.say(session_id, "What is the total?")
+    agent_session_id = await loop.start()
+    await loop.say(agent_session_id, "What is the total?")
     loop.anthropic.add(ScriptedFailure(kind=ErrorKind.CREDENTIAL, status=status, message=message))
 
-    run = await loop.loops.run(loop.owner, session_id)
+    run = await loop.loops.run(loop.owner, agent_session_id)
 
     assert run.end is RunEnd.PARKED and run.park is not None
     assert (run.park.reason, run.park.unlock) == (ParkReason.PROVIDER, unlock)
@@ -250,11 +250,11 @@ async def test_a_park_on_a_key_or_an_account_says_who_acts_and_wakes_once_it_is_
     for the platform's key and an admin for the org's, and tries again by
     itself, so the next run after the fix goes on."""
     loop = loop_over(tmp_path, models_layer=ModelsLayer(credentials=OwnKey().over) if own else None)
-    session_id = await loop.start()
-    await loop.say(session_id, "What is the total?")
+    agent_session_id = await loop.start()
+    await loop.say(agent_session_id, "What is the total?")
     loop.anthropic.add(ScriptedFailure(kind=kind, status=status, message=message))
 
-    run = await loop.loops.run(loop.owner, session_id)
+    run = await loop.loops.run(loop.owner, agent_session_id)
 
     park = run.park
     assert run.end is RunEnd.PARKED and park is not None and park.retry_at is not None
@@ -265,16 +265,16 @@ async def test_a_park_on_a_key_or_an_account_says_who_acts_and_wakes_once_it_is_
     wakes = [
         item
         for _, item in work._items.values()  # pyright: ignore[reportPrivateUsage]
-        if item.kind is WorkKind.WAKE_SESSION and item.target_id == session_id
+        if item.kind is WorkKind.WAKE_AGENT_SESSION and item.target_id == agent_session_id
     ]
-    assert [WakeSessionPayload.model_validate(w.payload).not_before for w in wakes] == [
+    assert [WakeAgentSessionPayload.model_validate(w.payload).not_before for w in wakes] == [
         park.retry_at
     ], "the queue holds its wake until the retry time"
 
     loop.clock.now = park.retry_at
-    await loop.managers.agent_sessions.wake_session(loop.owner, session_id, park)
+    await loop.managers.agent_sessions.wake_agent_session(loop.owner, agent_session_id, park)
     loop.anthropic.add(reply(said("The total is 12.")))
-    resumed = await loop.loops.run(loop.owner, session_id)
+    resumed = await loop.loops.run(loop.owner, agent_session_id)
 
     assert resumed.outcome is LoopOutcome.SUCCEEDED, "the fixed key answers"
     assert len(loop.anthropic.calls) == 2

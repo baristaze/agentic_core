@@ -295,7 +295,7 @@ advice; a failing test returned as a tool failure; an engine retry of an
 **Severity.** medium
 
 **Shape.** `scaffold/acme_root/om/src/acme/om/tools/rules.py` and
-`scaffold/acme_root/om/src/acme/om/steps/types/header.py`
+`scaffold/acme_root/om/src/acme/om/agent_steps/types/header.py`
 
 **Check.** review
 

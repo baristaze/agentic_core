@@ -145,18 +145,18 @@ class LedgerStorageMemoryImpl(MemoryStorageBase, LedgerStorageInterface):
             return self._insert(self._usage, org_id, record)
 
     async def read_usage_records(
-        self, org_id: UUID, session_id: UUID, after: UUID | None, limit: int
+        self, org_id: UUID, agent_session_id: UUID, after: UUID | None, limit: int
     ) -> list[UsageRecord]:
-        records = self._session_usage(org_id, session_id)
+        records = self._session_usage(org_id, agent_session_id)
         return [r for r in records if after is None or r.id > after][:limit]
 
     async def read_usage_rollups(
-        self, org_id: UUID, session_id: UUID, limit: int
+        self, org_id: UUID, agent_session_id: UUID, limit: int
     ) -> list[LoopUsage]:
-        return loop_rollups(self._session_usage(org_id, session_id))[:limit]
+        return loop_rollups(self._session_usage(org_id, agent_session_id))[:limit]
 
-    async def read_usage_total(self, org_id: UUID, session_id: UUID) -> UsageRollup:
-        return rollup_of(self._session_usage(org_id, session_id))
+    async def read_usage_total(self, org_id: UUID, agent_session_id: UUID) -> UsageRollup:
+        return rollup_of(self._session_usage(org_id, agent_session_id))
 
     async def count_tenant(self, org_id: UUID, limit: int) -> int:
         holds = len(self._rows(self._holds, org_id))
@@ -164,8 +164,10 @@ class LedgerStorageMemoryImpl(MemoryStorageBase, LedgerStorageInterface):
         tallies = sum(1 for org, _, _ in self._tallies if org == org_id)
         return min(holds + settlements + tallies, limit)
 
-    def _session_usage(self, org_id: UUID, session_id: UUID) -> list[UsageRecord]:
-        return [r for r in self._rows(self._usage, org_id) if r.session_id == session_id]
+    def _session_usage(self, org_id: UUID, agent_session_id: UUID) -> list[UsageRecord]:
+        return [
+            r for r in self._rows(self._usage, org_id) if r.agent_session_id == agent_session_id
+        ]
 
     def _tallies_of(self, org_id: UUID, hold: Hold) -> dict[TallyKey, Tally]:
         """The tally of each line, a fresh one where the window has none."""

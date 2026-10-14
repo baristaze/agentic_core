@@ -21,8 +21,8 @@ def switch_refusal(head: FillSet, role: ModelRole, to: Fill) -> str | None:
     return None
 
 
-def switched(head: FillSet, fills: FillSwitch, step_id: UUID, at: datetime) -> FillSet:
-    """The version after `head` that the `switched` step `step_id` announces:
+def switched(head: FillSet, fills: FillSwitch, agent_step_id: UUID, at: datetime) -> FillSet:
+    """The version after `head` that the `switched` step `agent_step_id` announces:
     the role's fill replaced, and the new fill no longer among its fallbacks.
     Its id is derived from the step, so writing it twice writes it once."""
     if fills.fill_set_version != head.version + 1:
@@ -43,14 +43,14 @@ def switched(head: FillSet, fills: FillSwitch, step_id: UUID, at: datetime) -> F
         for r in head.roles
     )
     return FillSet(
-        id=derived_id(step_id, at, "fill_set"),
+        id=derived_id(agent_step_id, at, "fill_set"),
         created_at=at,
-        session_id=head.session_id,
+        agent_session_id=head.agent_session_id,
         version=fills.fill_set_version,
         roles=roles,
         eligibility=head.eligibility,
         reason=fills.reason,
-        switched_by=step_id,
+        switched_by=agent_step_id,
     )
 
 

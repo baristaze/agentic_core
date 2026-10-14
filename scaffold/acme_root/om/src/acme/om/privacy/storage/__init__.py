@@ -11,24 +11,30 @@ from datetime import datetime
 from uuid import UUID
 
 from acme.om.outbox.types.row import OutboxRow
-from acme.om.privacy.types.session_privacy import KeyRing, SessionKey, SessionPrivacy
+from acme.om.privacy.types.agent_session_privacy import (
+    AgentSessionKey,
+    AgentSessionPrivacy,
+    KeyRing,
+)
 
 
 class PrivacyStorageInterface(ABC):
     @abstractmethod
     async def create_privacy(
-        self, org_id: UUID, record: SessionPrivacy, outbox_rows: tuple[OutboxRow, ...] = ()
-    ) -> SessionPrivacy:
+        self, org_id: UUID, record: AgentSessionPrivacy, outbox_rows: tuple[OutboxRow, ...] = ()
+    ) -> AgentSessionPrivacy:
         """The session's record, written once: `record` lands with the rows
         that announce it when the session has none, and the stored one is
         answered either way, with nothing landed."""
         ...
 
     @abstractmethod
-    async def read_privacy(self, org_id: UUID, session_id: UUID) -> SessionPrivacy | None: ...
+    async def read_privacy(
+        self, org_id: UUID, agent_session_id: UUID
+    ) -> AgentSessionPrivacy | None: ...
 
     @abstractmethod
-    async def add_key(self, org_id: UUID, key: SessionKey) -> SessionKey:
+    async def add_key(self, org_id: UUID, key: AgentSessionKey) -> AgentSessionKey:
         """Version `key.version` of its session's key, under the session's
         record's lock: it lands when the session holds no such version, and
         the stored one is answered either way. `KeyRevoked`, with nothing
@@ -37,15 +43,15 @@ class PrivacyStorageInterface(ABC):
         ...
 
     @abstractmethod
-    async def read_keys(self, org_id: UUID, session_id: UUID) -> KeyRing:
+    async def read_keys(self, org_id: UUID, agent_session_id: UUID) -> KeyRing:
         """Every version of the session's key in version order, live and
         destroyed, and whether it is revoked."""
         ...
 
     @abstractmethod
     async def revoke(
-        self, org_id: UUID, record: SessionPrivacy, outbox_rows: tuple[OutboxRow, ...] = ()
-    ) -> SessionPrivacy:
+        self, org_id: UUID, record: AgentSessionPrivacy, outbox_rows: tuple[OutboxRow, ...] = ()
+    ) -> AgentSessionPrivacy:
         """In one commit, with the rows that announce it: the session's
         record takes the revocation `record` carries, or lands as `record`
         when the session has none, and every version of its key is destroyed
@@ -55,7 +61,7 @@ class PrivacyStorageInterface(ABC):
         ...
 
     @abstractmethod
-    async def rewrap_key(self, org_id: UUID, key: SessionKey, expected: bytes) -> bool:
+    async def rewrap_key(self, org_id: UUID, key: AgentSessionKey, expected: bytes) -> bool:
         """The compare-and-set of a rotation: `key`'s wrapped copy replaces
         the stored one when the stored one is still `expected`. False, with
         nothing written, when it is not, such as a version destroyed
@@ -65,7 +71,7 @@ class PrivacyStorageInterface(ABC):
     @abstractmethod
     async def read_keys_wrapped_before(
         self, org_id: UUID, before: datetime, limit: int
-    ) -> list[SessionKey]:
+    ) -> list[AgentSessionKey]:
         """At most `limit` live versions of the tenant's keys wrapped before
         `before`, the longest wrapped first."""
         ...

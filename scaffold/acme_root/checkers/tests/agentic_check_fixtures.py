@@ -25,7 +25,7 @@ ADR = "docs/adr/2001-the-import-job-builds-its-tools-with-no-gate.md"
 OM = "om/src/acme/om"
 
 TOOL = f"{OM}/tools/echo.py"
-POSTGRES = f"{OM}/steps/storage/impl/postgres.py"
+POSTGRES = f"{OM}/agent_steps/storage/impl/postgres.py"
 MANAGER = f"{OM}/budgets/impl/manager.py"
 
 BASE: dict[str, str] = {
@@ -67,28 +67,29 @@ BASE: dict[str, str] = {
         "            mode=ToolMode.SYNC,\n        )\n"
     ),
     # the history: its table, a step type, and a storage that appends and purges
-    f"{OM}/steps/__init__.py": "",
-    f"{OM}/steps/types/__init__.py": "",
-    f"{OM}/steps/types/step.py": (
-        "from acme.om.base import Platform\n\n\nclass Step(Platform):\n    seq: int\n    text: str\n"
+    f"{OM}/agent_steps/__init__.py": "",
+    f"{OM}/agent_steps/types/__init__.py": "",
+    f"{OM}/agent_steps/types/agent_step.py": (
+        "from acme.om.base import Platform\n\n\nclass AgentStep(Platform):\n    seq: int\n    text: str\n"
     ),
-    f"{OM}/steps/storage/__init__.py": "",
-    f"{OM}/steps/storage/tables/__init__.py": "",
-    f"{OM}/steps/storage/tables/steps.py": (
-        'class Steps:\n    __tablename__ = "steps"\n\n\nclass StepCursors:\n    __tablename__ = "step_cursors"\n'
+    f"{OM}/agent_steps/storage/__init__.py": "",
+    f"{OM}/agent_steps/storage/tables/__init__.py": "",
+    f"{OM}/agent_steps/storage/tables/agent_steps.py": (
+        'class AgentSteps:\n    __tablename__ = "agent_steps"\n\n\n'
+        'class AgentStepCursors:\n    __tablename__ = "agent_step_cursors"\n'
     ),
-    f"{OM}/steps/storage/impl/__init__.py": "",
+    f"{OM}/agent_steps/storage/impl/__init__.py": "",
     POSTGRES: (
         "from sqlalchemy import delete, insert, update\n\n"
-        "from acme.om.steps.storage.tables.steps import StepCursors, Steps\n\n\n"
-        "class StepStoragePostgresImpl:\n"
+        "from acme.om.agent_steps.storage.tables.agent_steps import AgentStepCursors, AgentSteps\n\n\n"
+        "class AgentStepStoragePostgresImpl:\n"
         "    async def append(self, rows: list[dict]) -> None:\n"
         '        """No UPDATE steps here: a step is written once."""\n'
         "        stored: dict = {}\n        stored.update({})\n"
-        "        insert(Steps).values(rows)\n        update(StepCursors).values(head=1)\n\n"
-        "    async def purge_history(self, session_id: str) -> None:\n"
-        "        delete(Steps).where(Steps.session_id == session_id)\n"
-        '        "DELETE FROM activity.steps WHERE session_id = :id"\n'
+        "        insert(AgentSteps).values(rows)\n        update(AgentStepCursors).values(head=1)\n\n"
+        "    async def purge_history(self, agent_session_id: str) -> None:\n"
+        "        delete(AgentSteps).where(AgentSteps.agent_session_id == agent_session_id)\n"
+        '        "DELETE FROM activity.agent_steps WHERE agent_session_id = :id"\n'
     ),
     # the fills and the price table: the two places a model is named
     f"{OM}/models/__init__.py": "",

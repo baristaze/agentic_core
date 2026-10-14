@@ -9,7 +9,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.agent_session_storage import make_session
+from contracts.agent_session_storage import make_agent_session
 from contracts.doubles import Members, context
 from contracts.histories import History
 
@@ -17,17 +17,17 @@ from acme.infra.buckets import Buckets
 from acme.infra.impl.local import InfraLocalImpl
 from acme.integrations.model_providers.registry import absent_model_providers
 from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
+from acme.om.agent_steps.impl.manager import no_session
+from acme.om.agent_steps.types.agent_step import AgentStep
+from acme.om.agent_steps.types.header import ArtifactRef, ToolResponseHeader
 from acme.om.base import new_id
 from acme.om.context import Role, TenantContext
 from acme.om.exceptions import KeyRevoked, NotFound, Unavailable
 from acme.om.models.impl.credentials import CallCredentialsPlatformImpl
 from acme.om.privacy.impl.artifacts import ArtifactSealKeysImpl
-from acme.om.privacy.impl.keys import SessionKeysImpl
-from acme.om.privacy.types.session_privacy import StorageMode, StoragePolicy
+from acme.om.privacy.impl.keys import AgentSessionKeysImpl
+from acme.om.privacy.types.agent_session_privacy import StorageMode, StoragePolicy
 from acme.om.root import Managers, build_managers
-from acme.om.steps.impl.manager import no_session
-from acme.om.steps.types.header import ArtifactRef, ToolResponseHeader
-from acme.om.steps.types.step import Step
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.windows import rules
 from acme.om.windows.impl.gate import CallGateNullImpl
@@ -51,15 +51,17 @@ class Roots:
         self.ctx: TenantContext = context(Role.MEMBER)
 
     async def session(self) -> UUID:
-        created = await self.managers.agent_sessions.create_session(self.ctx, make_session())
+        created = await self.managers.agent_sessions.create_agent_session(
+            self.ctx, make_agent_session()
+        )
         return created.id
 
-    async def stored(self, session_id: UUID, artifact: ArtifactRef) -> bytes:
-        key = rules.artifact_key(session_id, artifact.id)
+    async def stored(self, agent_session_id: UUID, artifact: ArtifactRef) -> bytes:
+        key = rules.artifact_key(agent_session_id, artifact.id)
         return await self.infra.get_buckets().get(self.ctx.org_id, Buckets.ARTIFACTS, key)
 
-    async def present(self, session_id: UUID, artifact: ArtifactRef) -> bool:
-        key = rules.artifact_key(session_id, artifact.id)
+    async def present(self, agent_session_id: UUID, artifact: ArtifactRef) -> bool:
+        key = rules.artifact_key(agent_session_id, artifact.id)
         return await self.infra.get_buckets().exists(self.ctx.org_id, Buckets.ARTIFACTS, key)
 
 
@@ -68,27 +70,27 @@ def roots(tmp_path: Path) -> Roots:
     return Roots(tmp_path)
 
 
-def a_large_result(session_id: UUID) -> tuple[Step, str]:
-    history = History(session_id)
+def a_large_result(agent_session_id: UUID) -> tuple[AgentStep, str]:
+    history = History(agent_session_id)
     objective = history.message("Read the whole log.")
     reply = history.response(history.request((objective,)), "", [("c1", "read_log", {})])
     text = "".join(f"{LINE} {n:07d}\n" for n in range(1_200))
     return history.result(history.call(reply, "c1"), text), text
 
 
-async def kept(roots: Roots, session_id: UUID) -> tuple[ArtifactRef, str]:
-    result, text = a_large_result(session_id)
-    bounded = await roots.managers.windows.bound_tool_response(roots.ctx, session_id, result)
+async def kept(roots: Roots, agent_session_id: UUID) -> tuple[ArtifactRef, str]:
+    result, text = a_large_result(agent_session_id)
+    bounded = await roots.managers.windows.bound_tool_response(roots.ctx, agent_session_id, result)
     header = bounded.header
     assert isinstance(header, ToolResponseHeader) and header.artifact is not None
     return header.artifact, text
 
 
-async def read_whole(roots: Roots, session_id: UUID, artifact: ArtifactRef) -> str:
+async def read_whole(roots: Roots, agent_session_id: UUID, artifact: ArtifactRef) -> str:
     pages, offset = [], 0
     while True:
         page = await roots.managers.windows.get_artifact(
-            roots.ctx, session_id, artifact.id, offset, 100_000
+            roots.ctx, agent_session_id, artifact.id, offset, 100_000
         )
         pages.append(page.text)
         offset += len(page.text)
@@ -123,7 +125,7 @@ async def test_a_revoked_key_leaves_the_record_and_its_text_noise(roots: Roots) 
 
 
 async def test_a_sealed_artifact_opens_only_as_itself(roots: Roots) -> None:
-    keys = SessionKeysImpl(roots.storage.get_privacy_storage(), roots.infra.get_keys())
+    keys = AgentSessionKeysImpl(roots.storage.get_privacy_storage(), roots.infra.get_keys())
     seal = ArtifactSealKeysImpl(keys, roots.storage.get_privacy_storage())
     session, artifact = await roots.session(), new_id()
     sealed = await seal.seal(roots.ctx, session, artifact, b"what the tool printed")
@@ -172,7 +174,7 @@ async def test_an_artifact_goes_with_its_sessions_history(roots: Roots) -> None:
     session, other = await roots.session(), await roots.session()
     gone, _ = await kept(roots, session)
     stays, text = await kept(roots, other)
-    await roots.managers.agent_sessions.delete_session(roots.ctx, session)
+    await roots.managers.agent_sessions.delete_agent_session(roots.ctx, session)
     assert await roots.managers.agent_sessions.purge_across_tenants() == 1
     assert not await roots.present(session, gone), "the object goes"
     windows = roots.storage.get_window_storage()
@@ -194,10 +196,10 @@ async def test_a_purge_whose_object_went_already_still_takes_the_record(roots: R
 async def test_a_deleted_tenants_artifacts_go_a_batch_a_pass(roots: Roots) -> None:
     members = Members()  # pyright: ignore[reportAbstractUsage] (a partial double)
     managers = roots.managers
-    keys = SessionKeysImpl(roots.storage.get_privacy_storage(), roots.infra.get_keys())
+    keys = AgentSessionKeysImpl(roots.storage.get_privacy_storage(), roots.infra.get_keys())
     windows = WindowsManagerImpl(
         roots.storage.get_window_storage(),
-        managers.steps,
+        managers.agent_steps,
         members,
         managers.models,
         managers.attribution,
@@ -224,7 +226,9 @@ async def test_a_deleted_tenants_artifacts_go_a_batch_a_pass(roots: Roots) -> No
 async def test_a_root_with_no_key_service_keeps_no_artifact(tmp_path: Path) -> None:
     roots = Roots(tmp_path)
     managers = build_managers(roots.storage, roots.infra, artifact_seal=ArtifactSealNullImpl())
-    session = (await managers.agent_sessions.create_session(roots.ctx, make_session())).id
+    session = (
+        await managers.agent_sessions.create_agent_session(roots.ctx, make_agent_session())
+    ).id
     result, _ = a_large_result(session)
     with pytest.raises(Unavailable):
         await managers.windows.bound_tool_response(roots.ctx, session, result)

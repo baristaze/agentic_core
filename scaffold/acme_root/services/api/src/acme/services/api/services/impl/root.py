@@ -104,7 +104,7 @@ def build_services(
         agent_sessions=AgentSessionsServiceImpl(
             managers.agent_sessions,
             managers.agents,
-            managers.steps,
+            managers.agent_steps,
             managers.tools,
             managers.attribution,
             managers.loop,

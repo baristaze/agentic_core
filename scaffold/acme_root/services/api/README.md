@@ -106,7 +106,7 @@ app, and `main.py` is the `acme-api` command: `serve`, `migrate`,
   creator add someone, the one way into a private one; leave it, or as
   its creator remove someone, never its steerer; switch who sees it,
   org-wide or private, as its creator; hand its steer to a participant,
-  or take a lapsed one with `manage_sessions`; send it a message or a
+  or take a lapsed one with `manage_agent_sessions`; send it a message or a
   control (pause, resume, cancel, an interrupt of the call it names,
   compact, unlock), each kept when the answer comes and kept once under
   a retried key; decide a tool call its loop waits on; clear the park a
@@ -119,7 +119,7 @@ app, and `main.py` is the `acme-api` command: `serve`, `migrate`,
   hand-over is its holder's: no one else unlocks it or gives it back. A
   session the caller does not see, another org's included, answers as
   one that never existed. (`/v1/agent-sessions`,
-  `/v1/agent-sessions/{session_id}`, `.../participants/{user_id}`,
+  `/v1/agent-sessions/{agent_session_id}`, `.../participants/{user_id}`,
   `.../visibility`, `.../messages`, `.../controls`,
   `.../calls/{request_seq}/decision`, `.../deadline`, `.../principal`,
   `.../take-over`, `.../give-back`, `.../jobs/{key}/completion`,

@@ -4,7 +4,7 @@ the notice between its head and its tail names its id; a result elided once
 read renders as a stub that names its artifact, or its step when it fit
 one. A step's handle reads the whole result, its artifact's when it has
 one. Either handle is looked up in the session the call was made in
-(`ToolRuntime.session_id`), never one the input names, so a handle another
+(`ToolRuntime.agent_session_id`), never one the input names, so a handle another
 session holds answers as one that never existed. One answer is bounded as
 the model reads it, its JSON with every quote and newline escaped, under
 the window's result bound, so a page is kept in its step whole and never
@@ -16,12 +16,12 @@ from uuid import UUID
 from pydantic import Field
 from pydantic_core import to_json
 
+from acme.om.agent_steps import AgentStepsManagerInterface
+from acme.om.agent_steps.types.agent_step import AgentStep
+from acme.om.agent_steps.types.header import ToolFailure, ToolResponseHeader
 from acme.om.base import Platform
 from acme.om.context import TenantContext
 from acme.om.exceptions import NotFound, ToolFailed
-from acme.om.steps import StepsManagerInterface
-from acme.om.steps.types.header import ToolFailure, ToolResponseHeader
-from acme.om.steps.types.step import Step
 from acme.om.tools.tool import ToolInterface, ToolRuntime
 from acme.om.tools.types.policy import Target
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolMode, ToolSpec
@@ -69,7 +69,7 @@ class ArtifactRange(Platform):
 class ReadArtifactToolImpl(ToolInterface):
     def __init__(
         self,
-        steps: StepsManagerInterface,
+        steps: AgentStepsManagerInterface,
         windows: WindowsManagerInterface,
         options: ReadArtifactOptions | None = None,
     ) -> None:
@@ -106,7 +106,7 @@ class ReadArtifactToolImpl(ToolInterface):
         assert isinstance(call_input, ReadArtifactInput)
         handle, offset = call_input.handle, call_input.offset
         want = min(call_input.limit or self._options.max_chars, self._options.max_chars)
-        text, characters = await self._page(ctx, runtime.session_id, handle, offset, want)
+        text, characters = await self._page(ctx, runtime.agent_session_id, handle, offset, want)
         if offset >= characters:
             raise ToolFailed(
                 ToolFailure.INVALID_INPUT,
@@ -128,35 +128,37 @@ class ReadArtifactToolImpl(ToolInterface):
         )
 
     async def _page(
-        self, ctx: TenantContext, session_id: UUID, handle: UUID, offset: int, want: int
+        self, ctx: TenantContext, agent_session_id: UUID, handle: UUID, offset: int, want: int
     ) -> tuple[str, int]:
         """The text kept under `handle` from `offset`, at most `want`
         characters, and how many the whole holds: an artifact of the
         session, or a tool result among its steps, read from its artifact
         when it has one."""
         try:
-            page = await self._windows.get_artifact(ctx, session_id, handle, offset, want)
+            page = await self._windows.get_artifact(ctx, agent_session_id, handle, offset, want)
             return page.text, page.characters
         except NotFound:
             pass
-        step = await self._find(ctx, session_id, handle)
+        step = await self._find(ctx, agent_session_id, handle)
         header = step.header
         assert isinstance(header, ToolResponseHeader)
         if header.artifact is not None:
             page = await self._windows.get_artifact(
-                ctx, session_id, header.artifact.id, offset, want
+                ctx, agent_session_id, header.artifact.id, offset, want
             )
             return page.text, page.characters
         whole = result_text(step.as_tool_response())
         return whole[offset : offset + want], len(whole)
 
-    async def _find(self, ctx: TenantContext, session_id: UUID, handle: UUID) -> Step:
+    async def _find(self, ctx: TenantContext, agent_session_id: UUID, handle: UUID) -> AgentStep:
         """The tool response `handle` names among the steps of the call's own
         session. None found is the same answer whether the handle is another
         session's, another tenant's, or nobody's."""
         after = 0
         while True:
-            page = await self._steps.get_steps(ctx, session_id, after, self._options.page)
+            page = await self._steps.get_agent_steps(
+                ctx, agent_session_id, after, self._options.page
+            )
             for step in page.items:
                 if step.id == handle and isinstance(step.header, ToolResponseHeader):
                     return step

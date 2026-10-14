@@ -5,6 +5,10 @@ from uuid import UUID
 
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.types.agent_session import AgentSession
+from acme.om.agent_steps import AgentStepsManagerInterface
+from acme.om.agent_steps.rules import steer_step
+from acme.om.agent_steps.types.agent_step import AgentStep
+from acme.om.agent_steps.types.header import ModelRequestHeader
 from acme.om.attribution.manager import AttributionManagerInterface, PrincipalContext
 from acme.om.attribution.rules import (
     PRINCIPAL_PARK,
@@ -17,11 +21,11 @@ from acme.om.attribution.rules import (
 )
 from acme.om.attribution.storage import AttributionStorageInterface
 from acme.om.attribution.types.authority import (
+    AgentSessionAuthority,
     AuthorityMode,
     CallAuthority,
     CallReach,
     RequestAttribution,
-    SessionAuthority,
 )
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import Platform, derived_id, utcnow
@@ -38,14 +42,10 @@ from acme.om.exceptions import (
 )
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.types.row import OutboxRow, versioned_row
-from acme.om.steps import StepsManagerInterface
-from acme.om.steps.rules import steer_step
-from acme.om.steps.types.header import ModelRequestHeader
-from acme.om.steps.types.step import Step
 from acme.om.tenancy import TenancyManagerInterface
 
-CREATED = "attribution.session_authority.created"
-UPDATED = "attribution.session_authority.updated"
+CREATED = "attribution.agent_session_authority.created"
+UPDATED = "attribution.agent_session_authority.updated"
 
 
 class AttributionOptions(Platform):
@@ -83,7 +83,7 @@ class AttributionManagerImpl(AttributionManagerInterface):
         self,
         storage: AttributionStorageInterface,
         sessions: AgentSessionsManagerInterface,
-        steps: StepsManagerInterface,
+        steps: AgentStepsManagerInterface,
         principal_context: PrincipalContext,
         tenancy: TenancyManagerInterface,
         relay: OutboxRelayInterface,
@@ -100,15 +100,17 @@ class AttributionManagerImpl(AttributionManagerInterface):
         self._clock = clock
 
     async def open_authority(
-        self, ctx: TenantContext, session_id: UUID, mode: AuthorityMode
-    ) -> SessionAuthority:
+        self, ctx: TenantContext, agent_session_id: UUID, mode: AuthorityMode
+    ) -> AgentSessionAuthority:
         ctx.require(Permission.WRITE)
-        found = await self._storage.read_authority(ctx.org_id, session_id)
+        found = await self._storage.read_authority(ctx.org_id, agent_session_id)
         if found is not None:
             return found
-        session = await self._sessions.get_session(ctx, session_id)
+        session = await self._sessions.get_agent_session(ctx, agent_session_id)
         if session.created_by != ctx.user_id:
-            raise NotAuthorized(f"only the maker of agent session {session_id} opens its authority")
+            raise NotAuthorized(
+                f"only the maker of agent session {agent_session_id} opens its authority"
+            )
         came_from = session.parent_id or session.handed_off_from
         if came_from is None:
             # Its maker, as the context asking (the check above): through
@@ -116,7 +118,7 @@ class AttributionManagerImpl(AttributionManagerInterface):
             principal = principal_of(ctx)
             spender = None
         else:
-            source = await self._sessions.get_session_at_head(ctx, came_from)
+            source = await self._sessions.get_agent_session_at_head(ctx, came_from)
             passed = await self._storage.read_authority(ctx.org_id, came_from)
             if passed is None:
                 raise ValidationFailed(f"agent session {came_from} holds no authority to pass on")
@@ -125,8 +127,8 @@ class AttributionManagerImpl(AttributionManagerInterface):
                 passed, source.speaker, from_child=source.parent_id is not None, child=child
             )
         now = self._clock()
-        authority = SessionAuthority(
-            id=session_id,
+        authority = AgentSessionAuthority(
+            id=agent_session_id,
             created_at=now,
             updated_at=now,
             created_by=ctx.user_id,
@@ -138,41 +140,49 @@ class AttributionManagerImpl(AttributionManagerInterface):
         rows = (versioned_row(ctx, CREATED, authority.id, authority.version),)
         if not await self._storage.create_authority(ctx.org_id, authority, rows):
             # A retry under the same id answers the authority as stored.
-            existing = await self._storage.read_authority(ctx.org_id, session_id)
+            existing = await self._storage.read_authority(ctx.org_id, agent_session_id)
             if existing is None:
-                raise TenantMismatch(f"the authority of {session_id} is not in {ctx.org_id}")
+                raise TenantMismatch(f"the authority of {agent_session_id} is not in {ctx.org_id}")
             return existing
         await self._relay_all(ctx, rows)
         return authority
 
-    async def get_authority(self, ctx: TenantContext, session_id: UUID) -> SessionAuthority:
+    async def get_authority(
+        self, ctx: TenantContext, agent_session_id: UUID
+    ) -> AgentSessionAuthority:
         ctx.require(Permission.READ)
-        return await self._authority(ctx, session_id)
+        return await self._authority(ctx, agent_session_id)
 
     async def assign_principal(
-        self, ctx: TenantContext, session_id: UUID, steerer: UUID | None = None
-    ) -> SessionAuthority:
+        self, ctx: TenantContext, agent_session_id: UUID, steerer: UUID | None = None
+    ) -> AgentSessionAuthority:
         ctx.require(Permission.WRITE)
-        session = await self._sessions.get_session(ctx, session_id)
+        session = await self._sessions.get_agent_session(ctx, agent_session_id)
         if session.parent_id is not None:
-            raise ValidationFailed(f"agent session {session_id} runs under its parent's principal")
-        authority = await self._authority(ctx, session_id)
+            raise ValidationFailed(
+                f"agent session {agent_session_id} runs under its parent's principal"
+            )
+        authority = await self._authority(ctx, agent_session_id)
         steering = _is_person(authority.principal, ctx.user_id)
         if steerer is None or steerer == ctx.user_id:
             principal = principal_of(ctx)
             if not steering:
                 # A steer taken, never given by the one who held it: for a
-                # steerer who lapsed, by one who holds `manage_sessions`,
+                # steerer who lapsed, by one who holds `manage_agent_sessions`,
                 # who takes part from here.
-                ctx.require(Permission.MANAGE_SESSIONS)
+                ctx.require(Permission.MANAGE_AGENT_SESSIONS)
                 if await self._live(ctx, authority.principal) is not None:
-                    raise NotAuthorized(f"the steerer of agent session {session_id} still holds it")
+                    raise NotAuthorized(
+                        f"the steerer of agent session {agent_session_id} still holds it"
+                    )
         else:
             if not steering:
-                raise NotAuthorized(f"only the steerer of agent session {session_id} hands it over")
+                raise NotAuthorized(
+                    f"only the steerer of agent session {agent_session_id} hands it over"
+                )
             if steerer != session.created_by and steerer not in session.participants:
                 raise ValidationFailed(
-                    f"user {steerer} takes no part in agent session {session_id}"
+                    f"user {steerer} takes no part in agent session {agent_session_id}"
                 )
             principal = Principal(kind=PrincipalKind.PERSON, id=steerer)
         # A sub-agent runs under the principal it took at its spawn, so each
@@ -180,7 +190,7 @@ class AttributionManagerImpl(AttributionManagerInterface):
         # its parent's, so none holds more than its parent. They move before
         # the root, so a retry after a lost write still finds what it held.
         below: list[UUID] = []
-        for child_id in await self._below(ctx, session_id):
+        for child_id in await self._below(ctx, agent_session_id):
             held = await self._storage.read_authority(ctx.org_id, child_id)
             if held is not None and held.principal in (authority.principal, principal):
                 await self._held_by(ctx, held, principal)
@@ -189,33 +199,35 @@ class AttributionManagerImpl(AttributionManagerInterface):
         if authority.version > 1:
             # The record of the latest move, under an id the move derives,
             # so a retry after a lost answer records it once.
-            step_id = derived_id(session_id, authority.updated_at, "steer")
-            moved = steer_step(step_id, authority.updated_at, session_id, ctx, authority.principal)
-            await self._sessions.receive(ctx, session_id, [moved])
+            agent_step_id = derived_id(agent_session_id, authority.updated_at, "steer")
+            moved = steer_step(
+                agent_step_id, authority.updated_at, agent_session_id, ctx, authority.principal
+            )
+            await self._sessions.receive(ctx, agent_session_id, [moved])
         took = principal.id == ctx.user_id
         if took and ctx.user_id != session.created_by and ctx.user_id not in session.participants:
             # Who took the steer joins once the move is recorded: a private
             # session is joined by its steerer, never by an audit read, and
             # a retry after a lost write joins them then.
-            await self._sessions.add_participant(ctx, session_id, ctx.user_id)
+            await self._sessions.add_participant(ctx, agent_session_id, ctx.user_id)
         # The assignment is the principal park's unlock: a loop of the tree
         # that waits on it goes on, and its gates ask the new principal
         # again. A sub-agent marked deleted waits on nothing.
-        await self._sessions.wake_session(ctx, session_id, PRINCIPAL_PARK)
+        await self._sessions.wake_agent_session(ctx, agent_session_id, PRINCIPAL_PARK)
         for child_id in below:
             with contextlib.suppress(NotFound):
-                await self._sessions.wake_session(ctx, child_id, PRINCIPAL_PARK)
+                await self._sessions.wake_agent_session(ctx, child_id, PRINCIPAL_PARK)
         return authority
 
-    async def steers(self, ctx: TenantContext, session_id: UUID) -> bool:
+    async def steers(self, ctx: TenantContext, agent_session_id: UUID) -> bool:
         ctx.require(Permission.WRITE)
         try:
-            session = await self._sessions.get_session(ctx, session_id)
+            session = await self._sessions.get_agent_session(ctx, agent_session_id)
         except NotFound:
-            if await self._sessions.is_visible(ctx, session_id):
+            if await self._sessions.is_visible(ctx, agent_session_id):
                 return True  # no session stands over the history: whoever writes it steers it
             raise
-        authority = await self._storage.read_authority(ctx.org_id, session_id)
+        authority = await self._storage.read_authority(ctx.org_id, agent_session_id)
         if authority is None:
             # Not opened yet: its maker, who opens it, steers it.
             authority_principal = Principal(kind=PrincipalKind.PERSON, id=session.created_by)
@@ -227,35 +239,41 @@ class AttributionManagerImpl(AttributionManagerInterface):
         if session.root_id != session.id:
             with contextlib.suppress(NotFound):
                 # A root marked deleted, or purged, leaves the sub-agent its own.
-                root = await self._sessions.get_session(ctx, session.root_id)
+                root = await self._sessions.get_agent_session(ctx, session.root_id)
         if ctx.user_id == root.created_by or ctx.user_id in root.participants:
             return False
-        raise NotAuthorized(f"join agent session {session_id} to speak in it")
+        raise NotAuthorized(f"join agent session {agent_session_id} to speak in it")
 
     async def attribute_request(
-        self, ctx: TenantContext, session_id: UUID, after_seq: int, delivered: Mapping[UUID, int]
+        self,
+        ctx: TenantContext,
+        agent_session_id: UUID,
+        after_seq: int,
+        delivered: Mapping[UUID, int],
     ) -> RequestAttribution:
         ctx.require(Permission.READ)
         if after_seq < 0:
             raise ValidationFailed(f"no model request at {after_seq}")
-        authority = await self._authority(ctx, session_id)
+        authority = await self._authority(ctx, agent_session_id)
         previous: Principal | None = None
         if after_seq > 0:
-            found = await self._range(ctx, session_id, after_seq - 1, after_seq)
+            found = await self._range(ctx, agent_session_id, after_seq - 1, after_seq)
             latest = found[0] if found else None
             if latest is None or not isinstance(latest.header, ModelRequestHeader):
-                raise ValidationFailed(f"step {after_seq} of {session_id} is no model request")
+                raise ValidationFailed(
+                    f"step {after_seq} of {agent_session_id} is no model request"
+                )
             previous = latest.header.speaker
-        inputs = await self._delivered(ctx, session_id, delivered)
+        inputs = await self._delivered(ctx, agent_session_id, delivered)
         speaker = speaker_after(previous, inputs)
         spender = spender_of(authority.spender, speaker)
         if spender is None:
-            raise NoSpender(f"nobody can be named to pay for agent session {session_id}")
+            raise NoSpender(f"nobody can be named to pay for agent session {agent_session_id}")
         return RequestAttribution(speaker=speaker, spender=spender)
 
     async def _delivered(
-        self, ctx: TenantContext, session_id: UUID, wanted: Mapping[UUID, int]
-    ) -> list[Step]:
+        self, ctx: TenantContext, agent_session_id: UUID, wanted: Mapping[UUID, int]
+    ) -> list[AgentStep]:
         """The delivered inputs as the history holds them, in `seq` order:
         each read back at its place, never taken from the caller."""
         if not wanted:
@@ -263,29 +281,29 @@ class AttributionManagerImpl(AttributionManagerInterface):
         lowest, highest = min(wanted.values()), max(wanted.values())
         held = {
             step.id: step
-            for step in await self._range(ctx, session_id, max(lowest - 1, 0), highest)
+            for step in await self._range(ctx, agent_session_id, max(lowest - 1, 0), highest)
             if step.id in wanted and step.seq == wanted[step.id]
         }
         if len(held) != len(wanted):
-            raise ValidationFailed(f"a delivered step is not in the history of {session_id}")
+            raise ValidationFailed(f"a delivered step is not in the history of {agent_session_id}")
         return sorted(held.values(), key=lambda step: step.seq)
 
-    async def is_marked(self, ctx: TenantContext, session_id: UUID) -> bool:
+    async def is_marked(self, ctx: TenantContext, agent_session_id: UUID) -> bool:
         ctx.require(Permission.READ)
-        return (await self._at_head(ctx, session_id)).untrusted
+        return (await self._at_head(ctx, agent_session_id)).untrusted
 
-    async def call_principal(self, ctx: TenantContext, session_id: UUID) -> Principal:
+    async def call_principal(self, ctx: TenantContext, agent_session_id: UUID) -> Principal:
         ctx.require(Permission.READ)
-        authority = await self._authority(ctx, session_id)
-        session = await self._at_head(ctx, session_id)
+        authority = await self._authority(ctx, agent_session_id)
+        session = await self._at_head(ctx, agent_session_id)
         return call_principal(authority, session.speaker, child=session.parent_id is not None)
 
     async def authorize_call(
-        self, ctx: TenantContext, session_id: UUID, reach: CallReach
+        self, ctx: TenantContext, agent_session_id: UUID, reach: CallReach
     ) -> CallAuthority:
         ctx.require(Permission.WRITE)
-        authority = await self._authority(ctx, session_id)
-        session = await self._at_head(ctx, session_id)
+        authority = await self._authority(ctx, agent_session_id)
+        session = await self._at_head(ctx, agent_session_id)
         principal = call_principal(authority, session.speaker, child=session.parent_id is not None)
         # Asked on every call: a permission taken away between two calls of
         # one loop stops the second (ADR 1007).
@@ -299,8 +317,8 @@ class AttributionManagerImpl(AttributionManagerInterface):
             needs_person=needs_person(marked=session.untrusted, reach=reach),
         )
 
-    async def purge_authority(self, org_id: UUID, session_id: UUID) -> bool:
-        return await self._storage.purge_authority(org_id, session_id)
+    async def purge_authority(self, org_id: UUID, agent_session_id: UUID) -> bool:
+        return await self._storage.purge_authority(org_id, agent_session_id)
 
     async def purge_tenant(self, ctx: TenantContext) -> int:
         ctx.require(Permission.WRITE)
@@ -309,13 +327,16 @@ class AttributionManagerImpl(AttributionManagerInterface):
         return await self._storage.purge_tenant(ctx.org_id, self._options.purge_batch)
 
     async def _range(
-        self, ctx: TenantContext, session_id: UUID, after_seq: int, through_seq: int
-    ) -> list[Step]:
+        self, ctx: TenantContext, agent_session_id: UUID, after_seq: int, through_seq: int
+    ) -> list[AgentStep]:
         """The steps after `after_seq` through `through_seq`, page by page."""
-        found: list[Step] = []
+        found: list[AgentStep] = []
         while after_seq < through_seq:
-            page = await self._steps.get_steps(
-                ctx, session_id, after_seq, min(self._options.read_batch, through_seq - after_seq)
+            page = await self._steps.get_agent_steps(
+                ctx,
+                agent_session_id,
+                after_seq,
+                min(self._options.read_batch, through_seq - after_seq),
             )
             found.extend(step for step in page.items if step.seq <= through_seq)
             if not page.has_more or not page.items:
@@ -337,13 +358,13 @@ class AttributionManagerImpl(AttributionManagerInterface):
         return live
 
     async def _held_by(
-        self, ctx: TenantContext, authority: SessionAuthority, principal: Principal
-    ) -> SessionAuthority:
+        self, ctx: TenantContext, authority: AgentSessionAuthority, principal: Principal
+    ) -> AgentSessionAuthority:
         """`authority` with its calls run under `principal`, written when
         that moves it."""
         if authority.principal == principal:
             return authority
-        taken = SessionAuthority.model_validate(
+        taken = AgentSessionAuthority.model_validate(
             {
                 **authority.model_dump(),
                 "principal": principal,
@@ -357,11 +378,11 @@ class AttributionManagerImpl(AttributionManagerInterface):
         await self._relay_all(ctx, rows)
         return taken
 
-    async def _below(self, ctx: TenantContext, session_id: UUID) -> list[UUID]:
-        """Every session below `session_id`, children and theirs, a level at
+    async def _below(self, ctx: TenantContext, agent_session_id: UUID) -> list[UUID]:
+        """Every session below `agent_session_id`, children and theirs, a level at
         a time; the tree's count bounds the walk."""
         below: list[UUID] = []
-        parents = [session_id]
+        parents = [agent_session_id]
         while parents:
             parent_id = parents.pop(0)
             after: UUID | None = None
@@ -377,17 +398,17 @@ class AttributionManagerImpl(AttributionManagerInterface):
                 after = page.items[-1].id
         return below
 
-    async def _authority(self, ctx: TenantContext, session_id: UUID) -> SessionAuthority:
+    async def _authority(self, ctx: TenantContext, agent_session_id: UUID) -> AgentSessionAuthority:
         """A session with no authority runs no call and spends nothing."""
-        authority = await self._storage.read_authority(ctx.org_id, session_id)
+        authority = await self._storage.read_authority(ctx.org_id, agent_session_id)
         if authority is None:
-            raise NotFound(f"agent session {session_id} holds no authority")
+            raise NotFound(f"agent session {agent_session_id} holds no authority")
         return authority
 
-    async def _at_head(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
+    async def _at_head(self, ctx: TenantContext, agent_session_id: UUID) -> AgentSession:
         """The session with its speaker and mark as of the head of its
         history."""
-        return await self._sessions.get_session_at_head(ctx, session_id)
+        return await self._sessions.get_agent_session_at_head(ctx, agent_session_id)
 
     async def _relay_all(self, ctx: TenantContext, rows: tuple[OutboxRow, ...]) -> None:
         """The write has committed; a relay that fails is left to the sweep."""

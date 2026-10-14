@@ -31,7 +31,7 @@ class ModelsManagerInterface(ABC):
     async def resolve_fill_set(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         roles: Sequence[ModelRole],
         eligibility: Eligibility,
         asks: Sequence[ModelAsk] = (),
@@ -44,7 +44,7 @@ class ModelsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def get_fill_set(self, ctx: TenantContext, session_id: UUID) -> FillSet:
+    async def get_fill_set(self, ctx: TenantContext, agent_session_id: UUID) -> FillSet:
         """The latest version of the session's fill set; `NotFound` before it
         was resolved, and for another tenant's session."""
         ...
@@ -53,7 +53,7 @@ class ModelsManagerInterface(ABC):
     async def switch_fill(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         epoch: int,
         loop_id: UUID,
         role: ModelRole,
@@ -73,7 +73,7 @@ class ModelsManagerInterface(ABC):
     async def fall_back(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         epoch: int,
         loop_id: UUID,
         role: ModelRole,
@@ -89,12 +89,12 @@ class ModelsManagerInterface(ABC):
     async def settle_switch(
         self,
         ctx: TenantContext,
-        session_id: UUID,
-        step_id: UUID,
+        agent_session_id: UUID,
+        agent_step_id: UUID,
         fills: FillSwitch,
         at: datetime,
     ) -> FillSet:
-        """The version the `switched` step `step_id` of the session
+        """The version the `switched` step `agent_step_id` of the session
         announced, as its header names it (`fills`) at the time it was
         written (`at`): written when a crash came between the step and it,
         the stored one when it is there. A step that announces a version

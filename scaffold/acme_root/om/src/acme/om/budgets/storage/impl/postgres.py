@@ -217,10 +217,10 @@ class LedgerStoragePostgresImpl(PgStorageBase, LedgerStorageInterface):
             return landed
 
     async def read_usage_records(
-        self, org_id: UUID, session_id: UUID, after: UUID | None, limit: int
+        self, org_id: UUID, agent_session_id: UUID, after: UUID | None, limit: int
     ) -> list[UsageRecord]:
         stmt = select(UsageRecords).where(
-            UsageRecords.org_id == org_id, UsageRecords.session_id == session_id
+            UsageRecords.org_id == org_id, UsageRecords.agent_session_id == agent_session_id
         )
         if after is not None:
             stmt = stmt.where(UsageRecords.id > after)
@@ -230,12 +230,12 @@ class LedgerStoragePostgresImpl(PgStorageBase, LedgerStorageInterface):
             return [to_model(row, UsageRecord) for row in rows]
 
     async def read_usage_rollups(
-        self, org_id: UUID, session_id: UUID, limit: int
+        self, org_id: UUID, agent_session_id: UUID, limit: int
     ) -> list[LoopUsage]:
         u = UsageRecords
         stmt = (
             select(u.loop_id, *_ROLLUP)
-            .where(u.org_id == org_id, u.session_id == session_id)
+            .where(u.org_id == org_id, u.agent_session_id == agent_session_id)
             .group_by(u.loop_id)
             # Postgres has no min of a uuid; its text sorts as its bytes do.
             .order_by(func.min(cast(u.id, Text)))
@@ -245,9 +245,9 @@ class LedgerStoragePostgresImpl(PgStorageBase, LedgerStorageInterface):
             rows = (await session.execute(stmt)).all()
         return [LoopUsage(loop_id=row[0], rollup=_rollup(row[1:])) for row in rows]
 
-    async def read_usage_total(self, org_id: UUID, session_id: UUID) -> UsageRollup:
+    async def read_usage_total(self, org_id: UUID, agent_session_id: UUID) -> UsageRollup:
         u = UsageRecords
-        stmt = select(*_ROLLUP).where(u.org_id == org_id, u.session_id == session_id)
+        stmt = select(*_ROLLUP).where(u.org_id == org_id, u.agent_session_id == agent_session_id)
         async with self._session_for(UsageRecords, org_id=org_id) as session:
             row = (await session.execute(stmt)).one()
         return _rollup(row)

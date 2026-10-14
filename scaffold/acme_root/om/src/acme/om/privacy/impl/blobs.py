@@ -10,7 +10,7 @@ from collections.abc import Callable
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from acme.om.privacy.impl.sealed_steps import NONCE_BYTES
+from acme.om.privacy.impl.sealed_agent_steps import NONCE_BYTES
 from acme.om.privacy.keys import OpenKey
 
 VERSION_BYTES = 8

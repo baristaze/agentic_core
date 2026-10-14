@@ -24,6 +24,18 @@ from acme.integrations.model_providers.registry import scripted_model_providers
 from acme.integrations.model_providers.scripted import ModelProviderScriptedImpl, ScriptedFailure
 from acme.integrations.model_providers.types import ErrorKind, ProviderName, StopReason, Usage
 from acme.om.agent_sessions.types.agent_session import AgentSession
+from acme.om.agent_steps import AgentStepsManagerInterface
+from acme.om.agent_steps.impl.manager import no_session
+from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
+from acme.om.agent_steps.types.content import Content, TextBlock, ToolResultBlock
+from acme.om.agent_steps.types.header import (
+    ArtifactRef,
+    ControlCommand,
+    ModelRequestHeader,
+    ModelResponseHeader,
+    SummaryHeader,
+    ToolResponseHeader,
+)
 from acme.om.attribution import AttributionManagerInterface
 from acme.om.attribution.types.authority import AuthorityMode, RequestAttribution
 from acme.om.attribution.types.principal import Principal, PrincipalKind
@@ -53,20 +65,8 @@ from acme.om.models.types.fill import (
     SwitchReason,
 )
 from acme.om.privacy.impl.artifacts import ArtifactSealKeysImpl
-from acme.om.privacy.impl.keys import SessionKeysImpl
+from acme.om.privacy.impl.keys import AgentSessionKeysImpl
 from acme.om.root import Managers, build_managers
-from acme.om.steps import StepsManagerInterface
-from acme.om.steps.impl.manager import no_session
-from acme.om.steps.types.content import Content, TextBlock, ToolResultBlock
-from acme.om.steps.types.header import (
-    ArtifactRef,
-    ControlCommand,
-    ModelRequestHeader,
-    ModelResponseHeader,
-    SummaryHeader,
-    ToolResponseHeader,
-)
-from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.windows import rules
 from acme.om.windows.gate import CallGateInterface
@@ -143,7 +143,7 @@ class Gate(CallGateInterface):
     async def authorize(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         spender: Principal,
         role: ModelRole,
         fill: Fill,
@@ -176,7 +176,7 @@ class Gate(CallGateInterface):
     async def authorize_job(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         spender: Principal,
         tool: str,
         rate_micros_per_hour: int,
@@ -202,7 +202,11 @@ class Payer(AttributionManagerInterface):
         self.asked: list[tuple[int, tuple[UUID, ...]]] = []
 
     async def attribute_request(
-        self, ctx: TenantContext, session_id: UUID, after_seq: int, delivered: Mapping[UUID, int]
+        self,
+        ctx: TenantContext,
+        agent_session_id: UUID,
+        after_seq: int,
+        delivered: Mapping[UUID, int],
     ) -> RequestAttribution:
         self.asked.append((after_seq, tuple(delivered)))
         return RequestAttribution(speaker=PAYER, spender=PAYER)
@@ -213,7 +217,7 @@ Payer.__abstractmethods__ = frozenset()
 
 @dataclass
 class Engine:
-    steps: StepsManagerInterface
+    steps: AgentStepsManagerInterface
     models: ModelsManagerImpl
     windows: WindowsManagerImpl
     main: ModelProviderScriptedImpl
@@ -236,7 +240,7 @@ def an_engine(
     clocked: dict[str, Callable[[], datetime]] = {} if clock is None else {"clock": clock}
     models = ModelsManagerImpl(
         storage.get_fill_set_storage(),
-        managers.steps,
+        managers.agent_steps,
         managers.tenancy,
         ModelResolverTableImpl(Priced(), ResolverOptions(table=tuple(table))),
         ModelsOptions(),
@@ -245,12 +249,12 @@ def an_engine(
     providers = scripted_model_providers()
     gate, hashes = Gate(), PromptHashMemoryImpl()
     seal = ArtifactSealKeysImpl(
-        SessionKeysImpl(storage.get_privacy_storage(), infra.get_keys()),
+        AgentSessionKeysImpl(storage.get_privacy_storage(), infra.get_keys()),
         storage.get_privacy_storage(),
     )
     windows = WindowsManagerImpl(
         storage.get_window_storage(),
-        managers.steps,
+        managers.agent_steps,
         managers.tenancy,
         models,
         Payer(),  # pyright: ignore[reportAbstractUsage] (a partial double)
@@ -265,7 +269,7 @@ def an_engine(
         opens=no_session,
     )
     return Engine(
-        managers.steps,
+        managers.agent_steps,
         models,
         windows,
         cast(ModelProviderScriptedImpl, providers.get(ProviderName.ANTHROPIC)),
@@ -288,15 +292,17 @@ class Session:
     loop_id: UUID
 
 
-async def a_session(engine: Engine, history: History) -> Session:
+async def an_agent_session(engine: Engine, history: History) -> Session:
     """The history stored as a run appends it, under a fill set resolved."""
-    epoch = await engine.steps.begin_run(engine.ctx, history.session_id)
+    epoch = await engine.steps.begin_run(engine.ctx, history.agent_session_id)
     await engine.models.resolve_fill_set(
-        engine.ctx, history.session_id, [MAIN, SUMMARIZER, "triage"], Eligibility()
+        engine.ctx, history.agent_session_id, [MAIN, SUMMARIZER, "triage"], Eligibility()
     )
     if history.steps:
-        await engine.steps.append_steps(engine.ctx, history.session_id, epoch, history.steps)
-    return Session(history.session_id, epoch, history.loop_id or new_id())
+        await engine.steps.append_agent_steps(
+            engine.ctx, history.agent_session_id, epoch, history.steps
+        )
+    return Session(history.agent_session_id, epoch, history.loop_id or new_id())
 
 
 def a_long_history(turns: int = 4, size: int = 2_000) -> History:
@@ -319,18 +325,20 @@ def a_summary(text: str = SUMMARY, **fields: object) -> ModelReply:
     return ModelReply.model_validate(reply)
 
 
-async def history_of(engine: Engine, session: Session) -> list[Step]:
-    return list((await engine.steps.get_steps(engine.ctx, session.id, 0, 200)).items)
+async def history_of(engine: Engine, session: Session) -> list[AgentStep]:
+    return list((await engine.steps.get_agent_steps(engine.ctx, session.id, 0, 200)).items)
 
 
-def of_type(steps: Sequence[Step], step_type: StepType) -> list[Step]:
+def of_type(steps: Sequence[AgentStep], step_type: AgentStepType) -> list[AgentStep]:
     return [step for step in steps if step.type is step_type]
 
 
-async def record(engine: Engine, session: Session, rendered: rules.RenderedRequest) -> Step:
+async def record(engine: Engine, session: Session, rendered: rules.RenderedRequest) -> AgentStep:
     paid = RequestAttribution(speaker=PAYER, spender=PAYER)
     request = rules.request_step(rendered, paid, session.id, session.loop_id, new_id(), utcnow())
-    (stored,) = await engine.steps.append_steps(engine.ctx, session.id, session.epoch, [request])
+    (stored,) = await engine.steps.append_agent_steps(
+        engine.ctx, session.id, session.epoch, [request]
+    )
     return stored
 
 
@@ -340,13 +348,13 @@ async def record(engine: Engine, session: Session, rendered: rules.RenderedReque
 async def test_a_window_near_its_limit_compacts_into_a_summary_that_references_its_range(
     engine: Engine,
 ) -> None:
-    session = await a_session(engine, a_long_history())
+    session = await an_agent_session(engine, a_long_history())
     engine.summarizer.add(a_summary())
     rendered = await engine.windows.render_request(
         engine.ctx, session.id, session.epoch, session.loop_id, KIND
     )
     steps = await history_of(engine, session)
-    (summary,) = of_type(steps, StepType.SUMMARY)
+    (summary,) = of_type(steps, AgentStepType.SUMMARY)
     request, reply = steps[-3], steps[-2]
     assert isinstance(request.header, ModelRequestHeader) and request.header.role == SUMMARIZER
     assert request.header.spender == PAYER and engine.gate.spenders == [PAYER], "the payer pays"
@@ -358,7 +366,7 @@ async def test_a_window_near_its_limit_compacts_into_a_summary_that_references_i
     span = summary.header
     assert span.first_seq == 1 and span.last_seq < request.seq
     folded = [s for s in steps if s.seq <= span.last_seq]
-    assert folded[-1].type is StepType.TOOL_RESPONSE, "cut on a whole exchange"
+    assert folded[-1].type is AgentStepType.TOOL_RESPONSE, "cut on a whole exchange"
     assert rendered.window.summary_id == summary.id
     assert rendered.window.left_edge == span.last_seq + 1
     lead = [b.text for b in rendered.call.messages[0].blocks if isinstance(b, TextBlock)]
@@ -369,7 +377,7 @@ async def test_a_window_near_its_limit_compacts_into_a_summary_that_references_i
     assert role == SUMMARIZER
     assert engine.gate.settled == [(hold, Usage(input=900, output=60), True)]
     (site,) = engine.gate.sites
-    assert site is not None and (site.loop_id, site.step_id) == (session.loop_id, reply.id), (
+    assert site is not None and (site.loop_id, site.agent_step_id) == (session.loop_id, reply.id), (
         "its usage record names the loop and the reply"
     )
     (asked,) = engine.summarizer.calls
@@ -384,7 +392,7 @@ async def test_the_summarizer_is_asked_where_the_agent_stopped_and_for_no_instru
     what it did, found, decided, and left unchecked, and what it was doing
     where the record ends; bounded, invented from nothing, and with no
     instruction of its own."""
-    session = await a_session(engine, a_long_history())
+    session = await an_agent_session(engine, a_long_history())
     engine.summarizer.add(a_summary())
     await engine.windows.render_request(
         engine.ctx, session.id, session.epoch, session.loop_id, KIND
@@ -410,7 +418,7 @@ def test_an_objective_an_agent_handed_over_is_kept_by_the_summary_never_the_pinn
     )
     said = history.message("Go ahead.")
     zone = rules.pinned_zone(history.steps, said.seq, CompactionPolicy())
-    assert zone.objective is not None and zone.objective.step_id == said.id
+    assert zone.objective is not None and zone.objective.agent_step_id == said.id
     assert handed.as_text() not in rules.pinned_block(zone).text
     prompt = CompactionPolicy().summarizer_prompt
     assert "the objective as a principal stated it" in prompt
@@ -423,11 +431,11 @@ async def test_a_compaction_writes_at_the_engines_clock(tmp_path: Path) -> None:
     reply, and the summary all take its time, never the wall's."""
     at = AT + timedelta(days=30)
     engine = an_engine(tmp_path, clock=lambda: at)
-    session = await a_session(engine, a_long_history())
+    session = await an_agent_session(engine, a_long_history())
     engine.summarizer.add(a_summary())
     await render_main(engine, session)
     request, reply, summary = (await history_of(engine, session))[-3:]
-    assert summary.type is StepType.SUMMARY
+    assert summary.type is AgentStepType.SUMMARY
     assert {request.created_at, reply.created_at, summary.created_at} == {at}
     assert isinstance(reply.header, ModelResponseHeader)
     assert reply.header.stop_reason is StopReason.END_TURN
@@ -435,13 +443,13 @@ async def test_a_compaction_writes_at_the_engines_clock(tmp_path: Path) -> None:
 
 
 async def test_a_compacted_window_does_not_compact_again(engine: Engine) -> None:
-    session = await a_session(engine, a_long_history())
+    session = await an_agent_session(engine, a_long_history())
     engine.summarizer.add(a_summary())
     for _ in range(3):
         await engine.windows.render_request(
             engine.ctx, session.id, session.epoch, session.loop_id, KIND
         )
-    assert len(of_type(await history_of(engine, session), StepType.SUMMARY)) == 1
+    assert len(of_type(await history_of(engine, session), AgentStepType.SUMMARY)) == 1
     assert engine.summarizer.remaining == 0 and len(engine.summarizer.calls) == 1
 
 
@@ -452,7 +460,7 @@ async def test_the_trigger_reads_the_size_the_provider_reported(engine: Engine) 
     request = history.request(fill=NARROW.name)
     history.response(request, "Still looking.", usage=Usage(input=1_500, output=20))
     history.message("Go on.")
-    session = await a_session(engine, history)
+    session = await an_agent_session(engine, history)
     engine.summarizer.add(a_summary())
     rendered = await engine.windows.render_request(
         engine.ctx, session.id, session.epoch, session.loop_id, KIND
@@ -462,7 +470,7 @@ async def test_the_trigger_reads_the_size_the_provider_reported(engine: Engine) 
 
 async def test_a_compact_control_compacts_before_the_next_request(engine: Engine) -> None:
     history = a_long_history(turns=2, size=100)
-    session = await a_session(engine, history)
+    session = await an_agent_session(engine, history)
     quiet = await engine.windows.render_request(
         engine.ctx, session.id, session.epoch, session.loop_id, KIND
     )
@@ -483,11 +491,11 @@ async def test_a_compact_control_compacts_before_the_next_request(engine: Engine
 async def test_a_switch_to_a_smaller_window_compacts_first(tmp_path: Path) -> None:
     engine = an_engine(tmp_path, WIDENING)
     history = a_long_history(turns=3)
-    last = of_type(history.steps, StepType.MODEL_RESPONSE)[-1]
-    history.steps[-3] = Step.model_validate(
+    last = of_type(history.steps, AgentStepType.MODEL_RESPONSE)[-1]
+    history.steps[-3] = AgentStep.model_validate(
         {**last.model_dump(), "header": {"kind": "model_response", "usage": {"input": 1_800}}}
     )
-    session = await a_session(engine, history)
+    session = await an_agent_session(engine, history)
     wide = await engine.windows.render_request(
         engine.ctx, session.id, session.epoch, session.loop_id, KIND
     )
@@ -516,7 +524,7 @@ async def test_a_switch_inside_a_tool_use_cycle_thinks_again_once_the_cycle_clos
     history = History()
     objective = history.message("Find why the checkout drops the order.")
     history.turn((objective,), "Reading the checkout log.", [("read_log", "dropped at 4.2 s")])
-    session = await a_session(engine, history)
+    session = await an_agent_session(engine, history)
     assert (await render_main(engine, session)).call.thinking_budget == 1_024
     await engine.models.switch_fill(
         engine.ctx,
@@ -534,11 +542,11 @@ async def test_a_switch_inside_a_tool_use_cycle_thinks_again_once_the_cycle_clos
         await record(engine, session, held), "Reading the wrist log.", [("call_w", "read_log", {})]
     )
     later.result(later.call(still, "call_w"), "the wrist is fine")
-    await engine.steps.append_steps(engine.ctx, session.id, session.epoch, later.steps)
+    await engine.steps.append_agent_steps(engine.ctx, session.id, session.epoch, later.steps)
     open_still = await render_main(engine, session)
     assert open_still.call.thinking_budget is None, "the cycle is open still"
     closed = later.response(await record(engine, session, open_still), "It releases early.")
-    await engine.steps.append_steps(engine.ctx, session.id, session.epoch, [closed])
+    await engine.steps.append_agent_steps(engine.ctx, session.id, session.epoch, [closed])
     assert (await render_main(engine, session)).call.thinking_budget == 1_024
 
 
@@ -546,7 +554,7 @@ async def test_a_switch_inside_a_tool_use_cycle_thinks_again_once_the_cycle_clos
 
 
 async def test_a_providers_overflow_compacts_once_and_retries_once(engine: Engine) -> None:
-    session = await a_session(engine, a_long_history(turns=2, size=200))
+    session = await an_agent_session(engine, a_long_history(turns=2, size=200))
     rendered = await engine.windows.render_request(
         engine.ctx, session.id, session.epoch, session.loop_id, KIND
     )
@@ -583,7 +591,7 @@ async def test_a_window_with_nothing_to_fold_overflows_with_nothing_written(
 ) -> None:
     history = History()
     history.message("Find it." * 2_000)
-    session = await a_session(engine, history)
+    session = await an_agent_session(engine, history)
     rendered = await engine.windows.render_request(
         engine.ctx, session.id, session.epoch, session.loop_id, KIND
     )
@@ -597,7 +605,7 @@ async def test_a_window_with_nothing_to_fold_overflows_with_nothing_written(
 
 
 async def test_a_side_role_overflow_is_not_compacted(engine: Engine) -> None:
-    session = await a_session(engine, a_long_history())
+    session = await an_agent_session(engine, a_long_history())
     side = await engine.windows.render_request(
         engine.ctx, session.id, session.epoch, session.loop_id, KIND, "triage"
     )
@@ -611,14 +619,14 @@ async def test_a_side_role_overflow_is_not_compacted(engine: Engine) -> None:
 
 
 async def test_a_cut_summary_is_recorded_and_writes_no_summary(engine: Engine) -> None:
-    session = await a_session(engine, a_long_history(turns=6))
+    session = await an_agent_session(engine, a_long_history(turns=6))
     engine.summarizer.add(a_summary(stop_reason=StopReason.OUTPUT_LIMIT, truncated=True))
     with pytest.raises(CompactionFailed, match="not a whole summary"):
         await engine.windows.render_request(
             engine.ctx, session.id, session.epoch, session.loop_id, KIND
         )
     steps = await history_of(engine, session)
-    assert of_type(steps, StepType.SUMMARY) == []
+    assert of_type(steps, AgentStepType.SUMMARY) == []
     cut = steps[-1]
     assert isinstance(cut.header, ModelResponseHeader) and cut.header.truncated
     assert cut.header.stop_reason is StopReason.OUTPUT_LIMIT, "why it stopped is kept"
@@ -628,7 +636,7 @@ async def test_a_cut_summary_is_recorded_and_writes_no_summary(engine: Engine) -
 async def test_a_summarizer_that_fails_before_it_streams_releases_its_hold(
     engine: Engine,
 ) -> None:
-    session = await a_session(engine, a_long_history())
+    session = await an_agent_session(engine, a_long_history())
     engine.summarizer.add(ScriptedFailure(kind=ErrorKind.OVERLOADED, status=529))
     with pytest.raises(ModelCallFailed):
         await engine.windows.render_request(
@@ -637,7 +645,7 @@ async def test_a_summarizer_that_fails_before_it_streams_releases_its_hold(
     assert [(usage, billed) for _, usage, billed in engine.gate.settled] == [(None, False)]
     assert engine.gate.sites == [None], "a call with no reply writes no usage record"
     steps = await history_of(engine, session)
-    assert steps[-1].type is StepType.MODEL_REQUEST, "persisted before the call, unanswered"
+    assert steps[-1].type is AgentStepType.MODEL_REQUEST, "persisted before the call, unanswered"
 
 
 def a_refusal() -> ModelReply:
@@ -653,7 +661,7 @@ async def render_main(engine: Engine, session: Session) -> rules.RenderedRequest
 async def test_a_refused_summary_is_recorded_and_the_window_is_read_as_it_is(
     engine: Engine,
 ) -> None:
-    session = await a_session(engine, a_long_history(turns=3, size=1_450))
+    session = await an_agent_session(engine, a_long_history(turns=3, size=1_450))
     engine.summarizer.add(a_refusal(), a_summary())
     first = await render_main(engine, session)
     policy = CompactionPolicy()
@@ -664,7 +672,7 @@ async def test_a_refused_summary_is_recorded_and_the_window_is_read_as_it_is(
     refused = steps[-1]
     assert isinstance(refused.header, ModelResponseHeader) and refused.as_text()
     assert refused.header.stop_reason is StopReason.REFUSAL, "why it stopped is kept"
-    assert of_type(steps, StepType.SUMMARY) == []
+    assert of_type(steps, AgentStepType.SUMMARY) == []
     again = await render_main(engine, session)
     assert again.call == first.call and again.prompt_hash == first.prompt_hash
     assert len(engine.summarizer.calls) == 1, "a failed attempt is not repeated, nor billed"
@@ -674,7 +682,7 @@ async def test_a_refused_summary_is_recorded_and_the_window_is_read_as_it_is(
 async def test_a_failed_attempt_answers_the_compact_control_that_asked_for_it(
     engine: Engine,
 ) -> None:
-    session = await a_session(engine, a_long_history(turns=2, size=100))
+    session = await an_agent_session(engine, a_long_history(turns=2, size=100))
     control = History(session.id).control(ControlCommand.COMPACT)
     await engine.steps.append_inputs(engine.ctx, session.id, [control])
     engine.summarizer.add(a_refusal(), a_summary())
@@ -689,7 +697,7 @@ async def test_a_failed_attempt_answers_the_compact_control_that_asked_for_it(
 
 
 async def test_an_overflow_compacts_after_a_failed_attempt(engine: Engine) -> None:
-    session = await a_session(engine, a_long_history(turns=3, size=1_450))
+    session = await an_agent_session(engine, a_long_history(turns=3, size=1_450))
     engine.summarizer.add(a_refusal())
     refused = await render_main(engine, session)
     assert refused.window.summary_id is None
@@ -704,7 +712,7 @@ async def test_an_overflow_compacts_after_a_failed_attempt(engine: Engine) -> No
 async def test_a_summarizer_call_that_never_left_the_process_releases_its_hold(
     engine: Engine,
 ) -> None:
-    session = await a_session(engine, a_long_history())
+    session = await an_agent_session(engine, a_long_history())
     engine.summarizer.add(ScriptedFailure(kind=ErrorKind.CREDENTIAL, message="no key"))
     with pytest.raises(ModelCallFailed):
         await render_main(engine, session)
@@ -712,7 +720,7 @@ async def test_a_summarizer_call_that_never_left_the_process_releases_its_hold(
 
 
 async def test_a_summary_whose_stream_broke_is_billed_and_recorded_cut(engine: Engine) -> None:
-    session = await a_session(engine, a_long_history())
+    session = await an_agent_session(engine, a_long_history())
     arrived = a_summary(text="The order", stop_reason=None, truncated=True)
     engine.summarizer.add(ScriptedFailure(kind=ErrorKind.TRANSIENT, partial=arrived))
     with pytest.raises(ModelCallFailed):
@@ -722,12 +730,14 @@ async def test_a_summary_whose_stream_broke_is_billed_and_recorded_cut(engine: E
     assert isinstance(cut.header, ModelResponseHeader) and cut.header.truncated
     assert cut.as_text() == "The order"
     (site,) = engine.gate.sites
-    assert site is not None and site.step_id == cut.id, "settled whole, its record names the cut"
+    assert site is not None and site.agent_step_id == cut.id, (
+        "settled whole, its record names the cut"
+    )
     assert engine.gate.partials == [arrived.usage]
 
 
 async def test_a_refused_gate_calls_no_model_and_writes_nothing(engine: Engine) -> None:
-    session = await a_session(engine, a_long_history())
+    session = await an_agent_session(engine, a_long_history())
     before = await history_of(engine, session)
     engine.gate.refusing = True
     engine.summarizer.add(a_summary())
@@ -742,7 +752,7 @@ async def test_a_refused_gate_calls_no_model_and_writes_nothing(engine: Engine) 
 async def test_a_run_that_lost_its_claim_compacts_nothing_and_spends_nothing(
     engine: Engine,
 ) -> None:
-    session = await a_session(engine, a_long_history())
+    session = await an_agent_session(engine, a_long_history())
     before = await history_of(engine, session)
     await engine.steps.begin_run(engine.ctx, session.id)
     engine.summarizer.add(a_summary())
@@ -760,7 +770,7 @@ async def test_a_main_request_over_an_open_tool_call_is_refused(engine: Engine) 
     objective = history.message("Find it.")
     reply = history.response(history.request((objective,)), "", [("c1", "read_log", {})])
     history.call(reply, "c1")
-    session = await a_session(engine, history)
+    session = await an_agent_session(engine, history)
     with pytest.raises(PreconditionFailed):
         await engine.windows.render_request(
             engine.ctx, session.id, session.epoch, session.loop_id, KIND
@@ -768,7 +778,7 @@ async def test_a_main_request_over_an_open_tool_call_is_refused(engine: Engine) 
 
 
 async def test_a_side_role_reads_a_suffix_sized_to_its_own_fill(engine: Engine) -> None:
-    session = await a_session(engine, a_long_history())
+    session = await an_agent_session(engine, a_long_history())
     side = await engine.windows.render_request(
         engine.ctx, session.id, session.epoch, session.loop_id, KIND, "triage"
     )
@@ -776,7 +786,7 @@ async def test_a_side_role_reads_a_suffix_sized_to_its_own_fill(engine: Engine) 
     assert side.window.left_edge > 1 and side.window.summary_id is None
     assert side.window.used_tokens <= rules.limit_tokens(TRIAGE, CompactionPolicy())
     assert side.delivers == () and engine.summarizer.calls == []
-    assert of_type(await history_of(engine, session), StepType.SUMMARY) == []
+    assert of_type(await history_of(engine, session), AgentStepType.SUMMARY) == []
 
 
 # Replay: a recorded request re-renders to its prompt's hash.
@@ -788,7 +798,7 @@ async def test_re_rendering_each_recorded_request_reproduces_its_prompt_hash(
     engine = an_engine(tmp_path, WIDENING)
     history = History()
     history.message("Find why the checkout drops the order.")
-    session = await a_session(engine, history)
+    session = await an_agent_session(engine, history)
     for n in range(3):
         rendered = await engine.windows.render_request(
             engine.ctx, session.id, session.epoch, session.loop_id, KIND, plan=f"step {n}"
@@ -813,9 +823,9 @@ async def test_re_rendering_each_recorded_request_reproduces_its_prompt_hash(
         )
         turn.result(turn.call(response, f"c{n}"), f"part {n} of the log")
         turn.message(f"And part {n + 1}?")
-        await engine.steps.append_steps(engine.ctx, session.id, session.epoch, turn.steps)
+        await engine.steps.append_agent_steps(engine.ctx, session.id, session.epoch, turn.steps)
     steps = await history_of(engine, session)
-    recorded = [s for s in steps if s.type is StepType.MODEL_REQUEST]
+    recorded = [s for s in steps if s.type is AgentStepType.MODEL_REQUEST]
     assert len(recorded) == 3
     hashes: list[str] = []
     values: list[bytes] = []
@@ -834,8 +844,8 @@ async def test_re_rendering_each_recorded_request_reproduces_its_prompt_hash(
 # A tool result over the bound is stored as an artifact.
 
 
-def a_large_result(session_id: UUID, size: int = 30_000) -> tuple[History, Step, str]:
-    history = History(session_id)
+def a_large_result(agent_session_id: UUID, size: int = 30_000) -> tuple[History, AgentStep, str]:
+    history = History(agent_session_id)
     objective = history.message("Read the whole log.")
     reply = history.response(history.request((objective,)), "", [("c1", "read_log", {})])
     text = "".join(f"{n:07d}\n" for n in range(size // 8))
@@ -845,7 +855,7 @@ def a_large_result(session_id: UUID, size: int = 30_000) -> tuple[History, Step,
 
 async def test_a_result_over_the_bound_is_kept_as_an_artifact(engine: Engine) -> None:
     history, result, text = a_large_result(new_id())
-    session = await a_session(engine, History(history.session_id))
+    session = await an_agent_session(engine, History(history.agent_session_id))
     bounded = await engine.windows.bound_tool_response(engine.ctx, session.id, result)
     header = bounded.header
     assert isinstance(header, ToolResponseHeader) and header.artifact is not None
@@ -866,7 +876,7 @@ async def test_a_result_over_the_bound_is_kept_as_an_artifact(engine: Engine) ->
             break
     assert "".join(pages) == text and len(pages) == 2, "a page is at most the policy's"
     history.steps[-1] = bounded
-    await engine.steps.append_steps(engine.ctx, session.id, session.epoch, history.steps)
+    await engine.steps.append_agent_steps(engine.ctx, session.id, session.epoch, history.steps)
     draft = rules.render_main(
         await history_of(engine, session), KIND, NARROW, 1, None, CompactionPolicy()
     )
@@ -879,7 +889,7 @@ async def test_a_result_over_the_bound_is_kept_as_an_artifact(engine: Engine) ->
 
 async def test_a_result_within_the_bound_is_kept_as_it_is(engine: Engine) -> None:
     history, result, _ = a_large_result(new_id(), size=20_000)
-    session = await a_session(engine, History(history.session_id))
+    session = await an_agent_session(engine, History(history.agent_session_id))
     assert await engine.windows.bound_tool_response(engine.ctx, session.id, result) is result
     with pytest.raises(ValidationFailed):
         await engine.windows.bound_tool_response(engine.ctx, session.id, history.steps[0])
@@ -889,7 +899,7 @@ async def test_a_result_within_the_bound_is_kept_as_it_is(engine: Engine) -> Non
 
 async def test_another_tenant_reads_no_artifact(engine: Engine) -> None:
     history, result, _ = a_large_result(new_id())
-    session = await a_session(engine, History(history.session_id))
+    session = await an_agent_session(engine, History(history.agent_session_id))
     bounded = await engine.windows.bound_tool_response(engine.ctx, session.id, result)
     assert isinstance(bounded.header, ToolResponseHeader) and bounded.header.artifact is not None
     with pytest.raises(NotFound):
@@ -903,7 +913,7 @@ def test_a_step_that_names_an_artifact_holds_its_head_and_tail() -> None:
     handle = ArtifactRef(id=new_id(), characters=30_000)
     whole = {**result.model_dump(), "header": {"kind": "tool_response", "artifact": handle}}
     with pytest.raises(ValueError, match="head and its tail"):
-        Step.model_validate(whole)
+        AgentStep.model_validate(whole)
     content = Content(
         blocks=(
             ToolResultBlock(
@@ -911,18 +921,18 @@ def test_a_step_that_names_an_artifact_holds_its_head_and_tail() -> None:
             ),
         )
     )
-    assert Step.model_validate({**whole, "content": content}).created_at == AT
+    assert AgentStep.model_validate({**whole, "content": content}).created_at == AT
 
 
 # The root's own wiring.
 
 
-async def authorized(managers: Managers, ctx: TenantContext, session_id: UUID) -> None:
+async def authorized(managers: Managers, ctx: TenantContext, agent_session_id: UUID) -> None:
     """A session of the caller's, with its authority: a render reads who
     spoke and who pays from it."""
     now = utcnow()
     made = AgentSession(
-        id=session_id,
+        id=agent_session_id,
         created_at=now,
         updated_at=now,
         created_by=ctx.user_id,
@@ -930,38 +940,40 @@ async def authorized(managers: Managers, ctx: TenantContext, session_id: UUID) -
         title="a render",
         kind="investigator",
         kind_version=1,
-        root_id=session_id,
+        root_id=agent_session_id,
     )
-    await managers.agent_sessions.create_session(ctx, made)
-    await managers.attribution.open_authority(ctx, session_id, AuthorityMode.STEADY)
+    await managers.agent_sessions.create_agent_session(ctx, made)
+    await managers.attribution.open_authority(ctx, agent_session_id, AuthorityMode.STEADY)
 
 
 async def test_a_root_hashes_a_prompt_under_the_sessions_key(tmp_path: Path) -> None:
     managers = build_managers(StorageMemoryImpl(), InfraLocalImpl(tmp_path), model_prices=Priced())
     ctx = context(Role.MEMBER)
     history = History()
-    await authorized(managers, ctx, history.session_id)
+    await authorized(managers, ctx, history.agent_session_id)
     history.message("Find it.")
-    await managers.steps.append_inputs(ctx, history.session_id, history.steps)
-    epoch = await managers.steps.begin_run(ctx, history.session_id)
+    await managers.agent_steps.append_inputs(ctx, history.agent_session_id, history.steps)
+    epoch = await managers.agent_steps.begin_run(ctx, history.agent_session_id)
     await managers.models.resolve_fill_set(
-        ctx, history.session_id, [MAIN, SUMMARIZER], Eligibility()
+        ctx, history.agent_session_id, [MAIN, SUMMARIZER], Eligibility()
     )
     first, again = [
         await managers.windows.render_request(
-            ctx, history.session_id, epoch, history.steps[0].id, KIND
+            ctx, history.agent_session_id, epoch, history.steps[0].id, KIND
         )
         for _ in range(2)
     ]
     assert first.prompt_hash == again.prompt_hash, "the same steps, the same hash"
     other = History()
-    await authorized(managers, ctx, other.session_id)
+    await authorized(managers, ctx, other.agent_session_id)
     other.message("Find it.")
-    await managers.steps.append_inputs(ctx, other.session_id, other.steps)
-    epoch = await managers.steps.begin_run(ctx, other.session_id)
-    await managers.models.resolve_fill_set(ctx, other.session_id, [MAIN, SUMMARIZER], Eligibility())
+    await managers.agent_steps.append_inputs(ctx, other.agent_session_id, other.steps)
+    epoch = await managers.agent_steps.begin_run(ctx, other.agent_session_id)
+    await managers.models.resolve_fill_set(
+        ctx, other.agent_session_id, [MAIN, SUMMARIZER], Eligibility()
+    )
     elsewhere = await managers.windows.render_request(
-        ctx, other.session_id, epoch, other.steps[0].id, KIND
+        ctx, other.agent_session_id, epoch, other.steps[0].id, KIND
     )
     assert elsewhere.call == first.call and elsewhere.prompt_hash != first.prompt_hash, (
         "keyed by the session: one prompt in two sessions hashes apart"
@@ -978,19 +990,25 @@ async def test_a_root_with_the_nulls_wired_refuses_to_hash_or_spend(tmp_path: Pa
     )
     ctx = context(Role.MEMBER)
     history = History()
-    await authorized(managers, ctx, history.session_id)
+    await authorized(managers, ctx, history.agent_session_id)
     history.message("Find it.")
-    await managers.steps.append_inputs(ctx, history.session_id, history.steps)
-    epoch = await managers.steps.begin_run(ctx, history.session_id)
+    await managers.agent_steps.append_inputs(ctx, history.agent_session_id, history.steps)
+    epoch = await managers.agent_steps.begin_run(ctx, history.agent_session_id)
     await managers.models.resolve_fill_set(
-        ctx, history.session_id, [MAIN, SUMMARIZER], Eligibility()
+        ctx, history.agent_session_id, [MAIN, SUMMARIZER], Eligibility()
     )
     with pytest.raises(Unavailable, match="key service"):
         await managers.windows.render_request(
-            ctx, history.session_id, epoch, history.steps[0].id, KIND
+            ctx, history.agent_session_id, epoch, history.steps[0].id, KIND
         )
     call = ModelCall(model=SUMMARY_FILL.model, messages=(), max_output_tokens=1)
     with pytest.raises(Unavailable, match="budget gate"):
         await CallGateNullImpl().authorize(
-            ctx, history.session_id, PAYER, SUMMARIZER, SUMMARY_FILL, call, credential="platform"
+            ctx,
+            history.agent_session_id,
+            PAYER,
+            SUMMARIZER,
+            SUMMARY_FILL,
+            call,
+            credential="platform",
         )

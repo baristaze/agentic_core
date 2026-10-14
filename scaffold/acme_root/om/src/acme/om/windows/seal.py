@@ -24,7 +24,7 @@ class SealedArtifact(Platform):
 class ArtifactSealInterface(ABC):
     @abstractmethod
     async def seal(
-        self, ctx: TenantContext, session_id: UUID, artifact_id: UUID, data: bytes
+        self, ctx: TenantContext, agent_session_id: UUID, artifact_id: UUID, data: bytes
     ) -> SealedArtifact:
         """`data` sealed under the current version of the session's key,
         bound to the tenant, the session, the artifact, and the version, so
@@ -36,7 +36,7 @@ class ArtifactSealInterface(ABC):
 
     @abstractmethod
     async def open(
-        self, ctx: TenantContext, session_id: UUID, artifact_id: UUID, sealed: bytes
+        self, ctx: TenantContext, agent_session_id: UUID, artifact_id: UUID, sealed: bytes
     ) -> bytes | None:
         """The plain bytes of a blob `seal` made for this artifact; None when
         the version it names is destroyed, and the content with it. A blob no

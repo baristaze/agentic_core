@@ -38,10 +38,10 @@ Read [the steps](#steps) first, then [their record](#the-record-1).
 
 ## Contents
 
-- [Steps](#steps)
+- [AgentSteps](#steps)
 - [Loops and Sessions](#loops-and-sessions)
 
-## Steps
+## AgentSteps
 
 ### The Record
 
@@ -59,11 +59,11 @@ A loop references steps, never copies them.
 """
 
 LENS_STEPS = """\
-# Steps
+# AgentSteps
 
 ## STP-01 A step is written once
 
-**Source.** Steps, The Record.
+**Source.** AgentSteps, The Record.
 """
 
 LENSES_README = """\

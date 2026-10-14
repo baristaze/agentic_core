@@ -6,12 +6,14 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
+from contracts.agent_step_storage import make_message
 from contracts.doubles import APP, context
 from contracts.fill_set_storage import HAIKU, SOL, SONNET
-from contracts.step_storage import make_message
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.integrations.model_providers.types import Effort, ProviderName
+from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
+from acme.om.agent_steps.types.header import SwitchedHeader
 from acme.om.base import new_id
 from acme.om.budgets.impl.pricing import PricingTableImpl
 from acme.om.context import RequestContext, Role, TenantContext
@@ -47,8 +49,6 @@ from acme.om.models.types.fill import (
     SwitchReason,
 )
 from acme.om.root import Managers, build_managers
-from acme.om.steps.types.header import SwitchedHeader
-from acme.om.steps.types.step import Step, StepType
 from acme.om.storage.impl.memory import StorageMemoryImpl
 
 UNLISTED = Fill(
@@ -91,15 +91,19 @@ def managers(tmp_path: Path) -> Managers:
 async def a_run(managers: Managers, ctx: TenantContext) -> tuple[UUID, int, UUID]:
     """A session with a loop open and a run holding it: its id, the run's
     epoch, and the loop's id."""
-    session_id = new_id()
-    (first,) = await managers.steps.append_inputs(ctx, session_id, [make_message(session_id)])
-    epoch = await managers.steps.begin_run(ctx, session_id)
-    return session_id, epoch, first.id
+    agent_session_id = new_id()
+    (first,) = await managers.agent_steps.append_inputs(
+        ctx, agent_session_id, [make_message(agent_session_id)]
+    )
+    epoch = await managers.agent_steps.begin_run(ctx, agent_session_id)
+    return agent_session_id, epoch, first.id
 
 
-async def switches(managers: Managers, ctx: TenantContext, session_id: UUID) -> list[Step]:
-    page = await managers.steps.get_steps(ctx, session_id, 0, 100)
-    return [s for s in page.items if s.type is StepType.SWITCHED]
+async def switches(
+    managers: Managers, ctx: TenantContext, agent_session_id: UUID
+) -> list[AgentStep]:
+    page = await managers.agent_steps.get_agent_steps(ctx, agent_session_id, 0, 100)
+    return [s for s in page.items if s.type is AgentStepType.SWITCHED]
 
 
 # The resolver and its one source of prices.
@@ -213,13 +217,15 @@ async def test_an_ask_never_widens_what_a_fill_allows_and_the_fill_set_keeps_bot
     managers: Managers,
 ) -> None:
     ctx = context(Role.MEMBER)
-    session_id = new_id()
+    agent_session_id = new_id()
     asks = (
         ModelAsk(role=MAIN, size=ModelSize.L, effort=Effort.NONE),
         ModelAsk(role=SUMMARIZER, size=ModelSize.S, effort=Effort.HIGH),
     )
-    await managers.models.resolve_fill_set(ctx, session_id, [MAIN, SUMMARIZER], Eligibility(), asks)
-    main, summarizer = (await managers.models.get_fill_set(ctx, session_id)).roles
+    await managers.models.resolve_fill_set(
+        ctx, agent_session_id, [MAIN, SUMMARIZER], Eligibility(), asks
+    )
+    main, summarizer = (await managers.models.get_fill_set(ctx, agent_session_id)).roles
     assert served(main) == [
         ("anthropic/claude-sonnet-5-5", Effort.HIGH),
         ("openai/gpt-6.1-sol", Effort.HIGH),
@@ -263,36 +269,36 @@ async def test_each_openai_fill_lists_exactly_the_efforts_its_model_takes() -> N
 
 async def test_a_session_resolves_its_fills_once(managers: Managers) -> None:
     ctx = context(Role.MEMBER)
-    session_id = new_id()
+    agent_session_id = new_id()
     with pytest.raises(NotFound):
-        await managers.models.get_fill_set(ctx, session_id)
+        await managers.models.get_fill_set(ctx, agent_session_id)
     first = await managers.models.resolve_fill_set(
-        ctx, session_id, [MAIN, SUMMARIZER], Eligibility()
+        ctx, agent_session_id, [MAIN, SUMMARIZER], Eligibility()
     )
     assert first.version == 1 and first.reason is None and first.switched_by is None
     assert first.fill_for(MAIN) == DEFAULT_MAIN.fill
     again = await managers.models.resolve_fill_set(
-        ctx, session_id, [MAIN], Eligibility(region="eu")
+        ctx, agent_session_id, [MAIN], Eligibility(region="eu")
     )
     assert again == first, "a later resolution keeps the first"
-    assert await managers.models.get_fill_set(ctx, session_id) == first
+    assert await managers.models.get_fill_set(ctx, agent_session_id) == first
     with pytest.raises(NotFound):
-        await managers.models.get_fill_set(context(Role.MEMBER), session_id)
+        await managers.models.get_fill_set(context(Role.MEMBER), agent_session_id)
 
 
 async def test_a_switch_writes_a_new_version_and_a_switched_step_naming_both_fills(
     managers: Managers,
 ) -> None:
     ctx = context(Role.MEMBER)
-    session_id, epoch, loop_id = await a_run(managers, ctx)
+    agent_session_id, epoch, loop_id = await a_run(managers, ctx)
     first = await managers.models.resolve_fill_set(
-        ctx, session_id, [MAIN, SUMMARIZER], Eligibility()
+        ctx, agent_session_id, [MAIN, SUMMARIZER], Eligibility()
     )
     to = DEFAULT_MAIN.fallbacks[0]
     second = await managers.models.switch_fill(
-        ctx, session_id, epoch, loop_id, MAIN, to, SwitchReason.FALLBACK
+        ctx, agent_session_id, epoch, loop_id, MAIN, to, SwitchReason.FALLBACK
     )
-    (step,) = await switches(managers, ctx, session_id)
+    (step,) = await switches(managers, ctx, agent_session_id)
     assert isinstance(step.header, SwitchedHeader)
     named = step.header.fills
     assert named is not None
@@ -306,20 +312,20 @@ async def test_a_switch_writes_a_new_version_and_a_switched_step_naming_both_fil
     assert second.fill_for(MAIN) == to and second.fill_for(SUMMARIZER) == first.fill_for(SUMMARIZER)
     main = second.role_fill(MAIN)
     assert main is not None and to not in main.fallbacks
-    assert await managers.models.get_fill_set(ctx, session_id) == second
+    assert await managers.models.get_fill_set(ctx, agent_session_id) == second
 
 
 async def test_a_run_that_lost_its_claim_switches_nothing(managers: Managers) -> None:
     ctx = context(Role.MEMBER)
-    session_id, stale, loop_id = await a_run(managers, ctx)
-    first = await managers.models.resolve_fill_set(ctx, session_id, [MAIN], Eligibility())
-    await managers.steps.begin_run(ctx, session_id)
+    agent_session_id, stale, loop_id = await a_run(managers, ctx)
+    first = await managers.models.resolve_fill_set(ctx, agent_session_id, [MAIN], Eligibility())
+    await managers.agent_steps.begin_run(ctx, agent_session_id)
     with pytest.raises(StaleWriter):
         await managers.models.switch_fill(
-            ctx, session_id, stale, loop_id, MAIN, SOL, SwitchReason.POLICY
+            ctx, agent_session_id, stale, loop_id, MAIN, SOL, SwitchReason.POLICY
         )
-    assert await switches(managers, ctx, session_id) == []
-    assert await managers.models.get_fill_set(ctx, session_id) == first
+    assert await switches(managers, ctx, agent_session_id) == []
+    assert await managers.models.get_fill_set(ctx, agent_session_id) == first
 
 
 @pytest.mark.parametrize(
@@ -334,25 +340,25 @@ async def test_a_refused_switch_writes_nothing(
     managers: Managers, role: str, to: Fill, refused: type[Exception]
 ) -> None:
     ctx = context(Role.MEMBER)
-    session_id, epoch, loop_id = await a_run(managers, ctx)
-    first = await managers.models.resolve_fill_set(ctx, session_id, [MAIN], Eligibility())
+    agent_session_id, epoch, loop_id = await a_run(managers, ctx)
+    first = await managers.models.resolve_fill_set(ctx, agent_session_id, [MAIN], Eligibility())
     with pytest.raises(refused):
         await managers.models.switch_fill(
-            ctx, session_id, epoch, loop_id, role, to, SwitchReason.POLICY
+            ctx, agent_session_id, epoch, loop_id, role, to, SwitchReason.POLICY
         )
-    assert await switches(managers, ctx, session_id) == []
-    assert await managers.models.get_fill_set(ctx, session_id) == first
+    assert await switches(managers, ctx, agent_session_id) == []
+    assert await managers.models.get_fill_set(ctx, agent_session_id) == first
 
 
 async def test_a_switch_stays_inside_the_sessions_eligibility(managers: Managers) -> None:
     ctx = context(Role.MEMBER)
-    session_id, epoch, loop_id = await a_run(managers, ctx)
+    agent_session_id, epoch, loop_id = await a_run(managers, ctx)
     ineligible = SOL.model_copy(update={"eligibility": Eligibility(region="us")})
     eligible = SOL.model_copy(update={"eligibility": Eligibility(region="eu")})
     lighter = eligible.model_copy(update={"effort": Effort.LOW})
     models = ModelsManagerImpl(
         FillSetStorageMemoryImpl(),
-        managers.steps,
+        managers.agent_steps,
         managers.tenancy,
         ModelResolverTableImpl(
             Priced(eligible, ineligible, lighter),
@@ -362,26 +368,28 @@ async def test_a_switch_stays_inside_the_sessions_eligibility(managers: Managers
         ),
         ModelsOptions(),
     )
-    await models.resolve_fill_set(ctx, session_id, [MAIN], Eligibility(region="eu"))
+    await models.resolve_fill_set(ctx, agent_session_id, [MAIN], Eligibility(region="eu"))
     with pytest.raises(ValidationFailed):
         await models.switch_fill(
-            ctx, session_id, epoch, loop_id, MAIN, ineligible, SwitchReason.POLICY
+            ctx, agent_session_id, epoch, loop_id, MAIN, ineligible, SwitchReason.POLICY
         )
-    fallen = await models.fall_back(ctx, session_id, epoch, loop_id, MAIN)
+    fallen = await models.fall_back(ctx, agent_session_id, epoch, loop_id, MAIN)
     assert fallen is not None and fallen.fill_for(MAIN) == lighter, "the ineligible one is passed"
-    assert await models.fall_back(ctx, session_id, epoch, loop_id, MAIN) is None, "none is left"
-    assert len(await switches(managers, ctx, session_id)) == 1
+    assert await models.fall_back(ctx, agent_session_id, epoch, loop_id, MAIN) is None, (
+        "none is left"
+    )
+    assert len(await switches(managers, ctx, agent_session_id)) == 1
 
 
 async def test_a_fallback_takes_the_next_declared_fill_it_has_not_tried(managers: Managers) -> None:
     ctx = context(Role.MEMBER)
-    session_id, epoch, loop_id = await a_run(managers, ctx)
-    head = await managers.models.resolve_fill_set(ctx, session_id, [MAIN], Eligibility())
+    agent_session_id, epoch, loop_id = await a_run(managers, ctx)
+    head = await managers.models.resolve_fill_set(ctx, agent_session_id, [MAIN], Eligibility())
     declared = DEFAULT_MAIN.fallbacks
     assert rules.next_fallback(head, MAIN) == declared[0]
     assert rules.next_fallback(head, MAIN, tried=declared) is None
     assert rules.next_fallback(head, "title") is None
-    fallen = await managers.models.fall_back(ctx, session_id, epoch, loop_id, MAIN)
+    fallen = await managers.models.fall_back(ctx, agent_session_id, epoch, loop_id, MAIN)
     assert fallen is not None and fallen.fill_for(MAIN) == declared[0]
     assert fallen.reason is SwitchReason.FALLBACK
 
@@ -405,44 +413,46 @@ async def test_a_version_a_crash_left_unwritten_is_written_from_its_step(
     managers: Managers,
 ) -> None:
     ctx = context(Role.MEMBER)
-    session_id, epoch, loop_id = await a_run(managers, ctx)
+    agent_session_id, epoch, loop_id = await a_run(managers, ctx)
     storage = CrashAfterTheStep()
     models = ModelsManagerImpl(
         storage,
-        managers.steps,
+        managers.agent_steps,
         managers.tenancy,
         ModelResolverTableImpl(EVERY_DEFAULT, ResolverOptions()),
         ModelsOptions(),
     )
-    await models.resolve_fill_set(ctx, session_id, [MAIN], Eligibility())
+    await models.resolve_fill_set(ctx, agent_session_id, [MAIN], Eligibility())
     with pytest.raises(ConnectionError):
-        await models.switch_fill(ctx, session_id, epoch, loop_id, MAIN, SOL, SwitchReason.UPGRADE)
-    (step,) = await switches(managers, ctx, session_id)
-    assert (await models.get_fill_set(ctx, session_id)).version == 1, "the step is ahead"
+        await models.switch_fill(
+            ctx, agent_session_id, epoch, loop_id, MAIN, SOL, SwitchReason.UPGRADE
+        )
+    (step,) = await switches(managers, ctx, agent_session_id)
+    assert (await models.get_fill_set(ctx, agent_session_id)).version == 1, "the step is ahead"
     assert isinstance(step.header, SwitchedHeader)
     fills, at = step.header.fills, step.created_at
     assert fills is not None
-    settled = await models.settle_switch(ctx, session_id, step.id, fills, at)
+    settled = await models.settle_switch(ctx, agent_session_id, step.id, fills, at)
     assert (settled.version, settled.switched_by, settled.fill_for(MAIN)) == (2, step.id, SOL)
-    again = await models.settle_switch(ctx, session_id, step.id, fills, at)
+    again = await models.settle_switch(ctx, agent_session_id, step.id, fills, at)
     assert again == settled, "settled twice, written once"
-    assert await models.get_fill_set(ctx, session_id) == settled
+    assert await models.get_fill_set(ctx, agent_session_id) == settled
     with pytest.raises(PreconditionFailed):
-        await models.settle_switch(ctx, session_id, new_id(), fills, at)
+        await models.settle_switch(ctx, agent_session_id, new_id(), fills, at)
     later = fills.model_copy(update={"fill_set_version": 4})
     with pytest.raises(PreconditionFailed):
-        await models.settle_switch(ctx, session_id, new_id(), later, at)
+        await models.settle_switch(ctx, agent_session_id, new_id(), later, at)
 
 
 async def test_a_viewer_reads_and_switches_nothing(managers: Managers) -> None:
     member = context(Role.MEMBER)
-    session_id, epoch, loop_id = await a_run(managers, member)
+    agent_session_id, epoch, loop_id = await a_run(managers, member)
     viewer = context(Role.VIEWER)
     with pytest.raises(NotAuthorized):
-        await managers.models.resolve_fill_set(viewer, session_id, [MAIN], Eligibility())
+        await managers.models.resolve_fill_set(viewer, agent_session_id, [MAIN], Eligibility())
     with pytest.raises(NotAuthorized):
         await managers.models.switch_fill(
-            viewer, session_id, epoch, loop_id, MAIN, SOL, SwitchReason.POLICY
+            viewer, agent_session_id, epoch, loop_id, MAIN, SOL, SwitchReason.POLICY
         )
     with pytest.raises(NotAuthorized):
         await managers.models.purge_tenant(viewer)
@@ -456,7 +466,7 @@ async def test_the_sweep_purges_no_living_tenants_fill_sets(managers: Managers) 
         f"a-{new_id().hex[-8:]}@x.test",
         "Ann",
     )
-    session_id = new_id()
-    first = await managers.models.resolve_fill_set(ctx, session_id, [MAIN], Eligibility())
+    agent_session_id = new_id()
+    first = await managers.models.resolve_fill_set(ctx, agent_session_id, [MAIN], Eligibility())
     assert await managers.models.purge_tenant(ctx) == 0
-    assert await managers.models.get_fill_set(ctx, session_id) == first
+    assert await managers.models.get_fill_set(ctx, agent_session_id) == first

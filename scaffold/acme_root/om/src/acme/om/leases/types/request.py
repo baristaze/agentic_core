@@ -48,7 +48,7 @@ class WaiterKind(StrEnum):
     each with a `WaiterInterface`."""
 
     ORCHESTRATION = "orchestration"  # a long-running record parked on `resource`
-    SESSION = "session"  # an agent session whose loop parks on `resource`
+    AGENT_SESSION = "agent_session"  # an agent session whose loop parks on `resource`
 
 
 class LeaseRequest(Identifiable, Trackable):

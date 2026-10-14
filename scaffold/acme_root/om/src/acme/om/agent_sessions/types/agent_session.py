@@ -21,14 +21,14 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
+from acme.om.agent_steps.types.content import Stored
+from acme.om.agent_steps.types.header import Park
 from acme.om.attribution.types.authority import Visibility
 from acme.om.attribution.types.principal import MAX_KIND, Principal
 from acme.om.base import Identifiable, Platform, SoftDeletable, Trackable
-from acme.om.steps.types.content import Stored
-from acme.om.steps.types.header import Park
 
 
-class SessionStatus(StrEnum):
+class AgentSessionStatus(StrEnum):
     PENDING = "pending"  # an input that wakes it waits for a run
     RUNNING = "running"  # a run holds its loop
     PARKED = "parked"  # its loop waits on an unlock
@@ -100,7 +100,7 @@ class AgentSession(Identifiable, Trackable, SoftDeletable):
     # where it came, never cleared. A child of a session that holds private
     # data may carry it in its objective, so it holds it too.
     holds_private: bool = False
-    status: SessionStatus = SessionStatus.IDLE
+    status: AgentSessionStatus = AgentSessionStatus.IDLE
     park: Park | None = None  # what a parked loop waits on
     # The last seq the cached status has read: the projection goes on from
     # the step after it.
@@ -123,7 +123,7 @@ class AgentSession(Identifiable, Trackable, SoftDeletable):
 
     @model_validator(mode="after")
     def _a_park_is_the_parked_status(self) -> Self:
-        if (self.park is not None) != (self.status is SessionStatus.PARKED):
+        if (self.park is not None) != (self.status is AgentSessionStatus.PARKED):
             raise ValueError("a session carries a park exactly while it is parked")
         return self
 

@@ -12,10 +12,10 @@ from uuid import UUID
 
 from pydantic import Field
 
+from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
+from acme.om.agent_steps.types.header import ToolRequestHeader, ToolResponseHeader
 from acme.om.base import Platform
 from acme.om.context import TenantContext
-from acme.om.steps.types.header import ToolRequestHeader, ToolResponseHeader
-from acme.om.steps.types.step import Step, StepType
 from acme.om.tools.tool import ToolInterface, ToolRuntime
 from acme.om.tools.types.policy import Target
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolMode, ToolSpec
@@ -47,7 +47,7 @@ class Plan(Platform):
 
     version: int = Field(ge=1)
     text: str
-    step_id: UUID
+    agent_step_id: UUID
 
 
 class WritePlanToolImpl(ToolInterface):
@@ -86,7 +86,7 @@ class WritePlanToolImpl(ToolInterface):
         return PlanKept(plan=call_input.plan)
 
 
-def current_plan(steps: Sequence[Step]) -> Plan | None:
+def current_plan(steps: Sequence[AgentStep]) -> Plan | None:
     """The plan of the latest `write_plan` call the history answers without
     a failure, read from the response that made the call, in `seq` order. A
     call refused, denied, or cut off keeps no plan. None when the session
@@ -98,7 +98,7 @@ def current_plan(steps: Sequence[Step]) -> Plan | None:
     latest: Plan | None = None
     for step in steps:
         header = step.header
-        if step.type is StepType.MODEL_RESPONSE:
+        if step.type is AgentStepType.MODEL_RESPONSE:
             for use in step.as_tool_uses():
                 plan = use.input.get("plan")
                 if use.name == WRITE_PLAN and isinstance(plan, str):
@@ -112,5 +112,7 @@ def current_plan(steps: Sequence[Step]) -> Plan | None:
             version += 1
             key = calls[step.responds_to]
             text = None if key is None else written[key]
-            latest = None if text is None else Plan(version=version, text=text, step_id=step.id)
+            latest = (
+                None if text is None else Plan(version=version, text=text, agent_step_id=step.id)
+            )
     return latest

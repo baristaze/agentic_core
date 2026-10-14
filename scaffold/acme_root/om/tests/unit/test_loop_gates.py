@@ -13,6 +13,8 @@ import pytest
 from contracts.loops import ASSISTANT, BUILDER, DELIVERY, Clock, call, loop_over, reply, said
 
 from acme.integrations.model_providers.calls import ModelCall
+from acme.om.agent_steps.types.agent_step import AgentStepType
+from acme.om.agent_steps.types.header import Park, ParkReason
 from acme.om.agents.loop_rules import SPENDER_UNLOCK
 from acme.om.agents.types.run import RunEnd
 from acme.om.attribution.types.principal import Principal
@@ -20,8 +22,6 @@ from acme.om.context import TenantContext
 from acme.om.exceptions import GateParked, PlatformException, SpenderUnknown
 from acme.om.models.types.fill import Fill, ModelRole
 from acme.om.root import Managers
-from acme.om.steps.types.header import Park, ParkReason
-from acme.om.steps.types.step import StepType
 from acme.om.windows.impl.gate import CallGateBudgetImpl
 
 NORM = Park(reason=ParkReason.PERSON, unlock="norm")
@@ -49,7 +49,7 @@ class Parking(CallGateBudgetImpl):
     async def authorize(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         spender: Principal,
         role: ModelRole,
         fill: Fill,
@@ -61,13 +61,13 @@ class Parking(CallGateBudgetImpl):
             raise self.turn
         self.held += 1
         return await super().authorize(
-            ctx, session_id, spender, role, fill, call, credential=credential
+            ctx, agent_session_id, spender, role, fill, call, credential=credential
         )
 
     async def authorize_job(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         spender: Principal,
         tool: str,
         rate_micros_per_hour: int,
@@ -77,7 +77,7 @@ class Parking(CallGateBudgetImpl):
             raise self.job
         self.held += 1
         return await super().authorize_job(
-            ctx, session_id, spender, tool, rate_micros_per_hour, deadline
+            ctx, agent_session_id, spender, tool, rate_micros_per_hour, deadline
         )
 
 
@@ -102,11 +102,11 @@ async def test_a_gate_that_parks_a_model_call_parks_the_loop_where_it_says(
         return gates[-1]
 
     loop = loop_over(tmp_path, call_gate=parking)
-    session_id = await loop.start()
-    await loop.say(session_id, "What is the total?")
+    agent_session_id = await loop.start()
+    await loop.say(agent_session_id, "What is the total?")
     loop.anthropic.add(reply(said("Never asked.")))
 
-    run = await loop.loops.run(loop.owner, session_id)
+    run = await loop.loops.run(loop.owner, agent_session_id)
 
     assert run.end is RunEnd.PARKED and run.park is not None
     assert (run.park.reason, run.park.unlock, run.park.retry_at) == (
@@ -116,9 +116,9 @@ async def test_a_gate_that_parks_a_model_call_parks_the_loop_where_it_says(
     )
     assert gates[0].held == 0, "nothing was held"
     assert loop.anthropic.calls == [] and loop.anthropic.remaining == 1, "no call was made"
-    steps = await loop.history(session_id)
-    assert not [step for step in steps if step.type is StepType.MODEL_REQUEST]
-    assert steps[-1].type is StepType.PARKED
+    steps = await loop.history(agent_session_id)
+    assert not [step for step in steps if step.type is AgentStepType.MODEL_REQUEST]
+    assert steps[-1].type is AgentStepType.PARKED
 
 
 @pytest.mark.parametrize(("raised", "park"), CASES, ids=IDS)
@@ -133,16 +133,16 @@ async def test_a_gate_that_parks_a_spending_job_parks_the_loop_and_starts_nothin
 
     loop = loop_over(tmp_path, kinds=(ASSISTANT, DELIVERY, BUILDER), call_gate=parking)
     compute = loop.jobs["compute"]
-    session_id = await loop.start("builder")
-    await loop.say(session_id, "Start it.")
+    agent_session_id = await loop.start("builder")
+    await loop.say(agent_session_id, "Start it.")
     loop.anthropic.add(reply(call("compute", q="everything")), reply(said("It is done.")))
 
-    run = await loop.loops.run(loop.owner, session_id)
+    run = await loop.loops.run(loop.owner, agent_session_id)
 
     assert run.end is RunEnd.PARKED and run.park is not None
     assert (run.park.reason, run.park.unlock, run.park.job) == (park.reason, park.unlock, None)
     assert compute.started == {}, "no job started"
     assert gates[0].held == 1, "the model call's hold alone: none for the job"
-    steps = await loop.history(session_id)
-    (request,) = [step for step in steps if step.type is StepType.TOOL_REQUEST]
+    steps = await loop.history(agent_session_id)
+    (request,) = [step for step in steps if step.type is AgentStepType.TOOL_REQUEST]
     assert not [step for step in steps if step.responds_to == request.id], "the call waits"

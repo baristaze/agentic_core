@@ -8,10 +8,10 @@ from pathlib import Path
 
 from contracts.loops import ASSISTANT, DELIVERY, HELPER, call, loop_over, reply, said
 
+from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
+from acme.om.agent_steps.types.content import TextBlock
+from acme.om.agent_steps.types.header import LoopOutcome, ToolResponseHeader
 from acme.om.agents.types.run import RunEnd
-from acme.om.steps.types.content import TextBlock
-from acme.om.steps.types.header import LoopOutcome, ToolResponseHeader
-from acme.om.steps.types.step import Step, StepType
 from acme.om.tools.native.write_plan import Plan, current_plan
 from acme.om.windows.rules import data_block
 
@@ -19,7 +19,7 @@ FIRST = "1. Read the weekly report.\n2. Fix its total."
 SECOND = "1. Read the weekly report: done.\n2. Fix its total."
 
 
-def kept(steps: list[Step]) -> list[Step]:
+def kept(steps: list[AgentStep]) -> list[AgentStep]:
     """The answers that kept a plan."""
     return [
         step
@@ -32,8 +32,8 @@ async def test_a_plan_is_kept_by_version_rendered_last_next_call_and_read_by_a_p
     tmp_path: Path,
 ) -> None:
     loop = loop_over(tmp_path, kinds=(ASSISTANT, DELIVERY, HELPER))
-    session_id = await loop.start("helper")
-    await loop.say(session_id, "Fix the weekly report.")
+    agent_session_id = await loop.start("helper")
+    await loop.say(agent_session_id, "Fix the weekly report.")
     loop.anthropic.add(
         reply(call("write_plan", plan=FIRST)),
         reply(call("write_plan", plan="")),
@@ -41,7 +41,7 @@ async def test_a_plan_is_kept_by_version_rendered_last_next_call_and_read_by_a_p
         reply(said("The total is fixed.")),
     )
 
-    run = await loop.loops.run(loop.owner, session_id)
+    run = await loop.loops.run(loop.owner, agent_session_id)
 
     assert (run.end, run.outcome) == (RunEnd.ENDED, LoopOutcome.SUCCEEDED)
     first, refused, second, last = loop.anthropic.calls
@@ -52,15 +52,17 @@ async def test_a_plan_is_kept_by_version_rendered_last_next_call_and_read_by_a_p
     # A person, a participant who is not the session's owner, reads the
     # history.
     colleague = loop.colleague()
-    await loop.managers.agent_sessions.add_participant(loop.owner, session_id, colleague.user_id)
-    page = await loop.managers.steps.get_steps(colleague, session_id, 0, 200)
+    await loop.managers.agent_sessions.add_participant(
+        loop.owner, agent_session_id, colleague.user_id
+    )
+    page = await loop.managers.agent_steps.get_agent_steps(colleague, agent_session_id, 0, 200)
     steps = list(page.items)
     one, two = kept(steps)
-    assert current_plan(steps) == Plan(version=2, text=SECOND, step_id=two.id)
+    assert current_plan(steps) == Plan(version=2, text=SECOND, agent_step_id=two.id)
     assert current_plan([s for s in steps if s.seq <= one.seq]) == Plan(
-        version=1, text=FIRST, step_id=one.id
+        version=1, text=FIRST, agent_step_id=one.id
     )
     for answer, plan in ((one, FIRST), (two, SECOND)):
         shown = answer.as_tool_response().parts[0]
         assert isinstance(shown, TextBlock) and json.loads(shown.text) == {"plan": plan}
-    assert len([s for s in steps if s.type is StepType.TOOL_RESPONSE]) == 3
+    assert len([s for s in steps if s.type is AgentStepType.TOOL_RESPONSE]) == 3

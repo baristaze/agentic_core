@@ -12,13 +12,13 @@ from uuid import UUID
 from pydantic import AwareDatetime, Field, model_validator
 
 from acme.integrations.model_providers.types import StopReason
-from acme.om.agent_sessions.types.agent_session import SessionStatus
+from acme.om.agent_sessions.types.agent_session import AgentSessionStatus
+from acme.om.agent_steps.types.agent_step import Actor, AgentStepType, Origin
+from acme.om.agent_steps.types.content import MAX_NAME
+from acme.om.agent_steps.types.header import ControlCommand, LoopOutcome, ParkReason, ToolFailure
 from acme.om.agents.types.request import MAX_TITLE
 from acme.om.attribution.types.authority import Visibility
 from acme.om.attribution.types.principal import MAX_KIND
-from acme.om.steps.types.content import MAX_NAME
-from acme.om.steps.types.header import ControlCommand, LoopOutcome, ParkReason, ToolFailure
-from acme.om.steps.types.step import Actor, Origin, StepType
 from acme.om.tools.types.call import MAX_REPORT
 from acme.services.api.types.common import RequestBody, View
 
@@ -68,7 +68,7 @@ class AgentSessionView(View):
     title: str
     kind: str
     kind_version: int
-    status: SessionStatus
+    status: AgentSessionStatus
     park: ParkView | None
     created_at: datetime
     created_by: UUID
@@ -87,7 +87,7 @@ class AgentSessionPageView(View):
     has_more: bool
 
 
-class StepUsageView(View):
+class AgentStepUsageView(View):
     """What a model call used, as its provider reported it, in disjoint
     classes, so no token is counted twice."""
 
@@ -109,7 +109,7 @@ class SnapshotView(View):
     workspace_id: UUID
 
 
-class StepView(View):
+class AgentStepView(View):
     """One step of a session's history, in its order. `text` is what it
     says: a message's words, a model's answer, a tool's result. The rest is
     its header's, by type: the tools a model response called, why it
@@ -125,7 +125,7 @@ class StepView(View):
     id: UUID
     seq: int
     loop_id: UUID
-    type: StepType
+    type: AgentStepType
     actor: Actor
     origin: Origin
     responds_to: UUID | None
@@ -134,7 +134,7 @@ class StepView(View):
     text: str
     tools: list[str]
     stop_reason: StopReason | None
-    usage: StepUsageView | None
+    usage: AgentStepUsageView | None
     tool: str | None
     failure: ToolFailure | None
     command: ControlCommand | None
@@ -148,11 +148,11 @@ class StepView(View):
     visibility: Visibility | None
 
 
-class StepPageView(View):
+class AgentStepPageView(View):
     """One page of a session's history, after the seq the request named.
     With `has_more`, the next page starts after the last step's seq."""
 
-    items: list[StepView]
+    items: list[AgentStepView]
     has_more: bool
 
 
@@ -168,7 +168,7 @@ class ArtifactPageView(View):
     has_more: bool
 
 
-class StartSessionRequest(RequestBody):
+class StartAgentSessionRequest(RequestBody):
     """A session to start on the latest version of a kind the product runs."""
 
     kind: str = Field(min_length=1, max_length=MAX_KIND)
@@ -182,7 +182,7 @@ class MessageRequest(RequestBody):
     text: str = Field(min_length=1, max_length=MAX_MESSAGE)
 
 
-class SessionControl(StrEnum):
+class AgentSessionControl(StrEnum):
     """The controls a person sends a session out of band. A decision on one
     tool call is a route of its own."""
 
@@ -201,15 +201,15 @@ class ControlRequest(RequestBody):
     its workspace's next prepare starts from; no other control names
     either."""
 
-    command: SessionControl
+    command: AgentSessionControl
     request_seq: int | None = Field(default=None, ge=1)
     snapshot_id: UUID | None = None
 
     @model_validator(mode="after")
     def _an_interrupt_names_its_call(self) -> Self:
-        if (self.command is SessionControl.INTERRUPT) != (self.request_seq is not None):
+        if (self.command is AgentSessionControl.INTERRUPT) != (self.request_seq is not None):
             raise ValueError("an interrupt names the call it stops, and no other control names one")
-        if (self.command is SessionControl.RESTORE) != (self.snapshot_id is not None):
+        if (self.command is AgentSessionControl.RESTORE) != (self.snapshot_id is not None):
             raise ValueError(
                 "a restore names the snapshot it starts from, and no other control names one"
             )

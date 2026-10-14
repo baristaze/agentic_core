@@ -15,7 +15,7 @@ from acme.om.context import TenantContext
 class RecordSealInterface(ABC):
     @abstractmethod
     async def seal(
-        self, ctx: TenantContext, session_id: UUID, key: UUID, data: bytes
+        self, ctx: TenantContext, agent_session_id: UUID, key: UUID, data: bytes
     ) -> bytes | None:
         """`data` sealed under the current version of the session's key,
         bound to the tenant, the session, the command under `key`, and the
@@ -26,7 +26,7 @@ class RecordSealInterface(ABC):
 
     @abstractmethod
     async def open(
-        self, ctx: TenantContext, session_id: UUID, key: UUID, sealed: bytes
+        self, ctx: TenantContext, agent_session_id: UUID, key: UUID, sealed: bytes
     ) -> bytes | None:
         """The plain bytes of a blob `seal` made for this command; None when
         the version it names is destroyed, and the output with it. A blob no
@@ -43,7 +43,7 @@ class SnapshotSealInterface(ABC):
     names it stays."""
 
     @abstractmethod
-    async def keeps(self, ctx: TenantContext, session_id: UUID) -> bool:
+    async def keeps(self, ctx: TenantContext, agent_session_id: UUID) -> bool:
         """Whether the session keeps content at rest; `seal` answers None
         for one that does not. Asked before a snapshot is taken, so what a
         workspace holds never leaves a session that keeps no content at
@@ -52,7 +52,7 @@ class SnapshotSealInterface(ABC):
 
     @abstractmethod
     async def seal(
-        self, ctx: TenantContext, session_id: UUID, digest: str, data: bytes
+        self, ctx: TenantContext, agent_session_id: UUID, digest: str, data: bytes
     ) -> bytes | None:
         """`data` sealed under the current version of the session's key,
         bound to the tenant, the session, the snapshot's hash `digest`, and
@@ -63,7 +63,7 @@ class SnapshotSealInterface(ABC):
 
     @abstractmethod
     async def open(
-        self, ctx: TenantContext, session_id: UUID, digest: str, sealed: bytes
+        self, ctx: TenantContext, agent_session_id: UUID, digest: str, sealed: bytes
     ) -> bytes | None:
         """The plain bytes of a blob `seal` made for this hash of this
         session; None when the version it names is destroyed, and the

@@ -23,7 +23,7 @@ class WindowStorageInterface(ABC):
 
     @abstractmethod
     async def read_artifact(
-        self, org_id: UUID, session_id: UUID, artifact_id: UUID
+        self, org_id: UUID, agent_session_id: UUID, artifact_id: UUID
     ) -> Artifact | None:
         """The record of the session's artifact; None when the tenant's
         session holds no such artifact."""
@@ -31,10 +31,10 @@ class WindowStorageInterface(ABC):
 
     @abstractmethod
     async def read_artifacts(
-        self, org_id: UUID, session_id: UUID | None, limit: int
+        self, org_id: UUID, agent_session_id: UUID | None, limit: int
     ) -> list[Artifact]:
         """At most `limit` of the session's artifacts, or of the tenant's when
-        `session_id` is None, in id order: what a purge takes next."""
+        `agent_session_id` is None, in id order: what a purge takes next."""
         ...
 
     @abstractmethod

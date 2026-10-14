@@ -26,7 +26,7 @@ class CallGateInterface(ABC):
     async def authorize(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         spender: Principal,
         role: ModelRole,
         fill: Fill,
@@ -68,7 +68,7 @@ class CallGateInterface(ABC):
     async def authorize_job(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         spender: Principal,
         tool: str,
         rate_micros_per_hour: int,

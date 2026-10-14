@@ -159,7 +159,7 @@ class FillSet(Identifiable, Created):
     is the session's resolution and names no switch; every later one names
     why, and the `switched` step that announced it."""
 
-    session_id: UUID
+    agent_session_id: UUID
     version: int = Field(ge=1)
     roles: tuple[RoleFill, ...]
     eligibility: Eligibility = Eligibility()  # what the session requires of every fill

@@ -62,17 +62,17 @@ step never counts them, so they never keep a deleted tenant from being
 marked purged.
 
 **The operator plane reads a session's usage.**
-`GET /v1/admin/orgs/{org_id}/sessions/{session_id}/usage` takes an
+`GET /v1/admin/orgs/{org_id}/agent-sessions/{agent_session_id}/usage` takes an
 operator token with the read permission; a tenant's token is no
 operator's, and is refused with 401. It answers 404 `not_found` for an
 unknown org and for a session the org holds no record of, which is how
 another tenant's session reads. Each read logs the operator and the
-org, and none of the figures. The answer, `SessionUsageView`:
+org, and none of the figures. The answer, `AgentSessionUsageView`:
 
-- `session_id`.
+- `agent_session_id`.
 - `items`: a page of records, oldest first, each with `id`,
-  `created_at`, `hold_id`, `session_id`, `tree_id`, `loop_id`,
-  `step_id`, `agent_kind`, `kind_version`, `role`, `provider`, `model`,
+  `created_at`, `hold_id`, `agent_session_id`, `tree_id`, `loop_id`,
+  `agent_step_id`, `agent_kind`, `kind_version`, `role`, `provider`, `model`,
   `input_tokens`, `cache_read_tokens`, `cache_write_tokens`,
   `output_tokens`, `thinking_tokens`, `cost_micros`, `latency_ms`, and
   `settled_whole`.

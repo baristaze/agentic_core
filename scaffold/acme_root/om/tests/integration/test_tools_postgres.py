@@ -76,12 +76,12 @@ async def an_org(storage: StoragePostgresImpl, tmp_path: Path) -> tuple[TenantCo
     return owner, managers
 
 
-async def a_session(managers: Managers, owner: TenantContext) -> UUID:
+async def an_agent_session(managers: Managers, owner: TenantContext) -> UUID:
     """A session the owner made, whose calls run under the owner: the gate
     asks attribution whose authority each call runs under."""
-    session_id, now = new_id(), utcnow()
+    agent_session_id, now = new_id(), utcnow()
     session = AgentSession(
-        id=session_id,
+        id=agent_session_id,
         created_at=now,
         updated_at=now,
         created_by=owner.user_id,
@@ -89,11 +89,11 @@ async def a_session(managers: Managers, owner: TenantContext) -> UUID:
         title="a call over Postgres",
         kind="operator",
         kind_version=1,
-        root_id=session_id,
+        root_id=agent_session_id,
     )
-    await managers.agent_sessions.create_session(owner, session)
-    await managers.attribution.open_authority(owner, session_id, AuthorityMode.STEADY)
-    return session_id
+    await managers.agent_sessions.create_agent_session(owner, session)
+    await managers.attribution.open_authority(owner, agent_session_id, AuthorityMode.STEADY)
+    return agent_session_id
 
 
 def settings(tmp_path: Path, overrides: dict[str, str]) -> InfraSettings:
@@ -113,7 +113,7 @@ async def test_a_call_is_approved_run_audited_and_recovered_over_postgres(
     storage: StoragePostgresImpl, tmp_path: Path
 ) -> None:
     owner, managers = await an_org(storage, tmp_path)
-    tools, steps = managers.tools, managers.steps
+    tools, steps = managers.tools, managers.agent_steps
     python = str(Path(sys.executable))
     registry = registry_of(
         Command("call_api", secrets=(INJECTED_TOKEN,)), Command("deploy", effect=Effect.UNSAFE)
@@ -124,7 +124,7 @@ async def test_a_call_is_approved_run_audited_and_recovered_over_postgres(
     stored = await tools.write_policy(owner, policy.model_copy(update={"rules": narrowed}))
     assert (await tools.get_policy(owner)) == stored
 
-    session = await a_session(managers, owner)
+    session = await an_agent_session(managers, owner)
     workspace = await tools.prepare_workspace(owner, session, HOST_SPEC)
     script = "import os; print('token', os.environ['API_TOKEN'])"
     found = await put_call(
@@ -134,7 +134,7 @@ async def test_a_call_is_approved_run_audited_and_recovered_over_postgres(
         "call_api",
         {"argv": [python, "-c", script]},
         "execute",
-        session_id=session,
+        agent_session_id=session,
     )
     gate = await tools.gate(
         owner, registry, KIND_DEFAULTS, found.request, found.call_input, workspace
@@ -162,7 +162,8 @@ async def test_a_call_is_approved_run_audited_and_recovered_over_postgres(
     assert audit.payload["secret"] == "api_token" and audit.target_id == found.request.id
     held = [response.model_dump_json(), *(event.model_dump_json() for event in events)]
     held += [
-        step.model_dump_json() for step in (await steps.get_steps(owner, session, 0, 100)).items
+        step.model_dump_json()
+        for step in (await steps.get_agent_steps(owner, session, 0, 100)).items
     ]
     for text in held:
         for form in forms(SECRET):
@@ -177,7 +178,7 @@ async def test_a_call_is_approved_run_audited_and_recovered_over_postgres(
         "deploy",
         {"argv": ["sh", "-c", "echo deployed >> deploys.log; echo done"]},
         "execute",
-        session_id=session,
+        agent_session_id=session,
         epoch=found.epoch,
     )
     await tools.execute(

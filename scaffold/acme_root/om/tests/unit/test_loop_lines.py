@@ -20,7 +20,15 @@ import pytest
 from contracts.loops import ALLOWED, Loop, call, loop_over, reply, said
 
 from acme.integrations.model_providers.calls import ModelCall
-from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
+from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus
+from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
+from acme.om.agent_steps.types.header import (
+    ControlCommand,
+    ControlHeader,
+    LoopOutcome,
+    Park,
+    ParkReason,
+)
 from acme.om.agents import line_rules as lines
 from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
 from acme.om.agents.types.line import InLine
@@ -38,14 +46,6 @@ from acme.om.leases.types.request import (
     WaiterKind,
 )
 from acme.om.leases.types.resource import Resource, ResourceKind
-from acme.om.steps.types.header import (
-    ControlCommand,
-    ControlHeader,
-    LoopOutcome,
-    Park,
-    ParkReason,
-)
-from acme.om.steps.types.step import Actor, Origin, Step, StepType
 from acme.om.tools.tool import ToolInterface, ToolRuntime
 from acme.om.tools.types.policy import Target
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolSpec
@@ -90,7 +90,7 @@ class Reserve(ToolInterface):
         self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
     ) -> Platform:
         assert self.leases is not None and self.resource_id is not None
-        ask = lines.in_line(an_ask(self.resource_id), runtime.session_id, runtime.key)
+        ask = lines.in_line(an_ask(self.resource_id), runtime.agent_session_id, runtime.key)
         return InLine.of(await self.leases.ask(ctx, ask))
 
 
@@ -145,17 +145,19 @@ async def held_resource(tmp_path: Path) -> tuple[Loop, Resource, Lease]:
     return loop, resource, held.lease
 
 
-async def parked_in_line(loop: Loop) -> tuple[UUID, Step, Park]:
+async def parked_in_line(loop: Loop) -> tuple[UUID, AgentStep, Park]:
     """A session whose tool asked for the held resource and whose turn then
     ended: it parks in line, with the call's request and the park."""
-    session_id = await loop.start("reserver")
-    await loop.say(session_id, "Take the resource.")
+    agent_session_id = await loop.start("reserver")
+    await loop.say(agent_session_id, "Take the resource.")
     loop.anthropic.add(reply(call("reserve")))
     loop.anthropic.add(reply(said("I am in line for it, and I wait.")))
-    run = await loop.loops.run(loop.owner, session_id)
+    run = await loop.loops.run(loop.owner, agent_session_id)
     assert run.end is RunEnd.PARKED and run.park is not None, run
-    (request,) = [s for s in await loop.history(session_id) if s.type is StepType.TOOL_REQUEST]
-    return session_id, request, run.park
+    (request,) = [
+        s for s in await loop.history(agent_session_id) if s.type is AgentStepType.TOOL_REQUEST
+    ]
+    return agent_session_id, request, run.park
 
 
 async def notices(loop: Loop) -> list[tuple[UUID, UUID]]:
@@ -174,14 +176,14 @@ async def notices(loop: Loop) -> list[tuple[UUID, UUID]]:
         found.append((item.target_id, payload.request_id))
 
 
-async def unlocked(loop: Loop, ctx: TenantContext, session_id: UUID) -> AgentSession:
+async def unlocked(loop: Loop, ctx: TenantContext, agent_session_id: UUID) -> AgentSession:
     """What the `LEASE_NOTICE` handler does: a session parked in line is
     unlocked."""
-    session = await loop.managers.agent_sessions.get_session(ctx, session_id)
+    session = await loop.managers.agent_sessions.get_agent_session(ctx, agent_session_id)
     park = session.park
-    if session.status is not SessionStatus.PARKED or park is None or park.line is None:
+    if session.status is not AgentSessionStatus.PARKED or park is None or park.line is None:
         return session
-    return await loop.managers.agent_sessions.wake_session(ctx, session_id, park)
+    return await loop.managers.agent_sessions.wake_agent_session(ctx, agent_session_id, park)
 
 
 async def test_a_session_parks_in_line_and_wakes_with_its_lease_with_no_model_call_between(
@@ -189,7 +191,7 @@ async def test_a_session_parks_in_line_and_wakes_with_its_lease_with_no_model_ca
 ) -> None:
     loop, resource, held = await held_resource(tmp_path)
 
-    session_id, request, park = await parked_in_line(loop)
+    agent_session_id, request, park = await parked_in_line(loop)
 
     # The stop reason names the request, its place, and its estimate, and
     # no time: only the grant, or the request's end, clears it.
@@ -201,14 +203,14 @@ async def test_a_session_parks_in_line_and_wakes_with_its_lease_with_no_model_ca
         1,
     )
     assert park.line.estimate_seconds is not None
-    session = await loop.managers.agent_sessions.get_session(loop.owner, session_id)
-    assert (session.status, session.park) == (SessionStatus.PARKED, park)
+    session = await loop.managers.agent_sessions.get_agent_session(loop.owner, agent_session_id)
+    assert (session.status, session.park) == (AgentSessionStatus.PARKED, park)
     assert len(loop.anthropic.calls) == 2
 
     # Woken while the request still waits, the loop parks in line again,
     # and calls no model.
-    await loop.managers.agent_sessions.wake_session(loop.owner, session_id, park)
-    again = await loop.loops.run(loop.owner, session_id)
+    await loop.managers.agent_sessions.wake_agent_session(loop.owner, agent_session_id, park)
+    again = await loop.loops.run(loop.owner, agent_session_id)
     assert again.end is RunEnd.PARKED and again.park is not None
     assert again.park.line is not None and again.park.line.request_id == request.id
     assert len(loop.anthropic.calls) == 2, "no model call while the ask waits"
@@ -216,11 +218,11 @@ async def test_a_session_parks_in_line_and_wakes_with_its_lease_with_no_model_ca
     # The resource frees: the grant asks for the session's notice in its own
     # commit, and the handler unlocks the loop parked in line.
     await loop.managers.leases.release(loop.owner, held.id)
-    assert await notices(loop) == [(session_id, request.id)]
-    assert (await unlocked(loop, loop.owner, session_id)).status is SessionStatus.PENDING
+    assert await notices(loop) == [(agent_session_id, request.id)]
+    assert (await unlocked(loop, loop.owner, agent_session_id)).status is AgentSessionStatus.PENDING
     loop.anthropic.add(reply(said("I hold it now.")))
 
-    run = await loop.loops.run(loop.owner, session_id)
+    run = await loop.loops.run(loop.owner, agent_session_id)
 
     assert run.outcome is LoopOutcome.SUCCEEDED
     assert len(loop.anthropic.calls) == 3, "one model call, after the grant"
@@ -238,23 +240,23 @@ async def test_a_grant_between_the_read_and_the_park_wakes_the_session(
     park_as_written = sessions.park
 
     async def freed_first(
-        ctx: TenantContext, session_id: UUID, epoch: int, loop_id: UUID, park: Park
+        ctx: TenantContext, agent_session_id: UUID, epoch: int, loop_id: UUID, park: Park
     ) -> object:
         # The resource frees after the run read its ask waiting, and before
         # its park lands: the grant finds no park to clear.
         if park.line is not None:
             await loop.managers.leases.release(loop.owner, held.id)
-        return await park_as_written(ctx, session_id, epoch, loop_id, park)
+        return await park_as_written(ctx, agent_session_id, epoch, loop_id, park)
 
     monkeypatch.setattr(sessions, "park", freed_first)
 
-    session_id, request, _ = await parked_in_line(loop)
+    agent_session_id, request, _ = await parked_in_line(loop)
 
     # The run read its ask again once parked, and cleared the park itself.
-    session = await sessions.get_session(loop.owner, session_id)
-    assert session.status is SessionStatus.PENDING
+    session = await sessions.get_agent_session(loop.owner, agent_session_id)
+    assert session.status is AgentSessionStatus.PENDING
     loop.anthropic.add(reply(said("I hold it now.")))
-    run = await loop.loops.run(loop.owner, session_id)
+    run = await loop.loops.run(loop.owner, agent_session_id)
     assert run.outcome is LoopOutcome.SUCCEEDED
     lease = (await loop.managers.leases.get_request(loop.owner, request.id)).lease
     assert lease is not None
@@ -265,27 +267,27 @@ async def test_a_session_cancelled_in_line_leaves_it_and_the_next_request_is_gra
     tmp_path: Path,
 ) -> None:
     loop, resource, held = await held_resource(tmp_path)
-    session_id, request, _ = await parked_in_line(loop)
+    agent_session_id, request, _ = await parked_in_line(loop)
     behind = await loop.managers.leases.ask(loop.owner, an_ask(resource.id))
     assert behind.place == 2
 
-    await loop.managers.steps.append_inputs(
+    await loop.managers.agent_steps.append_inputs(
         loop.owner,
-        session_id,
+        agent_session_id,
         [
-            Step(
+            AgentStep(
                 id=new_id(),
                 created_at=loop.clock(),
-                session_id=session_id,
+                agent_session_id=agent_session_id,
                 loop_id=new_id(),
-                type=StepType.CONTROL,
+                type=AgentStepType.CONTROL,
                 actor=Actor.PERSON,
                 origin=Origin.PORTAL,
                 header=ControlHeader(command=ControlCommand.CANCEL),
             )
         ],
     )
-    run = await loop.loops.run(loop.owner, session_id)
+    run = await loop.loops.run(loop.owner, agent_session_id)
 
     assert run.outcome is LoopOutcome.CANCELLED
     left = (await loop.managers.leases.get_request(loop.owner, request.id)).request
@@ -303,27 +305,27 @@ async def test_a_lease_revoked_after_its_loop_ended_is_told_in_the_next_loops_fi
     tmp_path: Path,
 ) -> None:
     loop, _, held = await held_resource(tmp_path)
-    session_id, request, _ = await parked_in_line(loop)
+    agent_session_id, request, _ = await parked_in_line(loop)
     await loop.managers.leases.release(loop.owner, held.id)
-    await unlocked(loop, loop.owner, session_id)
+    await unlocked(loop, loop.owner, agent_session_id)
     loop.anthropic.add(reply(said("I hold it now.")))
-    first = await loop.loops.run(loop.owner, session_id)
+    first = await loop.loops.run(loop.owner, agent_session_id)
     assert first.outcome is LoopOutcome.SUCCEEDED
     lease = (await loop.managers.leases.get_request(loop.owner, request.id)).lease
     assert lease is not None
 
     # The loop that took the lease has ended; a manager takes it back.
     await loop.managers.leases.revoke(loop.owner, lease.id)
-    await loop.say(session_id, "Go on with the work.")
+    await loop.say(agent_session_id, "Go on with the work.")
     loop.anthropic.add(reply(said("I no longer hold it.")), reply(said("Still not mine.")))
-    second = await loop.loops.run(loop.owner, session_id)
+    second = await loop.loops.run(loop.owner, agent_session_id)
 
     assert second.outcome is LoopOutcome.SUCCEEDED
     told = f"The lease {lease.id} granted to your request {request.id} was revoked"
     assert told in str(loop.anthropic.calls[3].model_dump()), "the next loop's first call"
-    await loop.say(session_id, "And now?")
-    await loop.loops.run(loop.owner, session_id)
-    history = await loop.history(session_id)
+    await loop.say(agent_session_id, "And now?")
+    await loop.loops.run(loop.owner, agent_session_id)
+    history = await loop.history(agent_session_id)
     notices_told = [s for s in history if s.actor is Actor.ENGINE and told in str(s.content)]
     assert len(notices_told) == 1, "told once"
 
@@ -332,7 +334,7 @@ async def test_a_lease_that_ended_before_its_session_resumed_is_told_ended_never
     tmp_path: Path,
 ) -> None:
     loop, _, held = await held_resource(tmp_path)
-    session_id, request, _ = await parked_in_line(loop)
+    agent_session_id, request, _ = await parked_in_line(loop)
     await loop.managers.leases.release(loop.owner, held.id)
     lease = (await loop.managers.leases.get_request(loop.owner, request.id)).lease
     assert lease is not None
@@ -344,9 +346,9 @@ async def test_a_lease_that_ended_before_its_session_resumed_is_told_ended_never
         loop.owner.org_id, lease.id, LeaseStatus.EXPIRED, later, loop.owner.user_id, 60.0, (), later
     )
     assert expired is not None and expired.status is LeaseStatus.EXPIRED
-    await unlocked(loop, loop.owner, session_id)
+    await unlocked(loop, loop.owner, agent_session_id)
     loop.anthropic.add(reply(said("It ran out before I used it.")))
-    run = await loop.loops.run(loop.owner, session_id)
+    run = await loop.loops.run(loop.owner, agent_session_id)
 
     assert run.outcome is LoopOutcome.SUCCEEDED
     sent = str(loop.anthropic.calls[2].model_dump())
@@ -358,10 +360,10 @@ async def test_a_turn_that_ends_past_the_deadline_parks_on_it_and_holds_no_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     loop, resource, _ = await held_resource(tmp_path)
-    session_id = await loop.start("reserver")
+    agent_session_id = await loop.start("reserver")
     deadline = loop.clock.now + timedelta(minutes=2)
-    await loop.managers.agents.set_deadline(loop.owner, session_id, deadline)
-    await loop.say(session_id, "Take the resource.")
+    await loop.managers.agents.set_deadline(loop.owner, agent_session_id, deadline)
+    await loop.say(agent_session_id, "Take the resource.")
     loop.anthropic.add(reply(call("reserve")), reply(said("I am in line for it, and I wait.")))
     stream = loop.anthropic.stream
 
@@ -372,7 +374,7 @@ async def test_a_turn_that_ends_past_the_deadline_parks_on_it_and_holds_no_line(
             yield part
 
     monkeypatch.setattr(loop.anthropic, "stream", late)
-    run = await loop.loops.run(loop.owner, session_id)
+    run = await loop.loops.run(loop.owner, agent_session_id)
 
     assert run.end is RunEnd.PARKED and run.park is not None
     assert (run.park.reason, run.park.unlock, run.park.line) == (
@@ -382,7 +384,9 @@ async def test_a_turn_that_ends_past_the_deadline_parks_on_it_and_holds_no_line(
     )
     line = await loop.managers.leases.line(loop.owner, resource.id)
     assert line.requests == (), "no line held"
-    (request,) = [s for s in await loop.history(session_id) if s.type is StepType.TOOL_REQUEST]
+    (request,) = [
+        s for s in await loop.history(agent_session_id) if s.type is AgentStepType.TOOL_REQUEST
+    ]
     left = (await loop.managers.leases.get_request(loop.owner, request.id)).request
     assert (left.status, left.end_reason) == (RequestStatus.CANCELLED, EndReason.WAITER_GONE)
 
@@ -391,12 +395,12 @@ async def test_a_session_granted_past_the_deadline_parks_on_it_and_gives_the_lea
     tmp_path: Path,
 ) -> None:
     loop, resource, held = await held_resource(tmp_path)
-    session_id = await loop.start("reserver")
+    agent_session_id = await loop.start("reserver")
     deadline = loop.clock.now + timedelta(minutes=2)
-    await loop.managers.agents.set_deadline(loop.owner, session_id, deadline)
-    await loop.say(session_id, "Take the resource.")
+    await loop.managers.agents.set_deadline(loop.owner, agent_session_id, deadline)
+    await loop.say(agent_session_id, "Take the resource.")
     loop.anthropic.add(reply(call("reserve")), reply(said("I am in line for it, and I wait.")))
-    parked = await loop.loops.run(loop.owner, session_id)
+    parked = await loop.loops.run(loop.owner, agent_session_id)
     assert parked.park is not None and parked.park.line is not None, "in line before the deadline"
     request_id = parked.park.line.request_id
 
@@ -404,8 +408,8 @@ async def test_a_session_granted_past_the_deadline_parks_on_it_and_gives_the_lea
     loop.clock.now = deadline + timedelta(seconds=1)
     await loop.managers.leases.release(loop.owner, held.id)
     await notices(loop)
-    await unlocked(loop, loop.owner, session_id)
-    run = await loop.loops.run(loop.owner, session_id)
+    await unlocked(loop, loop.owner, agent_session_id)
+    run = await loop.loops.run(loop.owner, agent_session_id)
 
     assert run.end is RunEnd.PARKED and run.park is not None
     assert (run.park.reason, run.park.unlock) == (ParkReason.PERSON, "deadline")
@@ -416,9 +420,11 @@ async def test_a_session_granted_past_the_deadline_parks_on_it_and_gives_the_lea
     assert taken.lease is not None, "the resource went on to the next ask"
 
     # A person moves the deadline: the model reads the lease's end, once.
-    await loop.managers.agents.set_deadline(loop.owner, session_id, deadline + timedelta(hours=1))
+    await loop.managers.agents.set_deadline(
+        loop.owner, agent_session_id, deadline + timedelta(hours=1)
+    )
     loop.anthropic.add(reply(said("It was given back before I used it.")))
-    resumed = await loop.loops.run(loop.owner, session_id)
+    resumed = await loop.loops.run(loop.owner, agent_session_id)
     assert resumed.outcome is LoopOutcome.SUCCEEDED
     sent = str(loop.anthropic.calls[2].model_dump())
     released = f"The lease {lease.id} granted to your request {request_id} was released"
@@ -457,10 +463,10 @@ def an_ask_of(request_id: UUID, granted: bool) -> lines.Ask:
 
 
 def test_an_ask_is_the_calls_and_its_session_waits_on_it() -> None:
-    session_id, key = new_id(), new_id()
-    ask = lines.in_line(an_ask(new_id()), session_id, key)
+    agent_session_id, key = new_id(), new_id()
+    ask = lines.in_line(an_ask(new_id()), agent_session_id, key)
     assert (ask.id, ask.idempotency_key) == (key, key)
-    assert (ask.waiter_kind, ask.waiter_id) == (WaiterKind.SESSION, session_id)
+    assert (ask.waiter_kind, ask.waiter_id) == (WaiterKind.AGENT_SESSION, agent_session_id)
 
 
 def test_each_answer_is_told_once_and_a_grant_the_call_answered_with_never() -> None:
@@ -469,10 +475,10 @@ def test_each_answer_is_told_once_and_a_grant_the_call_answered_with_never() -> 
 
     granted = a_standing(RequestStatus.GRANTED, LeaseStatus.ACTIVE)
     ask = an_ask_of(granted.request.id, False)
-    ((step_id, text),) = lines.untold(granted, ask, ())
-    assert step_id == lines.notice_id(ask, lines.Answer.GRANTED)
+    ((agent_step_id, text),) = lines.untold(granted, ask, ())
+    assert agent_step_id == lines.notice_id(ask, lines.Answer.GRANTED)
     assert "token 7" in text
-    assert lines.untold(granted, ask, {step_id}) == []
+    assert lines.untold(granted, ask, {agent_step_id}) == []
     assert lines.untold(granted, an_ask_of(granted.request.id, True), ()) == []
 
     revoked = a_standing(RequestStatus.GRANTED, LeaseStatus.REVOKED)
@@ -488,8 +494,8 @@ def test_each_answer_is_told_once_and_a_grant_the_call_answered_with_never() -> 
     ):
         ended = a_standing(RequestStatus.GRANTED, status)
         ask = an_ask_of(ended.request.id, False)
-        ((step_id, text),) = lines.untold(ended, ask, ())
-        assert step_id == lines.notice_id(ask, answer)
+        ((agent_step_id, text),) = lines.untold(ended, ask, ())
+        assert agent_step_id == lines.notice_id(ask, answer)
         assert "token 7 is refused" in text and "Go on" not in text
 
     ended = a_standing(RequestStatus.CANCELLED)
