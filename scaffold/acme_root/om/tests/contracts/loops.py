@@ -229,7 +229,7 @@ BUILDER = AgentKind(
 HELPER = AgentKind(
     name="helper",
     version=1,
-    tools=("lookup", "ask_person", "write_plan", "read_attachment"),
+    tools=("lookup", "ask_person", "write_agent_plan", "read_attachment"),
     done_rule=DoneRule.ANSWER,
     authority=AuthorityMode.DELEGATED,
     tree=TreeLimits(height=1, count=0),

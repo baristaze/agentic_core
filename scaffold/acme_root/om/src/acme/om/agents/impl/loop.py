@@ -91,7 +91,7 @@ from acme.om.models.manager import ModelsManagerInterface
 from acme.om.models.types.fill import MAIN, SUMMARIZER, Eligibility, Fill
 from acme.om.tools import ToolsManagerInterface
 from acme.om.tools.native.load_toolset import callable_tools, load, loads
-from acme.om.tools.native.write_plan import current_plan
+from acme.om.tools.native.write_agent_plan import current_agent_plan
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.rules import (
     ISOLATION_REFUSED,
@@ -586,7 +586,7 @@ class LoopManagerImpl(LoopManagerInterface):
         )
         # The agent's current plan, read off the whole history, so a summary
         # that folded the call that wrote it still leaves it in view.
-        kept = current_plan(history)
+        kept = current_agent_plan(history)
         plan = None if kept is None else kept.text
         try:
             if run.refused is not None:

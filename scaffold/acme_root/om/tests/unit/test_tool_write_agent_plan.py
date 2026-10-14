@@ -1,4 +1,4 @@
-"""`write_plan` through the loop: each plan the history answers is one
+"""`write_agent_plan` through the loop: each plan the history answers is one
 version, the latest renders last in the next request, and a person reads
 it through the session's steps. A plan the schema refuses keeps no
 version."""
@@ -12,7 +12,7 @@ from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
 from acme.om.agent_steps.types.content import TextBlock
 from acme.om.agent_steps.types.header import LoopOutcome, ToolResponseHeader
 from acme.om.agents.types.run import RunEnd
-from acme.om.tools.native.write_plan import Plan, current_plan
+from acme.om.tools.native.write_agent_plan import AgentPlan, current_agent_plan
 from acme.om.windows.rules import data_block
 
 FIRST = "1. Read the weekly report.\n2. Fix its total."
@@ -35,9 +35,9 @@ async def test_a_plan_is_kept_by_version_rendered_last_next_call_and_read_by_a_p
     agent_session_id = await loop.start("helper")
     await loop.say(agent_session_id, "Fix the weekly report.")
     loop.anthropic.add(
-        reply(call("write_plan", plan=FIRST)),
-        reply(call("write_plan", plan="")),
-        reply(call("write_plan", plan=SECOND)),
+        reply(call("write_agent_plan", plan=FIRST)),
+        reply(call("write_agent_plan", plan="")),
+        reply(call("write_agent_plan", plan=SECOND)),
         reply(said("The total is fixed.")),
     )
 
@@ -58,8 +58,8 @@ async def test_a_plan_is_kept_by_version_rendered_last_next_call_and_read_by_a_p
     page = await loop.managers.agent_steps.get_agent_steps(colleague, agent_session_id, 0, 200)
     steps = list(page.items)
     one, two = kept(steps)
-    assert current_plan(steps) == Plan(version=2, text=SECOND, agent_step_id=two.id)
-    assert current_plan([s for s in steps if s.seq <= one.seq]) == Plan(
+    assert current_agent_plan(steps) == AgentPlan(version=2, text=SECOND, agent_step_id=two.id)
+    assert current_agent_plan([s for s in steps if s.seq <= one.seq]) == AgentPlan(
         version=1, text=FIRST, agent_step_id=one.id
     )
     for answer, plan in ((one, FIRST), (two, SECOND)):

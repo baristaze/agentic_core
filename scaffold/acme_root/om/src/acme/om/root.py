@@ -101,7 +101,7 @@ from acme.om.tools.native.read_artifact import ReadArtifactToolImpl
 from acme.om.tools.native.read_attachment import ReadAttachmentToolImpl
 from acme.om.tools.native.spawn_sub_agent import SpawnSubAgentToolImpl
 from acme.om.tools.native.wait_for_sub_agents import WaitForSubAgentsToolImpl
-from acme.om.tools.native.write_plan import WritePlanToolImpl
+from acme.om.tools.native.write_agent_plan import WriteAgentPlanToolImpl
 from acme.om.tools.seal import RecordSealInterface, SnapshotSealInterface
 from acme.om.tools.tool import ToolInterface
 from acme.om.windows import WindowsManagerInterface
@@ -658,7 +658,7 @@ def engine_tools(
     that defers a toolset holds the seventh, loading it."""
     return (
         AskPersonToolImpl(),
-        WritePlanToolImpl(),
+        WriteAgentPlanToolImpl(),
         LoadToolsetToolImpl(),
         ReadAttachmentToolImpl(steps, attachments),
         ReadArtifactToolImpl(steps, windows),

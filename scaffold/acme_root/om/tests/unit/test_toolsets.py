@@ -35,7 +35,7 @@ from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.context import TenantContext
 from acme.om.models.types.fill import MAIN
 from acme.om.tools.native.load_toolset import LoadToolsetToolImpl, callable_tools, loads
-from acme.om.tools.native.write_plan import current_plan
+from acme.om.tools.native.write_agent_plan import current_agent_plan
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.types.toolset import LOAD_TOOLSET, Toolset
 from acme.om.windows.rules import render_main
@@ -104,7 +104,7 @@ async def replayed(loop: Loop, kind: AgentKind, agent_session_id: UUID) -> list[
         held = callable_tools(session.tools, kind.waiting, loads(before))
         registry = ToolRegistry(tool for tool in catalog if tool.spec.name in held)
         prompts = kind_prompts(kind, registry, loads(before))
-        kept = current_plan(before)
+        kept = current_agent_plan(before)
         plan = None if kept is None else kept.text
         drafted = render_main(
             before, prompts, fill, header.fill_set_version, plan, CompactionPolicy()
