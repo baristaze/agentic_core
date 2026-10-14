@@ -12,7 +12,7 @@ its type's shape is refused there and never stored: the header its type
 fixes, the blocks its type may hold, `responds_to` on a response alone, an
 attachment's placeholder for every block that names one, the agent named
 in the header of every step an agent produced, a tool request always
-among them, and the head and tail of a result kept as an artifact."""
+among them, and the head and tail of a result kept as a tool output."""
 
 from collections.abc import Mapping
 from enum import StrEnum
@@ -355,9 +355,9 @@ def shape_refusal(step: AgentStep) -> str | None:
     }
     if missing := named - held:
         return f"no placeholder for attachment {sorted(str(i) for i in missing)[0]}"
-    if isinstance(step.header, ToolResponseHeader) and step.header.artifact is not None:
+    if isinstance(step.header, ToolResponseHeader) and step.header.tool_output is not None:
         (result,) = step.content.blocks
         preview = result.parts[:2] if isinstance(result, ToolResultBlock) else ()
         if len(preview) != 2 or not all(isinstance(part, TextBlock) for part in preview):
-            return "a result kept as an artifact holds its head and its tail first"
+            return "a result kept as a tool output holds its head and its tail first"
     return None

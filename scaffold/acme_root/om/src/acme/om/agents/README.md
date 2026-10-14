@@ -69,7 +69,7 @@ of](../../../../README.md).
   ends, and a note when it parks on a person. It names the child, says
   how its loop stands and what it said last, and wakes the parent. A
   report above the size bound a tool result has arrives as its head, its
-  tail, and the handle of the artifact that keeps it whole.
+  tail, and the handle of the tool output that keeps it whole.
 - **Hand off.** The new session holds the objective and where it came
   from, and starts only when its person speaks to it.
 - **Submit** a result through the gate.

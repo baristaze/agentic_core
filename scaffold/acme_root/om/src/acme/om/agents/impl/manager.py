@@ -313,7 +313,7 @@ class AgentsManagerImpl(AgentsManagerInterface):
             (stored,), parent = await self._sessions.receive(ctx, parent.id, [bounded])
         except KeyRevoked:
             # The parent's content is past its life: it takes no content
-            # again, so the report has no reader, its artifact included, and
+            # again, so the report has no reader, its tool output included, and
             # the child's loop ends as under a parent gone.
             return None
         if report_wakes(report) and parent.park == CHILDREN_PARK:

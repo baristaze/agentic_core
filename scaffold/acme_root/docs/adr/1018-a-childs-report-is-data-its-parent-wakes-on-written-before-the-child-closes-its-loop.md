@@ -54,9 +54,9 @@ repeats the report, which the inbox keeps once. A note of a park is
 written after the park, under an id of its own.
 
 **The bound is the tool result's.** A report longer than the size bound a
-tool result has is kept as an artifact of the parent's session, sealed
+tool result has is kept as a tool output of the parent's session, sealed
 under its key and purged with its history. The parent's step holds the
-report's head, its tail, and the artifact's handle, and its next request
+report's head, its tail, and the tool output's handle, and its next request
 renders them inside the data element with the notice of what is not
 shown and where it is kept.
 

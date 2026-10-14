@@ -98,19 +98,6 @@ class Among(StrEnum):
     visible = 'visible'
 
 
-class ArtifactPageView(BaseModel):
-    """
-    A page of what a session keeps whole outside its window, such as a
-    long tool result: its characters from `start`, the whole artifact's
-    length, and whether more follow.
-    """
-    artifact_id: Annotated[UUID, Field(title='Artifact Id')]
-    characters: Annotated[int, Field(title='Characters')]
-    has_more: Annotated[bool, Field(title='Has More')]
-    start: Annotated[int, Field(title='Start')]
-    text: Annotated[str, Field(title='Text')]
-
-
 class Label(RootModel[str]):
     root: Annotated[str, Field(max_length=200, min_length=1, pattern='^[^\\x00-\\x1f\\x7f]+$')]
 
@@ -974,6 +961,19 @@ class ToolFailure(StrEnum):
     denied = 'denied'
     interrupted = 'interrupted'
     permanent = 'permanent'
+
+
+class ToolOutputPageView(BaseModel):
+    """
+    A page of what a session keeps whole outside its window, such as a
+    long tool result: its characters from `start`, the whole tool output's
+    length, and whether more follow.
+    """
+    characters: Annotated[int, Field(title='Characters')]
+    has_more: Annotated[bool, Field(title='Has More')]
+    start: Annotated[int, Field(title='Start')]
+    text: Annotated[str, Field(title='Text')]
+    tool_output_id: Annotated[UUID, Field(title='Tool Output Id')]
 
 
 class TotpConfirmedView(BaseModel):

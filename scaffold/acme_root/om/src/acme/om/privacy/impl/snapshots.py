@@ -1,8 +1,8 @@
 """The seal a workspace's snapshot takes on its way to the object store, under
-its session's key, as an artifact's text is sealed on its way there.
+its session's key, as a tool output's text is sealed on its way there.
 
 The snapshot is sealed under the current version of the session's key, in
-the artifacts' form (`blobs`), bound to the tenant, the session, the
+the tool outputs' form (`blobs`), bound to the tenant, the session, the
 snapshot's hash, and the version, so a blob copied to another session or
 put under another hash opens nothing, and one whose bytes were altered is
 refused. Once the version is destroyed, the snapshot is noise, and the step

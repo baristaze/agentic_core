@@ -14,11 +14,11 @@ from acme.om.agent_steps.manager import OpenCheck
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
 from acme.om.agent_steps.types.content import Block, Children, Content, TextBlock, ToolResultBlock
 from acme.om.agent_steps.types.header import (
-    ArtifactRef,
     InputHeader,
     ModelResponseHeader,
     StepHeader,
     SummaryHeader,
+    ToolOutputRef,
     ToolResponseHeader,
 )
 from acme.om.attribution import AttributionManagerInterface
@@ -42,22 +42,22 @@ from acme.om.windows import rules
 from acme.om.windows.gate import CallGateInterface
 from acme.om.windows.hashes import PromptHashInterface
 from acme.om.windows.manager import WindowsManagerInterface
-from acme.om.windows.seal import ArtifactSealInterface
+from acme.om.windows.seal import ToolOutputSealInterface
 from acme.om.windows.storage import WindowStorageInterface
-from acme.om.windows.types.artifact import Artifact, ArtifactPage
 from acme.om.windows.types.kind import KindPrompts
 from acme.om.windows.types.policy import CompactionPolicy
+from acme.om.windows.types.tool_output import ToolOutput, ToolOutputPage
 from acme.om.windows.types.window import ContextWindow, RenderedRequest
 
-BUCKET = Buckets.ARTIFACTS
+BUCKET = Buckets.TOOL_OUTPUTS
 CONTENT_TYPE = "application/octet-stream"
-"""An artifact's text is sealed before it is stored, so the store holds
+"""A tool output's text is sealed before it is stored, so the store holds
 bytes no reader can take for text."""
 
 
 class WindowsOptions(Platform):
     page: int = Field(default=200, gt=0)  # steps one read of the history asks for
-    purge_batch: int = Field(default=200, gt=0)  # artifacts one read of a purge takes
+    purge_batch: int = Field(default=200, gt=0)  # tool outputs one read of a purge takes
 
 
 class WindowsManagerImpl(WindowsManagerInterface):
@@ -72,7 +72,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
         buckets: BucketsInterface,
         gate: CallGateInterface,
         hashes: PromptHashInterface,
-        seal: ArtifactSealInterface,
+        seal: ToolOutputSealInterface,
         policy: CompactionPolicy,
         options: WindowsOptions,
         clock: Callable[[], datetime] = utcnow,
@@ -94,7 +94,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
         self._hashes = hashes
         self._seal = seal
         self._policy = policy
-        # The sealed artifacts of sessions that keep no content at rest, by
+        # The sealed tool outputs of sessions that keep no content at rest, by
         # tenant, session, and id: held while this runtime lives, and
         # nowhere else; noise once the session's key is revoked.
         self._held: dict[tuple[UUID, UUID, UUID], bytes] = {}
@@ -185,7 +185,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
             raise ValidationFailed(
                 f"a {step.type.value} step is no tool response of {agent_session_id}"
             )
-        if header.artifact is not None:
+        if header.tool_output is not None:
             return step
         result = step.as_tool_response()
         kept = rules.preview(result, self._policy)
@@ -196,7 +196,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
         bounded = ToolResultBlock(
             tool_use_id=result.tool_use_id, parts=parts, is_error=result.is_error
         )
-        return _bounded(step, header.model_copy(update={"artifact": handle}), (bounded,))
+        return _bounded(step, header.model_copy(update={"tool_output": handle}), (bounded,))
 
     async def bound_report(
         self, ctx: TenantContext, agent_session_id: UUID, step: AgentStep
@@ -209,7 +209,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
                 f"a {step.type.value} step is no agent's input of {agent_session_id}"
             )
         assert isinstance(header, InputHeader)
-        if header.artifact is not None:
+        if header.tool_output is not None:
             return step
         whole = step.as_text()
         kept = rules.clip(whole, self._policy)
@@ -217,75 +217,82 @@ class WindowsManagerImpl(WindowsManagerInterface):
             return step
         handle = await self._keep(ctx, agent_session_id, step, whole)
         others = tuple(block for block in step.content.blocks if not isinstance(block, TextBlock))
-        return _bounded(step, header.model_copy(update={"artifact": handle}), (*kept, *others))
+        return _bounded(step, header.model_copy(update={"tool_output": handle}), (*kept, *others))
 
     async def _keep(
         self, ctx: TenantContext, agent_session_id: UUID, step: AgentStep, whole: str
-    ) -> ArtifactRef:
-        """A step's whole text kept as an artifact of its session, and its
+    ) -> ToolOutputRef:
+        """A step's whole text kept as a tool output of its session, and its
         handle. Its id is derived from the step, so a run that keeps the
-        same step twice writes the same artifact once. It is sealed like the
+        same step twice writes the same tool output once. It is sealed like the
         step it came from. A session that keeps no content at rest keeps its
-        artifact in this runtime's memory alone, as it keeps its steps'
+        tool output in this runtime's memory alone, as it keeps its steps'
         content, and its step is bounded all the same."""
-        artifact_id = derived_id(step.id, step.created_at, "artifact")
-        sealed = await self._seal.seal(ctx, agent_session_id, artifact_id, whole.encode("utf-8"))
+        tool_output_id = derived_id(step.id, step.created_at, "tool_output")
+        sealed = await self._seal.seal(ctx, agent_session_id, tool_output_id, whole.encode("utf-8"))
         if not sealed.at_rest:
-            self._held[(ctx.org_id, agent_session_id, artifact_id)] = sealed.blob
+            self._held[(ctx.org_id, agent_session_id, tool_output_id)] = sealed.blob
         else:
             await self._buckets.put(
                 ctx.org_id,
                 BUCKET,
-                rules.artifact_key(agent_session_id, artifact_id),
+                rules.tool_output_key(agent_session_id, tool_output_id),
                 sealed.blob,
                 CONTENT_TYPE,
                 deadline=ctx.deadline,
             )
             # The text first, then its record: a record always has its text.
-            artifact = Artifact(
-                id=artifact_id,
+            tool_output = ToolOutput(
+                id=tool_output_id,
                 created_at=step.created_at,
                 agent_session_id=agent_session_id,
                 agent_step_id=step.id,
                 characters=len(whole),
             )
-            await self._storage.write_artifact(ctx.org_id, artifact)
-        return ArtifactRef(id=artifact_id, characters=len(whole))
+            await self._storage.write_tool_output(ctx.org_id, tool_output)
+        return ToolOutputRef(id=tool_output_id, characters=len(whole))
 
-    async def get_artifact(
-        self, ctx: TenantContext, agent_session_id: UUID, artifact_id: UUID, offset: int, limit: int
-    ) -> ArtifactPage:
+    async def get_tool_output(
+        self,
+        ctx: TenantContext,
+        agent_session_id: UUID,
+        tool_output_id: UUID,
+        offset: int,
+        limit: int,
+    ) -> ToolOutputPage:
         ctx.require(Permission.READ)
         if not ctx.has(Permission.MANAGE_AGENT_SESSIONS):
             await self._opens(ctx, agent_session_id)
-        text = await self._kept(ctx, agent_session_id, artifact_id)
-        page, more = rules.artifact_page(text, offset, limit, self._policy)
-        return ArtifactPage(
-            artifact_id=artifact_id,
+        text = await self._kept(ctx, agent_session_id, tool_output_id)
+        page, more = rules.tool_output_page(text, offset, limit, self._policy)
+        return ToolOutputPage(
+            tool_output_id=tool_output_id,
             offset=max(0, offset),
             text=page,
             characters=len(text),
             has_more=more,
         )
 
-    async def _kept(self, ctx: TenantContext, agent_session_id: UUID, artifact_id: UUID) -> str:
-        """An artifact's text, held in this runtime's memory or kept in the
+    async def _kept(self, ctx: TenantContext, agent_session_id: UUID, tool_output_id: UUID) -> str:
+        """A tool output's text, held in this runtime's memory or kept in the
         store, opened under its session's key. Once the key is revoked it is
         noise wherever it is, and every read of it is refused."""
-        held = (ctx.org_id, agent_session_id, artifact_id)
+        held = (ctx.org_id, agent_session_id, tool_output_id)
         sealed = self._held.get(held)
         if sealed is None:
-            artifact = await self._storage.read_artifact(ctx.org_id, agent_session_id, artifact_id)
-            if artifact is None:
-                raise NotFound(f"artifact {artifact_id} not found")
-            key = rules.artifact_key(agent_session_id, artifact_id)
+            tool_output = await self._storage.read_tool_output(
+                ctx.org_id, agent_session_id, tool_output_id
+            )
+            if tool_output is None:
+                raise NotFound(f"tool output {tool_output_id} not found")
+            key = rules.tool_output_key(agent_session_id, tool_output_id)
             sealed = await self._buckets.get(ctx.org_id, BUCKET, key, deadline=ctx.deadline)
-        data = await self._seal.open(ctx, agent_session_id, artifact_id, sealed)
+        data = await self._seal.open(ctx, agent_session_id, tool_output_id, sealed)
         if data is None:
-            raise KeyRevoked(f"the content of artifact {artifact_id} is erased with its key")
+            raise KeyRevoked(f"the content of tool output {tool_output_id} is erased with its key")
         return data.decode("utf-8")
 
-    async def purge_artifacts(self, org_id: UUID, agent_session_id: UUID) -> int:
+    async def purge_tool_outputs(self, org_id: UUID, agent_session_id: UUID) -> int:
         return await self._purge(org_id, agent_session_id)
 
     async def purge_tenant(self, ctx: TenantContext) -> int:
@@ -295,7 +302,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
         return await self._purge(ctx.org_id, None)
 
     async def _purge(self, org_id: UUID, agent_session_id: UUID | None) -> int:
-        """The session's artifacts, or the tenant's, a batch at a time: each
+        """The session's tool outputs, or the tenant's, a batch at a time: each
         object first, then the records, so a failure between the two leaves
         a record the next pass finds, never an object no record names. A
         tenant's purge takes one batch a call, as every sweep step does; a
@@ -305,13 +312,13 @@ class WindowsManagerImpl(WindowsManagerInterface):
             del self._held[held]
         purged = 0
         while True:
-            batch = await self._storage.read_artifacts(
+            batch = await self._storage.read_tool_outputs(
                 org_id, agent_session_id, self._options.purge_batch
             )
-            for artifact in batch:
-                key = rules.artifact_key(artifact.agent_session_id, artifact.id)
+            for tool_output in batch:
+                key = rules.tool_output_key(tool_output.agent_session_id, tool_output.id)
                 await self._buckets.delete(org_id, BUCKET, key)
-            purged += await self._storage.purge_artifacts(org_id, [a.id for a in batch])
+            purged += await self._storage.purge_tool_outputs(org_id, [a.id for a in batch])
             if agent_session_id is None or len(batch) < self._options.purge_batch:
                 return purged
 

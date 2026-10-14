@@ -14,7 +14,6 @@ from acme.services.api.types.agent_sessions import (
     AgentSessionView,
     AgentStepPageView,
     AgentStepView,
-    ArtifactPageView,
     ControlRequest,
     DeadlineRequest,
     DecisionRequest,
@@ -23,6 +22,7 @@ from acme.services.api.types.agent_sessions import (
     MessageRequest,
     PrincipalRequest,
     StartAgentSessionRequest,
+    ToolOutputPageView,
     VisibilityRequest,
 )
 
@@ -153,9 +153,14 @@ class AgentSessionsServiceInterface(ABC):
     ) -> AgentStepPageView: ...
 
     @abstractmethod
-    async def get_artifact(
-        self, ctx: TenantContext, agent_session_id: UUID, artifact_id: UUID, start: int, limit: int
-    ) -> ArtifactPageView:
-        """A page of an artifact the session keeps, from the character at
+    async def get_tool_output(
+        self,
+        ctx: TenantContext,
+        agent_session_id: UUID,
+        tool_output_id: UUID,
+        start: int,
+        limit: int,
+    ) -> ToolOutputPageView:
+        """A page of a tool output the session keeps, from the character at
         `start`, read as its steps are."""
         ...

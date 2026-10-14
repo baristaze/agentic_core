@@ -54,7 +54,7 @@ the limit before the next summary.
   compares its hash; nothing outside the history decides the bytes.
 - A window whose latest exchange alone is past the model's limit cannot
   be compacted below it: the provider refuses it, and the loop ends
-  `errored`. A tool result above the size bound is kept as an artifact,
+  `errored`. A tool result above the size bound is kept as a tool output,
   with a preview in its step, so one result cannot fill a window.
 - A principal's message is pinned whatever it says; the pinned zone
   grows with them, within its bound and its digest's.

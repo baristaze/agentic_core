@@ -43,7 +43,6 @@ from acme.om.agent_steps.types.content import (
     ToolUseBlock,
 )
 from acme.om.agent_steps.types.header import (
-    ArtifactRef,
     ControlCommand,
     ControlHeader,
     InputHeader,
@@ -51,6 +50,7 @@ from acme.om.agent_steps.types.header import (
     ModelResponseHeader,
     SummaryHeader,
     SwitchedHeader,
+    ToolOutputRef,
     ToolRequestHeader,
     ToolResponseHeader,
 )
@@ -79,7 +79,7 @@ STANDING_LEAD = "Standing instructions a principal set for this session. They ho
 """What opens the session's standing text, in the system layer after the
 kind's prompts: whole on every request, never cut by a compaction."""
 
-READ_ARTIFACT = "read_artifact"
+READ_TOOL_OUTPUT = "read_tool_output"
 """The engine's tool that reads a result kept whole outside the window, by
 the handle a notice or a stub names: the tool both name to the model."""
 
@@ -596,12 +596,12 @@ class _Walk:
     def result(self, use: ToolUseBlock, answer: AgentStep, elided: bool) -> ToolResultBlock:
         result = answer.as_tool_response()
         header = answer.header
-        artifact = header.artifact if isinstance(header, ToolResponseHeader) else None
+        tool_output = header.tool_output if isinstance(header, ToolResponseHeader) else None
         if elided:
-            parts: tuple[ResultPart, ...] = (TextBlock(text=_stub(answer, artifact)),)
-        elif artifact is not None:
+            parts: tuple[ResultPart, ...] = (TextBlock(text=_stub(answer, tool_output)),)
+        elif tool_output is not None:
             head, tail, *rest = result.parts
-            notice = TextBlock(text=_artifact_notice(artifact, head, tail))
+            notice = TextBlock(text=_tool_output_notice(tool_output, head, tail))
             parts = (head, notice, tail, *rest)
         else:
             parts = result.parts
@@ -618,23 +618,27 @@ def _author(step: AgentStep) -> dict[str, object]:
     return {}
 
 
-def _stub(answer: AgentStep, artifact: ArtifactRef | None) -> str:
-    size = result_chars(answer) if artifact is None else artifact.characters
-    kept = f"artifact {artifact.id}" if artifact is not None else f"step {answer.id} of the history"
+def _stub(answer: AgentStep, tool_output: ToolOutputRef | None) -> str:
+    size = result_chars(answer) if tool_output is None else tool_output.characters
+    kept = (
+        f"tool output {tool_output.id}"
+        if tool_output is not None
+        else f"step {answer.id} of the history"
+    )
     return (
         f"[A tool result of {size} characters, elided once read. It is kept whole as {kept}; "
-        f"{READ_ARTIFACT} reads it by that handle.]"
+        f"{READ_TOOL_OUTPUT} reads it by that handle.]"
     )
 
 
-def _artifact_notice(
-    artifact: ArtifactRef, head: ResultPart, tail: ResultPart, what: str = "result"
+def _tool_output_notice(
+    tool_output: ToolOutputRef, head: ResultPart, tail: ResultPart, what: str = "result"
 ) -> str:
     shown = sum(len(part.text) for part in (head, tail) if isinstance(part, TextBlock))
     return (
-        f"[{artifact.characters - shown} characters between the head above and the tail "
-        f"below are not shown. The whole {what} is artifact {artifact.id}, "
-        f"{artifact.characters} characters; {READ_ARTIFACT} pages through it by that handle.]"
+        f"[{tool_output.characters - shown} characters between the head above and the tail "
+        f"below are not shown. The whole {what} is tool output {tool_output.id}, "
+        f"{tool_output.characters} characters; {READ_TOOL_OUTPUT} pages through it by that handle.]"
     )
 
 
@@ -643,11 +647,11 @@ def _input_text(step: AgentStep) -> str:
     size bound is its head, the notice of what is not shown and where it is
     kept, and its tail."""
     header = step.header
-    if not isinstance(header, InputHeader) or header.artifact is None:
+    if not isinstance(header, InputHeader) or header.tool_output is None:
         return step.as_text()
     texts = [block for block in step.content.blocks if isinstance(block, TextBlock)]
     head, tail = texts[0], texts[-1]
-    notice = _artifact_notice(header.artifact, head, tail, "report")
+    notice = _tool_output_notice(header.tool_output, head, tail, "report")
     return "\n".join((head.text, notice, tail.text))
 
 
@@ -1111,16 +1115,16 @@ def fold_range(steps: Sequence[AgentStep], cut: int) -> tuple[int, int]:
 # Large results.
 
 
-def artifact_key(agent_session_id: UUID, artifact_id: UUID) -> str:
-    """Where an artifact lives in its bucket, under the tenant's prefix the
-    buckets put first: by session, so a session's artifacts sit together."""
-    return f"agent-sessions/{agent_session_id}/{artifact_id}"
+def tool_output_key(agent_session_id: UUID, tool_output_id: UUID) -> str:
+    """Where a tool output lives in its bucket, under the tenant's prefix the
+    buckets put first: by session, so a session's tool outputs sit together."""
+    return f"agent-sessions/{agent_session_id}/{tool_output_id}"
 
 
 def preview(
     result: ToolResultBlock, policy: CompactionPolicy
 ) -> tuple[str, tuple[ResultPart, ...]] | None:
-    """A result above the size bound as an artifact keeps it: the whole text,
+    """A result above the size bound as a tool output keeps it: the whole text,
     and the parts the step keeps, its head and its tail first, then what
     else it held. None when the result is within the bound."""
     whole = result_text(result)
@@ -1132,7 +1136,7 @@ def preview(
 
 
 def result_text(result: ToolResultBlock) -> str:
-    """A tool result's whole text, as an artifact keeps it and a read of it
+    """A tool result's whole text, as a tool output keeps it and a read of it
     answers: its text parts, a line apart."""
     return "\n".join(part.text for part in result.parts if isinstance(part, TextBlock))
 
@@ -1147,8 +1151,10 @@ def clip(whole: str, policy: CompactionPolicy) -> tuple[TextBlock, TextBlock] | 
     return head, tail
 
 
-def artifact_page(text: str, offset: int, limit: int, policy: CompactionPolicy) -> tuple[str, bool]:
-    """The characters of an artifact from `offset`, at most `limit` and the
+def tool_output_page(
+    text: str, offset: int, limit: int, policy: CompactionPolicy
+) -> tuple[str, bool]:
+    """The characters of a tool output from `offset`, at most `limit` and the
     policy's page, and whether more follow."""
     size = max(1, min(limit, policy.page_max))
     start = max(0, offset)

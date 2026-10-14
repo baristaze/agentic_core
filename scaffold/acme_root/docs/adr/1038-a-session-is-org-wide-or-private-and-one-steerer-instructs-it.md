@@ -4,7 +4,7 @@
 
 ## Context
 
-A session's history and its artifacts opened on the tenant's `read`
+A session's history and its tool outputs opened on the tenant's `read`
 alone, so a viewer could read the results of an admin's delegated calls
 that the viewer's own permissions could not fetch. The spec says opening
 content takes a permission of its own. The session's participants were
@@ -26,7 +26,7 @@ by every member of its org, and any member may join it as a participant.
 A private session is seen by its creator, the participants its creator
 adds, and `manage_agent_sessions`, a new permission the owner and the admin
 hold, for audit. A sub-agent is seen as its root is. To anyone else, a
-session, its history, and its artifacts answer `NotFound`, as one that
+session, its history, and its tool outputs answer `NotFound`, as one that
 never existed; the steps and the windows managers ask before they open
 anything, and the sessions manager before every operation that names a
 session.

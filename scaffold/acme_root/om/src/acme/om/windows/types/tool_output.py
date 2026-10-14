@@ -1,4 +1,4 @@
-"""An artifact: a tool result too large for a step, kept whole outside it.
+"""A tool output: a tool result too large for a step, kept whole outside it.
 The record is its shape; the text lives in the object store, under the
 tenant's prefix, and a read answers it a page at a time."""
 
@@ -9,22 +9,22 @@ from pydantic import Field
 from acme.om.base import Created, Identifiable, Platform
 
 
-class Artifact(Identifiable, Created):
-    """The record of an artifact: the session it belongs to, the tool
+class ToolOutput(Identifiable, Created):
+    """The record of a tool output: the session it belongs to, the tool
     response it came from, and how many characters it holds. Its id is
     derived from that response, so keeping one response twice keeps one
-    artifact."""
+    tool_output."""
 
     agent_session_id: UUID
     agent_step_id: UUID
     characters: int = Field(gt=0)
 
 
-class ArtifactPage(Platform):
-    """The characters of the artifact from `offset`, and whether more follow.
-    `characters` is the whole artifact's length."""
+class ToolOutputPage(Platform):
+    """The characters of the tool output from `offset`, and whether more follow.
+    `characters` is the whole tool output's length."""
 
-    artifact_id: UUID
+    tool_output_id: UUID
     offset: int = Field(ge=0)
     text: str
     characters: int = Field(ge=0)

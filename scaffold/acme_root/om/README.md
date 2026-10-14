@@ -112,7 +112,7 @@ reads, sized for that model. When the agent's own window nears its limit,
 its oldest part is folded into a **summary**, a step of its own, and the
 **pinned zone** carries the session's objective and its principals'
 standing instructions through every fold. A tool's result too large for
-a step is kept whole as an **artifact** in the object store.
+a step is kept whole as a **tool output** in the object store.
 
 ## The loop
 
@@ -176,7 +176,7 @@ arrive twice, so the second copy gets the first one's answer.
 - An agent session's fill set names the model for each of its jobs, and
   each switch of it is a step of the session's history.
 - A window and its summaries read a session's steps and change none of
-  them; an artifact belongs to the session whose step names it.
+  them; a tool output belongs to the session whose step names it.
 - An agent session's steps are its truth. Its status is read off them,
   and a change of it writes an outbox row like any other change. A
   session and its steps name their org.

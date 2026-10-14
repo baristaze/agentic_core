@@ -118,7 +118,7 @@ class AgentsManagerInterface(ABC):
         message: data that names the child and says how its loop stands and
         what it said last, carrying the child's mark and whether it holds
         private data, and above the size bound a tool result has, its head,
-        its tail, and the handle of the artifact that keeps it whole. It
+        its tail, and the handle of the tool output that keeps it whole. It
         wakes the parent through the inbox, so the projection that turns the
         parent pending asks for its run, except the note of a cancel that
         came down from the parent (`rules.report_wakes`); one that wakes a

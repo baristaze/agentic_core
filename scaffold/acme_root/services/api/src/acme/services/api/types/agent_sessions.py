@@ -1,5 +1,5 @@
 """The wire types of agent sessions: a session, one step of its history,
-an artifact it keeps, and what a person sends it. A step's view is flat:
+a tool output it keeps, and what a person sends it. A step's view is flat:
 what it is, who wrote it, what it says as text, and the few fields of its
 header a reader acts on. Its content is the session's, so whoever the
 session is visible to reads it as the session's own reader does."""
@@ -156,12 +156,12 @@ class AgentStepPageView(View):
     has_more: bool
 
 
-class ArtifactPageView(View):
+class ToolOutputPageView(View):
     """A page of what a session keeps whole outside its window, such as a
-    long tool result: its characters from `start`, the whole artifact's
+    long tool result: its characters from `start`, the whole tool output's
     length, and whether more follow."""
 
-    artifact_id: UUID
+    tool_output_id: UUID
     start: int
     text: str
     characters: int

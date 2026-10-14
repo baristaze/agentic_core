@@ -38,7 +38,6 @@ from acme.services.api.types.agent_sessions import (
     AgentStepPageView,
     AgentStepUsageView,
     AgentStepView,
-    ArtifactPageView,
     ControlRequest,
     DeadlineRequest,
     DecisionRequest,
@@ -49,6 +48,7 @@ from acme.services.api.types.agent_sessions import (
     PrincipalRequest,
     SnapshotView,
     StartAgentSessionRequest,
+    ToolOutputPageView,
     VisibilityRequest,
 )
 from acme.services.api.types.common import clamp_limit
@@ -289,15 +289,22 @@ class AgentSessionsServiceImpl(AgentSessionsServiceInterface):
             items=[step_view(step) for step in page.items], has_more=page.has_more
         )
 
-    async def get_artifact(
-        self, ctx: TenantContext, agent_session_id: UUID, artifact_id: UUID, start: int, limit: int
-    ) -> ArtifactPageView:
-        # The session first, so one marked deleted keeps its artifacts closed
+    async def get_tool_output(
+        self,
+        ctx: TenantContext,
+        agent_session_id: UUID,
+        tool_output_id: UUID,
+        start: int,
+        limit: int,
+    ) -> ToolOutputPageView:
+        # The session first, so one marked deleted keeps its tool outputs closed
         # as it keeps its history.
         await self._sessions.get_agent_session(ctx, agent_session_id)
-        page = await self._windows.get_artifact(ctx, agent_session_id, artifact_id, start, limit)
-        return ArtifactPageView(
-            artifact_id=page.artifact_id,
+        page = await self._windows.get_tool_output(
+            ctx, agent_session_id, tool_output_id, start, limit
+        )
+        return ToolOutputPageView(
+            tool_output_id=page.tool_output_id,
             start=page.offset,
             text=page.text,
             characters=page.characters,

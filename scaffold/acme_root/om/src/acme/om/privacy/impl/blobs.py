@@ -1,4 +1,4 @@
-"""A blob sealed under one version of a session's key, the form an artifact's
+"""A blob sealed under one version of a session's key, the form a tool output's
 text and a command's record both take: the version at its head, then the
 nonce, then AES-GCM over the data, bound to what its caller names with the
 version, so a blob copied anywhere else opens nothing. It opens with the

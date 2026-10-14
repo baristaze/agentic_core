@@ -185,7 +185,7 @@ def test_role_metadata_holds_only_that_role() -> None:
         "budget_holds",
         "budget_settlements",
         "usage_records",
-        "artifacts",
+        "tool_outputs",
     }
     assert {t.name for t in role_metadata(DatabaseRole.ADMIN).tables.values()} == {"platform_sizes"}
 

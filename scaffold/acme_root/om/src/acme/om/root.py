@@ -71,7 +71,6 @@ from acme.om.orchestrations.impl.manager import OrchestrationsManagerImpl, Orche
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.impl.relay import OutboxRelayImpl
 from acme.om.privacy import PrivacyManagerInterface
-from acme.om.privacy.impl.artifacts import ArtifactSealKeysImpl
 from acme.om.privacy.impl.keys import AgentSessionKeysImpl
 from acme.om.privacy.impl.manager import PrivacyManagerImpl, PrivacyOptions
 from acme.om.privacy.impl.memory_only_agent_steps import AgentStepStorageShapeOnlyImpl
@@ -79,6 +78,7 @@ from acme.om.privacy.impl.records import RecordSealKeysImpl
 from acme.om.privacy.impl.routed_agent_steps import AgentStepStorageRoutedImpl
 from acme.om.privacy.impl.sealed_agent_steps import AgentStepStorageSealedImpl
 from acme.om.privacy.impl.snapshots import SnapshotSealKeysImpl
+from acme.om.privacy.impl.tool_outputs import ToolOutputSealKeysImpl
 from acme.om.privacy.keys import AgentSessionKeysInterface
 from acme.om.storage.root import StorageInterface
 from acme.om.tenancy import TenancyManagerInterface, TenancyOperatorManagerInterface
@@ -97,8 +97,8 @@ from acme.om.tools.impl.manager import ToolsManagerImpl, ToolsOptions
 from acme.om.tools.impl.snapshots import SnapshotStore
 from acme.om.tools.native.ask_person import AskPersonToolImpl
 from acme.om.tools.native.load_toolset import LoadToolsetToolImpl
-from acme.om.tools.native.read_artifact import ReadArtifactToolImpl
 from acme.om.tools.native.read_attachment import ReadAttachmentToolImpl
+from acme.om.tools.native.read_tool_output import ReadToolOutputToolImpl
 from acme.om.tools.native.spawn_sub_agent import SpawnSubAgentToolImpl
 from acme.om.tools.native.wait_for_sub_agents import WaitForSubAgentsToolImpl
 from acme.om.tools.native.write_agent_plan import WriteAgentPlanToolImpl
@@ -110,7 +110,7 @@ from acme.om.windows.hashes import PromptHashInterface
 from acme.om.windows.impl.gate import CallGateBudgetImpl
 from acme.om.windows.impl.hashes import PromptHashPrivacyImpl
 from acme.om.windows.impl.manager import WindowsManagerImpl, WindowsOptions
-from acme.om.windows.seal import ArtifactSealInterface
+from acme.om.windows.seal import ToolOutputSealInterface
 from acme.om.windows.types.policy import CompactionPolicy
 from acme.om.work import WorkManagerInterface, WorkOperatorManagerInterface
 from acme.om.work.impl.manager import WorkManagerImpl, WorkOptions
@@ -167,10 +167,10 @@ async def purge_held(
     managers: Managers, org_id: UUID, agent_session_id: UUID, tree_id: UUID | None
 ) -> None:
     """What the windows, the tools, attribution, and the agents hold of a
-    session the sweep purges: its artifacts, and its workspace with its
+    session the sweep purges: its tool outputs, and its workspace with its
     transport's records, which go with its history, its authority, and its
     tree when it was the tree's last session."""
-    await managers.windows.purge_artifacts(org_id, agent_session_id)
+    await managers.windows.purge_tool_outputs(org_id, agent_session_id)
     await managers.tools.purge_workspace(org_id, agent_session_id)
     await managers.attribution.purge_authority(org_id, agent_session_id)
     if tree_id is not None:
@@ -268,7 +268,7 @@ def build_managers(
     models_layer: ModelsLayer | None = None,
     call_gate: CallGateInterface | None = None,
     prompt_hash: PromptHashInterface | None = None,
-    artifact_seal: ArtifactSealInterface | None = None,
+    tool_output_seal: ToolOutputSealInterface | None = None,
     record_seal: RecordSealInterface | None = None,
     snapshot_seal: SnapshotSealInterface | None = None,
     compaction_policy: CompactionPolicy | None = None,
@@ -308,7 +308,7 @@ def build_managers(
     privacy namespace's keyed hash behind the other. `budget_gate` None is
     the gate over the ledger; outside `environment` `local`, a quiet null
     gate or ledger is refused at boot (`UnsafeConfiguration`).
-    `artifact_seal` is what seals an artifact's text under its session's
+    `tool_output_seal` is what seals a tool output's text under its session's
     key, `record_seal` what seals a command's output in its transport's
     record, and `snapshot_seal` what seals a workspace's snapshot; None
     wires the privacy namespace's seal over the session keys.
@@ -498,7 +498,8 @@ def build_managers(
         infra.get_buckets(),
         calls,
         prompt_hash or PromptHashPrivacyImpl(privacy),
-        artifact_seal or ArtifactSealKeysImpl(agent_session_keys, storage.get_privacy_storage()),
+        tool_output_seal
+        or ToolOutputSealKeysImpl(agent_session_keys, storage.get_privacy_storage()),
         compaction_policy or CompactionPolicy(),
         WindowsOptions(),
         opens=lambda ctx, agent_session_id: opens(managers, ctx, agent_session_id),
@@ -661,7 +662,7 @@ def engine_tools(
         WriteAgentPlanToolImpl(),
         LoadToolsetToolImpl(),
         ReadAttachmentToolImpl(steps, attachments),
-        ReadArtifactToolImpl(steps, windows),
+        ReadToolOutputToolImpl(steps, windows),
         SpawnSubAgentToolImpl(sessions, agents),
         WaitForSubAgentsToolImpl(sessions),
     )

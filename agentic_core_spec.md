@@ -616,13 +616,13 @@ A compaction is a model call and passes the budget gate like any other.
 
 ### Large Results and Retrieval
 
-A tool result above a size bound is stored as an artifact. The step
+A tool result above a size bound is stored as a tool output. The step
 holds a preview, its head and tail, and a handle. The engine's read
-tool, `read_artifact`, pages through the rest by that handle, and reads
+tool, `read_tool_output`, pages through the rest by that handle, and reads
 back a result that compaction elided by the handle its stub names. The
 notice beside a preview and the stub both name it. It reads the calling
 session's own results alone. Agents retrieve just in time (search the
-history, read an artifact, query a record) rather than preload. A sub-agent is the
+history, read a tool output, query a record) rather than preload. A sub-agent is the
 other context tool: it explores in a clean context and returns a report
 ([Sub-Agents](#sub-agents)).
 
@@ -818,7 +818,7 @@ tools execute, never over stdio ([The Runtime](#the-runtime)).
 
 | Class | Covers |
 |---|---|
-| `read` | Reading the workspace, records, or artifacts |
+| `read` | Reading the workspace, records, or tool outputs |
 | `write` | Changing files in the workspace |
 | `execute` | Running code in the workspace: commands, builds, tests. One class, because inside a sandbox a build script runs arbitrary code. |
 | `network` | Reaching an arbitrary external endpoint, such as fetching a URL |
@@ -1690,7 +1690,7 @@ between them.
 - **A bounded objective.** A spawn's objective has a size bound.
   It names large material by its handle and never pastes it.
 - **A bounded report.** A child's report has a size bound. Above
-  it, the report is stored as an artifact, and the parent's inbox holds
+  it, the report is stored as a tool output, and the parent's inbox holds
   its preview and its handle, as a large tool result does ([Large
   Results and Retrieval](#large-results-and-retrieval)).
 - **Caps of its own.** A child runs under its kind's step guard, sized
@@ -1759,7 +1759,7 @@ sees ciphertext. Opening content takes the session's key, which opens to
 whom the session is visible ([Who Is Who](#who-is-who)): every member of
 its org when it is org-wide, its creator and its participants when it is
 private, and `manage_agent_sessions`, a permission of its own, an admin's, for
-audit, everywhere. To anyone else, its history and its artifacts answer
+audit, everywhere. To anyone else, its history and its tool outputs answer
 as a session that never existed.
 
 A session's key has versions. New content is sealed under the current
@@ -1778,7 +1778,7 @@ test, and a cloud key service a fleet.
 |---|---|
 | Messages, events, tool inputs and outputs | Ids, types, `seq`, actors, origins, references |
 | Thinking, summaries, the plan | Times, sizes, stop reasons, failure classes |
-| Attachments and artifacts | Usage, cost, budgets; that an approval happened, and who decided |
+| Attachments and tool outputs | Usage, cost, budgets; that an approval happened, and who decided |
 | Anything derived: caches, indexes, embeddings | Tool names, classes, effects; keyed hashes |
 
 A hash in the shape is keyed by the session, so a destroyed session's

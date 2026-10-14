@@ -1,5 +1,5 @@
-"""`read_artifact` through the loop: a result above the size bound is kept
-as an artifact, the notice between its head and its tail names the tool and
+"""`read_tool_output` through the loop: a result above the size bound is kept
+as a tool output, the notice between its head and its tail names the tool and
 the handle, and a read by that handle, or by its step's, answers exactly
 the kept text at the asked range, bounded as the model reads it so the
 answer is kept in its step whole. A result a compaction elided reads back
@@ -49,12 +49,12 @@ LARGE = "".join(f'{n:06d} "row"\n' for n in range(2_500))
 answer's JSON escapes."""
 MEDIUM = "".join(f"{n:05d} b\n" for n in range(800))
 """A dump within the size bound, past the length a compaction elides."""
-HANDLE = re.compile(r"(?:artifact|step) ([0-9a-f-]{36})")
+HANDLE = re.compile(r"(?:tool output|step) ([0-9a-f-]{36})")
 
 READER = AgentKind(
     name="reader",
     version=1,
-    tools=("lookup", "dump", "bulky", "read_artifact"),
+    tools=("lookup", "dump", "bulky", "read_tool_output"),
     done_rule=DoneRule.ANSWER,
     authority=AuthorityMode.DELEGATED,
     tree=TreeLimits(height=1, count=0),
@@ -83,7 +83,7 @@ def a_loop(tmp_path: Path, storage: StorageInterface | None = None) -> Loop:
 
 
 def read(handle: UUID | str, **within: object) -> ToolUseBlock:
-    return call("read_artifact", handle=str(handle), **within)
+    return call("read_tool_output", handle=str(handle), **within)
 
 
 def responses(steps: list[AgentStep]) -> list[AgentStep]:
@@ -109,13 +109,13 @@ def rendered_result(loop: Loop, tool_use_id: str) -> ToolResultBlock:
     return found[-1]
 
 
-async def stored(loop: Loop, agent_session_id: UUID, artifact_id: UUID) -> str:
-    """The whole text the artifact keeps, read from the store a page at a
+async def stored(loop: Loop, agent_session_id: UUID, tool_output_id: UUID) -> str:
+    """The whole text the tool output keeps, read from the store a page at a
     time."""
     pages, offset = [], 0
     while True:
-        page = await loop.managers.windows.get_artifact(
-            loop.owner, agent_session_id, artifact_id, offset, 100_000
+        page = await loop.managers.windows.get_tool_output(
+            loop.owner, agent_session_id, tool_output_id, offset, 100_000
         )
         pages.append(page.text)
         offset += len(page.text)
@@ -133,13 +133,13 @@ async def test_a_read_by_the_handle_a_notice_names_answers_the_kept_text_at_its_
     loop.anthropic.add(reply(dumped), reply(said("It is long.")))
     assert (await loop.loops.run(loop.owner, agent_session_id)).outcome is LoopOutcome.SUCCEEDED
     (kept,) = responses(await loop.history(agent_session_id))
-    assert isinstance(kept.header, ToolResponseHeader) and kept.header.artifact is not None
-    whole = await stored(loop, agent_session_id, kept.header.artifact.id)
-    assert whole == Found(text=LARGE).model_dump_json(), "the artifact keeps the whole answer"
+    assert isinstance(kept.header, ToolResponseHeader) and kept.header.tool_output is not None
+    whole = await stored(loop, agent_session_id, kept.header.tool_output.id)
+    assert whole == Found(text=LARGE).model_dump_json(), "the tool output keeps the whole answer"
     _, notice, _ = rendered_result(loop, dumped.id).parts
-    assert isinstance(notice, TextBlock) and "read_artifact pages through it" in notice.text
+    assert isinstance(notice, TextBlock) and "read_tool_output pages through it" in notice.text
     (named,) = HANDLE.findall(notice.text)
-    assert named == str(kept.header.artifact.id), "the notice names the artifact's handle"
+    assert named == str(kept.header.tool_output.id), "the notice names the tool output's handle"
 
     await loop.say(agent_session_id, "Read part of it.")
     loop.anthropic.add(
@@ -150,8 +150,8 @@ async def test_a_read_by_the_handle_a_notice_names_answers_the_kept_text_at_its_
     )
     assert (await loop.loops.run(loop.owner, agent_session_id)).outcome is LoopOutcome.SUCCEEDED
 
-    by_artifact, by_step, rest = responses(await loop.history(agent_session_id))[1:]
-    failure, text = answer(by_artifact)
+    by_tool_output, by_step, rest = responses(await loop.history(agent_session_id))[1:]
+    failure, text = answer(by_tool_output)
     assert failure is None and json.loads(text) == {
         "handle": named,
         "offset": 12_345,
@@ -161,15 +161,15 @@ async def test_a_read_by_the_handle_a_notice_names_answers_the_kept_text_at_its_
     }
     failure, text = answer(by_step)
     assert failure is None and json.loads(text)["text"] == whole[12_345:13_023], (
-        "a step's handle reads its artifact"
+        "a step's handle reads its tool output"
     )
     failure, text = answer(rest)
     page = json.loads(text)
     assert failure is None and len(text) <= 20_000, "one answer is within its bound"
     assert page["text"] == whole[10_000 : 10_000 + len(page["text"])]
     assert page["next_offset"] == 10_000 + len(page["text"]) < len(whole), "read on from there"
-    assert isinstance(rest.header, ToolResponseHeader) and rest.header.artifact is None, (
-        "a page is kept in its step whole, never as an artifact"
+    assert isinstance(rest.header, ToolResponseHeader) and rest.header.tool_output is None, (
+        "a page is kept in its step whole, never as a tool output"
     )
 
 
@@ -202,7 +202,7 @@ async def test_a_result_a_compaction_elided_reads_back_whole_by_the_handle_its_s
     assert any(step.type is AgentStepType.SUMMARY for step in history), "the window compacted"
     (stub,) = rendered_result(loop, bulky.id).parts
     assert isinstance(stub, TextBlock) and "elided once read" in stub.text
-    assert "read_artifact reads it" in stub.text
+    assert "read_tool_output reads it" in stub.text
     assert HANDLE.findall(stub.text) == [str(elided.id)], "the stub names the step's handle"
     failure, text = answer(responses(history)[-1])
     assert failure is None and json.loads(text) == {
@@ -222,9 +222,9 @@ async def test_a_read_never_reaches_another_session_and_refuses_what_it_cannot_r
     loop.anthropic.add(reply(use("dump")), reply(use("bulky")), reply(said("Read.")))
     assert (await loop.loops.run(loop.owner, holder)).outcome is LoopOutcome.SUCCEEDED
     large, medium = responses(await loop.history(holder))
-    assert isinstance(large.header, ToolResponseHeader) and large.header.artifact is not None
-    artifact = large.header.artifact
-    handles = (artifact.id, large.id, medium.id)
+    assert isinstance(large.header, ToolResponseHeader) and large.header.tool_output is not None
+    tool_output = large.header.tool_output
+    handles = (tool_output.id, large.id, medium.id)
 
     other = await loop.start("reader")
     await loop.say(other, "Read the dump.")
@@ -244,7 +244,7 @@ async def test_a_read_never_reaches_another_session_and_refuses_what_it_cannot_r
     # Two runs, so no run fails often enough in a row to end inconclusive.
     await loop.say(holder, "Read past the end.")
     loop.anthropic.add(
-        reply(read(artifact.id, offset=artifact.characters)),
+        reply(read(tool_output.id, offset=tool_output.characters)),
         reply(read(medium.id, offset=99_999)),
         reply(read("the dump")),
         reply(said("Done.")),
@@ -261,8 +261,8 @@ async def test_a_read_never_reaches_another_session_and_refuses_what_it_cannot_r
     assert (
         at_end[0] is ToolFailure.INVALID_INPUT
         and (
-            f"{artifact.id} holds {artifact.characters} characters; "
-            f"offset {artifact.characters} is at or past its end"
+            f"{tool_output.id} holds {tool_output.characters} characters; "
+            f"offset {tool_output.characters} is at or past its end"
         )
         in at_end[1]
     )

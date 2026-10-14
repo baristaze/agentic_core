@@ -351,28 +351,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/agent-sessions/{agent_session_id}/artifacts/{artifact_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Artifact
-         * @description A page of what the session keeps whole outside its window, from the
-         *     character at `start`: an artifact is written once, so no character's
-         *     place moves between pages. The policy's page bounds `limit`.
-         */
-        get: operations["get_artifact_v1_agent_sessions__agent_session_id__artifacts__artifact_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/agent-sessions/{agent_session_id}/calls/{request_seq}/decision": {
         parameters: {
             query?: never;
@@ -584,6 +562,28 @@ export interface paths {
          *     loop parks on a hand-over they hold. 409 when another person holds it.
          */
         post: operations["take_over_v1_agent_sessions__agent_session_id__take_over_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agent-sessions/{agent_session_id}/tool-outputs/{tool_output_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Tool Output
+         * @description A page of what the session keeps whole outside its window, from the
+         *     character at `start`: a tool output is written once, so no character's
+         *     place moves between pages. The policy's page bounds `limit`.
+         */
+        get: operations["get_tool_output_v1_agent_sessions__agent_session_id__tool_outputs__tool_output_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1758,27 +1758,6 @@ export interface components {
              * Format: uuid
              */
             user_id: string;
-        };
-        /**
-         * ArtifactPageView
-         * @description A page of what a session keeps whole outside its window, such as a
-         *     long tool result: its characters from `start`, the whole artifact's
-         *     length, and whether more follow.
-         */
-        ArtifactPageView: {
-            /**
-             * Artifact Id
-             * Format: uuid
-             */
-            artifact_id: string;
-            /** Characters */
-            characters: number;
-            /** Has More */
-            has_more: boolean;
-            /** Start */
-            start: number;
-            /** Text */
-            text: string;
         };
         /**
          * AskRequest
@@ -3248,6 +3227,27 @@ export interface components {
          */
         ToolFailure: "invalid_input" | "transient" | "timeout" | "denied" | "interrupted" | "permanent";
         /**
+         * ToolOutputPageView
+         * @description A page of what a session keeps whole outside its window, such as a
+         *     long tool result: its characters from `start`, the whole tool output's
+         *     length, and whether more follow.
+         */
+        ToolOutputPageView: {
+            /** Characters */
+            characters: number;
+            /** Has More */
+            has_more: boolean;
+            /** Start */
+            start: number;
+            /** Text */
+            text: string;
+            /**
+             * Tool Output Id
+             * Format: uuid
+             */
+            tool_output_id: string;
+        };
+        /**
          * TotpConfirmedView
          * @description The second factor is enrolled: from now on the operator plane admits
          *     this identity only on a sign-in that verified a code, so the next
@@ -4281,45 +4281,6 @@ export interface operations {
             };
         };
     };
-    get_artifact_v1_agent_sessions__agent_session_id__artifacts__artifact_id__get: {
-        parameters: {
-            query?: {
-                start?: number;
-                limit?: number;
-            };
-            header?: {
-                authorization?: string | null;
-                "x-app"?: string | null;
-                "x-app-version"?: string | null;
-            };
-            path: {
-                agent_session_id: string;
-                artifact_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ArtifactPageView"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     decide_call_v1_agent_sessions__agent_session_id__calls__request_seq__decision_post: {
         parameters: {
             query?: never;
@@ -4732,6 +4693,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentSessionView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_tool_output_v1_agent_sessions__agent_session_id__tool_outputs__tool_output_id__get: {
+        parameters: {
+            query?: {
+                start?: number;
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+                "x-app"?: string | null;
+                "x-app-version"?: string | null;
+            };
+            path: {
+                agent_session_id: string;
+                tool_output_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolOutputPageView"];
                 };
             };
             /** @description Validation Error */

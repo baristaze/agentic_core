@@ -115,7 +115,7 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
 - **Every session belongs to one org.** Another org's session answers as
   one that never existed, and a session's parent is in its own org.
 - **A session opens to whom it is visible.** Every operation that names
-  a session, its history, and its artifacts reads it as the person sees
+  a session, its history, and its tool outputs reads it as the person sees
   it: an org-wide one by every member, a private one by its creator and
   its participants, and every one by `manage_agent_sessions`, an admin's, for
   audit. To anyone else it answers as one that never existed. A sub-agent

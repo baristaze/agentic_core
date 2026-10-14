@@ -40,7 +40,7 @@ This is one of the kinds of thing [Acme is made of](../../../../README.md).
   first step, the summary before it), a hash of what it sent, keyed by
   the session, and the budget hold its worst case was reserved by. A
   response names why the model stopped. A tool's answer too large to keep
-  in a step names the artifact that holds it whole, and keeps its head
+  in a step names the tool output that holds it whole, and keeps its head
   and its tail.
 - **Cursor**: each session's last number, and the epoch of the run that
   holds it.

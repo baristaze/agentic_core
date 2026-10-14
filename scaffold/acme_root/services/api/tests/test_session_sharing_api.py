@@ -3,7 +3,7 @@ live app in memory.
 
 A session is org-wide or private: a steady kind's are org-wide and a
 delegated kind's private, until its creator switches it, a recorded step.
-Its history and its artifacts open to whom it is visible: every member of
+Its history and its tool outputs open to whom it is visible: every member of
 the org when it is org-wide; its creator, its participants, and a holder
 of `manage_agent_sessions` when it is private. To anyone else it answers as one
 that never existed. One person steers it at a time: its creator, until a
@@ -78,8 +78,8 @@ class Org:
         assert said.status_code == 201, said.text
         return agent_session_id
 
-    async def keep_artifact(self, agent_session_id: str) -> str:
-        """A tool's result past the size bound, kept whole as an artifact
+    async def keep_tool_output(self, agent_session_id: str) -> str:
+        """A tool's result past the size bound, kept whole as a tool output
         of the session, as the loop keeps it."""
         token = self.headers["ann"]["Authorization"].removeprefix("Bearer ")
         ctx = await self.container.managers.tenancy.authenticate(seed_request(), token)
@@ -91,19 +91,21 @@ class Org:
         bounded = await self.container.managers.windows.bound_tool_response(
             ctx, UUID(agent_session_id), result
         )
-        assert isinstance(bounded.header, ToolResponseHeader) and bounded.header.artifact
-        return str(bounded.header.artifact.id)
+        assert isinstance(bounded.header, ToolResponseHeader) and bounded.header.tool_output
+        return str(bounded.header.tool_output.id)
 
     async def reads(
-        self, who: str, agent_session_id: str, artifact_id: str
+        self, who: str, agent_session_id: str, tool_output_id: str
     ) -> tuple[int, int, int]:
-        """What `who` gets for the session, its history, and its artifact."""
+        """What `who` gets for the session, its history, and its tool output."""
         path = f"/v1/agent-sessions/{agent_session_id}"
         headers = self.headers[who]
         session = await self.client.get(path, headers=headers)
         steps = await self.client.get(f"{path}/steps", headers=headers)
-        artifact = await self.client.get(f"{path}/artifacts/{artifact_id}", headers=headers)
-        return session.status_code, steps.status_code, artifact.status_code
+        tool_output = await self.client.get(
+            f"{path}/tool-outputs/{tool_output_id}", headers=headers
+        )
+        return session.status_code, steps.status_code, tool_output.status_code
 
     async def put(self, who: str, path: str, body: dict[str, Any] | None = None) -> httpx.Response:
         return await self.client.put(path, headers=self.headers[who], json=body)
@@ -145,22 +147,22 @@ async def org(client: httpx.AsyncClient, container: AppContainer, owner: dict[st
     return seated
 
 
-async def test_a_sessions_history_and_artifacts_open_to_whom_it_is_visible(org: Org) -> None:
-    """An org-wide session's history and artifacts are served to a member
+async def test_a_sessions_history_and_tool_outputs_open_to_whom_it_is_visible(org: Org) -> None:
+    """An org-wide session's history and tool outputs are served to a member
     who did not make it. A private one's are refused to a member who is
     neither its creator nor a participant, as one that never existed, and
     served to a participant and to an admin, who holds `manage_agent_sessions`."""
     open_id = await org.start("steward")
-    open_artifact = await org.keep_artifact(open_id)
+    open_tool_output = await org.keep_tool_output(open_id)
     closed_id = await org.start("assistant")
-    closed_artifact = await org.keep_artifact(closed_id)
+    closed_tool_output = await org.keep_tool_output(closed_id)
     added = await org.put("ann", f"/v1/agent-sessions/{closed_id}/participants/{org.ids['noa']}")
     assert added.status_code == 200, added.text
 
-    assert await org.reads("mia", open_id, open_artifact) == (200, 200, 200)
-    assert await org.reads("mia", closed_id, closed_artifact) == (404, 404, 404)
-    assert await org.reads("noa", closed_id, closed_artifact) == (200, 200, 200)
-    assert await org.reads("ada", closed_id, closed_artifact) == (200, 200, 200)
+    assert await org.reads("mia", open_id, open_tool_output) == (200, 200, 200)
+    assert await org.reads("mia", closed_id, closed_tool_output) == (404, 404, 404)
+    assert await org.reads("noa", closed_id, closed_tool_output) == (200, 200, 200)
+    assert await org.reads("ada", closed_id, closed_tool_output) == (200, 200, 200)
     assert await org.listed("mia", "visible") == [open_id]
     assert await org.listed("noa", "mine") == [closed_id]
     assert await org.listed("ada", "visible") == [open_id, closed_id]

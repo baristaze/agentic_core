@@ -168,7 +168,7 @@ async def test_a_quoted_range_that_fills_the_bound_is_answered_whole_never_as_a_
     tmp_path: Path,
 ) -> None:
     """Every quote doubles in the answer's JSON, so the bound is measured
-    there: past it, the window would keep the read as an artifact and show
+    there: past it, the window would keep the read as a tool output and show
     only its head and tail."""
     sheet = a_file("weekly.csv")
     reader = Reader({sheet.id: AttachmentText(pages=(QUOTED,))})
@@ -183,7 +183,7 @@ async def test_a_quoted_range_that_fills_the_bound_is_answered_whole_never_as_a_
     (response,) = [
         s for s in await loop.history(agent_session_id) if s.type is AgentStepType.TOOL_RESPONSE
     ]
-    assert isinstance(response.header, ToolResponseHeader) and response.header.artifact is None
+    assert isinstance(response.header, ToolResponseHeader) and response.header.tool_output is None
     ((failure, text),) = answers([response])
     assert failure is None and len(text) <= 20_000, "within the bound as the model reads it"
     held = json.loads(text)

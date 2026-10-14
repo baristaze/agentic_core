@@ -23,7 +23,7 @@ __all__ = [
 class Buckets(StrEnum):
     USER_FILE_UPLOADS = "user-file-uploads"
     EXPORTS = "exports"
-    ARTIFACTS = "artifacts"  # tool results too large for a step, read a page at a time
+    TOOL_OUTPUTS = "tool-outputs"  # tool results too large for a step, read a page at a time
     SNAPSHOTS = "snapshots"  # workspace snapshots, sealed, each under its content's hash
 
 

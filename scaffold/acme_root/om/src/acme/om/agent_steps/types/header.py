@@ -178,11 +178,11 @@ class Park(Platform):
         return self
 
 
-class ArtifactRef(Platform):
-    """The handle of a text kept whole as an artifact, outside the step: a
-    tool result, or a child's report to its parent. It holds the artifact's
+class ToolOutputRef(Platform):
+    """The handle of a text kept whole as a tool output, outside the step: a
+    tool result, or a child's report to its parent. It holds the tool output's
     id and how many characters it holds. The step keeps the text's head and
-    tail; `read_artifact` pages through the rest by the id."""
+    tail; `read_tool_output` pages through the rest by the id."""
 
     id: UUID
     characters: int = Field(gt=0)
@@ -223,7 +223,7 @@ class InputHeader(Platform):
     it reaches, and is set on any input that carries a file, which is data
     whoever attached it (`agent_steps.types.agent_step.AgentStep`). `holds_private` carries
     whether that agent's session holds private data, so a child's report
-    makes its parent hold what the child held. `artifact` is the handle of a
+    makes its parent hold what the child held. `tool_output` is the handle of a
     child's report above the size bound, whose head and tail are the step's
     two text blocks.
 
@@ -238,7 +238,7 @@ class InputHeader(Platform):
     agent: AgentRef | None = None
     untrusted: bool = False
     holds_private: bool = False
-    artifact: ArtifactRef | None = None
+    tool_output: ToolOutputRef | None = None
     participant: bool = False
 
 
@@ -357,7 +357,7 @@ class AcceptedResult(Platform):
 class ToolResponseHeader(Platform):
     """A result, or the class of the failure the call met. `interrupted`
     marks a call stopped before it answered, its outcome unknown, so the
-    model verifies before it retries. `artifact` is the handle of a result
+    model verifies before it retries. `tool_output` is the handle of a result
     above the size bound, whose head and tail are the first two parts of the
     step's result. `accepted` is the verdict on a result submitted through
     the kind's result tool, kept in the history so the loop ends on it even
@@ -365,7 +365,7 @@ class ToolResponseHeader(Platform):
 
     kind: Literal["tool_response"] = "tool_response"
     failure: ToolFailure | None = None
-    artifact: ArtifactRef | None = None
+    tool_output: ToolOutputRef | None = None
     accepted: AcceptedResult | None = None
 
     @model_validator(mode="after")

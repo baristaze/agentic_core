@@ -63,8 +63,8 @@ from acme.om.windows.gate import CallGateInterface
 from acme.om.windows.hashes import PromptHashInterface
 from acme.om.windows.impl.gate import CallGateNullImpl
 from acme.om.windows.impl.hashes import PromptHashNullImpl
-from acme.om.windows.impl.seal import ArtifactSealNullImpl
-from acme.om.windows.seal import ArtifactSealInterface
+from acme.om.windows.impl.seal import ToolOutputSealNullImpl
+from acme.om.windows.seal import ToolOutputSealInterface
 
 CTX = context(Role.OWNER)
 PAYER = Principal(kind=PrincipalKind.PERSON, id=CTX.user_id)
@@ -104,9 +104,9 @@ LOUD: list[tuple[object, object, Callable[[], Awaitable[Any]]]] = [
         lambda: PromptHashNullImpl().keyed_hash(CTX, uuid4(), b"a prompt"),
     ),
     (
-        ArtifactSealInterface,
-        ArtifactSealNullImpl(),
-        lambda: ArtifactSealNullImpl().seal(CTX, uuid4(), uuid4(), b"a result"),
+        ToolOutputSealInterface,
+        ToolOutputSealNullImpl(),
+        lambda: ToolOutputSealNullImpl().seal(CTX, uuid4(), uuid4(), b"a result"),
     ),
     (
         RecordSealInterface,

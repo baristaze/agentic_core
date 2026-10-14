@@ -46,12 +46,12 @@ TABLE_ROLES: dict[str, DatabaseRole] = {
     "budget_settlements": DatabaseRole.ACTIVITY,
     "usage_records": DatabaseRole.ACTIVITY,
     "fill_sets": DatabaseRole.CORE,
-    "artifacts": DatabaseRole.ACTIVITY,
+    "tool_outputs": DatabaseRole.ACTIVITY,
     "tool_policies": DatabaseRole.CORE,
 }
 
 APPEND_ONLY_TABLES: frozenset[str] = frozenset(
-    {"agent_steps", "budget_holds", "budget_settlements", "usage_records", "artifacts"}
+    {"agent_steps", "budget_holds", "budget_settlements", "usage_records", "tool_outputs"}
 )
 """Tables whose rows are written once: the serving logins hold SELECT and
 INSERT on them and never UPDATE or DELETE. The migration that creates one
@@ -64,13 +64,13 @@ PURGED_TABLES: frozenset[str] = frozenset(
         "agent_sessions",
         "agent_steps",
         "agent_step_cursors",
-        "artifacts",
+        "tool_outputs",
         "agent_session_authorities",
         "agent_trees",
     }
 )
 """The tables the purge login reaches: a session, its history and its
-artifacts, its authority, and its tree, which go together when the session
+tool_outputs, its authority, and its tree, which go together when the session
 is purged. It holds SELECT and DELETE on them and nothing
 else, granted by the migrations that admit it and again by the login
 command, and the tenant fence admits it within the tenant its transaction

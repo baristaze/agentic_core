@@ -1,8 +1,8 @@
 """The seal a command's output takes in its transport's record, under its
-session's key, as an artifact's text is sealed on its way to the store.
+session's key, as a tool output's text is sealed on its way to the store.
 
 The output is sealed under the current version of the session's key, in
-the artifacts' form (`blobs`), bound to the tenant, the session, the
+the tool outputs' form (`blobs`), bound to the tenant, the session, the
 command, and the version, so a record copied to another command opens
 nothing. Once the version is destroyed, the output is noise, and the
 record still says how the command ended. A session that keeps no content

@@ -171,12 +171,12 @@ MANAGER_EXCEPTIONS: frozenset[tuple[str, str]] = frozenset(
         # And the history of each session that purge has claimed, named with
         # its tenant: bookkeeping of the same step, for no principal.
         ("AgentStepsManagerInterface", "purge_histories"),
-        # And the session's authority, its tree, its artifacts, and its
+        # And the session's authority, its tree, its tool outputs, and its
         # workspace, named with the tenant, which the same purge takes before
         # the session's row.
         ("AttributionManagerInterface", "purge_authority"),
         ("AgentsManagerInterface", "purge_tree"),
-        ("WindowsManagerInterface", "purge_artifacts"),
+        ("WindowsManagerInterface", "purge_tool_outputs"),
         ("ToolsManagerInterface", "purge_workspace"),
         # The sweep's gauges of the queue, read across tenants like the purge.
         ("WorkManagerInterface", "oldest_ready_age"),

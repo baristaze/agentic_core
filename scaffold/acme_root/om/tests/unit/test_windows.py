@@ -3,7 +3,7 @@ window near its limit compacts into a summary step that references its
 range, a provider's overflow compacts once and retries once, compaction
 never loops and never spends outside the gate, a recorded request
 re-renders to its prompt's hash, and a tool result over the bound is kept as
-an artifact the step holds the head, the tail, and the handle of."""
+a tool output the step holds the head, the tail, and the handle of."""
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -29,11 +29,11 @@ from acme.om.agent_steps.impl.manager import no_session
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
 from acme.om.agent_steps.types.content import Content, TextBlock, ToolResultBlock
 from acme.om.agent_steps.types.header import (
-    ArtifactRef,
     ControlCommand,
     ModelRequestHeader,
     ModelResponseHeader,
     SummaryHeader,
+    ToolOutputRef,
     ToolResponseHeader,
 )
 from acme.om.attribution import AttributionManagerInterface
@@ -64,8 +64,8 @@ from acme.om.models.types.fill import (
     RoleFill,
     SwitchReason,
 )
-from acme.om.privacy.impl.artifacts import ArtifactSealKeysImpl
 from acme.om.privacy.impl.keys import AgentSessionKeysImpl
+from acme.om.privacy.impl.tool_outputs import ToolOutputSealKeysImpl
 from acme.om.root import Managers, build_managers
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.windows import rules
@@ -248,7 +248,7 @@ def an_engine(
     )
     providers = scripted_model_providers()
     gate, hashes = Gate(), PromptHashMemoryImpl()
-    seal = ArtifactSealKeysImpl(
+    seal = ToolOutputSealKeysImpl(
         AgentSessionKeysImpl(storage.get_privacy_storage(), infra.get_keys()),
         storage.get_privacy_storage(),
     )
@@ -841,7 +841,7 @@ async def test_re_rendering_each_recorded_request_reproduces_its_prompt_hash(
     assert elsewhere != hashes[-1], "the hash is keyed by its session"
 
 
-# A tool result over the bound is stored as an artifact.
+# A tool result over the bound is stored as a tool output.
 
 
 def a_large_result(agent_session_id: UUID, size: int = 30_000) -> tuple[History, AgentStep, str]:
@@ -853,22 +853,22 @@ def a_large_result(agent_session_id: UUID, size: int = 30_000) -> tuple[History,
     return history, result, text
 
 
-async def test_a_result_over_the_bound_is_kept_as_an_artifact(engine: Engine) -> None:
+async def test_a_result_over_the_bound_is_kept_as_an_tool_output(engine: Engine) -> None:
     history, result, text = a_large_result(new_id())
     session = await an_agent_session(engine, History(history.agent_session_id))
     bounded = await engine.windows.bound_tool_response(engine.ctx, session.id, result)
     header = bounded.header
-    assert isinstance(header, ToolResponseHeader) and header.artifact is not None
-    assert header.artifact.characters == len(text)
+    assert isinstance(header, ToolResponseHeader) and header.tool_output is not None
+    assert header.tool_output.characters == len(text)
     head, tail = bounded.as_tool_response().parts
     assert head == TextBlock(text=text[:2_000]) and tail == TextBlock(text=text[-2_000:])
     assert (bounded.id, bounded.responds_to) == (result.id, result.responds_to)
     again = await engine.windows.bound_tool_response(engine.ctx, session.id, result)
-    assert again == bounded, "the same response keeps the same artifact"
+    assert again == bounded, "the same response keeps the same tool output"
     pages, offset = [], 0
     while True:
-        page = await engine.windows.get_artifact(
-            engine.ctx, session.id, header.artifact.id, offset, 100_000
+        page = await engine.windows.get_tool_output(
+            engine.ctx, session.id, header.tool_output.id, offset, 100_000
         )
         pages.append(page.text)
         offset += len(page.text)
@@ -883,7 +883,7 @@ async def test_a_result_over_the_bound_is_kept_as_an_artifact(engine: Engine) ->
     shown = next(b for m in draft.call.messages for b in m.blocks if isinstance(b, ToolResultBlock))
     first, notice, last = shown.parts
     assert (first, last) == (head, tail)
-    assert isinstance(notice, TextBlock) and str(header.artifact.id) in notice.text
+    assert isinstance(notice, TextBlock) and str(header.tool_output.id) in notice.text
     assert f"{len(text) - 4_000} characters" in notice.text
 
 
@@ -894,24 +894,24 @@ async def test_a_result_within_the_bound_is_kept_as_it_is(engine: Engine) -> Non
     with pytest.raises(ValidationFailed):
         await engine.windows.bound_tool_response(engine.ctx, session.id, history.steps[0])
     with pytest.raises(NotFound):
-        await engine.windows.get_artifact(engine.ctx, session.id, new_id(), 0, 10)
+        await engine.windows.get_tool_output(engine.ctx, session.id, new_id(), 0, 10)
 
 
-async def test_another_tenant_reads_no_artifact(engine: Engine) -> None:
+async def test_another_tenant_reads_no_tool_output(engine: Engine) -> None:
     history, result, _ = a_large_result(new_id())
     session = await an_agent_session(engine, History(history.agent_session_id))
     bounded = await engine.windows.bound_tool_response(engine.ctx, session.id, result)
-    assert isinstance(bounded.header, ToolResponseHeader) and bounded.header.artifact is not None
+    assert isinstance(bounded.header, ToolResponseHeader) and bounded.header.tool_output is not None
     with pytest.raises(NotFound):
-        await engine.windows.get_artifact(
-            context(Role.MEMBER), session.id, bounded.header.artifact.id, 0, 10
+        await engine.windows.get_tool_output(
+            context(Role.MEMBER), session.id, bounded.header.tool_output.id, 0, 10
         )
 
 
-def test_a_step_that_names_an_artifact_holds_its_head_and_tail() -> None:
+def test_a_step_that_names_an_tool_output_holds_its_head_and_tail() -> None:
     _, result, _ = a_large_result(new_id())
-    handle = ArtifactRef(id=new_id(), characters=30_000)
-    whole = {**result.model_dump(), "header": {"kind": "tool_response", "artifact": handle}}
+    handle = ToolOutputRef(id=new_id(), characters=30_000)
+    whole = {**result.model_dump(), "header": {"kind": "tool_response", "tool_output": handle}}
     with pytest.raises(ValueError, match="head and its tail"):
         AgentStep.model_validate(whole)
     content = Content(

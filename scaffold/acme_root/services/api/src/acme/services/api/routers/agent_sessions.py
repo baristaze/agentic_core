@@ -2,7 +2,7 @@
 person takes part in or sees, join one or leave it, switch who sees it,
 hand its steer on, send it a message or a control, decide a tool call it
 waits on, clear the park a person clears, and read its history and its
-artifacts a page at a time. Each function is one call into the agent
+tool_outputs a page at a time. Each function is one call into the agent
 sessions service; every create runs under the idempotency record, so a
 retried send is one step. The loop runs in the session runner: a route
 writes what a person said and answers once it is durable. A session the
@@ -29,7 +29,6 @@ from acme.services.api.types.agent_sessions import (
     AgentSessionView,
     AgentStepPageView,
     AgentStepView,
-    ArtifactPageView,
     ControlRequest,
     DeadlineRequest,
     DecisionRequest,
@@ -38,6 +37,7 @@ from acme.services.api.types.agent_sessions import (
     MessageRequest,
     PrincipalRequest,
     StartAgentSessionRequest,
+    ToolOutputPageView,
     VisibilityRequest,
 )
 from acme.services.api.types.common import LIMIT_DEFAULT
@@ -232,16 +232,16 @@ async def get_agent_steps(
     return await sessions.get_agent_steps(ctx, agent_session_id, after_seq, limit)
 
 
-@router.get("/{agent_session_id}/artifacts/{artifact_id}", response_model=ArtifactPageView)
-async def get_artifact(
+@router.get("/{agent_session_id}/tool-outputs/{tool_output_id}", response_model=ToolOutputPageView)
+async def get_tool_output(
     ctx: Ctx,
     sessions: AgentSessionsService,
     agent_session_id: UUID,
-    artifact_id: UUID,
+    tool_output_id: UUID,
     start: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1)] = 10_000,
-) -> ArtifactPageView:
+) -> ToolOutputPageView:
     """A page of what the session keeps whole outside its window, from the
-    character at `start`: an artifact is written once, so no character's
+    character at `start`: a tool output is written once, so no character's
     place moves between pages. The policy's page bounds `limit`."""
-    return await sessions.get_artifact(ctx, agent_session_id, artifact_id, start, limit)
+    return await sessions.get_tool_output(ctx, agent_session_id, tool_output_id, start, limit)

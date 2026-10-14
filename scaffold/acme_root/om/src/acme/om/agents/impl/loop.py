@@ -1460,8 +1460,8 @@ class LoopManagerImpl(LoopManagerInterface):
     async def _answer(
         self, run: _Run, request: AgentStep, answer: AgentStep, *after: AgentStep
     ) -> tuple[AgentStep, ...]:
-        """A call's response under the id this run gives it, kept whole as an
-        artifact when it is too large for a step, and persisted before the
+        """A call's response under the id this run gives it, kept whole as a
+        tool output when it is too large for a step, and persisted before the
         next model call, with the steps `after` it in the same append. A
         run that lost its claim is refused here, whatever it answered."""
         own = answer.model_copy(update={"id": response_id(request, run.epoch)})

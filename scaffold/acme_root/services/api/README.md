@@ -112,7 +112,7 @@ app, and `main.py` is the `acme-api` command: `serve`, `migrate`,
   a retried key; decide a tool call its loop waits on; clear the park a
   person clears (move the tree's deadline, take its steer, take its
   environment over and give it back in person, complete a job it waits
-  on); and read its history and its artifacts a page at a time. A
+  on); and read its history and its tool outputs a page at a time. A
   message, or a park cleared, asks for a run of its loop, which the
   session runner claims; the API never runs a loop. Only the steerer's
   message instructs; a participant's is data and asks for no run. A
@@ -123,7 +123,7 @@ app, and `main.py` is the `acme-api` command: `serve`, `migrate`,
   `.../visibility`, `.../messages`, `.../controls`,
   `.../calls/{request_seq}/decision`, `.../deadline`, `.../principal`,
   `.../take-over`, `.../give-back`, `.../jobs/{key}/completion`,
-  `.../steps`, `.../artifacts/{artifact_id}`, ADRs 1038 and 1039)
+  `.../steps`, `.../tool-outputs/{tool_output_id}`, ADRs 1038 and 1039)
 - **The identity provider's deliveries.** Outside `/v1`, since their
   shape is the provider's. No credential: the route checks the provider's
   signature over the body and its timestamp, and queues the delivery for
