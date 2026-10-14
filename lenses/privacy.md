@@ -42,7 +42,8 @@ removes.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/privacy/impl/sealed_agent_steps.py` and
+**Shape.**
+`scaffold/acme_root/om/src/acme/om/privacy/impl/sealed_agent_steps.py` and
 `scaffold/acme_root/om/src/acme/om/privacy/impl/keys.py`
 
 **Check.** review
@@ -153,7 +154,8 @@ declared time.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/privacy/impl/routed_agent_steps.py` and
+**Shape.**
+`scaffold/acme_root/om/src/acme/om/privacy/impl/routed_agent_steps.py` and
 `scaffold/acme_root/om/src/acme/om/privacy/types/agent_session_privacy.py`
 
 **Check.** review

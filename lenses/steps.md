@@ -84,8 +84,8 @@ tool-use block instead of referencing it and carrying its input's hash.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/agent_steps/types/agent_step.py` and
-`scaffold/acme_root/om/src/acme/om/agent_steps/types/header.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_steps/types/agent_step.py`
+and `scaffold/acme_root/om/src/acme/om/agent_steps/types/header.py`
 
 **Check.** review
 
@@ -111,8 +111,8 @@ response object or raw token text passed out of the engine.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/agent_steps/types/agent_step.py` and
-`scaffold/acme_root/om/src/acme/om/agent_steps/types/content.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_steps/types/agent_step.py`
+and `scaffold/acme_root/om/src/acme/om/agent_steps/types/content.py`
 
 **Check.** review
 
@@ -138,7 +138,8 @@ STP-11).
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/agent_steps/storage/impl/postgres.py`
+**Shape.**
+`scaffold/acme_root/om/src/acme/om/agent_steps/storage/impl/postgres.py`
 and `scaffold/acme_root/om/src/acme/om/base.py`
 
 **Check.** review
@@ -336,7 +337,8 @@ from a lower epoch.
 
 **Severity.** high
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/agent_steps/storage/impl/postgres.py`
+**Shape.**
+`scaffold/acme_root/om/src/acme/om/agent_steps/storage/impl/postgres.py`
 and `scaffold/acme_root/infra/src/acme/infra/transports/records.py`
 
 **Check.** review

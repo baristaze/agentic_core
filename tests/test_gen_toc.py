@@ -2,7 +2,7 @@
 
 import pytest
 
-LISTED = "- [AgentSteps](#steps)\n- [Loops and Sessions](#loops-and-sessions)\n"
+LISTED = "- [Steps](#steps)\n- [Loops and Sessions](#loops-and-sessions)\n"
 
 
 @pytest.fixture
@@ -24,7 +24,7 @@ def test_stale_contents_fails_check_and_leaves_the_file(repo, toc, capsys):
 
 
 def test_a_section_out_of_order_fails_check(repo, toc):
-    repo.edit("agentic_core_spec.md", LISTED, "- [Loops and Sessions](#loops-and-sessions)\n- [AgentSteps](#steps)\n")
+    repo.edit("agentic_core_spec.md", LISTED, "- [Loops and Sessions](#loops-and-sessions)\n- [Steps](#steps)\n")
     assert toc.main(["--check"]) == 1
 
 
@@ -48,7 +48,7 @@ def test_repeated_heading_gets_a_numbered_anchor_the_link_checker_accepts(repo, 
     links = repo.script("check_links")
     repo.write("agentic_core_spec.md", repo.read("agentic_core_spec.md") + "\n## Steps\n\nAgain.\n")
     toc.main([])
-    assert "- [AgentSteps](#steps-1)" in repo.read("agentic_core_spec.md")
+    assert "- [Steps](#steps-1)" in repo.read("agentic_core_spec.md")
     assert links.main() == 0
 
 
@@ -60,7 +60,7 @@ def test_missing_contents_fails(repo, toc, capsys):
 
 @pytest.mark.parametrize("flag", ["--chekc", "--chec", "--check-only", "check"])
 def test_unknown_argument_is_refused_and_writes_nothing(repo, toc, flag):
-    before = repo.read("agentic_core_spec.md").replace("- [AgentSteps](#steps)\n", "")
+    before = repo.read("agentic_core_spec.md").replace("- [Steps](#steps)\n", "")
     repo.write("agentic_core_spec.md", before)
     with pytest.raises(SystemExit) as exit_:
         toc.main([flag])

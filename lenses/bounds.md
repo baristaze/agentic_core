@@ -34,7 +34,8 @@ budgets one call may read; a close that reopens.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/spend_budgets/types/spend_budget.py`
+**Shape.**
+`scaffold/acme_root/om/src/acme/om/spend_budgets/types/spend_budget.py`
 
 **Check.** review
 
@@ -123,7 +124,8 @@ or an alarm.
 
 **Severity.** high
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/spend_budgets/types/spend_hold.py` and
+**Shape.**
+`scaffold/acme_root/om/src/acme/om/spend_budgets/types/spend_hold.py` and
 `scaffold/acme_root/integrations/src/acme/integrations/model_providers/types.py`
 
 **Check.** review
@@ -148,7 +150,8 @@ postpay.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/spend_budgets/types/spend_breach.py` and
+**Shape.**
+`scaffold/acme_root/om/src/acme/om/spend_budgets/types/spend_breach.py` and
 `scaffold/acme_root/om/src/acme/om/spend_budgets/rules.py`
 
 **Check.** review
