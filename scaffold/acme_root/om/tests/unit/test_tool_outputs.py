@@ -16,6 +16,7 @@ from contracts.histories import History
 from acme.infra.buckets import Buckets
 from acme.infra.impl.local import InfraLocalImpl
 from acme.integrations.model_providers.registry import absent_model_providers
+from acme.om.agent_root import AgentRootOptions
 from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
 from acme.om.agent_steps.impl.manager import no_session
 from acme.om.agent_steps.types.agent_step import AgentStep
@@ -46,7 +47,9 @@ class Roots:
         # Marked today, purged today: the retention is not what is tested.
         options = AgentSessionsOptions(retention=timedelta(0))
         self.managers: Managers = build_managers(
-            self.storage, self.infra, agent_sessions_options=options
+            self.storage,
+            self.infra,
+            agent_root_options=AgentRootOptions(agent_sessions_options=options),
         )
         self.ctx: TenantContext = context(Role.MEMBER)
 
@@ -225,7 +228,11 @@ async def test_a_deleted_tenants_tool_outputs_go_a_batch_a_pass(roots: Roots) ->
 
 async def test_a_root_with_no_key_service_keeps_no_tool_output(tmp_path: Path) -> None:
     roots = Roots(tmp_path)
-    managers = build_managers(roots.storage, roots.infra, tool_output_seal=ToolOutputSealNullImpl())
+    managers = build_managers(
+        roots.storage,
+        roots.infra,
+        agent_root_options=AgentRootOptions(tool_output_seal=ToolOutputSealNullImpl()),
+    )
     session = (
         await managers.agent_sessions.create_agent_session(roots.ctx, make_agent_session())
     ).id

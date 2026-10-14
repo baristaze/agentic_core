@@ -12,6 +12,7 @@ from contracts.fill_set_storage import HAIKU, SOL, SONNET
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.integrations.model_providers.types import Effort, ProviderName
+from acme.om.agent_root import AgentRootOptions
 from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
 from acme.om.agent_steps.types.header import SwitchedHeader
 from acme.om.base import new_id
@@ -85,7 +86,11 @@ EVERY_DEFAULT = Priced(
 
 @pytest.fixture
 def managers(tmp_path: Path) -> Managers:
-    return build_managers(StorageMemoryImpl(), InfraLocalImpl(tmp_path), model_prices=EVERY_DEFAULT)
+    return build_managers(
+        StorageMemoryImpl(),
+        InfraLocalImpl(tmp_path),
+        agent_root_options=AgentRootOptions(model_prices=EVERY_DEFAULT),
+    )
 
 
 async def a_run(managers: Managers, ctx: TenantContext) -> tuple[UUID, int, UUID]:

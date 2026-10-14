@@ -36,6 +36,7 @@ from acme.infra.secrets.local import SecretsLocalImpl
 from acme.infra.transports.broker import BrokerTwinImpl
 from acme.infra.transports.vm import TransportVmImpl
 from acme.infra.vms.twin import VmsTwinImpl
+from acme.om.agent_root import AgentRootOptions
 from acme.om.agent_steps.types.agent_step import AgentStep
 from acme.om.agent_steps.types.header import AgentWorkspaceSnapshot, SnapshotHeader
 from acme.om.base import new_id
@@ -191,7 +192,11 @@ async def test_a_revoked_key_destroys_the_disks_kept_for_its_snapshots_and_no_ot
     workspace, a cache, stays, and so does a fork's copy, kept for the
     child under its own key: the child still starts from it."""
     infra = VmInfra(tmp_path)
-    managers = build_managers(StorageMemoryImpl(), infra, tool_catalog=stand_ins("read_log"))
+    managers = build_managers(
+        StorageMemoryImpl(),
+        infra,
+        agent_root_options=AgentRootOptions(tool_catalog=stand_ins("read_log")),
+    )
     ctx = context(Role.MEMBER)
     parent, child = [
         (await managers.agent_sessions.create_agent_session(ctx, make_agent_session())).id

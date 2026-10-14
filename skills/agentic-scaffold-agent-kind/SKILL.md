@@ -69,7 +69,7 @@ The shape of a kind is `DELIVERY` and `ASSISTANT` in
 | File | Change |
 |------|--------|
 | `om/src/<name>/om/agents/kinds.py` | `<KIND>`, and its version in `AGENT_KINDS` |
-| `services/api/src/<name>/services/api/container.py`, `workers/maintenance/src/<name>/workers/maintenance/container.py` (the first kind) | `agent_kinds=AGENT_KINDS` in the call to `build_managers` |
+| `services/api/src/<name>/services/api/container.py`, `workers/maintenance/src/<name>/workers/maintenance/container.py` (the first kind) | `agent_kinds=AGENT_KINDS` in the `AgentRootOptions` its call to `build_managers` passes |
 | `om/tests/unit/test_agent_kinds.py` | the kind's cases |
 | `services/api/tests/test_container.py` (the first kind) | the API's container passes `AGENT_KINDS` |
 | `om/src/<name>/om/agents/README.md` | the kind, in the product's language |
@@ -77,9 +77,10 @@ The shape of a kind is `DELIVERY` and `ASSISTANT` in
 ## Procedure
 
 1. The engine holds a product's kinds in one catalog, which
-   `build_managers` in `om/src/<name>/om/root.py` takes as
-   `agent_kinds`. Every process's container that builds the managers
-   passes `AGENT_KINDS`, so each process knows the same kinds.
+   `build_agent_managers` in `om/src/<name>/om/agent_root.py` takes as
+   `AgentRootOptions.agent_kinds`. Every process's container that
+   builds the managers passes `AGENT_KINDS` in the `agent_root_options`
+   of its `build_managers` call, so each process knows the same kinds.
 2. A kind is versioned, and a session keeps the version it started on.
    A change to a kind that the last commit holds
    (`git show HEAD:om/src/<name>/om/agents/kinds.py`) is the next
@@ -107,7 +108,7 @@ The shape of a kind is `DELIVERY` and `ASSISTANT` in
    `latest(<kind>)` answers this version, and each earlier version
    still answers by its number; `latest(<kind>).share` is the share the
    kind names, or `None` for a kind that names none. Each container passes them, held in
-   that process's own tests, read from the arguments its
+   that process's own tests, read from the `agent_root_options` its
    `build_managers` call receives, as `services/api/tests/test_container.py`
    reads that call.
 

@@ -21,6 +21,7 @@ from acme.integrations.model_providers.calls import ModelCall, ModelReply
 from acme.integrations.model_providers.registry import ModelProvidersOverImpl
 from acme.integrations.model_providers.scripted import ModelProviderScriptedImpl, ScriptedFailure
 from acme.integrations.model_providers.types import ErrorKind, ProviderName, StopReason, Usage
+from acme.om.agent_root import AgentRootOptions
 from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
 from acme.om.agent_steps.types.content import TextBlock, ToolResultBlock, ToolUseBlock
@@ -44,7 +45,7 @@ from acme.om.base import Platform, new_id, utcnow
 from acme.om.context import CredentialKind, RequestContext, Role, TenantContext, build_context
 from acme.om.language_models.impl.credentials import CallCredentialsPlatformImpl
 from acme.om.language_models.layer import LanguageModelsLayer
-from acme.om.root import Managers, build_managers, engine_tools
+from acme.om.root import Managers, build_managers
 from acme.om.spend_budgets.types.amount import Amount
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.storage.root import StorageInterface
@@ -52,6 +53,7 @@ from acme.om.tenancy.rules import permissions_of
 from acme.om.tools.attachments import AttachmentReaderInterface
 from acme.om.tools.impl.attachments import AttachmentReaderNullImpl
 from acme.om.tools.impl.manager import ToolsOptions
+from acme.om.tools.native import native_tools
 from acme.om.tools.tool import JobToolInterface, ToolInterface, ToolRuntime
 from acme.om.tools.types.call import JobHandle, JobStarted
 from acme.om.tools.types.policy import Decision, Target, ToolPolicyLayer, ToolPolicyRule
@@ -407,13 +409,15 @@ def loop_over(
         storage,
         infra,
         integrations=integrations,
-        agent_kinds=kinds,
-        principal_context=live,
-        tool_catalog=every,
-        attachment_reader=reader,
-        language_models_layer=language_models_layer,
-        tools_options=None if ceilings is None else ToolsOptions(ceilings=ceilings),
-        agent_sessions_options=sessions,
+        agent_root_options=AgentRootOptions(
+            agent_kinds=kinds,
+            principal_context=live,
+            tool_catalog=every,
+            attachment_reader=reader,
+            language_models_layer=language_models_layer,
+            tools_options=None if ceilings is None else ToolsOptions(ceilings=ceilings),
+            agent_sessions_options=sessions,
+        ),
     )
     clock = Clock()
     # The sessions of one case share one signal, as a fleet's do on Valkey:
@@ -453,7 +457,7 @@ def loop_over(
         ),
         signal,
         sink,
-        engine_tools(
+        native_tools(
             managers.agent_steps,
             managers.agent_sessions,
             reader,

@@ -13,6 +13,7 @@ from contracts.doubles import context
 from contracts.tools import stand_ins
 
 from acme.infra.impl.local import InfraLocalImpl
+from acme.om.agent_root import AgentRootOptions
 from acme.om.agent_sessions.rules import QUESTION, asks_for_run, parked_step
 from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus
 from acme.om.agent_steps.rules import control_step, message_step
@@ -58,7 +59,9 @@ class Engine:
     def __init__(self, tmp_path: Path) -> None:
         self.storage = StorageMemoryImpl()
         self.managers: Managers = build_managers(
-            self.storage, InfraLocalImpl(tmp_path), tool_catalog=TOOLS
+            self.storage,
+            InfraLocalImpl(tmp_path),
+            agent_root_options=AgentRootOptions(tool_catalog=TOOLS),
         )
 
     def runs(self, agent_session_id: UUID) -> list[WorkItem]:

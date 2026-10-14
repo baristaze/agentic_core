@@ -23,6 +23,7 @@ from sqlalchemy import text
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.infra.keys.memory import KeyServiceMemoryImpl
+from acme.om.agent_root import AgentRootOptions
 from acme.om.agent_steps.storage import AgentStepStorageInterface
 from acme.om.agent_steps.storage.impl.memory import AgentStepStorageMemoryImpl
 from acme.om.agent_steps.storage.impl.postgres import AgentStepStoragePostgresImpl
@@ -106,7 +107,7 @@ def infra(tmp_path: Path) -> InfraLocalImpl:
 
 @pytest.fixture
 def managers(storage: StoragePostgresImpl, infra: InfraLocalImpl) -> Managers:
-    return build_managers(storage, infra, tool_catalog=TOOLS)
+    return build_managers(storage, infra, agent_root_options=AgentRootOptions(tool_catalog=TOOLS))
 
 
 async def an_org(managers: Managers) -> TenantContext:
@@ -306,7 +307,9 @@ async def test_a_memory_only_session_writes_no_content_row(
     assert not [phrase for phrase in SAID if phrase in reader]
     assert await key_rows(pg_sessions, ctx.org_id) == []
 
-    elsewhere = build_managers(storage, infra, tool_catalog=TOOLS)
+    elsewhere = build_managers(
+        storage, infra, agent_root_options=AgentRootOptions(tool_catalog=TOOLS)
+    )
     shapes = (await elsewhere.agent_steps.get_agent_steps(ctx, sessions["shape"], 0, 50)).items
     assert [step.seq for step in shapes] == list(range(1, 7))
     assert ContentState.ABSENT in {step.content.state for step in shapes}

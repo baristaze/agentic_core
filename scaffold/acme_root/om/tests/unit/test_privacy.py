@@ -25,6 +25,7 @@ from contracts.tools import stand_ins
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.infra.keys.memory import KeyServiceMemoryImpl
+from acme.om.agent_root import AgentRootOptions
 from acme.om.agent_steps.storage import AgentStepStorageInterface
 from acme.om.agent_steps.storage.impl.memory import AgentStepStorageMemoryImpl
 from acme.om.agent_steps.types.agent_step import AgentStep
@@ -190,7 +191,9 @@ def infra(tmp_path: Path) -> InfraLocalImpl:
 
 @pytest.fixture
 def managers(infra: InfraLocalImpl) -> Managers:
-    return build_managers(StorageMemoryImpl(), infra, tool_catalog=TOOLS)
+    return build_managers(
+        StorageMemoryImpl(), infra, agent_root_options=AgentRootOptions(tool_catalog=TOOLS)
+    )
 
 
 async def an_agent_session(managers: Managers, ctx: TenantContext) -> UUID:

@@ -180,7 +180,7 @@ built inside the engine.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/root.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_root.py`
 
 **Check.** `agentic-check` decides that no `__init__` parameter or dataclass
 field in the engine's modules, their storage left out, takes an interface

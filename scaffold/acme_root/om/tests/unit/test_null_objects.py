@@ -39,6 +39,7 @@ from acme.integrations.model_providers import ModelProviderInterface, reply_of
 from acme.integrations.model_providers.absent import ModelProviderAbsentImpl
 from acme.integrations.model_providers.calls import ModelCall
 from acme.integrations.model_providers.types import ProviderName
+from acme.om.agent_root import AgentRootOptions
 from acme.om.agent_steps.types.stream import TextPart
 from acme.om.agents import LoopHooksInterface, ResultGateInterface
 from acme.om.agents.hooks import NO_ATTACHED_TOOLSETS
@@ -205,17 +206,22 @@ def test_a_root_outside_local_refuses_a_quiet_budget_gate(tmp_path: Path, enviro
         build_managers(
             StorageMemoryImpl(),
             InfraLocalImpl(tmp_path),
-            spend_budget_gate=SpendBudgetGateNullImpl(),
-            environment=environment,
+            agent_root_options=AgentRootOptions(
+                spend_budget_gate=SpendBudgetGateNullImpl(), environment=environment
+            ),
         )
 
 
 def test_a_local_root_accepts_a_quiet_budget_gate_and_any_root_its_own(tmp_path: Path) -> None:
     local = build_managers(
-        StorageMemoryImpl(), InfraLocalImpl(tmp_path), spend_budget_gate=SpendBudgetGateNullImpl()
+        StorageMemoryImpl(),
+        InfraLocalImpl(tmp_path),
+        agent_root_options=AgentRootOptions(spend_budget_gate=SpendBudgetGateNullImpl()),
     )
     assert isinstance(local.spend_budget_gate, QuietNull)
     deployed = build_managers(
-        StorageMemoryImpl(), InfraLocalImpl(tmp_path), environment="production"
+        StorageMemoryImpl(),
+        InfraLocalImpl(tmp_path),
+        agent_root_options=AgentRootOptions(environment="production"),
     )
     assert not isinstance(deployed.spend_budget_gate, QuietNull)

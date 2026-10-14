@@ -12,6 +12,7 @@ from acme.integrations.identity.twin import IdentityProviderTwinImpl
 from acme.integrations.impl.configured import IntegrationsConfiguredImpl, IntegrationsOverImpl
 from acme.integrations.model_providers.registry import absent_model_providers
 from acme.integrations.root import IntegrationsInterface
+from acme.om.agent_root import AgentRootOptions
 from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
 from acme.om.agent_steps.impl.manager import AgentStepsOptions
 from acme.om.agents.impl.manager import AgentsOptions
@@ -76,7 +77,6 @@ def worker_managers(
             purge_batch=batch,
         ),
         integrations=integrations,
-        environment=settings.environment,
         media_options=MediaOptions(
             retention=timedelta(days=settings.media_retention_days),
             pending_expiry=timedelta(hours=settings.media_pending_expiry_hours),
@@ -91,17 +91,20 @@ def worker_managers(
         ),
         orchestrations_options=OrchestrationsOptions(purge_batch=batch),
         leases_options=LeasesOptions(purge_batch=batch),
-        steps_options=AgentStepsOptions(purge_batch=batch),
-        agent_sessions_options=AgentSessionsOptions(
-            purge_batch=batch,
-            retention=timedelta(days=settings.agent_session_retention_days),
-            purge_sessions=AGENT_SESSION_PURGE_BATCH,
+        agent_root_options=AgentRootOptions(
+            environment=settings.environment,
+            steps_options=AgentStepsOptions(purge_batch=batch),
+            agent_sessions_options=AgentSessionsOptions(
+                purge_batch=batch,
+                retention=timedelta(days=settings.agent_session_retention_days),
+                purge_sessions=AGENT_SESSION_PURGE_BATCH,
+            ),
+            agents_options=AgentsOptions(purge_batch=batch),
+            attribution_options=AttributionOptions(purge_batch=batch),
+            budgets_options=SpendBudgetsOptions(purge_batch=batch),
+            language_models_options=LanguageModelsOptions(purge_batch=batch),
+            tools_options=ToolsOptions(purge_batch=batch),
         ),
-        agents_options=AgentsOptions(purge_batch=batch),
-        attribution_options=AttributionOptions(purge_batch=batch),
-        budgets_options=SpendBudgetsOptions(purge_batch=batch),
-        language_models_options=LanguageModelsOptions(purge_batch=batch),
-        tools_options=ToolsOptions(purge_batch=batch),
     )
 
 
