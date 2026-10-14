@@ -1,8 +1,8 @@
-"""Machines on this host's hypervisor, through Lima's command line
-(`limactl`): Apple's virtualization on macOS, KVM on Linux. Each machine is
+"""VMs on this host's hypervisor, through Lima's command line
+(`limactl`): Apple's virtualization on macOS, KVM on Linux. Each VM is
 an instance of Lima, from a template this module writes, and each snapshot
 is a stopped instance of its own: its disk a copy-on-write clone of the
-machine's, where the filesystem clones files (ADR 1029)."""
+VM's, where the filesystem clones files (ADR 1029)."""
 
 import asyncio
 import hashlib
@@ -17,13 +17,13 @@ from datetime import timedelta
 from pathlib import Path
 
 from acme.infra.exceptions import BackendFailed, InfraValidationFailed
-from acme.infra.machines import (
+from acme.infra.vms import (
     Channel,
-    MachineReply,
-    MachinesInterface,
-    MachineSpec,
-    MachineState,
     SnapshotNotFound,
+    VmReply,
+    VmsInterface,
+    VmSpec,
+    VmState,
 )
 
 LIMA_VARIABLES = ("PATH", "HOME", "LIMA_HOME", "XDG_CACHE_HOME", "XDG_CONFIG_HOME")
@@ -56,7 +56,7 @@ timeout 600 sh -c 'until docker info >/dev/null 2>&1; do sleep 2; done'
 """What a start waits for: Docker answering the guest user."""
 
 IMAGE = re.compile(r"^(template:[A-Za-z0-9._/-]+|https://[^\s]+|/[^\s]+)$")
-"""An image Lima builds a machine on: one of its templates, or a template's
+"""An image Lima builds a VM on: one of its templates, or a template's
 address or path, never anything a template file would read as more."""
 
 DISK = "disk"
@@ -97,7 +97,7 @@ def hypervisor() -> str | None:
         if os.access("/dev/kvm", os.R_OK | os.W_OK):
             return None
         return "this host has no /dev/kvm this process may open"
-    return f"Lima runs no machine on {sys.platform}"
+    return f"Lima runs no VM on {sys.platform}"
 
 
 def lima_home() -> Path:
@@ -120,15 +120,15 @@ def name_refused(longest: str, home: Path, bound: int) -> str | None:
     if length < bound:
         return None
     return (
-        f"Lima keeps its machines in {home}, and a machine named as long as "
+        f"Lima keeps its VMs in {home}, and a VM named as long as "
         f"{longest!r} would put its socket {length} characters deep, where this "
         f"host allows fewer than {bound}: set LIMA_HOME to a shorter folder, or "
-        "the machine prefix shorter"
+        "the VM prefix shorter"
     )
 
 
-def template(spec: MachineSpec) -> dict[str, object]:
-    """The template a machine is made from: its image, Docker provisioned
+def template(spec: VmSpec) -> dict[str, object]:
+    """The template a VM is made from: its image, Docker provisioned
     inside, and nothing of this host in it. It mounts no directory of the
     host, forwards no port to it, carries none of its proxy variables,
     loads none of its keys, and forwards no agent."""
@@ -152,18 +152,18 @@ def template(spec: MachineSpec) -> dict[str, object]:
     return made
 
 
-class MachinesLimaImpl(MachinesInterface):
-    """Machines through `limactl`, each command a process bounded by a
+class VmsLimaImpl(VmsInterface):
+    """VMs through `limactl`, each command a process bounded by a
     timeout, a start by a longer one, since the first may download an image
-    and install Docker. A machine's egress cannot be closed from outside its
-    guest, so a machine that must reach nothing is refused; its cpus and its
+    and install Docker. A VM's egress cannot be closed from outside its
+    guest, so a VM that must reach nothing is refused; its cpus and its
     memory are held by the hypervisor. A snapshot is a clone of a stopped
     instance, held to a digest of its disk: the bytes of each run of data
     the disk holds, by offset, so the holes of a sparse disk are never
     read. `encrypted` declares the disk that holds Lima's instances
     encrypted at rest; nothing here can see it. Lima keeps a socket in
     each instance's folder, so its probe refuses a name whose socket path
-    this host cannot hold, before any machine starts."""
+    this host cannot hold, before any VM starts."""
 
     def __init__(
         self,
@@ -196,15 +196,15 @@ class MachinesLimaImpl(MachinesInterface):
     def encrypted_at_rest(self) -> bool:
         return self._encrypted
 
-    async def state(self, name: str) -> MachineState:
+    async def state(self, name: str) -> VmState:
         instance = (await self._instances()).get(name)
         if instance is None:
-            return MachineState.ABSENT
-        return MachineState.RUNNING if instance["status"] == "Running" else MachineState.STOPPED
+            return VmState.ABSENT
+        return VmState.RUNNING if instance["status"] == "Running" else VmState.STOPPED
 
-    async def launch(self, name: str, spec: MachineSpec, snapshot: str | None = None) -> None:
+    async def launch(self, name: str, spec: VmSpec, snapshot: str | None = None) -> None:
         if spec.egress_open is False:
-            raise InfraValidationFailed("a Lima machine cannot be closed to egress")
+            raise InfraValidationFailed("a Lima VM cannot be closed to egress")
         instance = (await self._instances()).get(name)
         if instance is None:
             await self._make(name, spec, snapshot)
@@ -218,12 +218,12 @@ class MachinesLimaImpl(MachinesInterface):
             await self._checked("edit", *_sized(spec), name)
         await self._checked("start", name)
 
-    async def _make(self, name: str, spec: MachineSpec, snapshot: str | None) -> None:
-        """A machine made under `name`, from a clone of `snapshot` or from
+    async def _make(self, name: str, spec: VmSpec, snapshot: str | None) -> None:
+        """A VM made under `name`, from a clone of `snapshot` or from
         the template, and started. One that fails part way is deleted."""
         try:
             if snapshot is not None:
-                if await self.state(snapshot) is not MachineState.STOPPED:
+                if await self.state(snapshot) is not VmState.STOPPED:
                     raise SnapshotNotFound(f"no snapshot stands under {snapshot}")
                 await self._checked("clone", *_sized(spec), snapshot, name)
             else:
@@ -244,7 +244,7 @@ class MachinesLimaImpl(MachinesInterface):
         *,
         bound: timedelta,
         stdin: bytes | None = None,
-    ) -> MachineReply:
+    ) -> VmReply:
         return await self._limactl(*self._shell(name), *argv, bound=bound, stdin=stdin)
 
     def channel(self, name: str) -> Channel:
@@ -254,7 +254,7 @@ class MachinesLimaImpl(MachinesInterface):
         return ("--tty=false", "shell", "--workdir", "/", name, "--")
 
     async def stop(self, name: str) -> None:
-        if await self.state(name) is MachineState.RUNNING:
+        if await self.state(name) is VmState.RUNNING:
             await self._checked("stop", name)
 
     async def snapshot(self, name: str, to: str) -> str:
@@ -304,7 +304,7 @@ class MachinesLimaImpl(MachinesInterface):
         await self._checked("delete", "--force", name)
 
     def describe(self) -> str:
-        return "machines=lima"
+        return "vms=lima"
 
     async def start(self) -> None:
         return None
@@ -330,9 +330,7 @@ class MachinesLimaImpl(MachinesInterface):
         if not reply.ok:
             raise BackendFailed("limactl", command, reply.reason())
 
-    async def _limactl(
-        self, *args: str, bound: timedelta, stdin: bytes | None = None
-    ) -> MachineReply:
+    async def _limactl(self, *args: str, bound: timedelta, stdin: bytes | None = None) -> VmReply:
         """Runs `limactl <args>` and answers its exit and output; one that has
         not ended within `bound` is killed and answers no code. A command line
         that is not installed answers 127, as a shell would."""
@@ -347,7 +345,7 @@ class MachinesLimaImpl(MachinesInterface):
                 cwd="/",
             )
         except FileNotFoundError:
-            return MachineReply(127, b"", b"limactl is not installed")
+            return VmReply(127, b"", b"limactl is not installed")
         try:
             stdout, stderr = await asyncio.wait_for(
                 process.communicate(stdin), bound.total_seconds()
@@ -355,19 +353,19 @@ class MachinesLimaImpl(MachinesInterface):
         except TimeoutError:
             process.kill()
             await process.wait()
-            return MachineReply(None, b"", b"")
-        return MachineReply(process.returncode, stdout, stderr)
+            return VmReply(None, b"", b"")
+        return VmReply(process.returncode, stdout, stderr)
 
 
-def _holds(instance: dict[str, object], spec: MachineSpec) -> bool:
+def _holds(instance: dict[str, object], spec: VmSpec) -> bool:
     """Whether an instance holds the cpus and the memory `spec` asks for."""
     if spec.cpus is not None and instance.get("cpus") != spec.cpus:
         return False
     return spec.memory_mb is None or instance.get("memory") == spec.memory_mb << 20
 
 
-def _sized(spec: MachineSpec) -> tuple[str, ...]:
-    """The flags that set a machine's cpus and memory to `spec`'s."""
+def _sized(spec: VmSpec) -> tuple[str, ...]:
+    """The flags that set a VM's cpus and memory to `spec`'s."""
     flags: list[str] = []
     if spec.cpus is not None:
         flags += ["--cpus", str(spec.cpus)]

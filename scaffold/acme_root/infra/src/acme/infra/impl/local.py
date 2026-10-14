@@ -11,8 +11,6 @@ from acme.infra.flags import FlagsInterface
 from acme.infra.flags.memory import FlagsMemoryImpl
 from acme.infra.keys import KeyServiceInterface
 from acme.infra.keys.memory import KeyServiceMemoryImpl
-from acme.infra.machines import MachinesInterface
-from acme.infra.machines.twin import MachinesTwinImpl
 from acme.infra.outages import OutageSignalInterface
 from acme.infra.outages.null import OutageSignalNullImpl
 from acme.infra.queues import QueuesInterface
@@ -25,6 +23,8 @@ from acme.infra.topics.memory import TopicsMemoryImpl
 from acme.infra.transports import CredentialBrokerInterface, TransportInterface
 from acme.infra.transports.broker import BrokerTwinImpl
 from acme.infra.transports.twin import TransportTwinImpl
+from acme.infra.vms import VmsInterface
+from acme.infra.vms.twin import VmsTwinImpl
 from acme.infra.workspaces import WorkspaceProviderInterface
 from acme.infra.workspaces.twin import WorkspaceTwinImpl
 
@@ -42,7 +42,7 @@ class InfraLocalImpl(InfraInterface):
         self._queues = QueueMemoryImpl()
         self._secrets = SecretsLocalImpl(root / "secrets.env")
         self._keys = KeyServiceMemoryImpl()
-        self._machines = MachinesTwinImpl(root / "machines")
+        self._vms = VmsTwinImpl(root / "vms")
         self._workspaces = WorkspaceTwinImpl()
         self._broker = BrokerTwinImpl()
         self._transport = TransportTwinImpl(self._secrets, self._broker)
@@ -69,8 +69,8 @@ class InfraLocalImpl(InfraInterface):
     def get_workspaces(self) -> WorkspaceProviderInterface:
         return self._workspaces
 
-    def get_machines(self) -> MachinesInterface:
-        return self._machines
+    def get_vms(self) -> VmsInterface:
+        return self._vms
 
     def get_transport(self) -> TransportInterface:
         return self._transport
@@ -93,7 +93,7 @@ class InfraLocalImpl(InfraInterface):
             self._queues.describe(),
             self._secrets.describe(),
             self._keys.describe(),
-            self._machines.describe(),
+            self._vms.describe(),
             self._workspaces.describe(),
             self._transport.describe(),
             self._broker.describe(),
@@ -111,11 +111,11 @@ class InfraLocalImpl(InfraInterface):
             self._flags,
         ):
             await capability.start()
-        for runtime in (self._broker, self._machines, self._workspaces, self._transport):
+        for runtime in (self._broker, self._vms, self._workspaces, self._transport):
             await runtime.start()
 
     async def close(self) -> None:
-        for runtime in (self._transport, self._workspaces, self._machines, self._broker):
+        for runtime in (self._transport, self._workspaces, self._vms, self._broker):
             await runtime.close()
         for cache in self._caches.values():
             await cache.close()

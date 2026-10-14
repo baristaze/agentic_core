@@ -172,7 +172,7 @@ flowchart LR
 | Effect | Whether a tool call may be repeated: read-only, idempotent, unsafe | [The Tool Contract](#the-tool-contract) |
 | Approval | A person's decision on one exact tool call | [Approvals](#approvals) |
 | Workspace, transport | Where tools run; the only way to run there | [The Runtime](#the-runtime) |
-| Machines | The virtual machines a VM workspace runs on, each started from an image or a snapshot of a disk | [The Runtime](#the-runtime) |
+| VMs | The virtual machines a VM workspace runs on, each started from an image or a snapshot of a disk | [The Runtime](#the-runtime) |
 | Snapshot | A workspace kept whole, sealed, named by a step, and trusted by its hash | [Workspace Snapshots](#workspace-snapshots) |
 | Base | An image and its setup, built once for a tenant and kept as a snapshot workspaces start from | [Workspace Snapshots](#workspace-snapshots) |
 | Stream part | A typed, live fragment of a step or artifact | [Streams](#streams) |
@@ -973,11 +973,11 @@ capabilities in the guideline's sense ([Infrastructure][g-infra]):
   the engine's own host. A transport that records each execution under
   its idempotency key can answer its outcome after a crash.
 
-A VM workspace runs on **machines**, a third capability: it starts a
-machine from an image or from a snapshot, runs a command in it, stops
+A VM workspace runs on **VMs**, a third capability: it starts a VM
+from an image or from a snapshot, runs a command in it, stops
 it, snapshots its disk, and destroys it. It says up front what it can
 hold: whether its host has a hypervisor, the egress it closes from
-outside a guest, and the limits it enforces. One machine serves one
+outside a guest, and the limits it enforces. One VM serves one
 workspace, and the agent's commands may run containers inside it. A
 laptop's own hypervisor runs them, or a cloud's VMs, behind the same
 interface.
@@ -1054,7 +1054,7 @@ platform's ([Next: The Platform](#next-the-platform)).
   bytes keyed by the session. A `snapshotted` step names it: its id, its
   hash, its size, and the workspace it came from. The history is the
   source of truth for which snapshots a session holds. A VM's disk is
-  too large for a bucket: its machines keep it, in a store encrypted at
+  too large for a bucket: its VMs keep it, in a store encrypted at
   rest, and the sealed archive names it by a reference and a digest the
   restore holds it to.
 - **Restore.** A prepare may start from a snapshot the history names,
@@ -1086,7 +1086,7 @@ platform's ([Next: The Platform](#next-the-platform)).
   the commands a person declared, so its workspace holds what a system's
   package manager needs, such as changing a file's owner, and nothing
   privileged. Every container a session uses holds no such power; a
-  VM's commands hold their guest whole, and the machine is the wall. A
+  VM's commands hold their guest whole, and the VM is the wall. A
   setup runs no model, is given no secret, and reads no session's
   content, so its base is the tenant's, not a session's: kept under the
   tenant alone, never sealed under a session's key, and gone with the
@@ -1903,7 +1903,7 @@ every surface a copy shares, so the bare word stays the product's.
 
 Provider adapters are clients of external services, so they live under
 `integrations/`, each with the scripted provider as its twin. The
-workspace provider, the machines, the transport, and the key service
+workspace provider, the VMs, the transport, and the key service
 are capabilities under `infra/`, beside the guideline's.
 
 ## Deviations from the Guideline

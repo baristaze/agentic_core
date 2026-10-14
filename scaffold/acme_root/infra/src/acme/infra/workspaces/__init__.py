@@ -268,7 +268,7 @@ class WorkspaceProviderInterface(ABC):
         package manager needs, such as changing a file's owner, and nothing
         privileged. Every other workspace, each one a session uses, holds
         no such power. A provider whose instances hold none ignores it, and
-        so does one whose wall is the machine, whose commands hold their
+        so does one whose wall is the VM, whose commands hold their
         guest whole."""
         ...
 

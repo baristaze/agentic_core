@@ -1,13 +1,13 @@
-"""A VM workspace's snapshot through the tools, on a machine on Lima, its
+"""A VM workspace's snapshot through the tools, on a VM on Lima, its
 archive kept on the stack's MinIO (ADR 1029). The step names an archive of
 a few hundred bytes, sealed in the bucket; the disk stays with the
-machines. Prepared from it after its machine is destroyed, the workspace
+VMs. Prepared from it after its VM is destroyed, the workspace
 answers the same file and the same Docker image. A secret's value a
 command wrote anywhere on the disk refuses the next snapshot, by the
 secret's name, and nothing more is stored.
 
 Skipped, with the reason, where Lima or a hypervisor is missing. The
-machine is named under `ACME_MACHINE_PREFIX` and destroyed at the end."""
+VM is named under `ACME_VM_PREFIX` and destroyed at the end."""
 
 import os
 import secrets as tokens
@@ -27,13 +27,13 @@ from acme.infra.base import utcnow
 from acme.infra.buckets import Buckets
 from acme.infra.buckets.s3 import BucketsS3Impl
 from acme.infra.impl.settings import InfraSettings
-from acme.infra.machines import MachineState
-from acme.infra.machines.lima import MachinesLimaImpl, hypervisor
 from acme.infra.secrets.local import SecretsLocalImpl
 from acme.infra.transports import CommandSpec
 from acme.infra.transports.broker import BrokerTwinImpl
 from acme.infra.transports.twin import RecordSealTwin
 from acme.infra.transports.vm import TransportVmImpl
+from acme.infra.vms import VmState
+from acme.infra.vms.lima import VmsLimaImpl, hypervisor
 from acme.infra.workspaces import (
     Durability,
     EgressMode,
@@ -120,11 +120,11 @@ async def run(transport: TransportVmImpl, workspace: Workspace, script: str) -> 
 async def test_a_vm_snapshot_is_kept_on_minio_by_name_and_restores_its_whole_disk(
     tmp_path: Path, minio: BucketsS3Impl
 ) -> None:
-    machines = MachinesLimaImpl(TIMEOUT, timedelta(minutes=15), encrypted=True)
-    prefix = os.environ.get("ACME_MACHINE_PREFIX", "acme-test-")
-    provider = WorkspaceVmImpl(machines, "template:_images/ubuntu-lts", prefix, TIMEOUT)
+    vms = VmsLimaImpl(TIMEOUT, timedelta(minutes=15), encrypted=True)
+    prefix = os.environ.get("ACME_VM_PREFIX", "acme-test-")
+    provider = WorkspaceVmImpl(vms, "template:_images/ubuntu-lts", prefix, TIMEOUT)
     secrets = SecretsLocalImpl(tmp_path / "secrets.env")
-    transport = TransportVmImpl(tmp_path / "records", secrets, BrokerTwinImpl(), machines, TIMEOUT)
+    transport = TransportVmImpl(tmp_path / "records", secrets, BrokerTwinImpl(), vms, TIMEOUT)
     tools = tools_over(
         transport,
         provider,
@@ -158,8 +158,8 @@ async def test_a_vm_snapshot_is_kept_on_minio_by_name_and_restores_its_whole_dis
         assert snapshot.size < 512 and len(sealed) < 1024, "a name and a digest, never the disk"
         assert workspace.location.encode() not in sealed, "sealed, never in the clear"
 
-        await machines.destroy(workspace.location)
-        assert await machines.state(workspace.location) is MachineState.ABSENT
+        await vms.destroy(workspace.location)
+        assert await vms.state(workspace.location) is VmState.ABSENT
         restored = await tools.manager.prepare_workspace(
             ctx, agent_session_id, KEPT, restore=snapshot
         )
@@ -173,8 +173,8 @@ async def test_a_vm_snapshot_is_kept_on_minio_by_name_and_restores_its_whole_dis
             )
         kept = await minio.list(ctx.org_id, Buckets.SNAPSHOTS, session_prefix(agent_session_id), 10)
         assert kept == [key], "nothing more stored"
-        disks = await machines.names(f"{workspace.location}-")
+        disks = await vms.names(f"{workspace.location}-")
         assert len(disks) == 1, "the refused snapshot's disk went; the kept one stays"
     finally:
         await tools.manager.purge_workspace(ctx.org_id, agent_session_id)
-    assert await machines.names(workspace.location) == [], "the machine and its disks"
+    assert await vms.names(workspace.location) == [], "the VM and its disks"
