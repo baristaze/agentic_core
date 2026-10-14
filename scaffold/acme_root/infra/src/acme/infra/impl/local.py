@@ -3,6 +3,8 @@ one folder, for tests and the fast gate."""
 
 from pathlib import Path
 
+from acme.infra.agent_workspaces import AgentWorkspaceProviderInterface
+from acme.infra.agent_workspaces.twin import AgentWorkspaceTwinImpl
 from acme.infra.buckets import BucketsInterface
 from acme.infra.buckets.local import BucketsLocalImpl
 from acme.infra.cache import CacheInterface, CacheScope
@@ -25,8 +27,6 @@ from acme.infra.transports.broker import BrokerTwinImpl
 from acme.infra.transports.twin import TransportTwinImpl
 from acme.infra.vms import VmsInterface
 from acme.infra.vms.twin import VmsTwinImpl
-from acme.infra.workspaces import WorkspaceProviderInterface
-from acme.infra.workspaces.twin import WorkspaceTwinImpl
 
 
 class InfraLocalImpl(InfraInterface):
@@ -43,7 +43,7 @@ class InfraLocalImpl(InfraInterface):
         self._secrets = SecretsLocalImpl(root / "secrets.env")
         self._keys = KeyServiceMemoryImpl()
         self._vms = VmsTwinImpl(root / "vms")
-        self._workspaces = WorkspaceTwinImpl()
+        self._agent_workspaces = AgentWorkspaceTwinImpl()
         self._broker = BrokerTwinImpl()
         self._transport = TransportTwinImpl(self._secrets, self._broker)
         self._flags = FlagsMemoryImpl(file=root / "flags.json")
@@ -66,8 +66,8 @@ class InfraLocalImpl(InfraInterface):
     def get_keys(self) -> KeyServiceInterface:
         return self._keys
 
-    def get_workspaces(self) -> WorkspaceProviderInterface:
-        return self._workspaces
+    def get_agent_workspaces(self) -> AgentWorkspaceProviderInterface:
+        return self._agent_workspaces
 
     def get_vms(self) -> VmsInterface:
         return self._vms
@@ -94,7 +94,7 @@ class InfraLocalImpl(InfraInterface):
             self._secrets.describe(),
             self._keys.describe(),
             self._vms.describe(),
-            self._workspaces.describe(),
+            self._agent_workspaces.describe(),
             self._transport.describe(),
             self._broker.describe(),
             self._flags.describe(),
@@ -111,11 +111,11 @@ class InfraLocalImpl(InfraInterface):
             self._flags,
         ):
             await capability.start()
-        for runtime in (self._broker, self._vms, self._workspaces, self._transport):
+        for runtime in (self._broker, self._vms, self._agent_workspaces, self._transport):
             await runtime.start()
 
     async def close(self) -> None:
-        for runtime in (self._transport, self._workspaces, self._vms, self._broker):
+        for runtime in (self._transport, self._agent_workspaces, self._vms, self._broker):
             await runtime.close()
         for cache in self._caches.values():
             await cache.close()

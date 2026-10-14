@@ -4,6 +4,7 @@ capability declares one so the root never asks which."""
 
 from abc import ABC, abstractmethod
 
+from acme.infra.agent_workspaces import AgentWorkspaceProviderInterface
 from acme.infra.buckets import BucketsInterface
 from acme.infra.cache import CacheInterface, CacheScope
 from acme.infra.flags import FlagsInterface
@@ -14,7 +15,6 @@ from acme.infra.secrets import SecretsInterface
 from acme.infra.topics import TopicsInterface
 from acme.infra.transports import CredentialBrokerInterface, TransportInterface
 from acme.infra.vms import VmsInterface
-from acme.infra.workspaces import WorkspaceProviderInterface
 
 
 class InfraInterface(ABC):
@@ -37,7 +37,7 @@ class InfraInterface(ABC):
     def get_keys(self) -> KeyServiceInterface: ...
 
     @abstractmethod
-    def get_workspaces(self) -> WorkspaceProviderInterface: ...
+    def get_agent_workspaces(self) -> AgentWorkspaceProviderInterface: ...
 
     @abstractmethod
     def get_vms(self) -> VmsInterface:

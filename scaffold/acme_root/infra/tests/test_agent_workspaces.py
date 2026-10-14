@@ -5,7 +5,7 @@ with open egress for one that asked for none. A host directory's release
 ends what its commands left running there.
 
 An account workspace runs its commands as an account of the host, which the
-cases that need one name in TEST_WORKSPACE_ACCOUNT. They are skipped, with
+cases that need one name in TEST_AGENT_WORKSPACE_ACCOUNT. They are skipped, with
 the reason, on a host that cannot switch to it: one not on Linux, or a
 process without the capabilities the switch takes, as in most CI. Their
 root's filesystem keeps ACLs. Two more run under a unit with
@@ -28,6 +28,26 @@ from pathlib import Path
 
 import pytest
 
+from acme.infra.agent_workspaces import (
+    AgentWorkspace,
+    AgentWorkspaceProviderInterface,
+    EgressMode,
+    EgressPolicy,
+    IsolationMode,
+    IsolationRefused,
+    IsolationSpec,
+    ResourceLimits,
+)
+from acme.infra.agent_workspaces import account as accounts
+from acme.infra.agent_workspaces.account import AgentWorkspaceAccountImpl, Switch, switch_to
+from acme.infra.agent_workspaces.container import (
+    ICC,
+    OPEN_NETWORK,
+    AgentWorkspaceContainerImpl,
+    container_name,
+)
+from acme.infra.agent_workspaces.host import AgentWorkspaceHostImpl
+from acme.infra.agent_workspaces.twin import AgentWorkspaceNullImpl, AgentWorkspaceTwinImpl
 from acme.infra.base import new_id, utcnow
 from acme.infra.docker import DockerReply
 from acme.infra.exceptions import BackendFailed
@@ -38,26 +58,6 @@ from acme.infra.transports import CommandResult, CommandSpec
 from acme.infra.transports.broker import BrokerNullImpl
 from acme.infra.transports.local import TransportLocalImpl
 from acme.infra.transports.twin import RecordSealTwin
-from acme.infra.workspaces import (
-    EgressMode,
-    EgressPolicy,
-    IsolationMode,
-    IsolationRefused,
-    IsolationSpec,
-    ResourceLimits,
-    Workspace,
-    WorkspaceProviderInterface,
-)
-from acme.infra.workspaces import account as accounts
-from acme.infra.workspaces.account import Switch, WorkspaceAccountImpl, switch_to
-from acme.infra.workspaces.container import (
-    ICC,
-    OPEN_NETWORK,
-    WorkspaceContainerImpl,
-    container_name,
-)
-from acme.infra.workspaces.host import WorkspaceHostImpl
-from acme.infra.workspaces.twin import WorkspaceNullImpl, WorkspaceTwinImpl
 
 NONE = EgressPolicy(mode=EgressMode.NONE)
 OPEN = EgressPolicy(mode=EgressMode.OPEN)
@@ -94,7 +94,7 @@ async def test_a_host_directory_refuses_what_it_cannot_hold_and_makes_nothing(
 ) -> None:
     root = tmp_path / "workspaces"
     with pytest.raises(IsolationRefused) as refused:
-        await WorkspaceHostImpl(root).prepare(new_id(), new_id(), asked)
+        await AgentWorkspaceHostImpl(root).prepare(new_id(), new_id(), asked)
     assert refused.value.cause == refused.value.message, "what the spec asks, a person reads"
     assert not root.exists(), "nothing is made for a spec that is refused"
 
@@ -102,14 +102,14 @@ async def test_a_host_directory_refuses_what_it_cannot_hold_and_makes_nothing(
 async def test_a_host_directory_meets_the_host_mode_and_keeps_its_files_past_a_release(
     tmp_path: Path,
 ) -> None:
-    provider = WorkspaceHostImpl(tmp_path)
-    org, workspace_id = new_id(), new_id()
-    workspace = await provider.prepare(org, workspace_id, spec(IsolationMode.HOST))
+    provider = AgentWorkspaceHostImpl(tmp_path)
+    org, agent_workspace_id = new_id(), new_id()
+    workspace = await provider.prepare(org, agent_workspace_id, spec(IsolationMode.HOST))
     (Path(workspace.location) / "notes.txt").write_text("kept")
     await provider.release(workspace)
-    again = await provider.prepare(org, workspace_id, spec(IsolationMode.HOST))
+    again = await provider.prepare(org, agent_workspace_id, spec(IsolationMode.HOST))
     assert (Path(again.location) / "notes.txt").read_text() == "kept"
-    await provider.purge(org, workspace_id)
+    await provider.purge(org, agent_workspace_id)
     assert not await asyncio.to_thread(Path(again.location).exists)
 
 
@@ -152,7 +152,7 @@ async def test_a_host_release_ends_what_its_commands_left_running_and_nothing_el
     """Its instance is what runs in it: a release ends each process whose
     directory is inside the workspace, one of this process's own children
     among them, and leaves one elsewhere alone."""
-    provider = WorkspaceHostImpl(tmp_path / "workspaces")
+    provider = AgentWorkspaceHostImpl(tmp_path / "workspaces")
     workspace = await provider.prepare(new_id(), new_id(), spec(IsolationMode.HOST))
     nested = Path(workspace.location) / "server"
     nested.mkdir()
@@ -194,7 +194,7 @@ def left_locked(location: Path, outside: Path) -> None:
 async def test_a_host_purge_removes_what_a_command_left_locked_and_follows_no_link(
     tmp_path: Path,
 ) -> None:
-    provider = WorkspaceHostImpl(tmp_path / "workspaces")
+    provider = AgentWorkspaceHostImpl(tmp_path / "workspaces")
     workspace = await provider.prepare(new_id(), new_id(), spec(IsolationMode.HOST))
     outside = tmp_path / "outside"
     await asyncio.to_thread(left_locked, Path(workspace.location), outside)
@@ -207,7 +207,7 @@ async def test_a_host_purge_removes_what_a_command_left_locked_and_follows_no_li
 
 
 async def test_a_host_purge_ends_what_runs_there_before_its_files_go(tmp_path: Path) -> None:
-    provider = WorkspaceHostImpl(tmp_path / "workspaces")
+    provider = AgentWorkspaceHostImpl(tmp_path / "workspaces")
     workspace = await provider.prepare(new_id(), new_id(), spec(IsolationMode.HOST))
     left = await left_behind(Path(workspace.location))
     try:
@@ -228,8 +228,8 @@ async def test_a_container_provider_refuses_what_it_cannot_hold_before_it_reache
         calls.append(args)
         raise AssertionError("a refused spec reaches no docker")
 
-    monkeypatch.setattr("acme.infra.workspaces.container.docker", docker)
-    provider = WorkspaceContainerImpl("python:3.14-slim", timedelta(seconds=5))
+    monkeypatch.setattr("acme.infra.agent_workspaces.container.docker", docker)
+    provider = AgentWorkspaceContainerImpl("python:3.14-slim", timedelta(seconds=5))
     with pytest.raises(IsolationRefused):
         await provider.prepare(new_id(), new_id(), asked)
     assert calls == []
@@ -284,15 +284,15 @@ async def test_a_running_container_is_reused_only_under_the_spec_it_was_started_
     and its files, in their volume, are kept."""
     opened, closed = spec(IsolationMode.CONTAINER, OPEN), spec(IsolationMode.CONTAINER, NONE)
     docker = LocalDocker()
-    monkeypatch.setattr("acme.infra.workspaces.container.docker", docker)
-    provider = WorkspaceContainerImpl("python:3.14-slim", timedelta(seconds=5))
-    org, workspace_id = new_id(), new_id()
-    await provider.prepare(org, workspace_id, opened)
+    monkeypatch.setattr("acme.infra.agent_workspaces.container.docker", docker)
+    provider = AgentWorkspaceContainerImpl("python:3.14-slim", timedelta(seconds=5))
+    org, agent_workspace_id = new_id(), new_id()
+    await provider.prepare(org, agent_workspace_id, opened)
     docker.calls.clear()
-    await provider.prepare(org, workspace_id, opened)
+    await provider.prepare(org, agent_workspace_id, opened)
     assert [call[0] for call in docker.calls] == ["version", "inspect"], "the same spec reuses it"
     docker.calls.clear()
-    await provider.prepare(org, workspace_id, closed)
+    await provider.prepare(org, agent_workspace_id, closed)
     assert [call[0] for call in docker.calls] == ["version", "inspect", "rm", "volume", "run"]
     run = docker.calls[-1]
     assert run[run.index("--network") + 1] == "none", "the new container holds the tighter spec"
@@ -306,8 +306,8 @@ async def test_open_egress_workspaces_share_a_bridge_where_none_reaches_another(
     bridge, where every container reaches every other: each joins the one
     bridge made with traffic between its containers off, made once."""
     docker = LocalDocker()
-    monkeypatch.setattr("acme.infra.workspaces.container.docker", docker)
-    provider = WorkspaceContainerImpl("python:3.14-slim", timedelta(seconds=5))
+    monkeypatch.setattr("acme.infra.agent_workspaces.container.docker", docker)
+    provider = AgentWorkspaceContainerImpl("python:3.14-slim", timedelta(seconds=5))
     opened = spec(IsolationMode.CONTAINER, OPEN)
 
     await provider.prepare(new_id(), new_id(), opened)
@@ -328,8 +328,8 @@ async def test_a_bridge_that_lets_its_containers_reach_each_other_is_refused(
     container starts."""
     docker = LocalDocker()
     docker.networks[OPEN_NETWORK] = {ICC: "true"}
-    monkeypatch.setattr("acme.infra.workspaces.container.docker", docker)
-    provider = WorkspaceContainerImpl("python:3.14-slim", timedelta(seconds=5))
+    monkeypatch.setattr("acme.infra.agent_workspaces.container.docker", docker)
+    provider = AgentWorkspaceContainerImpl("python:3.14-slim", timedelta(seconds=5))
 
     with pytest.raises(IsolationRefused, match="reach each other"):
         await provider.prepare(new_id(), new_id(), spec(IsolationMode.CONTAINER, OPEN))
@@ -343,19 +343,19 @@ async def test_a_container_purge_by_ids_removes_its_container_and_its_files(
     named by the workspace's id. A Docker that cannot remove them fails the
     purge, so nothing is left behind as if it went."""
     docker = LocalDocker()
-    monkeypatch.setattr("acme.infra.workspaces.container.docker", docker)
-    provider = WorkspaceContainerImpl("python:3.14-slim", timedelta(seconds=5))
-    workspace_id = new_id()
-    name = container_name(workspace_id)
-    await provider.purge(new_id(), workspace_id)
+    monkeypatch.setattr("acme.infra.agent_workspaces.container.docker", docker)
+    provider = AgentWorkspaceContainerImpl("python:3.14-slim", timedelta(seconds=5))
+    agent_workspace_id = new_id()
+    name = container_name(agent_workspace_id)
+    await provider.purge(new_id(), agent_workspace_id)
     assert docker.calls == [("rm", "-f", name), ("volume", "rm", "-f", name)]
 
     async def unreachable(*args: str, **_: object) -> DockerReply:
         return DockerReply(1, b"", b"Cannot connect to the Docker daemon")
 
-    monkeypatch.setattr("acme.infra.workspaces.container.docker", unreachable)
+    monkeypatch.setattr("acme.infra.agent_workspaces.container.docker", unreachable)
     with pytest.raises(BackendFailed):
-        await provider.purge(new_id(), workspace_id)
+        await provider.purge(new_id(), agent_workspace_id)
 
 
 async def test_a_container_spec_with_no_docker_is_refused_and_never_swapped_for_a_directory(
@@ -371,14 +371,14 @@ async def test_a_container_spec_with_no_docker_is_refused_and_never_swapped_for_
             {
                 "environment": "local",
                 "secrets_file": tmp_path / "secrets.env",
-                "workspace_backend": "container",
-                "workspaces_root": root,
+                "agent_workspace_backend": "container",
+                "agent_workspaces_root": root,
                 "docker_timeout_seconds": 20,
             }
         )
     )
     with pytest.raises(IsolationRefused, match="needs Docker") as refused:
-        await infra.get_workspaces().prepare(
+        await infra.get_agent_workspaces().prepare(
             new_id(), new_id(), spec(IsolationMode.CONTAINER, NONE)
         )
     assert refused.value.cause is None, "what docker answered reaches the log alone"
@@ -386,10 +386,10 @@ async def test_a_container_spec_with_no_docker_is_refused_and_never_swapped_for_
 
 
 @pytest.mark.parametrize(
-    "provider", [WorkspaceTwinImpl(), WorkspaceNullImpl()], ids=lambda p: p.describe()
+    "provider", [AgentWorkspaceTwinImpl(), AgentWorkspaceNullImpl()], ids=lambda p: p.describe()
 )
 async def test_the_twin_and_the_null_provider_refuse_every_mode_not_theirs(
-    provider: WorkspaceProviderInterface,
+    provider: AgentWorkspaceProviderInterface,
 ) -> None:
     for mode in (
         IsolationMode.VM,
@@ -399,7 +399,7 @@ async def test_the_twin_and_the_null_provider_refuse_every_mode_not_theirs(
     ):
         with pytest.raises(IsolationRefused):
             await provider.prepare(new_id(), new_id(), spec(mode, NONE))
-    if isinstance(provider, WorkspaceNullImpl):
+    if isinstance(provider, AgentWorkspaceNullImpl):
         with pytest.raises(IsolationRefused):
             await provider.prepare(new_id(), new_id(), spec(IsolationMode.TWIN, NONE))
     else:
@@ -415,11 +415,11 @@ def test_an_allowlist_names_its_hosts_and_no_other_egress_does() -> None:
 
 
 def test_the_absent_workspace_is_the_none_mode() -> None:
-    absent = Workspace.absent(new_id(), new_id())
+    absent = AgentWorkspace.absent(new_id(), new_id())
     assert absent.spec.mode is IsolationMode.NONE and absent.location == ""
 
 
-ACCOUNT = os.environ.get("TEST_WORKSPACE_ACCOUNT", "")
+ACCOUNT = os.environ.get("TEST_AGENT_WORKSPACE_ACCOUNT", "")
 
 ACCOUNT_REFUSES = [
     spec(IsolationMode.HOST),
@@ -436,7 +436,7 @@ def cannot_switch() -> str | None:
     """Why this host cannot run a command as the account under test; None
     when it can."""
     if not ACCOUNT:
-        return "TEST_WORKSPACE_ACCOUNT names no account this process may switch to"
+        return "TEST_AGENT_WORKSPACE_ACCOUNT names no account this process may switch to"
     try:
         switch_to(ACCOUNT)
     except IsolationRefused as refused:
@@ -491,7 +491,7 @@ def as_account(records: Path) -> TransportLocalImpl:
 
 
 async def ran(
-    transport: TransportLocalImpl, workspace: Workspace, script: str, seconds: float = 30
+    transport: TransportLocalImpl, workspace: AgentWorkspace, script: str, seconds: float = 30
 ) -> CommandResult:
     sent = CommandSpec(
         argv=("sh", "-c", script),
@@ -536,7 +536,7 @@ async def test_an_account_workspace_refuses_what_it_cannot_hold_and_makes_nothin
     """Egress, a share of the cpus, and a bound on memory are each refused
     before anything runs: the mode never holds a weaker form of them."""
     root = tmp_path / "workspaces"
-    provider = WorkspaceAccountImpl(root, ACCOUNT or "acme-agent")
+    provider = AgentWorkspaceAccountImpl(root, ACCOUNT or "acme-agent")
     with pytest.raises(IsolationRefused):
         await provider.prepare(new_id(), new_id(), asked)
     assert not root.exists(), "nothing is made for a spec that is refused"
@@ -546,7 +546,7 @@ async def test_an_account_workspace_on_a_host_that_cannot_switch_is_refused(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "workspaces"
-    provider = WorkspaceAccountImpl(root, "no-such-account-here")
+    provider = AgentWorkspaceAccountImpl(root, "no-such-account-here")
     with pytest.raises(IsolationRefused):
         await provider.prepare(new_id(), new_id(), spec(IsolationMode.ACCOUNT, processes=64))
     assert not root.exists()
@@ -558,7 +558,7 @@ async def test_an_account_workspace_without_the_switchs_capabilities_is_refused(
 ) -> None:
     monkeypatch.setattr(accounts, "effective_capabilities", lambda: {5})
     with pytest.raises(IsolationRefused, match="CAP_SETGID, CAP_SETUID, CAP_SETPCAP"):
-        await WorkspaceAccountImpl(account_root, ACCOUNT).prepare(
+        await AgentWorkspaceAccountImpl(account_root, ACCOUNT).prepare(
             new_id(), new_id(), spec(IsolationMode.ACCOUNT)
         )
     assert await asyncio.to_thread(os.listdir, account_root) == []
@@ -575,7 +575,7 @@ async def test_an_account_workspace_on_a_host_that_lets_an_account_link_anothers
     setting.write_text("0\n")
     monkeypatch.setattr(accounts, "HARDLINKS", setting)
     with pytest.raises(IsolationRefused, match="protected_hardlinks"):
-        await WorkspaceAccountImpl(account_root, ACCOUNT).prepare(
+        await AgentWorkspaceAccountImpl(account_root, ACCOUNT).prepare(
             new_id(), new_id(), spec(IsolationMode.ACCOUNT)
         )
     assert await asyncio.to_thread(os.listdir, account_root) == []
@@ -621,21 +621,21 @@ async def test_the_hosts_hard_link_setting_is_read_where_it_shows_and_declared_w
 
     monkeypatch.setattr(accounts, "switch_to", switched)
     monkeypatch.setattr(accounts, "filter_refusal", unfiltered)
-    monkeypatch.setattr(WorkspaceAccountImpl, "_took", serves_another)
+    monkeypatch.setattr(AgentWorkspaceAccountImpl, "_took", serves_another)
     root = tmp_path / "workspaces"
     infra = InfraConfiguredImpl(
         InfraSettings.model_validate(
             {
                 "environment": "local",
                 "secrets_file": tmp_path / "secrets.env",
-                "workspace_backend": "account",
-                "workspaces_root": root,
-                "workspace_protected_hardlinks": declared,
+                "agent_workspace_backend": "account",
+                "agent_workspaces_root": root,
+                "agent_workspace_protected_hardlinks": declared,
             }
         )
     )
     with pytest.raises(IsolationRefused) as caught:
-        await infra.get_workspaces().prepare(new_id(), new_id(), spec(IsolationMode.ACCOUNT))
+        await infra.get_agent_workspaces().prepare(new_id(), new_id(), spec(IsolationMode.ACCOUNT))
     if refused is None:
         assert "one at a time" in caught.value.message, "past the host, to the account's hold"
     else:
@@ -656,10 +656,12 @@ async def test_only_the_refusal_that_waits_for_the_other_workspace_clears(
     never: list[IsolationRefused] = []
     for refused in ACCOUNT_REFUSES:
         with pytest.raises(IsolationRefused) as caught:
-            await WorkspaceAccountImpl(root, "acme-agent").prepare(new_id(), new_id(), refused)
+            await AgentWorkspaceAccountImpl(root, "acme-agent").prepare(new_id(), new_id(), refused)
         never.append(caught.value)
     with pytest.raises(IsolationRefused) as caught:
-        await WorkspaceAccountImpl(root, "no-such-account-here").prepare(new_id(), new_id(), asked)
+        await AgentWorkspaceAccountImpl(root, "no-such-account-here").prepare(
+            new_id(), new_id(), asked
+        )
     never.append(caught.value)
 
     def switched(account: str) -> Switch:
@@ -673,7 +675,7 @@ async def test_only_the_refusal_that_waits_for_the_other_workspace_clears(
     setting.write_text("0\n")
     monkeypatch.setattr(accounts, "HARDLINKS", setting)
     with pytest.raises(IsolationRefused, match="protected_hardlinks") as caught:
-        await WorkspaceAccountImpl(root, "acme-agent").prepare(new_id(), new_id(), asked)
+        await AgentWorkspaceAccountImpl(root, "acme-agent").prepare(new_id(), new_id(), asked)
     never.append(caught.value)
 
     setting.write_text("1\n")
@@ -683,13 +685,13 @@ async def test_only_the_refusal_that_waits_for_the_other_workspace_clears(
 
     monkeypatch.setattr(accounts, "filter_refusal", filtered)
     with pytest.raises(IsolationRefused, match="a chown fails here") as caught:
-        await WorkspaceAccountImpl(root, "acme-agent").prepare(new_id(), new_id(), asked)
+        await AgentWorkspaceAccountImpl(root, "acme-agent").prepare(new_id(), new_id(), asked)
     never.append(caught.value)
 
     monkeypatch.setattr(accounts, "filter_refusal", unfiltered)
-    monkeypatch.setattr(WorkspaceAccountImpl, "_took", serves_another)
+    monkeypatch.setattr(AgentWorkspaceAccountImpl, "_took", serves_another)
     with pytest.raises(IsolationRefused, match="one at a time") as caught:
-        await WorkspaceAccountImpl(root, "acme-agent").prepare(new_id(), new_id(), asked)
+        await AgentWorkspaceAccountImpl(root, "acme-agent").prepare(new_id(), new_id(), asked)
     assert caught.value.clears
     assert [refused.message for refused in never if refused.clears] == []
     spec_refused, host_refused = never[: len(ACCOUNT_REFUSES)], never[len(ACCOUNT_REFUSES) :]
@@ -708,7 +710,7 @@ async def test_a_command_runs_as_the_account_with_no_group_no_capability_and_no_
     `no_new_privs`, the processes it asked for at most, and an environment
     of its own, its home and temporary directory in the workspace's."""
     monkeypatch.setenv("ENGINE_OWN", "this process's alone")
-    provider = WorkspaceAccountImpl(account_root, ACCOUNT)
+    provider = AgentWorkspaceAccountImpl(account_root, ACCOUNT)
     workspace = await provider.prepare(
         new_id(), new_id(), spec(IsolationMode.ACCOUNT, processes=64)
     )
@@ -750,9 +752,9 @@ async def test_an_account_release_ends_its_command_and_what_left_its_session_and
     release ends the command still running and a process it left in a
     session of its own, outside the workspace's directory, and keeps the
     files, which a purge removes."""
-    provider = WorkspaceAccountImpl(account_root, ACCOUNT)
-    org, workspace_id = new_id(), new_id()
-    workspace = await provider.prepare(org, workspace_id, spec(IsolationMode.ACCOUNT))
+    provider = AgentWorkspaceAccountImpl(account_root, ACCOUNT)
+    org, agent_workspace_id = new_id(), new_id()
+    workspace = await provider.prepare(org, agent_workspace_id, spec(IsolationMode.ACCOUNT))
     transport = as_account(tmp_path / "records")
     script = (
         "(cd / && exec setsid sleep 300 </dev/null >/dev/null 2>&1) & echo $! > left.pid; "
@@ -771,7 +773,7 @@ async def test_an_account_release_ends_its_command_and_what_left_its_session_and
     assert result.exit_code != 0 and not result.timed_out
     assert await still_alive(*pids) == []
     assert (home / "left.pid").exists(), "a release keeps the files"
-    await provider.purge(org, workspace_id)
+    await provider.purge(org, agent_workspace_id)
     assert not home.parent.exists()
 
 
@@ -782,9 +784,9 @@ async def test_an_account_release_ends_what_it_left_where_proc_hides_it_from_thi
 ) -> None:
     """Where `/proc` hides another account's processes from this one, a
     process the account left running is still ended by the release."""
-    provider = WorkspaceAccountImpl(account_root, ACCOUNT)
-    org, workspace_id = new_id(), new_id()
-    workspace = await provider.prepare(org, workspace_id, spec(IsolationMode.ACCOUNT))
+    provider = AgentWorkspaceAccountImpl(account_root, ACCOUNT)
+    org, agent_workspace_id = new_id(), new_id()
+    workspace = await provider.prepare(org, agent_workspace_id, spec(IsolationMode.ACCOUNT))
     try:
         script = "(cd / && exec setsid sleep 300 </dev/null >/dev/null 2>&1) & echo $!"
         result = await ran(as_account(tmp_path / "records"), workspace, script)
@@ -796,7 +798,7 @@ async def test_an_account_release_ends_what_it_left_where_proc_hides_it_from_thi
         await provider.release(workspace)
         assert await still_alive(left) == []
     finally:
-        await provider.purge(org, workspace_id)
+        await provider.purge(org, agent_workspace_id)
 
 
 @needs_an_account
@@ -807,7 +809,7 @@ async def test_an_account_purge_follows_no_link_the_account_planted_and_clears_w
     outside.mkdir()
     (outside / "kept.txt").write_text("the engine's")
     before = (outside / "kept.txt").stat()
-    provider = WorkspaceAccountImpl(account_root, ACCOUNT)
+    provider = AgentWorkspaceAccountImpl(account_root, ACCOUNT)
     workspace = await provider.prepare(new_id(), new_id(), spec(IsolationMode.ACCOUNT))
     plant = (
         f"ln -s {outside}/kept.txt file-link; ln -s {outside} dir-link; "
@@ -833,10 +835,10 @@ async def test_an_account_purge_follows_no_link_the_account_planted_and_clears_w
 async def test_the_account_serves_one_workspace_at_a_time_and_a_released_one_is_closed_to_it(
     account_root: Path, tmp_path: Path
 ) -> None:
-    provider = WorkspaceAccountImpl(account_root, ACCOUNT)
+    provider = AgentWorkspaceAccountImpl(account_root, ACCOUNT)
     transport = as_account(tmp_path / "records")
     first = await provider.prepare(new_id(), new_id(), spec(IsolationMode.ACCOUNT))
-    second: Workspace | None = None
+    second: AgentWorkspace | None = None
     try:
         await ran(transport, first, "echo first > notes.txt")
         with pytest.raises(IsolationRefused, match="one at a time"):
@@ -942,7 +944,7 @@ async def test_under_a_hardened_unit_a_workspace_prepares_runs_as_the_account_re
     outside.mkdir()
     (outside / "kept.txt").write_text("the engine's")
     account = switch_to(ACCOUNT)
-    provider = WorkspaceAccountImpl(account_root, ACCOUNT, protected_hardlinks=True)
+    provider = AgentWorkspaceAccountImpl(account_root, ACCOUNT, protected_hardlinks=True)
     transport = as_account(tmp_path / "records")
     workspace = await provider.prepare(
         new_id(), new_id(), spec(IsolationMode.ACCOUNT, processes=64)
@@ -987,7 +989,7 @@ async def test_under_a_unit_whose_filter_refuses_what_the_mode_takes_a_prepare_n
     """Under a unit whose system call filter refuses the switch's calls or
     chown, a prepare is refused before it makes anything, and its refusal
     names the filter and each set it refuses."""
-    provider = WorkspaceAccountImpl(account_root, ACCOUNT, protected_hardlinks=True)
+    provider = AgentWorkspaceAccountImpl(account_root, ACCOUNT, protected_hardlinks=True)
     with pytest.raises(IsolationRefused, match="SystemCallFilter") as refused:
         await provider.prepare(new_id(), new_id(), spec(IsolationMode.ACCOUNT, processes=64))
     assert [name for name in REFUSED if name not in refused.value.message] == []

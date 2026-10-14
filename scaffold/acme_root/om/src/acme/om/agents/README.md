@@ -29,7 +29,7 @@ of](../../../../README.md).
   own.
 - **Loop**: what an agent does from what woke its session to how the
   loop ended. The model chooses; the loop does. It has no record of its
-  own: it is a span of the session's [steps](../steps/README.md), its id
+  own: it is a span of the session's [steps](../agent_steps/README.md), its id
   is its first step's, and a closing step names its outcome.
 - **Run**: one stretch of a loop in one process. A run takes the
   session's next writer epoch before it reads anything, so a run that

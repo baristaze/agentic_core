@@ -121,7 +121,7 @@ def test_a_loops_end_and_its_park_say_their_cause_on_their_line(stack: Stack) ->
         stack.acme("agent-session", "say", agent_session_id, "Run the tests.")
     failed = "the base's setup command 1, 'pip install acme-tools', exited 2"
     a_loop_ran(stack, ended, LoopOutcome.ERRORED, cause=failed)
-    lost = Park(reason=ParkReason.PERSON, unlock="workspace", cause="the snapshot is gone")
+    lost = Park(reason=ParkReason.PERSON, unlock="agent_workspace", cause="the snapshot is gone")
     a_loop_ran(stack, parked, None, park=lost)
 
     end = stack.acme("agent-session", "steps", ended, "--after", "3")
@@ -131,5 +131,5 @@ def test_a_loops_end_and_its_park_say_their_cause_on_their_line(stack: Stack) ->
     assert park.output.strip().split(maxsplit=2) == [
         "4",
         "parked",
-        "person, until workspace: the snapshot is gone",
+        "person, until agent_workspace: the snapshot is gone",
     ]

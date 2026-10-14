@@ -11,11 +11,16 @@ from uuid import UUID
 
 from pydantic import Field, ValidationError
 
+from acme.infra.agent_workspaces import (
+    AgentWorkspace,
+    AgentWorkspaceLost,
+    Durability,
+    IsolationRefused,
+)
 from acme.infra.base import SYSTEM_SCOPE
 from acme.infra.exceptions import InfraException
 from acme.infra.outages import Outage, OutageSignalInterface
 from acme.infra.transports import OutputSink
-from acme.infra.workspaces import Durability, IsolationRefused, Workspace, WorkspaceLost
 from acme.integrations.model_providers import ModelProviderInterface
 from acme.integrations.model_providers.calls import Finished, ModelCall, ModelReply
 from acme.integrations.model_providers.failures import ModelCallFailed
@@ -123,7 +128,7 @@ Sleep = Callable[[float], Awaitable[None]]
 """How the loop waits, injected beside its clock, so a test never sleeps."""
 
 HANDOVER_UNLOCK = "give_back"
-WORKSPACE_UNLOCK = "workspace"
+AGENT_WORKSPACE_UNLOCK = "agent_workspace"
 LOST_SNAPSHOT = "the snapshot the workspace starts from is gone, or no longer matches what was kept"
 LOST_SOURCE = "what the workspace is rebuilt from is gone, or cannot be brought in"
 """The causes a park on a lost workspace names, the engine's own words: the
@@ -166,7 +171,7 @@ class LoopOptions(Platform):
     repeats_noticed: int = Field(default=3, ge=1)
     # How long a loop no host can give its workspace waits, parked on the
     # resource, before it asks again.
-    workspace_wait: timedelta = timedelta(minutes=1)
+    agent_workspace_wait: timedelta = timedelta(minutes=1)
 
 
 @dataclass
@@ -187,7 +192,7 @@ class _Run:
     # The policy layers of the kinds above the session in its tree, nearest
     # first: each of its calls is decided under them as under its own kind's.
     above: tuple[ToolPolicyLayer, ...] = ()
-    workspace: Workspace | None = None
+    workspace: AgentWorkspace | None = None
     kept: bool = False  # a snapshot holds its workspace whole, taken at its end
     made: set[UUID] = field(default_factory=lambda: set[UUID]())  # tool requests it wrote
     failures: int = 0  # provider errors in a row
@@ -342,7 +347,7 @@ class LoopManagerImpl(LoopManagerInterface):
         if start is None and kind.isolation.durability is Durability.SNAPSHOT:
             start = rules.kept_snapshot(history)
         # A person let a loop go on that parked on its lost workspace.
-        unlocked = loop is not None and loop.park is not None and lost_workspace(loop.park)
+        unlocked = loop is not None and loop.park is not None and lost_agent_workspace(loop.park)
         try:
             stopped = await self._prepare(run, start, unlocked=unlocked)
             if stopped is not None:
@@ -371,11 +376,11 @@ class LoopManagerImpl(LoopManagerInterface):
         again and the model reads why."""
         restore = None if start is None else named_snapshot(start)
         try:
-            run.workspace = await self._tools.prepare_workspace(
+            run.workspace = await self._tools.prepare_agent_workspace(
                 run.ctx, run.agent_session_id, run.kind.isolation, restore=restore
             )
         except InfraException as refused:
-            if start is not None and unlocked and refused.code == WorkspaceLost.code:
+            if start is not None and unlocked and refused.code == AgentWorkspaceLost.code:
                 log.warning(
                     "session %s goes on without its snapshot: %s", run.agent_session_id, refused
                 )
@@ -406,10 +411,10 @@ class LoopManagerImpl(LoopManagerInterface):
             # No host can give it the workspace yet: no weaker one, and
             # no call spent. It waits on the resource and asks again.
             log.warning("session %s waits for a workspace: %s", run.agent_session_id, refused)
-            retry_at = self._clock() + self._options.workspace_wait
+            retry_at = self._clock() + self._options.agent_workspace_wait
             park = Park(
                 reason=ParkReason.RESOURCE,
-                unlock=WORKSPACE_UNLOCK,
+                unlock=AGENT_WORKSPACE_UNLOCK,
                 retry_at=retry_at,
                 unsettled=not run.resumed,
                 cause=cause,
@@ -420,7 +425,7 @@ class LoopManagerImpl(LoopManagerInterface):
             # weaker workspace, and no call spent on a loop that cannot run.
             log.warning("session %s has no workspace: %s", run.agent_session_id, refused)
             return await self._end(run, LoopOutcome.ERRORED, cause=cause)
-        if refused.code != WorkspaceLost.code:
+        if refused.code != AgentWorkspaceLost.code:
             raise refused
         # What the workspace is rebuilt from is gone: nothing restarts
         # from scratch in its stead, and a person says what comes next.
@@ -428,7 +433,7 @@ class LoopManagerImpl(LoopManagerInterface):
         log.error("session %s lost its workspace: %s", run.agent_session_id, refused)
         park = Park(
             reason=ParkReason.PERSON,
-            unlock=WORKSPACE_UNLOCK,
+            unlock=AGENT_WORKSPACE_UNLOCK,
             unsettled=not run.resumed,
             cause=LOST_SNAPSHOT if restoring else LOST_SOURCE,
         )
@@ -1805,7 +1810,7 @@ class LoopManagerImpl(LoopManagerInterface):
         if workspace is None or workspace.spec.durability is not Durability.SNAPSHOT:
             return
         try:
-            await self._tools.snapshot_workspace(
+            await self._tools.snapshot_agent_workspace(
                 run.ctx, run.agent_session_id, workspace, epoch=run.epoch, loop_id=run.loop_id
             )
         except StaleWriter:
@@ -1828,7 +1833,7 @@ class LoopManagerImpl(LoopManagerInterface):
             )
             return
         try:
-            await self._tools.release_workspace(run.ctx, run.workspace)
+            await self._tools.release_agent_workspace(run.ctx, run.workspace)
         except Exception:
             log.exception("session %s: the workspace was not released", run.agent_session_id)
 
@@ -1966,9 +1971,9 @@ def _held_by_another(park: Park | None, ctx: TenantContext) -> bool:
     )
 
 
-def lost_workspace(park: Park) -> bool:
+def lost_agent_workspace(park: Park) -> bool:
     """Whether a park waits for a person on a workspace that was lost."""
-    return park.reason is ParkReason.PERSON and park.unlock == WORKSPACE_UNLOCK
+    return park.reason is ParkReason.PERSON and park.unlock == AGENT_WORKSPACE_UNLOCK
 
 
 def provider_park(fill: Fill, retry_at: datetime) -> Park:

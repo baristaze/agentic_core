@@ -29,7 +29,7 @@ from acme.om.agent_steps.types.content import Attachment, Children, DocumentBloc
 from acme.om.agent_steps.types.content import TextBlock as KeptText
 from acme.om.agent_steps.types.header import LoopOutcome, Park, ParkReason, ToolResponseHeader
 from acme.om.agents import LoopManagerInterface
-from acme.om.agents.types.kind import NO_WORKSPACE, AgentKind, DoneRule, TreeLimits
+from acme.om.agents.types.kind import NO_AGENT_WORKSPACE, AgentKind, DoneRule, TreeLimits
 from acme.om.agents.types.request import Start
 from acme.om.agents.types.run import LoopRun, RunEnd
 from acme.om.attribution.types.authority import AuthorityMode
@@ -439,7 +439,7 @@ ASKING = AgentKind(
     policy=ToolPolicyLayer(
         rules=(ToolPolicyRule(authorization_class=ToolClass.READ, decision=Decision.ALLOW),)
     ),
-    isolation=NO_WORKSPACE,
+    isolation=NO_AGENT_WORKSPACE,
 )
 
 

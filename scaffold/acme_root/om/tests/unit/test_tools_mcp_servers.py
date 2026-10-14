@@ -233,7 +233,7 @@ async def call_on(
     """`call`, with the tools manager it went through."""
     transport, _ = twin_transport(tmp_path)
     tools = tools_over(transport)
-    workspace = await tools.manager.prepare_workspace(at.ctx, at.ctx.org_id, TWIN_SPEC)
+    workspace = await tools.manager.prepare_agent_workspace(at.ctx, at.ctx.org_id, TWIN_SPEC)
     found = await put_call(
         tools.manager, tools.steps, at.ctx, tool.spec.name, call_input, "integration"
     )

@@ -965,7 +965,9 @@ capabilities in the guideline's sense ([Infrastructure][g-infra]):
   directory on a host, the same directory with its commands run as an
   account of the host, or a twin for tests), an egress policy, resource
   limits, and the base it starts from ([Workspace
-  Snapshots](#workspace-snapshots)).
+  Snapshots](#workspace-snapshots)). In code the place is an
+  `AgentWorkspace`, in `infra/agent_workspaces`, so a product's own
+  workspace, a tenant's or a team's, keeps the bare word.
 - An **execution transport** runs a command there, streamed, and reads,
   writes, and lists files there, wherever "there" is: this process, a
   container, or a machine across a network. Every tool that runs a

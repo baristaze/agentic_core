@@ -16,15 +16,15 @@ import httpx
 import pytest
 from api_support import build_container, seed_request
 
-from acme.infra.transports import CommandSpec
-from acme.infra.transports.twin import TransportTwinImpl, TwinReply
-from acme.infra.workspaces import (
+from acme.infra.agent_workspaces import (
+    AgentWorkspaceBase,
     EgressMode,
     EgressPolicy,
     IsolationMode,
     IsolationSpec,
-    WorkspaceBase,
 )
+from acme.infra.transports import CommandSpec
+from acme.infra.transports.twin import TransportTwinImpl, TwinReply
 from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.context import TenantContext
@@ -43,7 +43,7 @@ BUILDER = AgentKind(
     isolation=IsolationSpec(
         mode=IsolationMode.TWIN,
         egress=EgressPolicy(mode=EgressMode.NONE),
-        base=WorkspaceBase(
+        base=AgentWorkspaceBase(
             image="python:3.14-slim",
             setup=(SETUP,),
             egress=EgressPolicy(mode=EgressMode.OPEN),

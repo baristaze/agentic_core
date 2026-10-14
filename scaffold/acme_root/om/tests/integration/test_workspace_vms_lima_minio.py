@@ -23,6 +23,16 @@ from contracts.doubles import context
 from contracts.factories import make_org
 from contracts.tools import tools_over
 
+from acme.infra.agent_workspaces import (
+    AgentWorkspace,
+    Durability,
+    EgressMode,
+    EgressPolicy,
+    IsolationMode,
+    IsolationSpec,
+    SnapshotRefused,
+)
+from acme.infra.agent_workspaces.vm import AgentWorkspaceVmImpl
 from acme.infra.base import utcnow
 from acme.infra.buckets import Buckets
 from acme.infra.buckets.s3 import BucketsS3Impl
@@ -34,16 +44,6 @@ from acme.infra.transports.twin import RecordSealTwin
 from acme.infra.transports.vm import TransportVmImpl
 from acme.infra.vms import VmState
 from acme.infra.vms.lima import VmsLimaImpl, hypervisor
-from acme.infra.workspaces import (
-    Durability,
-    EgressMode,
-    EgressPolicy,
-    IsolationMode,
-    IsolationSpec,
-    SnapshotRefused,
-    Workspace,
-)
-from acme.infra.workspaces.vm import WorkspaceVmImpl
 from acme.om.agent_steps.types.header import SnapshotHeader
 from acme.om.base import new_id
 from acme.om.context import Role
@@ -108,7 +108,7 @@ async def minio() -> AsyncIterator[BucketsS3Impl]:
             await s3.delete_bucket(Bucket=name)
 
 
-async def run(transport: TransportVmImpl, workspace: Workspace, script: str) -> str:
+async def run(transport: TransportVmImpl, workspace: AgentWorkspace, script: str) -> str:
     sent = CommandSpec(
         argv=("sh", "-c", script), key=new_id(), epoch=1, deadline=utcnow() + TIMEOUT
     )
@@ -122,7 +122,7 @@ async def test_a_vm_snapshot_is_kept_on_minio_by_name_and_restores_its_whole_dis
 ) -> None:
     vms = VmsLimaImpl(TIMEOUT, timedelta(minutes=15), encrypted=True)
     prefix = os.environ.get("ACME_VM_PREFIX", "acme-test-")
-    provider = WorkspaceVmImpl(vms, "template:_images/ubuntu-lts", prefix, TIMEOUT)
+    provider = AgentWorkspaceVmImpl(vms, "template:_images/ubuntu-lts", prefix, TIMEOUT)
     secrets = SecretsLocalImpl(tmp_path / "secrets.env")
     transport = TransportVmImpl(tmp_path / "records", secrets, BrokerTwinImpl(), vms, TIMEOUT)
     tools = tools_over(
@@ -135,7 +135,7 @@ async def test_a_vm_snapshot_is_kept_on_minio_by_name_and_restores_its_whole_dis
     ctx = context(Role.SERVICE, make_org())
     await secrets.put(ctx.org_id, "SERVICE_TOKEN", "tok-vm-0123456789abcdef")
     agent_session_id = new_id()
-    workspace = await tools.manager.prepare_workspace(ctx, agent_session_id, KEPT)
+    workspace = await tools.manager.prepare_agent_workspace(ctx, agent_session_id, KEPT)
     try:
         before = await run(
             transport,
@@ -146,7 +146,7 @@ async def test_a_vm_snapshot_is_kept_on_minio_by_name_and_restores_its_whole_dis
             "docker image inspect --format '{{.Id}}' acme-test-kept",
         )
         epoch = await tools.steps.begin_run(ctx, agent_session_id)
-        step = await tools.manager.snapshot_workspace(
+        step = await tools.manager.snapshot_agent_workspace(
             ctx, agent_session_id, workspace, epoch=epoch, loop_id=new_id()
         )
         assert isinstance(step.header, SnapshotHeader)
@@ -160,7 +160,7 @@ async def test_a_vm_snapshot_is_kept_on_minio_by_name_and_restores_its_whole_dis
 
         await vms.destroy(workspace.location)
         assert await vms.state(workspace.location) is VmState.ABSENT
-        restored = await tools.manager.prepare_workspace(
+        restored = await tools.manager.prepare_agent_workspace(
             ctx, agent_session_id, KEPT, restore=snapshot
         )
         check = "sha256sum state.bin && docker image inspect --format '{{.Id}}' acme-test-kept"
@@ -168,7 +168,7 @@ async def test_a_vm_snapshot_is_kept_on_minio_by_name_and_restores_its_whole_dis
 
         await run(transport, restored, "echo tok-vm-0123456789abcdef | sudo tee /etc/leak")
         with pytest.raises(SnapshotRefused, match="SERVICE_TOKEN"):
-            await tools.manager.snapshot_workspace(
+            await tools.manager.snapshot_agent_workspace(
                 ctx, agent_session_id, restored, epoch=epoch, loop_id=new_id()
             )
         kept = await minio.list(ctx.org_id, Buckets.SNAPSHOTS, session_prefix(agent_session_id), 10)
@@ -176,5 +176,5 @@ async def test_a_vm_snapshot_is_kept_on_minio_by_name_and_restores_its_whole_dis
         disks = await vms.names(f"{workspace.location}-")
         assert len(disks) == 1, "the refused snapshot's disk went; the kept one stays"
     finally:
-        await tools.manager.purge_workspace(ctx.org_id, agent_session_id)
+        await tools.manager.purge_agent_workspace(ctx.org_id, agent_session_id)
     assert await vms.names(workspace.location) == [], "the VM and its disks"

@@ -3428,6 +3428,11 @@
       "SnapshotView": {
         "description": "A workspace's snapshot a step names: its id, which a restore names,\nthe hash of its bytes keyed by its session, its size in bytes, and the\nworkspace it was taken from.",
         "properties": {
+          "agent_workspace_id": {
+            "format": "uuid",
+            "title": "Agent Workspace Id",
+            "type": "string"
+          },
           "hash": {
             "title": "Hash",
             "type": "string"
@@ -3440,18 +3445,13 @@
           "size": {
             "title": "Size",
             "type": "integer"
-          },
-          "workspace_id": {
-            "format": "uuid",
-            "title": "Workspace Id",
-            "type": "string"
           }
         },
         "required": [
           "id",
           "hash",
           "size",
-          "workspace_id"
+          "agent_workspace_id"
         ],
         "title": "SnapshotView",
         "type": "object"

@@ -22,12 +22,12 @@ from contracts.tools import (
 )
 from pydantic import ValidationError
 
-from acme.infra.workspaces import (
+from acme.infra.agent_workspaces import (
+    AgentWorkspace,
     EgressMode,
     EgressPolicy,
     IsolationMode,
     IsolationSpec,
-    Workspace,
 )
 from acme.om.agent_steps.types.header import ToolFailure, ToolResponseHeader
 from acme.om.base import new_id
@@ -216,7 +216,7 @@ async def test_the_target_comes_from_the_system_and_not_from_what_the_input_clai
     ctx = context(Role.SERVICE, org)
     push = PushBranch({"main": True, "feature": False})
     registry = registry_of(push)
-    workspace = Workspace.absent(ctx.org_id, new_id())
+    workspace = AgentWorkspace.absent(ctx.org_id, new_id())
     # The tenant lets every integration call run unattended; the kind still
     # denies a push to a protected branch.
     admin = context(Role.ADMIN, org)
@@ -324,7 +324,7 @@ async def test_a_call_that_runs_code_acts_outward_from_a_workspace_with_open_egr
     tools = tools_over(twin_transport(tmp_path)[0])
     ctx = context(Role.OWNER, make_org())
     spec = IsolationSpec(mode=IsolationMode.TWIN, egress=EgressPolicy(mode=egress))
-    workspace = Workspace(id=new_id(), org_id=ctx.org_id, spec=spec, location="twin:ws")
+    workspace = AgentWorkspace(id=new_id(), org_id=ctx.org_id, spec=spec, location="twin:ws")
     found = await put_call(
         tools.manager, tools.steps, ctx, "run_command", {"argv": ["true"]}, "execute"
     )
@@ -367,7 +367,7 @@ async def test_a_permission_taken_away_stops_the_next_call_of_its_class(tmp_path
     allowed = ToolPolicyLayer(
         rules=(ToolPolicyRule(authorization_class=ToolClass.CONFIGURATION, decision=ALLOW),)
     )
-    workspace = Workspace.absent(org.id, new_id())
+    workspace = AgentWorkspace.absent(org.id, new_id())
     gates = []
     for role in (Role.ADMIN, Role.MEMBER):
         tools.attribution.role = role
@@ -412,7 +412,7 @@ async def test_the_outward_ceiling_holds_a_call_whose_target_does_not_say(
         ToolPolicyLayer(),
         found.request,
         found.call_input,
-        Workspace.absent(org.id, new_id()),
+        AgentWorkspace.absent(org.id, new_id()),
     )
 
     assert (gate.outcome, gate.decision) == (GateOutcome.ASK, APPROVE)

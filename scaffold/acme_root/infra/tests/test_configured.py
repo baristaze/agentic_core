@@ -53,8 +53,8 @@ def local_settings(tmp_path: Path, **overrides: object) -> InfraSettings:
         ("buckets_backend", "local"),
         ("queues_backend", "memory"),
         ("keys_backend", "memory"),
-        ("workspace_backend", "host"),
-        ("workspace_backend", "account"),
+        ("agent_workspace_backend", "host"),
+        ("agent_workspace_backend", "account"),
         ("vms_backend", "lima"),
         ("flags_backend", "memory"),
     ],
@@ -270,7 +270,7 @@ def test_a_workspace_backend_builds_its_provider_and_its_transport_together(
     choice, and building them reaches nothing."""
     root = tmp_path / "workspaces"
     infra = InfraConfiguredImpl(
-        local_settings(tmp_path, workspace_backend=backend, workspaces_root=root)
+        local_settings(tmp_path, agent_workspace_backend=backend, agent_workspaces_root=root)
     )
     runtime = [line for line in infra.describe() if line.startswith(("workspaces=", "transport="))]
     assert runtime == [line.format(root=root) for line in lines]

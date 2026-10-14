@@ -166,7 +166,7 @@ thing [Acme is made of](../../../../README.md).
 ## How another namespace composes it
 
 The agent's loop asks where each call stands, runs it, and writes the
-response it gets back into the session's [steps](../steps/README.md). A
+response it gets back into the session's [steps](../agent_steps/README.md). A
 person's decision lands in the same history. Where a tool runs, the
 workspace and the commands in it, is the infrastructure's
 ([infra](../../../../../infra/README.md)).

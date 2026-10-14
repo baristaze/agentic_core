@@ -41,7 +41,7 @@ async def test_a_repeatable_call_runs_again_under_the_same_key(
     tools = tools_over(transport)
     ctx = context(Role.SERVICE, make_org())
     registry = registry_of(Command(effect=effect))
-    workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
+    workspace = await tools.manager.prepare_agent_workspace(ctx, new_id(), TWIN_SPEC)
     found = await put_call(
         tools.manager, tools.steps, ctx, "run_command", {"argv": ["make", "test"]}, "execute"
     )
@@ -70,7 +70,7 @@ async def test_an_unsafe_call_is_answered_from_the_transports_record(tmp_path: P
     tools = tools_over(transport)
     ctx = context(Role.SERVICE, make_org())
     registry = registry_of(Command("deploy", effect=Effect.UNSAFE))
-    workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
+    workspace = await tools.manager.prepare_agent_workspace(ctx, new_id(), TWIN_SPEC)
     found = await put_call(
         tools.manager, tools.steps, ctx, "deploy", {"argv": ["deploy", "staging"]}, "execute"
     )
@@ -100,7 +100,7 @@ async def test_an_unsafe_call_with_no_record_is_interrupted_and_never_repeated(
     ctx = context(Role.SERVICE, make_org())
     push = PushBranch({"feature": False})
     registry = registry_of(Command("deploy", effect=Effect.UNSAFE), push)
-    workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
+    workspace = await tools.manager.prepare_agent_workspace(ctx, new_id(), TWIN_SPEC)
     for tool, call_input, cls in (
         ("deploy", {"argv": ["deploy", "staging"]}, "execute"),
         ("push_branch", {"branch": "feature"}, "integration"),
@@ -129,7 +129,7 @@ async def test_recovering_an_unsafe_call_fences_the_lost_runs_command(tmp_path: 
     tools = tools_over(transport)
     ctx = context(Role.SERVICE, make_org())
     registry = registry_of(Command("deploy", effect=Effect.UNSAFE))
-    workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
+    workspace = await tools.manager.prepare_agent_workspace(ctx, new_id(), TWIN_SPEC)
     found = await put_call(
         tools.manager, tools.steps, ctx, "deploy", {"argv": ["deploy", "staging"]}, "execute"
     )

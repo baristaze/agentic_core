@@ -15,8 +15,8 @@ from uuid import UUID
 
 from pydantic import Field
 
+from acme.infra.agent_workspaces import SnapshotRefused
 from acme.infra.exceptions import InfraException
-from acme.infra.workspaces import SnapshotRefused
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_steps.types.header import ToolFailure
 from acme.om.agents.manager import AgentsManagerInterface

@@ -12,6 +12,14 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from acme.infra.agent_workspaces import (
+    AgentWorkspaceProviderInterface,
+    EgressMode,
+    EgressPolicy,
+    IsolationMode,
+    IsolationSpec,
+)
+from acme.infra.agent_workspaces.twin import AgentWorkspaceTwinImpl
 from acme.infra.buckets import BucketsInterface
 from acme.infra.buckets.local import BucketsLocalImpl
 from acme.infra.cache import CacheInterface, CacheScope
@@ -29,14 +37,6 @@ from acme.infra.transports import (
 )
 from acme.infra.transports.broker import BrokerTwinImpl
 from acme.infra.transports.twin import TransportTwinImpl, TwinHandler, TwinReply
-from acme.infra.workspaces import (
-    EgressMode,
-    EgressPolicy,
-    IsolationMode,
-    IsolationSpec,
-    WorkspaceProviderInterface,
-)
-from acme.infra.workspaces.twin import WorkspaceTwinImpl
 from acme.om.agent_steps import AgentStepsManagerInterface
 from acme.om.agent_steps.impl.manager import (
     AgentStepsManagerImpl,
@@ -62,7 +62,7 @@ from acme.om.privacy.impl.records import RecordSealKeysImpl
 from acme.om.privacy.impl.snapshots import SnapshotSealKeysImpl
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.tenancy.rules import permissions_of
-from acme.om.tools.impl.bases import WorkspaceBases
+from acme.om.tools.impl.bases import AgentWorkspaceBases
 from acme.om.tools.impl.manager import ToolsManagerImpl, ToolsOptions
 from acme.om.tools.impl.snapshots import SnapshotStore
 from acme.om.tools.manager import ToolsManagerInterface
@@ -273,7 +273,7 @@ class Tools:
 
 def tools_over(
     transport: TransportInterface,
-    workspaces: WorkspaceProviderInterface | None = None,
+    workspaces: AgentWorkspaceProviderInterface | None = None,
     options: ToolsOptions | None = None,
     *,
     broker: CredentialBrokerInterface | None = None,
@@ -307,7 +307,7 @@ def tools_over(
         waits.append(seconds)
         clock.now += timedelta(seconds=seconds)
 
-    workspaces = workspaces or WorkspaceTwinImpl()
+    workspaces = workspaces or AgentWorkspaceTwinImpl()
     buckets = buckets or BucketsLocalImpl(Path(tempfile.mkdtemp(prefix="snapshots-")))
     options = options or ToolsOptions()
     snapshots = SnapshotStore(
@@ -318,11 +318,11 @@ def tools_over(
         secret_names,
         options.purge_batch,
     )
-    bases = WorkspaceBases(
+    bases = AgentWorkspaceBases(
         buckets,
         workspaces,
         transport,
-        claims or CacheMemoryImpl(CacheScope.WORKSPACE_BASE),
+        claims or CacheMemoryImpl(CacheScope.AGENT_WORKSPACE_BASE),
         snapshots.scan,
         options.base_build_limit,
         options.purge_batch,

@@ -106,7 +106,7 @@ class SnapshotView(View):
     id: UUID
     hash: str
     size: int
-    workspace_id: UUID
+    agent_workspace_id: UUID
 
 
 class AgentStepView(View):

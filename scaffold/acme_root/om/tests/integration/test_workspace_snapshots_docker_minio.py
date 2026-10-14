@@ -27,6 +27,18 @@ from contracts.loops import ALLOWED, ASSISTANT, DELIVERY, Loop, call, loop_over,
 from contracts.sub_agents import answers, failure_of, text_of
 from contracts.tools import Command
 
+from acme.infra.agent_workspaces import (
+    AgentWorkspace,
+    AgentWorkspaceLost,
+    AgentWorkspaceProviderInterface,
+    Durability,
+    EgressMode,
+    EgressPolicy,
+    IsolationMode,
+    IsolationSpec,
+    SnapshotRefused,
+)
+from acme.infra.agent_workspaces.container import AgentWorkspaceContainerImpl, container_name
 from acme.infra.buckets import Buckets, BucketsInterface
 from acme.infra.buckets.s3 import BucketsS3Impl
 from acme.infra.docker import docker
@@ -42,25 +54,13 @@ from acme.infra.transports import (
 from acme.infra.transports.broker import BrokerTwinImpl
 from acme.infra.transports.container import TransportContainerImpl
 from acme.infra.transports.twin import RecordSealTwin
-from acme.infra.workspaces import (
-    Durability,
-    EgressMode,
-    EgressPolicy,
-    IsolationMode,
-    IsolationSpec,
-    SnapshotRefused,
-    Workspace,
-    WorkspaceLost,
-    WorkspaceProviderInterface,
-)
-from acme.infra.workspaces.container import WorkspaceContainerImpl, container_name
 from acme.om.agent_sessions.rules import QUESTION
 from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
 from acme.om.agent_steps.types.content import TextBlock
 from acme.om.agent_steps.types.header import (
+    AgentWorkspaceSnapshot,
     LoopOutcome,
     SnapshotHeader,
-    WorkspaceSnapshot,
 )
 from acme.om.base import new_id, utcnow
 from acme.om.tools.impl.snapshots import BUCKET, session_prefix, snapshot_key
@@ -112,7 +112,7 @@ pytestmark = [
 ]
 
 
-async def inside(workspace: Workspace, *argv: str) -> tuple[int | None, str]:
+async def inside(workspace: AgentWorkspace, *argv: str) -> tuple[int | None, str]:
     reply = await docker("exec", workspace.location, *argv, bound=timedelta(seconds=120))
     return reply.code, reply.stdout.decode()
 
@@ -121,13 +121,13 @@ class FileBroker(BrokerTwinImpl):
     """A broker that attaches a credential the way a credential helper does:
     a file in the workspace, there while the command that needs it runs."""
 
-    async def attach(self, workspace: Workspace, key: UUID, use: SecretUse) -> None:
+    async def attach(self, workspace: AgentWorkspace, key: UUID, use: SecretUse) -> None:
         await super().attach(workspace, key, use)
         held = f"mkdir -p {CREDENTIALS} && echo held > {CREDENTIALS}/{use.name}"
         code, _ = await inside(workspace, "sh", "-c", held)
         assert code == 0
 
-    async def detach(self, workspace: Workspace, key: UUID) -> None:
+    async def detach(self, workspace: AgentWorkspace, key: UUID) -> None:
         for use in self.attached.get(key, []):
             await inside(workspace, "rm", "-f", f"{CREDENTIALS}/{use.name}")
         await super().detach(workspace, key)
@@ -139,14 +139,14 @@ class InfraOnDocker(InfraLocalImpl):
 
     def __init__(self, root: Path, buckets: BucketsInterface | None = None) -> None:
         super().__init__(root)
-        self.workspaces = WorkspaceContainerImpl(IMAGE, timedelta(seconds=300))
+        self.workspaces = AgentWorkspaceContainerImpl(IMAGE, timedelta(seconds=300))
         self.broker = FileBroker()
         self.transport = TransportContainerImpl(
             root / "records", self.get_secrets(), self.broker, timedelta(seconds=120)
         )
         self.buckets = buckets or super().get_buckets()
 
-    def get_workspaces(self) -> WorkspaceProviderInterface:
+    def get_agent_workspaces(self) -> AgentWorkspaceProviderInterface:
         return self.workspaces
 
     def get_transport(self) -> TransportInterface:
@@ -213,22 +213,22 @@ def on_docker(
     return loop, infra
 
 
-async def snapshot_of(loop: Loop, agent_session_id: UUID, workspace: Workspace) -> AgentStep:
+async def snapshot_of(loop: Loop, agent_session_id: UUID, workspace: AgentWorkspace) -> AgentStep:
     epoch = await loop.managers.agent_steps.begin_run(loop.owner, agent_session_id)
-    return await loop.managers.tools.snapshot_workspace(
+    return await loop.managers.tools.snapshot_agent_workspace(
         loop.owner, agent_session_id, workspace, epoch=epoch, loop_id=new_id()
     )
 
 
-def named(step: AgentStep) -> WorkspaceSnapshot:
+def named(step: AgentStep) -> AgentWorkspaceSnapshot:
     assert isinstance(step.header, SnapshotHeader)
     return step.header.snapshot
 
 
-async def container_runs(workspace_id: UUID) -> bool:
+async def container_runs(agent_workspace_id: UUID) -> bool:
     """Whether a container stands for the workspace; its volume, under the
     same name, outlives a release."""
-    name = container_name(workspace_id)
+    name = container_name(agent_workspace_id)
     shown = await docker("inspect", "--type", "container", name, bound=timedelta(seconds=20))
     return shown.ok
 
@@ -242,7 +242,7 @@ async def restores_and_refuses_an_altered_one(
     loop, infra = on_docker(tmp_path, buckets)
     tools, ctx = loop.managers.tools, loop.owner
     agent_session_id = await loop.start(BOXED.name)
-    workspace = await tools.prepare_workspace(ctx, agent_session_id, BOXED_SPEC)
+    workspace = await tools.prepare_agent_workspace(ctx, agent_session_id, BOXED_SPEC)
     try:
         await inside(workspace, "sh", "-c", "echo kept > /workspace/a.txt && echo kept > /opt/b")
         step = await snapshot_of(loop, agent_session_id, workspace)
@@ -250,23 +250,23 @@ async def restores_and_refuses_an_altered_one(
         (read,) = [s for s in await loop.history(agent_session_id) if s.id == step.id]
         snapshot = named(read)
         await inside(workspace, "sh", "-c", "echo later > /workspace/a.txt && rm /opt/b")
-        await tools.release_workspace(ctx, workspace)
+        await tools.release_agent_workspace(ctx, workspace)
 
-        restored = await tools.prepare_workspace(
+        restored = await tools.prepare_agent_workspace(
             ctx, agent_session_id, BOXED_SPEC, restore=snapshot
         )
         assert await inside(restored, "cat", "/workspace/a.txt", "/opt/b") == (0, "kept\nkept\n")
 
-        await tools.release_workspace(ctx, restored)
+        await tools.release_agent_workspace(ctx, restored)
         key = snapshot_key(agent_session_id, snapshot.hash)
         sealed = bytearray(await infra.buckets.get(ctx.org_id, BUCKET, key))
         sealed[len(sealed) // 2] ^= 0x01
         await infra.buckets.put(ctx.org_id, BUCKET, key, bytes(sealed), "application/octet-stream")
-        with pytest.raises(WorkspaceLost, match="altered"):
-            await tools.prepare_workspace(ctx, agent_session_id, BOXED_SPEC, restore=snapshot)
+        with pytest.raises(AgentWorkspaceLost, match="altered"):
+            await tools.prepare_agent_workspace(ctx, agent_session_id, BOXED_SPEC, restore=snapshot)
         assert not await container_runs(agent_session_id), "no workspace started"
     finally:
-        await tools.purge_workspace(ctx.org_id, agent_session_id)
+        await tools.purge_agent_workspace(ctx.org_id, agent_session_id)
 
 
 async def test_a_snapshot_on_the_local_buckets_restores_and_an_altered_one_starts_nothing(
@@ -293,7 +293,7 @@ async def test_a_snapshot_holds_no_credential_the_broker_attached_and_no_secrets
     tools, ctx = loop.managers.tools, loop.owner
     await infra.get_secrets().put(ctx.org_id, TOKEN, f"tok-{tokens.token_hex(12)}")
     agent_session_id = await loop.start(BOXED.name)
-    workspace = await tools.prepare_workspace(ctx, agent_session_id, BOXED_SPEC)
+    workspace = await tools.prepare_agent_workspace(ctx, agent_session_id, BOXED_SPEC)
     seal = RecordSealTwin().seal
 
     def command(script: str) -> CommandSpec:
@@ -315,8 +315,8 @@ async def test_a_snapshot_holds_no_credential_the_broker_attached_and_no_secrets
         assert (await inside(workspace, "test", "-e", credential))[0] == 0
 
         snapshot = named(await snapshot_of(loop, agent_session_id, workspace))
-        await tools.release_workspace(ctx, workspace)
-        restored = await tools.prepare_workspace(
+        await tools.release_agent_workspace(ctx, workspace)
+        restored = await tools.prepare_agent_workspace(
             ctx, agent_session_id, BOXED_SPEC, restore=snapshot
         )
 
@@ -330,7 +330,7 @@ async def test_a_snapshot_holds_no_credential_the_broker_attached_and_no_secrets
         with pytest.raises(SnapshotRefused, match=TOKEN):
             await snapshot_of(loop, agent_session_id, restored)
     finally:
-        await tools.purge_workspace(ctx.org_id, agent_session_id)
+        await tools.purge_agent_workspace(ctx.org_id, agent_session_id)
 
 
 async def test_a_child_forked_in_its_parents_run_sees_its_workspace_at_the_spawn(
@@ -379,9 +379,9 @@ async def test_a_child_forked_in_its_parents_run_sees_its_workspace_at_the_spawn
         assert (await loop.loops.run(ctx, parent)).outcome is LoopOutcome.SUCCEEDED
         assert printed(await loop.history(parent)) == "clean\nafter\n"
     finally:
-        await tools.purge_workspace(ctx.org_id, parent)
+        await tools.purge_agent_workspace(ctx.org_id, parent)
         if child is not None:
-            await tools.purge_workspace(ctx.org_id, child)
+            await tools.purge_agent_workspace(ctx.org_id, child)
 
 
 def printed(history: list[AgentStep]) -> str:
@@ -427,7 +427,7 @@ async def test_a_kept_workspace_holds_what_a_loop_wrote_outside_its_volume_acros
 
         history = await loop.history(agent_session_id)
         stored = await infra.buckets.list(ctx.org_id, BUCKET, session_prefix(agent_session_id), 100)
-        released = Workspace(
+        released = AgentWorkspace(
             id=agent_session_id,
             org_id=ctx.org_id,
             spec=BOXED_SPEC,
@@ -435,11 +435,11 @@ async def test_a_kept_workspace_holds_what_a_loop_wrote_outside_its_volume_acros
         )
         epoch = await loop.managers.agent_steps.begin_run(ctx, agent_session_id)
         with pytest.raises(SnapshotRefused, match="no instance"):
-            await tools.snapshot_workspace(
+            await tools.snapshot_agent_workspace(
                 ctx, agent_session_id, released, epoch=epoch, loop_id=new_id()
             )
         after = await infra.buckets.list(ctx.org_id, BUCKET, session_prefix(agent_session_id), 100)
         assert after == stored, "nothing stored"
         assert await loop.history(agent_session_id) == history, "no step names one"
     finally:
-        await tools.purge_workspace(ctx.org_id, agent_session_id)
+        await tools.purge_agent_workspace(ctx.org_id, agent_session_id)

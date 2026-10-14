@@ -15,17 +15,17 @@ import pytest
 from contracts import sub_agents
 from contracts.loops import call, loop_over, reply, said, use
 
-from acme.infra.workspaces import (
+from acme.infra.agent_workspaces import (
+    AgentWorkspace,
+    AgentWorkspaceLost,
+    AgentWorkspaceProviderInterface,
     EgressMode,
     EgressPolicy,
     IsolationMode,
     IsolationRefused,
     IsolationSpec,
-    Workspace,
-    WorkspaceLost,
-    WorkspaceProviderInterface,
 )
-from acme.infra.workspaces.twin import WorkspaceNullImpl, WorkspaceTwinImpl
+from acme.infra.agent_workspaces.twin import AgentWorkspaceNullImpl, AgentWorkspaceTwinImpl
 from acme.om.agent_sessions.types.agent_session import AgentSessionStatus
 from acme.om.agent_steps.types.agent_step import AgentStepType
 from acme.om.agent_steps.types.header import (
@@ -46,10 +46,10 @@ CONTAINER = IsolationSpec(mode=IsolationMode.CONTAINER, egress=EgressPolicy(mode
 
 
 @pytest.mark.parametrize(
-    "provider", [WorkspaceNullImpl(), WorkspaceTwinImpl()], ids=lambda p: p.describe()
+    "provider", [AgentWorkspaceNullImpl(), AgentWorkspaceTwinImpl()], ids=lambda p: p.describe()
 )
 async def test_a_refusal_that_cannot_clear_ends_the_loop_errored_and_wakes_its_waiting_parent(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: WorkspaceProviderInterface
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: AgentWorkspaceProviderInterface
 ) -> None:
     loop = loop_over(tmp_path, kinds=sub_agents.KINDS)
     root = await sub_agents.a_root(loop, "What is the quarterly total?")
@@ -61,10 +61,10 @@ async def test_a_refusal_that_cannot_clear_ends_the_loop_errored_and_wakes_its_w
 
     async def refused(
         ctx: TenantContext, agent_session_id: UUID, spec: IsolationSpec, **_: object
-    ) -> Workspace:
+    ) -> AgentWorkspace:
         return await provider.prepare(ctx.org_id, agent_session_id, CONTAINER)
 
-    monkeypatch.setattr(loop.managers.tools, "prepare_workspace", refused)
+    monkeypatch.setattr(loop.managers.tools, "prepare_agent_workspace", refused)
     run = await loop.loops.run(loop.owner, child.id)
 
     assert (run.end, run.outcome, run.park) == (RunEnd.ENDED, LoopOutcome.ERRORED, None)
@@ -84,26 +84,26 @@ async def test_a_refusal_that_clears_parks_on_the_resource_and_asks_again_after_
     loop = loop_over(tmp_path)
     agent_session_id = await loop.start()
     await loop.say(agent_session_id, "What is the total?")
-    prepare = loop.managers.tools.prepare_workspace
+    prepare = loop.managers.tools.prepare_agent_workspace
 
-    async def refused(*args: object, **kwargs: object) -> Workspace:
+    async def refused(*args: object, **kwargs: object) -> AgentWorkspace:
         raise IsolationRefused(
             "host-7 holds every workspace", clears=True, cause="no workspace is free yet"
         )
 
-    monkeypatch.setattr(loop.managers.tools, "prepare_workspace", refused)
+    monkeypatch.setattr(loop.managers.tools, "prepare_agent_workspace", refused)
     waiting = await loop.loops.run(loop.owner, agent_session_id)
 
     assert waiting.end is RunEnd.PARKED and waiting.park is not None, "never ended"
     assert (waiting.park.reason, waiting.park.unlock, waiting.park.retry_at) == (
         ParkReason.RESOURCE,
-        "workspace",
-        loop.clock() + LoopOptions().workspace_wait,
+        "agent_workspace",
+        loop.clock() + LoopOptions().agent_workspace_wait,
     )
     assert waiting.park.cause == "no workspace is free yet", "its cause, never its message"
     assert loop.anthropic.calls == [], "no call was made"
 
-    monkeypatch.setattr(loop.managers.tools, "prepare_workspace", prepare)
+    monkeypatch.setattr(loop.managers.tools, "prepare_agent_workspace", prepare)
     assert waiting.park.retry_at is not None
     loop.clock.now = waiting.park.retry_at
     await loop.managers.agent_sessions.wake_agent_session(
@@ -123,16 +123,16 @@ async def test_a_lost_workspace_parks_for_a_person_and_the_park_is_unsettled(
     await loop.say(agent_session_id, "What is the total?")
     loop.anthropic.add(reply(said("Never asked.")))
 
-    async def lost(*args: object, **kwargs: object) -> Workspace:
-        raise WorkspaceLost("what the workspace is rebuilt from is gone")
+    async def lost(*args: object, **kwargs: object) -> AgentWorkspace:
+        raise AgentWorkspaceLost("what the workspace is rebuilt from is gone")
 
-    monkeypatch.setattr(loop.managers.tools, "prepare_workspace", lost)
+    monkeypatch.setattr(loop.managers.tools, "prepare_agent_workspace", lost)
     run = await loop.loops.run(loop.owner, agent_session_id)
 
     assert run.end is RunEnd.PARKED and run.park is not None, "never ended"
     assert (run.park.reason, run.park.unlock, run.park.retry_at) == (
         ParkReason.PERSON,
-        "workspace",
+        "agent_workspace",
         None,
     )
     assert run.park.unsettled, "written before its run settled anything"
@@ -158,14 +158,14 @@ async def test_a_refused_isolation_after_a_settled_park_parks_on_the_resource_se
     ]
     await loop.managers.tools.decide_call(loop.owner, agent_session_id, send.seq, approve=True)
 
-    async def refused(*args: object, **kwargs: object) -> Workspace:
+    async def refused(*args: object, **kwargs: object) -> AgentWorkspace:
         raise IsolationRefused("no host can give it the workspace yet", clears=True)
 
-    monkeypatch.setattr(loop.managers.tools, "prepare_workspace", refused)
+    monkeypatch.setattr(loop.managers.tools, "prepare_agent_workspace", refused)
     waiting = await loop.loops.run(loop.owner, agent_session_id)
 
     assert waiting.end is RunEnd.PARKED and waiting.park is not None
-    assert (waiting.park.reason, waiting.park.unlock) == (ParkReason.RESOURCE, "workspace")
+    assert (waiting.park.reason, waiting.park.unlock) == (ParkReason.RESOURCE, "agent_workspace")
     assert waiting.park.retry_at is not None and waiting.park.retry_at > loop.clock()
     assert not waiting.park.unsettled, "its run resumed a settled park"
     assert loop.tools["send"].ran_as == [], "nothing ran"

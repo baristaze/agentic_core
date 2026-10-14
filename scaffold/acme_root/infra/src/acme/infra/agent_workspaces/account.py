@@ -47,20 +47,20 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from uuid import UUID
 
-from acme.infra.exceptions import InfraException
-from acme.infra.workspaces import (
+from acme.infra.agent_workspaces import (
+    AgentWorkspace,
+    AgentWorkspaceProviderInterface,
     EgressMode,
     IsolationMode,
     IsolationRefused,
     IsolationSpec,
     ResourceLimits,
     SnapshotRefused,
-    Workspace,
-    WorkspaceProviderInterface,
     refusal,
 )
-from acme.infra.workspaces.host import UNKEPT, remove_directory
-from acme.infra.workspaces.stragglers import PROC, end_stragglers
+from acme.infra.agent_workspaces.host import UNKEPT, remove_directory
+from acme.infra.agent_workspaces.stragglers import PROC, end_stragglers
+from acme.infra.exceptions import InfraException
 
 LIMITS = frozenset({"processes"})
 """What the mode enforces of a spec's limits: the account's processes, which
@@ -402,7 +402,7 @@ async def end_group_as(switch: Switch, group: int, seconds: float = ENDING_SECON
         await ending.wait()
 
 
-class WorkspaceAccountImpl(WorkspaceProviderInterface):
+class AgentWorkspaceAccountImpl(AgentWorkspaceProviderInterface):
     """A directory per workspace under `root`, its commands run as `account`
     by the local transport given the same account. It meets the account
     mode with open egress and a bound on processes, and refuses any spec
@@ -429,13 +429,13 @@ class WorkspaceAccountImpl(WorkspaceProviderInterface):
     async def prepare(
         self,
         org_id: UUID,
-        workspace_id: UUID,
+        agent_workspace_id: UUID,
         spec: IsolationSpec,
         snapshot: bytes | None = None,
         base: bytes | None = None,
         *,
         building: bool = False,
-    ) -> Workspace:
+    ) -> AgentWorkspace:
         why = refusal(
             spec, mode=IsolationMode.ACCOUNT, egress={EgressMode.OPEN}, limits=LIMITS, unkept=UNKEPT
         )
@@ -450,10 +450,10 @@ class WorkspaceAccountImpl(WorkspaceProviderInterface):
         filtered = await filter_refusal(switch)
         if filtered is not None:
             raise IsolationRefused(filtered)
-        job = self._job(org_id, workspace_id)
+        job = self._job(org_id, agent_workspace_id)
         async with self._turn:
             fresh = self._held is None
-            if not await self._took(workspace_id, job, switch):
+            if not await self._took(agent_workspace_id, job, switch):
                 raise IsolationRefused(
                     f"the account {self._account!r} serves another workspace, and one at a time",
                     clears=True,
@@ -464,12 +464,14 @@ class WorkspaceAccountImpl(WorkspaceProviderInterface):
                 if fresh:
                     self._give_back()
                 raise
-        return Workspace(id=workspace_id, org_id=org_id, spec=spec, location=str(job / HOME))
+        return AgentWorkspace(
+            id=agent_workspace_id, org_id=org_id, spec=spec, location=str(job / HOME)
+        )
 
-    async def snapshot(self, workspace: Workspace) -> bytes:
+    async def snapshot(self, workspace: AgentWorkspace) -> bytes:
         raise SnapshotRefused(f"an account workspace cannot be snapshotted: {UNKEPT}")
 
-    async def release(self, workspace: Workspace) -> None:
+    async def release(self, workspace: AgentWorkspace) -> None:
         job = self._job(workspace.org_id, workspace.id)
         switch = await asyncio.to_thread(switch_to, self._account)
         async with self._turn:
@@ -483,13 +485,13 @@ class WorkspaceAccountImpl(WorkspaceProviderInterface):
                 await asyncio.to_thread(_closed, job)
                 self._give_back()
 
-    async def purge(self, org_id: UUID, workspace_id: UUID) -> None:
-        job = self._job(org_id, workspace_id)
+    async def purge(self, org_id: UUID, agent_workspace_id: UUID) -> None:
+        job = self._job(org_id, agent_workspace_id)
         if not await asyncio.to_thread(job.is_dir):
             return
         switch = await asyncio.to_thread(switch_to, self._account)
         async with self._turn:
-            if not await self._took(workspace_id, job, switch):
+            if not await self._took(agent_workspace_id, job, switch):
                 # None of its processes is alive, and the account reaches
                 # nothing in it: what only the account can remove stays, and
                 # the purge fails, to be tried again.
@@ -506,13 +508,13 @@ class WorkspaceAccountImpl(WorkspaceProviderInterface):
     async def held(self, snapshot: bytes) -> AsyncIterator[bytes]:
         yield snapshot  # it makes no snapshot, so none names bytes kept elsewhere
 
-    async def keep(self, snapshot: bytes, org_id: UUID, workspace_id: UUID) -> bytes:
+    async def keep(self, snapshot: bytes, org_id: UUID, agent_workspace_id: UUID) -> bytes:
         return snapshot
 
     async def discard(self, snapshot: bytes) -> None:
         return None
 
-    async def erase_snapshots(self, org_id: UUID, workspace_id: UUID) -> None:
+    async def erase_snapshots(self, org_id: UUID, agent_workspace_id: UUID) -> None:
         return None
 
     def describe(self) -> str:
@@ -524,17 +526,17 @@ class WorkspaceAccountImpl(WorkspaceProviderInterface):
     async def close(self) -> None:
         self._give_back()
 
-    def _job(self, org_id: UUID, workspace_id: UUID) -> Path:
+    def _job(self, org_id: UUID, agent_workspace_id: UUID) -> Path:
         """Named by ids alone, so no name climbs out of the root."""
-        return self._root.resolve() / org_id.hex / workspace_id.hex
+        return self._root.resolve() / org_id.hex / agent_workspace_id.hex
 
-    async def _took(self, workspace_id: UUID, job: Path, switch: Switch) -> bool:
-        """Whether the account serves `workspace_id`, whose directory is
+    async def _took(self, agent_workspace_id: UUID, job: Path, switch: Switch) -> bool:
+        """Whether the account serves `agent_workspace_id`, whose directory is
         `job`, now: it did already, or it served none, in this process or
         another, and now does. What a crash left of the workspace it served
         last is ended first, its processes, then its directory's opening."""
         if self._held is not None:
-            return self._held == workspace_id
+            return self._held == agent_workspace_id
         lock = await asyncio.to_thread(_locked, self._root, self._account)
         if lock is None:
             return False
@@ -544,7 +546,7 @@ class WorkspaceAccountImpl(WorkspaceProviderInterface):
         except BaseException:
             os.close(lock)
             raise
-        self._held, self._lock = workspace_id, lock
+        self._held, self._lock = agent_workspace_id, lock
         return True
 
     def _give_back(self) -> None:

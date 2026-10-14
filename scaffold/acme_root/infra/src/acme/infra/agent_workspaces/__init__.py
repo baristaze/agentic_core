@@ -1,4 +1,4 @@
-"""Workspaces: the place an agent works, a capability, not a domain. A
+"""Agent workspaces: the place an agent works, a capability, not a domain. A
 provider prepares, releases, and purges a workspace to an isolation spec: a
 mode, an egress policy, and resource limits. The transport runs commands
 there (`acme.infra.transports`).
@@ -24,7 +24,7 @@ workspace on it starts from that snapshot and runs with its spec's egress,
 never the setup's.
 
 What a workspace is rebuilt from may be gone for good, such as the branch a
-checkout tracks. A layer that prepares one then raises `WorkspaceLost`, and
+checkout tracks. A layer that prepares one then raises `AgentWorkspaceLost`, and
 the loop parks, loudly, for a person."""
 
 from abc import ABC, abstractmethod
@@ -39,6 +39,10 @@ from acme.infra.base import InfraModel
 from acme.infra.exceptions import InfraException, InfraValidationFailed
 
 __all__ = [
+    "AgentWorkspace",
+    "AgentWorkspaceBase",
+    "AgentWorkspaceLost",
+    "AgentWorkspaceProviderInterface",
     "BaseSetupFailed",
     "Durability",
     "EgressMode",
@@ -48,10 +52,6 @@ __all__ = [
     "IsolationSpec",
     "ResourceLimits",
     "SnapshotRefused",
-    "Workspace",
-    "WorkspaceBase",
-    "WorkspaceLost",
-    "WorkspaceProviderInterface",
     "refusal",
 ]
 
@@ -98,7 +98,7 @@ class ResourceLimits(InfraModel):
         return frozenset(name for name, value in self if value is not None)
 
 
-class WorkspaceBase(InfraModel):
+class AgentWorkspaceBase(InfraModel):
     """What a workspace starts from: an image, and the commands that set it
     up, run in order, in the workspace's directory, with `egress` alone, such
     as a package registry's. A setup runs commands a person declared and no
@@ -117,10 +117,10 @@ class IsolationSpec(InfraModel):
     egress: EgressPolicy
     limits: ResourceLimits = ResourceLimits()
     durability: Durability = Durability.CACHE
-    base: WorkspaceBase | None = None  # None: the provider's own image
+    base: AgentWorkspaceBase | None = None  # None: the provider's own image
 
 
-class Workspace(InfraModel):
+class AgentWorkspace(InfraModel):
     """A prepared workspace: its id, its tenant, the spec it was prepared to,
     and where its transport finds it (a directory, a container's name)."""
 
@@ -130,11 +130,11 @@ class Workspace(InfraModel):
     location: str
 
     @classmethod
-    def absent(cls, org_id: UUID, workspace_id: UUID) -> Self:
+    def absent(cls, org_id: UUID, agent_workspace_id: UUID) -> Self:
         """The workspace of a session that has none: every transport refuses
         it, loudly."""
         spec = IsolationSpec(mode=IsolationMode.NONE, egress=EgressPolicy(mode=EgressMode.NONE))
-        return cls(id=workspace_id, org_id=org_id, spec=spec, location="")
+        return cls(id=agent_workspace_id, org_id=org_id, spec=spec, location="")
 
 
 class IsolationRefused(InfraValidationFailed):
@@ -189,14 +189,14 @@ class SnapshotRefused(InfraValidationFailed):
     code = "snapshot_refused"
 
 
-class WorkspaceLost(InfraException):
+class AgentWorkspaceLost(InfraException):
     """What a workspace is rebuilt from is gone, or cannot be brought in, and
     nothing says how, such as a branch deleted under it or one that moved
     on both sides: never rebuilt from something else in its stead, and the
     loop that asked parks, loudly, for a person."""
 
     http_status = 409
-    code = "workspace_lost"
+    code = "agent_workspace_lost"
 
 
 def refusal(
@@ -228,19 +228,19 @@ def refusal(
     return None
 
 
-class WorkspaceProviderInterface(ABC):
+class AgentWorkspaceProviderInterface(ABC):
     @abstractmethod
     async def prepare(
         self,
         org_id: UUID,
-        workspace_id: UUID,
+        agent_workspace_id: UUID,
         spec: IsolationSpec,
         snapshot: bytes | None = None,
         base: bytes | None = None,
         *,
         building: bool = False,
-    ) -> Workspace:
-        """The workspace under `workspace_id`, prepared to `spec`: made, or
+    ) -> AgentWorkspace:
+        """The workspace under `agent_workspace_id`, prepared to `spec`: made, or
         found again with its files after a release. `IsolationRefused`, with
         nothing created, when this provider cannot meet every part of the
         spec or cannot reach what it would prepare it on; it `clears` only
@@ -250,7 +250,7 @@ class WorkspaceProviderInterface(ABC):
         workspace starts from it: what it held before is replaced whole. A
         provider that cannot snapshot refuses it with `IsolationRefused`;
         one that cannot bring it in, such as an archive of another
-        provider's or one whose image is gone, raises `WorkspaceLost`. A
+        provider's or one whose image is gone, raises `AgentWorkspaceLost`. A
         restore that fails part way leaves no workspace behind, never a
         half-restored one.
 
@@ -260,7 +260,7 @@ class WorkspaceProviderInterface(ABC):
         workspace's only when it has none yet: a workspace found again keeps
         its own. `snapshot` wins over it. A spec whose base has setup is
         refused without its archive, never started on the bare image. One
-        this provider cannot bring in raises `WorkspaceLost`, and nothing of
+        this provider cannot bring in raises `AgentWorkspaceLost`, and nothing of
         the workspace's own files is lost.
 
         With `building`, the workspace is the one a base's setup runs in,
@@ -273,7 +273,7 @@ class WorkspaceProviderInterface(ABC):
         ...
 
     @abstractmethod
-    async def snapshot(self, workspace: Workspace) -> bytes:
+    async def snapshot(self, workspace: AgentWorkspace) -> bytes:
         """Everything the workspace's commands could write, as one archive
         `prepare` starts a workspace from, taken while nothing runs in it.
         The workspace keeps its instance. `SnapshotRefused`, before anything
@@ -290,11 +290,11 @@ class WorkspaceProviderInterface(ABC):
         ...
 
     @abstractmethod
-    async def keep(self, snapshot: bytes, org_id: UUID, workspace_id: UUID) -> bytes:
+    async def keep(self, snapshot: bytes, org_id: UUID, agent_workspace_id: UUID) -> bytes:
         """An archive this provider's `snapshot` made, kept as the workspace
-        under `workspace_id`'s own, such as a fork's copy or a base: one
+        under `agent_workspace_id`'s own, such as a fork's copy or a base: one
         whose bytes outlive the purge of the workspace it was taken of, and
-        go with the purge of `workspace_id`. An archive that holds its bytes
+        go with the purge of `agent_workspace_id`. An archive that holds its bytes
         is its own copy. One that names bytes kept elsewhere copies them,
         and a copy kept already is answered again."""
         ...
@@ -308,8 +308,8 @@ class WorkspaceProviderInterface(ABC):
         ...
 
     @abstractmethod
-    async def erase_snapshots(self, org_id: UUID, workspace_id: UUID) -> None:
-        """What the snapshots kept under the workspace `workspace_id` hold
+    async def erase_snapshots(self, org_id: UUID, agent_workspace_id: UUID) -> None:
+        """What the snapshots kept under the workspace `agent_workspace_id` hold
         outside their archives, such as disks, removed, and the workspace's
         instance and files kept: what a revocation of the key that seals
         those archives erases with them. A copy kept under another
@@ -318,15 +318,15 @@ class WorkspaceProviderInterface(ABC):
         ...
 
     @abstractmethod
-    async def release(self, workspace: Workspace) -> None:
+    async def release(self, workspace: AgentWorkspace) -> None:
         """Lets the instance go and keeps the files. Releasing one that holds
         no instance does nothing."""
         ...
 
     @abstractmethod
-    async def purge(self, org_id: UUID, workspace_id: UUID) -> None:
+    async def purge(self, org_id: UUID, agent_workspace_id: UUID) -> None:
         """Lets the instance and the files of the workspace under
-        `workspace_id` go, and every snapshot this provider keeps elsewhere
+        `agent_workspace_id` go, and every snapshot this provider keeps elsewhere
         under it, found by the ids `prepare` names it by, so a purge needs
         no workspace in hand. Purging one already gone, or never made,
         does nothing; one this provider cannot remove is an error."""

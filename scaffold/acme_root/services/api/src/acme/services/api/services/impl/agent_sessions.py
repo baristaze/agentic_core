@@ -8,6 +8,7 @@ from acme.om.agent_steps.rules import control_step, message_step
 from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
 from acme.om.agent_steps.types.content import TextBlock
 from acme.om.agent_steps.types.header import (
+    AgentWorkspaceSnapshot,
     ControlCommand,
     ControlHeader,
     InputHeader,
@@ -18,7 +19,6 @@ from acme.om.agent_steps.types.header import (
     SwitchedHeader,
     ToolRequestHeader,
     ToolResponseHeader,
-    WorkspaceSnapshot,
 )
 from acme.om.agents import AgentsManagerInterface
 from acme.om.agents.loop import LoopManagerInterface
@@ -128,7 +128,7 @@ def step_view(step: AgentStep) -> AgentStepView:
     )
 
 
-def snapshot_view(snapshot: WorkspaceSnapshot | None) -> SnapshotView | None:
+def snapshot_view(snapshot: AgentWorkspaceSnapshot | None) -> SnapshotView | None:
     return None if snapshot is None else SnapshotView.model_validate(snapshot.model_dump())
 
 

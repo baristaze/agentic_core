@@ -233,7 +233,7 @@ def test_a_cause_past_its_bound_is_cut_never_refused() -> None:
     keeps it."""
     long = "the base's setup command 1, '" + "x" * MAX_CAUSE + "', exited 2"
     ended = LoopEndedHeader(outcome=LoopOutcome.ERRORED, cause=long)
-    parked = Park(reason=ParkReason.PERSON, unlock="workspace", cause="gone\x00")
+    parked = Park(reason=ParkReason.PERSON, unlock="agent_workspace", cause="gone\x00")
 
     assert ended.cause is not None and len(ended.cause) == MAX_CAUSE
     assert ended.cause == long[: MAX_CAUSE - 1] + "\u2026"

@@ -290,7 +290,7 @@ class AgentStepStorageContract:
         message = make_message(session)
         waits = Park(
             reason=ParkReason.RESOURCE,
-            unlock="workspace",
+            unlock="agent_workspace",
             retry_at=utcnow(),
             cause="the workspace base is being built",
         )

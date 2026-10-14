@@ -849,10 +849,10 @@ class SnapshotView(BaseModel):
     the hash of its bytes keyed by its session, its size in bytes, and the
     workspace it was taken from.
     """
+    agent_workspace_id: Annotated[UUID, Field(title='Agent Workspace Id')]
     hash: Annotated[str, Field(title='Hash')]
     id: Annotated[UUID, Field(title='Id')]
     size: Annotated[int, Field(title='Size')]
-    workspace_id: Annotated[UUID, Field(title='Workspace Id')]
 
 
 class Intent(StrEnum):

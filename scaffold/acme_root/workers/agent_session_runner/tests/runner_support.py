@@ -9,11 +9,11 @@ transport's record and never run again."""
 from datetime import timedelta
 from uuid import uuid4
 
-from acme.infra.workspaces import EgressMode, EgressPolicy, IsolationMode, IsolationSpec
+from acme.infra.agent_workspaces import EgressMode, EgressPolicy, IsolationMode, IsolationSpec
 from acme.integrations.model_providers.calls import ModelReply
 from acme.integrations.model_providers.content import TextBlock, ToolUseBlock
 from acme.integrations.model_providers.types import StopReason, Usage
-from acme.om.agents.types.kind import NO_WORKSPACE, AgentKind, DoneRule, TreeLimits
+from acme.om.agents.types.kind import NO_AGENT_WORKSPACE, AgentKind, DoneRule, TreeLimits
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.base import Platform
 from acme.om.context import TenantContext
@@ -99,7 +99,7 @@ def assistant(isolation: IsolationSpec = HOST) -> AgentKind:
 
 KINDS = (assistant(),)
 TOOLS: tuple[ToolInterface, ...] = (RunCommand(),)
-ABSENT = (assistant(NO_WORKSPACE),)
+ABSENT = (assistant(NO_AGENT_WORKSPACE),)
 """The kind with no workspace, for a suite whose tool touches none."""
 
 

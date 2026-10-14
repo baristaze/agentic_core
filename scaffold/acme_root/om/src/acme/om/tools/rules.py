@@ -9,18 +9,18 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+from acme.infra.agent_workspaces import EgressMode
 from acme.infra.transports import CommandResult
-from acme.infra.workspaces import EgressMode
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
 from acme.om.agent_steps.types.content import Content, TextBlock, ToolResultBlock, ToolUseBlock
 from acme.om.agent_steps.types.header import (
+    AgentWorkspaceSnapshot,
     ControlCommand,
     ControlHeader,
     SnapshotHeader,
     ToolFailure,
     ToolRequestHeader,
     ToolResponseHeader,
-    WorkspaceSnapshot,
 )
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.attribution.types.principal import AgentRef, Principal
@@ -356,7 +356,7 @@ CAPABILITY_MISSING = "capability_missing"
 ISOLATION_REFUSED = "isolation_refused"
 """The code of a workspace provider's refusal of a spec it cannot meet."""
 
-INFRA_FAILURES: dict[str, ToolFailure] = {"path_outside_workspace": ToolFailure.INVALID_INPUT}
+INFRA_FAILURES: dict[str, ToolFailure] = {"path_outside_agent_workspace": ToolFailure.INVALID_INPUT}
 """A failure infra raised whose class its code decides: a path the model
 chose that leads out of the workspace is an input it can correct."""
 
@@ -543,7 +543,7 @@ def recovered_text(result: CommandResult, limit: int) -> str:
 # Workspace snapshots.
 
 
-def named_snapshot(step: AgentStep) -> WorkspaceSnapshot | None:
+def named_snapshot(step: AgentStep) -> AgentWorkspaceSnapshot | None:
     """The snapshot a step names: the one a `snapshotted` step says the
     session took, or the one a restore starts its workspace from."""
     header = step.header
@@ -559,7 +559,7 @@ def snapshotted_step(
     at: datetime,
     agent_session_id: UUID,
     loop_id: UUID,
-    snapshot: WorkspaceSnapshot,
+    snapshot: AgentWorkspaceSnapshot,
 ) -> AgentStep:
     """The step that names a snapshot the session took of its workspace."""
     return AgentStep(

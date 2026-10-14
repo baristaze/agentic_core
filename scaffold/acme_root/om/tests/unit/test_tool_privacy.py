@@ -30,14 +30,14 @@ from contracts.tools import (
     stand_ins,
 )
 
+from acme.infra.agent_workspaces import AgentWorkspace, AgentWorkspaceProviderInterface
+from acme.infra.agent_workspaces.host import AgentWorkspaceHostImpl
+from acme.infra.agent_workspaces.twin import AgentWorkspaceTwinImpl
 from acme.infra.exceptions import InfraNotFound
 from acme.infra.impl.local import InfraLocalImpl
 from acme.infra.transports import RecordSeal, TransportInterface
 from acme.infra.transports.local import DEFAULT_PATH, TransportLocalImpl
 from acme.infra.transports.twin import TransportTwinImpl
-from acme.infra.workspaces import Workspace, WorkspaceProviderInterface
-from acme.infra.workspaces.host import WorkspaceHostImpl
-from acme.infra.workspaces.twin import WorkspaceTwinImpl
 from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
 from acme.om.agent_steps.types.agent_step import AgentStepType
 from acme.om.agent_steps.types.header import ToolRequestHeader
@@ -68,7 +68,7 @@ class HostInfra(InfraLocalImpl):
         super().__init__(root)
         self.records = root / "records"
         python = Path(sys.executable).parent
-        self._host = WorkspaceHostImpl(root / "workspaces")
+        self._host = AgentWorkspaceHostImpl(root / "workspaces")
         self._local = TransportLocalImpl(
             self.records,
             self.get_secrets(),
@@ -76,7 +76,7 @@ class HostInfra(InfraLocalImpl):
             search_path=f"{python}:{DEFAULT_PATH}",
         )
 
-    def get_workspaces(self) -> WorkspaceProviderInterface:
+    def get_agent_workspaces(self) -> AgentWorkspaceProviderInterface:
         return self._host
 
     def get_transport(self) -> TransportInterface:
@@ -108,11 +108,11 @@ class Roots:
         )
         return created.id
 
-    async def ran(self, agent_session_id: UUID) -> tuple[Workspace, Call]:
+    async def ran(self, agent_session_id: UUID) -> tuple[AgentWorkspace, Call]:
         """The session's workspace, and an unsafe call in its history whose
         command ran and printed `LINE`."""
         tools = self.managers.tools
-        workspace = await tools.prepare_workspace(self.ctx, agent_session_id, self.spec)
+        workspace = await tools.prepare_agent_workspace(self.ctx, agent_session_id, self.spec)
         call_input = {"argv": ["sh", "-c", f"echo {LINE}"]}
         found = await put_call(
             tools,
@@ -135,16 +135,18 @@ class Roots:
         assert failure_of(response) is None and LINE in result_text(response)
         return workspace, found
 
-    def at_rest(self, workspace_id: UUID) -> bytes:
+    def at_rest(self, agent_workspace_id: UUID) -> bytes:
         """Every record the transport keeps of the workspace, as kept."""
         if isinstance(self.transport, TransportTwinImpl):
             kept = self.transport.records.items()
-            return b"".join(r.model_dump_json().encode() for (w, _), r in kept if w == workspace_id)
+            return b"".join(
+                r.model_dump_json().encode() for (w, _), r in kept if w == agent_workspace_id
+            )
         assert isinstance(self.infra, HostInfra)
-        folder = self.infra.records / workspace_id.hex
+        folder = self.infra.records / agent_workspace_id.hex
         return b"".join(path.read_bytes() for path in sorted(folder.glob("*.json")))
 
-    async def holds_files(self, workspace: Workspace) -> bool:
+    async def holds_files(self, workspace: AgentWorkspace) -> bool:
         """Whether anything of the workspace's files is left where they were
         kept: a directory on this host, or the twin's memory."""
         if isinstance(self.infra, HostInfra):
@@ -275,8 +277,8 @@ async def test_a_deleted_tenants_purge_takes_its_sessions_workspaces_and_no_othe
     if isinstance(roots.infra, HostInfra):
         assert not any((roots.infra.records / w.id.hex).exists() for w, _ in ran)
     else:
-        twin = roots.infra.get_workspaces()
-        assert isinstance(twin, WorkspaceTwinImpl)
+        twin = roots.infra.get_agent_workspaces()
+        assert isinstance(twin, AgentWorkspaceTwinImpl)
         assert twin.live == {stays.id}, "the twin holds the other tenant's alone"
     assert await roots.holds_files(stays) and roots.at_rest(stays.id), "another tenant's stay"
     assert await agent_sessions.get_agent_session(roots.ctx, elsewhere)
@@ -310,13 +312,13 @@ async def test_a_session_whose_workspace_cannot_go_fails_alone_and_stays_claimed
     (held, made), (gone, kept) = await roots.ran(stuck), await roots.ran(other)
     for workspace, call in ((held, made), (gone, kept)):
         await roots.transport.write_file(workspace, "notes.txt", LINE.encode(), call.epoch)
-    provider = roots.infra.get_workspaces()
+    provider = roots.infra.get_agent_workspaces()
     purge = provider.purge
 
-    async def refusing(org_id: UUID, workspace_id: UUID) -> None:
-        if workspace_id == stuck:
+    async def refusing(org_id: UUID, agent_workspace_id: UUID) -> None:
+        if agent_workspace_id == stuck:
             raise PermissionError("a file there cannot be removed")
-        await purge(org_id, workspace_id)
+        await purge(org_id, agent_workspace_id)
 
     monkeypatch.setattr(provider, "purge", refusing)
     for session in (stuck, other):

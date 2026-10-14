@@ -9,19 +9,19 @@ from datetime import timedelta
 from typing import IO
 from uuid import UUID
 
-from acme.infra.docker import docker, docker_stream
-from acme.infra.exceptions import BackendFailed
-from acme.infra.workspaces import (
+from acme.infra.agent_workspaces import (
+    AgentWorkspace,
+    AgentWorkspaceLost,
+    AgentWorkspaceProviderInterface,
     EgressMode,
     IsolationMode,
     IsolationRefused,
     IsolationSpec,
     SnapshotRefused,
-    Workspace,
-    WorkspaceLost,
-    WorkspaceProviderInterface,
     refusal,
 )
+from acme.infra.docker import docker, docker_stream
+from acme.infra.exceptions import BackendFailed
 
 MOUNT = "/workspace"
 """Where a workspace's files sit inside its container."""
@@ -81,9 +81,9 @@ REMOVE = 'while IFS= read -r path; do rm -rf -- "$path" || exit 1; done'
 """Removes each path its input names, one a line."""
 
 
-def container_name(workspace_id: UUID) -> str:
+def container_name(agent_workspace_id: UUID) -> str:
     """The container's name, and its volume's: one per workspace."""
-    return f"acme-ws-{workspace_id.hex}"
+    return f"acme-ws-{agent_workspace_id.hex}"
 
 
 def spec_print(spec: IsolationSpec, *, building: bool = False) -> str:
@@ -94,7 +94,7 @@ def spec_print(spec: IsolationSpec, *, building: bool = False) -> str:
     return hashlib.sha256(started_to.encode()).hexdigest()
 
 
-class WorkspaceContainerImpl(WorkspaceProviderInterface):
+class AgentWorkspaceContainerImpl(AgentWorkspaceProviderInterface):
     """A container per workspace on the local Docker, with its files in a
     volume of its own that outlives the container. It meets the container
     mode with no egress or open egress, and every resource limit. A running
@@ -136,13 +136,13 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
     async def prepare(
         self,
         org_id: UUID,
-        workspace_id: UUID,
+        agent_workspace_id: UUID,
         spec: IsolationSpec,
         snapshot: bytes | None = None,
         base: bytes | None = None,
         *,
         building: bool = False,
-    ) -> Workspace:
+    ) -> AgentWorkspace:
         why = refusal(
             spec,
             mode=IsolationMode.CONTAINER,
@@ -157,8 +157,8 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
         reachable = await docker("version", "--format", "{{.Server.Version}}", bound=self._timeout)
         if not reachable.ok:
             raise IsolationRefused(f"a container workspace needs Docker: {reachable.reason()}")
-        name = container_name(workspace_id)
-        workspace = Workspace(id=workspace_id, org_id=org_id, spec=spec, location=name)
+        name = container_name(agent_workspace_id)
+        workspace = AgentWorkspace(id=agent_workspace_id, org_id=org_id, spec=spec, location=name)
         if snapshot is not None:
             return await self._restore(workspace, snapshot)
         running = await docker("inspect", "--format", STARTED_TO, name, bound=self._timeout)
@@ -178,7 +178,7 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
             await self._start(workspace, self._named_image(spec), building=building)
         return workspace
 
-    async def snapshot(self, workspace: Workspace) -> bytes:
+    async def snapshot(self, workspace: AgentWorkspace) -> bytes:
         name = workspace.location
         shown = await docker("inspect", "--format", RUNS_ON, name, bound=self._timeout)
         running = shown.stdout.split()
@@ -213,7 +213,7 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
             Kept(image=image, pull=pull, deleted=deleted, layer=layer, files=files.stdout)
         )
 
-    async def release(self, workspace: Workspace) -> None:
+    async def release(self, workspace: AgentWorkspace) -> None:
         await docker("rm", "-f", workspace.location, bound=self._timeout)
 
     async def _pullable(self, image: str) -> str | None:
@@ -228,8 +228,8 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
         served = json.loads(shown.stdout or b"null") or []
         return min((ref for ref in served if REPO_DIGEST.match(ref)), default=None)
 
-    async def purge(self, org_id: UUID, workspace_id: UUID) -> None:
-        await self._remove(container_name(workspace_id))
+    async def purge(self, org_id: UUID, agent_workspace_id: UUID) -> None:
+        await self._remove(container_name(agent_workspace_id))
 
     async def _remove(self, name: str) -> None:
         """The container and its volume gone; one already gone is no error."""
@@ -238,7 +238,9 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
             if not removed.ok:
                 raise BackendFailed("docker", " ".join(removal[:-2]), removed.reason())
 
-    async def _start(self, workspace: Workspace, image: str, *, building: bool = False) -> None:
+    async def _start(
+        self, workspace: AgentWorkspace, image: str, *, building: bool = False
+    ) -> None:
         """The workspace's volume, made when it is missing, and a container
         on `image` that mounts it, started to the workspace's spec: with no
         capability, or, `building`, with a setup's."""
@@ -283,7 +285,7 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
         if not started.ok:
             raise BackendFailed("docker", "run", started.reason())
 
-    async def _restore(self, workspace: Workspace, snapshot: bytes) -> Workspace:
+    async def _restore(self, workspace: AgentWorkspace, snapshot: bytes) -> AgentWorkspace:
         """The workspace replaced whole by what `snapshot` holds: a container
         on the image it names, its writable layer and its volume copied back,
         and the paths removed from the image removed again. The image is
@@ -302,7 +304,7 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
             raise
         return workspace
 
-    async def _start_on_base(self, workspace: Workspace, kept: Kept) -> None:
+    async def _start_on_base(self, workspace: AgentWorkspace, kept: Kept) -> None:
         """A container started from a base's snapshot: on the image it names,
         with the setup's layer copied in and the paths the setup removed
         removed again, and the setup's files copied into the volume only when
@@ -359,23 +361,23 @@ class WorkspaceContainerImpl(WorkspaceProviderInterface):
             return
         taken_on = f"the image {kept.image} the snapshot was taken on"
         if kept.pull is None:
-            raise WorkspaceLost(f"{taken_on} is not on this host, and no registry serves it")
+            raise AgentWorkspaceLost(f"{taken_on} is not on this host, and no registry serves it")
         pulled = await docker("pull", kept.pull, bound=self._timeout)
         if not pulled.ok:
-            raise WorkspaceLost(f"{taken_on} is not on this host: {pulled.reason()}")
+            raise AgentWorkspaceLost(f"{taken_on} is not on this host: {pulled.reason()}")
         if not (await docker("image", "inspect", kept.image, bound=self._timeout)).ok:
-            raise WorkspaceLost(f"{kept.pull} pulled an image other than {taken_on}")
+            raise AgentWorkspaceLost(f"{kept.pull} pulled an image other than {taken_on}")
 
     async def held(self, snapshot: bytes) -> AsyncIterator[bytes]:
         yield snapshot  # its archive holds its bytes
 
-    async def keep(self, snapshot: bytes, org_id: UUID, workspace_id: UUID) -> bytes:
+    async def keep(self, snapshot: bytes, org_id: UUID, agent_workspace_id: UUID) -> bytes:
         return snapshot
 
     async def discard(self, snapshot: bytes) -> None:
         return None
 
-    async def erase_snapshots(self, org_id: UUID, workspace_id: UUID) -> None:
+    async def erase_snapshots(self, org_id: UUID, agent_workspace_id: UUID) -> None:
         return None
 
     def describe(self) -> str:
@@ -531,17 +533,17 @@ def _opened(snapshot: bytes) -> Kept:
         image, deleted = manifest["image"], tuple(manifest["deleted"])
         format_, pull = manifest["format"], manifest.get("pull")
     except (tarfile.TarError, KeyError, TypeError, ValueError) as error:
-        raise WorkspaceLost(f"the snapshot is no container's: {error}") from error
+        raise AgentWorkspaceLost(f"the snapshot is no container's: {error}") from error
     if format_ != FORMAT:
-        raise WorkspaceLost(f"the snapshot is {format_!r}, not a container's")
+        raise AgentWorkspaceLost(f"the snapshot is {format_!r}, not a container's")
     if not isinstance(image, str) or not IMAGE_ID.match(image):
-        raise WorkspaceLost("the snapshot names no image by its id")
+        raise AgentWorkspaceLost("the snapshot names no image by its id")
     if pull is not None and (not isinstance(pull, str) or not REPO_DIGEST.match(pull)):
-        raise WorkspaceLost("the snapshot names its image's digest by no reference to pull")
+        raise AgentWorkspaceLost("the snapshot names its image's digest by no reference to pull")
     if not all(
         isinstance(path, str) and path.startswith("/") and "\n" not in path for path in deleted
     ):
-        raise WorkspaceLost("the snapshot names a removed path that is not one")
+        raise AgentWorkspaceLost("the snapshot names a removed path that is not one")
     return Kept(
         image=image,
         pull=pull,

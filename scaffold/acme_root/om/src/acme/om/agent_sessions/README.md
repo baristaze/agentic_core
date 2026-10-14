@@ -9,7 +9,7 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
   its title, the people who take part in it, who sees it, its [agent
   kind](../agents/README.md) and the tools it may call, the session that
   spawned it or handed it the work, the root of its tree, and a status it
-  keeps up to date from its [steps](../steps/README.md). The steps are
+  keeps up to date from its [steps](../agent_steps/README.md). The steps are
   the truth; the status is kept for listing and finding, and so are the
   person who spoke last and the untrusted mark
   ([attribution](../attribution/README.md)).

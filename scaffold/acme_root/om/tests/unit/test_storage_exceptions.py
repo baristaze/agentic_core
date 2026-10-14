@@ -177,7 +177,7 @@ MANAGER_EXCEPTIONS: frozenset[tuple[str, str]] = frozenset(
         ("AttributionManagerInterface", "purge_authority"),
         ("AgentsManagerInterface", "purge_tree"),
         ("WindowsManagerInterface", "purge_tool_outputs"),
-        ("ToolsManagerInterface", "purge_workspace"),
+        ("ToolsManagerInterface", "purge_agent_workspace"),
         # The sweep's gauges of the queue, read across tenants like the purge.
         ("WorkManagerInterface", "oldest_ready_age"),
         ("WorkManagerInterface", "failed_within"),

@@ -3,7 +3,7 @@ from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
 from uuid import UUID
 
-from acme.infra.workspaces import IsolationMode
+from acme.infra.agent_workspaces import IsolationMode
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.limits import deadline_park
 from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus
@@ -12,10 +12,10 @@ from acme.om.agent_steps.rules import standing_step
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
 from acme.om.agent_steps.types.content import Content, TextBlock
 from acme.om.agent_steps.types.header import (
+    AgentWorkspaceSnapshot,
     ControlCommand,
     ControlHeader,
     InputHeader,
-    WorkspaceSnapshot,
 )
 from acme.om.agents.gate import ResultGateInterface
 from acme.om.agents.manager import AgentsManagerInterface
@@ -221,7 +221,7 @@ class AgentsManagerImpl(AgentsManagerInterface):
         child: AgentSession,
         fork: TakeSnapshot,
         taken: TakenSnapshot | None,
-    ) -> WorkspaceSnapshot:
+    ) -> AgentWorkspaceSnapshot:
         """The child's copy of its parent's workspace, under an id its
         spawn derives. A spawn asked again answers the copy the child's
         history already names; one that never got so far takes the

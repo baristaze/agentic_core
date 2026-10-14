@@ -15,6 +15,7 @@ from acme.om.agent_steps.types.agent_step import (
 )
 from acme.om.agent_steps.types.content import Content, TextBlock
 from acme.om.agent_steps.types.header import (
+    AgentWorkspaceSnapshot,
     ControlCommand,
     ControlHeader,
     InputHeader,
@@ -22,7 +23,6 @@ from acme.om.agent_steps.types.header import (
     SteerSwitch,
     SwitchedHeader,
     VisibilitySwitch,
-    WorkspaceSnapshot,
 )
 from acme.om.attribution.rules import principal_of
 from acme.om.attribution.types.authority import Visibility
@@ -179,7 +179,7 @@ def control_step(
     ctx: TenantContext,
     command: ControlCommand,
     call: UUID | None = None,
-    snapshot: WorkspaceSnapshot | None = None,
+    snapshot: AgentWorkspaceSnapshot | None = None,
 ) -> AgentStep:
     """A principal's control, out of band, through the surface `ctx` arrived
     on, naming who sent it. An interrupt names the request of the one call it stops, `call`, and

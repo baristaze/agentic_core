@@ -6,17 +6,17 @@ from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from uuid import UUID
 
-from acme.infra.workspaces import (
+from acme.infra.agent_workspaces import (
+    AgentWorkspace,
+    AgentWorkspaceProviderInterface,
     EgressMode,
     IsolationMode,
     IsolationRefused,
     IsolationSpec,
     SnapshotRefused,
-    Workspace,
-    WorkspaceProviderInterface,
     refusal,
 )
-from acme.infra.workspaces.stragglers import end_stragglers
+from acme.infra.agent_workspaces.stragglers import end_stragglers
 
 UNKEPT = "its commands write outside its directory, so no snapshot of it holds all they wrote"
 """Why a directory on a host is never snapshotted: what a command installs or
@@ -25,7 +25,7 @@ outside the directory, and a snapshot of the directory alone would lose it
 without a word."""
 
 
-class WorkspaceHostImpl(WorkspaceProviderInterface):
+class AgentWorkspaceHostImpl(AgentWorkspaceProviderInterface):
     """A directory on this host, one per workspace, under `root`. A directory
     confines where files go and nothing else: not a process's network, and
     not what it takes of the machine. So it meets the host mode with open
@@ -41,13 +41,13 @@ class WorkspaceHostImpl(WorkspaceProviderInterface):
     async def prepare(
         self,
         org_id: UUID,
-        workspace_id: UUID,
+        agent_workspace_id: UUID,
         spec: IsolationSpec,
         snapshot: bytes | None = None,
         base: bytes | None = None,
         *,
         building: bool = False,
-    ) -> Workspace:
+    ) -> AgentWorkspace:
         why = refusal(
             spec, mode=IsolationMode.HOST, egress={EgressMode.OPEN}, limits=(), unkept=UNKEPT
         )
@@ -55,31 +55,33 @@ class WorkspaceHostImpl(WorkspaceProviderInterface):
             why = f"a host workspace cannot start from a snapshot: {UNKEPT}"
         if why is not None:
             raise IsolationRefused(why, cause=why)
-        directory = self._directory(org_id, workspace_id)
+        directory = self._directory(org_id, agent_workspace_id)
         await asyncio.to_thread(directory.mkdir, mode=0o700, parents=True, exist_ok=True)
-        return Workspace(id=workspace_id, org_id=org_id, spec=spec, location=str(directory))
+        return AgentWorkspace(
+            id=agent_workspace_id, org_id=org_id, spec=spec, location=str(directory)
+        )
 
-    async def snapshot(self, workspace: Workspace) -> bytes:
+    async def snapshot(self, workspace: AgentWorkspace) -> bytes:
         raise SnapshotRefused(f"a host workspace cannot be snapshotted: {UNKEPT}")
 
-    async def release(self, workspace: Workspace) -> None:
+    async def release(self, workspace: AgentWorkspace) -> None:
         await end_stragglers(self._directory(workspace.org_id, workspace.id))
 
-    async def purge(self, org_id: UUID, workspace_id: UUID) -> None:
-        directory = self._directory(org_id, workspace_id)
+    async def purge(self, org_id: UUID, agent_workspace_id: UUID) -> None:
+        directory = self._directory(org_id, agent_workspace_id)
         await end_stragglers(directory)
         await asyncio.to_thread(remove_directory, directory)
 
     async def held(self, snapshot: bytes) -> AsyncIterator[bytes]:
         yield snapshot  # it makes no snapshot, so none names bytes kept elsewhere
 
-    async def keep(self, snapshot: bytes, org_id: UUID, workspace_id: UUID) -> bytes:
+    async def keep(self, snapshot: bytes, org_id: UUID, agent_workspace_id: UUID) -> bytes:
         return snapshot
 
     async def discard(self, snapshot: bytes) -> None:
         return None
 
-    async def erase_snapshots(self, org_id: UUID, workspace_id: UUID) -> None:
+    async def erase_snapshots(self, org_id: UUID, agent_workspace_id: UUID) -> None:
         return None
 
     def describe(self) -> str:
@@ -91,9 +93,9 @@ class WorkspaceHostImpl(WorkspaceProviderInterface):
     async def close(self) -> None:
         return None
 
-    def _directory(self, org_id: UUID, workspace_id: UUID) -> Path:
+    def _directory(self, org_id: UUID, agent_workspace_id: UUID) -> Path:
         """Named by ids alone, so no name climbs out of the root."""
-        return self._root.resolve() / org_id.hex / workspace_id.hex
+        return self._root.resolve() / org_id.hex / agent_workspace_id.hex
 
 
 def remove_directory(directory: Path) -> None:

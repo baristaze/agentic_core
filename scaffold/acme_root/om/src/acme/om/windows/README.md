@@ -10,7 +10,7 @@ reads, sized for the model that reads it.
 ## What it holds
 
 - **Request**: what one call of a model sends, rendered from the
-  session's [steps](../steps/README.md). It is laid out from what changes
+  session's [steps](../agent_steps/README.md). It is laid out from what changes
   least to what changes most: the agent kind's prompts and the session's
   standing text, its tools, the pinned zone, the latest summary, the
   steps since it, the inputs the agent has not read yet, and its current
@@ -99,7 +99,7 @@ The agent's loop asks for each request here, records it as a step, and
 calls the model it names. It keeps each large tool result here before it
 writes the result's step. The fills come from [the
 models](../models/README.md), the steps from [the
-steps](../steps/README.md), and the summarizer's call goes to the model
+steps](../agent_steps/README.md), and the summarizer's call goes to the model
 providers, under `integrations/`, behind the budget gate.
 
 <!-- agents-only

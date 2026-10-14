@@ -7,6 +7,7 @@ from uuid import UUID
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+from acme.infra.agent_workspaces import AgentWorkspace, IsolationMode
 from acme.infra.base import utcnow
 from acme.infra.exceptions import InfraNotFound
 from acme.infra.secrets import SecretsInterface
@@ -27,7 +28,6 @@ from acme.infra.transports import (
 from acme.infra.transports.injection import injected
 from acme.infra.transports.processes import bound_text
 from acme.infra.transports.records import CommandRecord, opened_result, sealed_record
-from acme.infra.workspaces import IsolationMode, Workspace
 
 
 @dataclass(frozen=True)
@@ -70,7 +70,7 @@ class TransportTwinImpl(TransportInterface):
 
     async def run(
         self,
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         command: CommandSpec,
         on_output: OutputSink | None = None,
         *,
@@ -110,23 +110,23 @@ class TransportTwinImpl(TransportInterface):
         return result
 
     async def outcome(
-        self, workspace: Workspace, key: UUID, epoch: int, *, seal: RecordSeal
+        self, workspace: AgentWorkspace, key: UUID, epoch: int, *, seal: RecordSeal
     ) -> CommandResult | None:
         self._serve(workspace)
         self._admit(workspace.id, epoch)
         record = self.records.get((workspace.id, key))
         return None if record is None else await opened_result(record, seal)
 
-    async def purge_records(self, workspace_id: UUID) -> None:
+    async def purge_records(self, agent_workspace_id: UUID) -> None:
         """Its records and its epoch, and its files, which the twin keeps
         in place of the workspace's own storage."""
-        for kept in [kept for kept in self.records if kept[0] == workspace_id]:
+        for kept in [kept for kept in self.records if kept[0] == agent_workspace_id]:
             del self.records[kept]
-        self._epochs.pop(workspace_id, None)
-        self._files.pop(workspace_id, None)
+        self._epochs.pop(agent_workspace_id, None)
+        self._files.pop(agent_workspace_id, None)
 
     async def read_file(
-        self, workspace: Workspace, path: str, max_bytes: int, offset: int = 0
+        self, workspace: AgentWorkspace, path: str, max_bytes: int, offset: int = 0
     ) -> bytes:
         self._serve(workspace)
         start = file_offset(offset)
@@ -136,12 +136,14 @@ class TransportTwinImpl(TransportInterface):
             raise InfraNotFound(f"no file {path!r} in the workspace")
         return files[name][start : start + max_bytes]
 
-    async def write_file(self, workspace: Workspace, path: str, data: bytes, epoch: int) -> None:
+    async def write_file(
+        self, workspace: AgentWorkspace, path: str, data: bytes, epoch: int
+    ) -> None:
         self._serve(workspace)
         self._admit(workspace.id, epoch)
         self._files.setdefault(workspace.id, {})[str(relative_path(path))] = data
 
-    async def list_files(self, workspace: Workspace, path: str, limit: int) -> list[FileEntry]:
+    async def list_files(self, workspace: AgentWorkspace, path: str, limit: int) -> list[FileEntry]:
         self._serve(workspace)
         folder = relative_path(path)
         files = self._files.get(workspace.id, {})
@@ -160,16 +162,16 @@ class TransportTwinImpl(TransportInterface):
     async def close(self) -> None:
         return None
 
-    def _serve(self, workspace: Workspace) -> None:
+    def _serve(self, workspace: AgentWorkspace) -> None:
         require_mode(workspace, IsolationMode.TWIN, "twin")
 
-    def _admit(self, workspace_id: UUID, epoch: int) -> None:
-        seen = self._epochs.get(workspace_id, 0)
+    def _admit(self, agent_workspace_id: UUID, epoch: int) -> None:
+        seen = self._epochs.get(agent_workspace_id, 0)
         if epoch < seen:
             raise StaleCommand(
-                f"workspace {workspace_id} runs commands at epoch {seen}; {epoch} is stale"
+                f"workspace {agent_workspace_id} runs commands at epoch {seen}; {epoch} is stale"
             )
-        self._epochs[workspace_id] = epoch
+        self._epochs[agent_workspace_id] = epoch
 
 
 class TransportNullImpl(TransportInterface):
@@ -178,7 +180,7 @@ class TransportNullImpl(TransportInterface):
 
     async def run(
         self,
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         command: CommandSpec,
         on_output: OutputSink | None = None,
         *,
@@ -187,22 +189,24 @@ class TransportNullImpl(TransportInterface):
         raise CapabilityMissing("this agent has no workspace")
 
     async def outcome(
-        self, workspace: Workspace, key: UUID, epoch: int, *, seal: RecordSeal
+        self, workspace: AgentWorkspace, key: UUID, epoch: int, *, seal: RecordSeal
     ) -> CommandResult | None:
         raise CapabilityMissing("this agent has no workspace")
 
     async def read_file(
-        self, workspace: Workspace, path: str, max_bytes: int, offset: int = 0
+        self, workspace: AgentWorkspace, path: str, max_bytes: int, offset: int = 0
     ) -> bytes:
         raise CapabilityMissing("this agent has no workspace")
 
-    async def write_file(self, workspace: Workspace, path: str, data: bytes, epoch: int) -> None:
+    async def write_file(
+        self, workspace: AgentWorkspace, path: str, data: bytes, epoch: int
+    ) -> None:
         raise CapabilityMissing("this agent has no workspace")
 
-    async def list_files(self, workspace: Workspace, path: str, limit: int) -> list[FileEntry]:
+    async def list_files(self, workspace: AgentWorkspace, path: str, limit: int) -> list[FileEntry]:
         raise CapabilityMissing("this agent has no workspace")
 
-    async def purge_records(self, workspace_id: UUID) -> None:
+    async def purge_records(self, agent_workspace_id: UUID) -> None:
         """A process with no transport keeps no record, so it has none to
         remove."""
         return None

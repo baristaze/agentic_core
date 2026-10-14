@@ -13,12 +13,12 @@ neither purge nor revocation of one reaches the other (ADR 1027, ADR
 from collections.abc import AsyncIterable, Collection
 from uuid import UUID
 
+from acme.infra.agent_workspaces import AgentWorkspaceLost, SnapshotRefused
 from acme.infra.buckets import BlobNotFound, Buckets, BucketsInterface
 from acme.infra.exceptions import InfraException, SecretNotFound
 from acme.infra.secrets import SecretsInterface
 from acme.infra.transports import secret_held
-from acme.infra.workspaces import SnapshotRefused, WorkspaceLost
-from acme.om.agent_steps.types.header import HASH_SCHEME, WorkspaceSnapshot
+from acme.om.agent_steps.types.header import HASH_SCHEME, AgentWorkspaceSnapshot
 from acme.om.context import TenantContext
 from acme.om.tools.manager import KeyedHash
 from acme.om.tools.seal import SnapshotSealInterface
@@ -76,11 +76,11 @@ class SnapshotStore:
         ctx: TenantContext,
         agent_session_id: UUID,
         snapshot_id: UUID,
-        workspace_id: UUID,
+        agent_workspace_id: UUID,
         archive: bytes,
-    ) -> WorkspaceSnapshot:
+    ) -> AgentWorkspaceSnapshot:
         """`archive` kept as the session's snapshot under `snapshot_id`,
-        taken of the workspace under `workspace_id`. Nothing is stored when
+        taken of the workspace under `agent_workspace_id`. Nothing is stored when
         the session keeps no content at rest (`SnapshotRefused`)."""
         digest = HASH_SCHEME + await self._keyed_hash(ctx, agent_session_id, archive)
         sealed = await self._seal.seal(ctx, agent_session_id, digest, archive)
@@ -90,16 +90,16 @@ class SnapshotStore:
         await self._buckets.put(
             ctx.org_id, BUCKET, key, sealed, CONTENT_TYPE, deadline=ctx.deadline
         )
-        return WorkspaceSnapshot(
-            id=snapshot_id, hash=digest, size=len(archive), workspace_id=workspace_id
+        return AgentWorkspaceSnapshot(
+            id=snapshot_id, hash=digest, size=len(archive), agent_workspace_id=agent_workspace_id
         )
 
     async def load(
-        self, ctx: TenantContext, agent_session_id: UUID, snapshot: WorkspaceSnapshot
+        self, ctx: TenantContext, agent_session_id: UUID, snapshot: AgentWorkspaceSnapshot
     ) -> bytes:
         """The bytes of a snapshot the session keeps, trusted only once they
         open under its key and hash to what its step names. Anything else
-        loses the workspace that would start from it (`WorkspaceLost`)."""
+        loses the workspace that would start from it (`AgentWorkspaceLost`)."""
         what = f"snapshot {snapshot.id} of agent session {agent_session_id}"
         try:
             sealed = await self._buckets.get(
@@ -111,21 +111,23 @@ class SnapshotStore:
         except InfraException as error:
             if error.code != BlobNotFound.code:
                 raise
-            raise WorkspaceLost(f"{what} is gone from the store") from error
+            raise AgentWorkspaceLost(f"{what} is gone from the store") from error
         try:
             archive = await self._seal.open(ctx, agent_session_id, snapshot.hash, sealed)
         except ValueError as error:
-            raise WorkspaceLost(f"{what} does not open: its stored bytes were altered") from error
+            raise AgentWorkspaceLost(
+                f"{what} does not open: its stored bytes were altered"
+            ) from error
         if archive is None:
-            raise WorkspaceLost(f"{what} was erased with its session's key")
+            raise AgentWorkspaceLost(f"{what} was erased with its session's key")
         digest = HASH_SCHEME + await self._keyed_hash(ctx, agent_session_id, archive)
         if digest != snapshot.hash or len(archive) != snapshot.size:
-            raise WorkspaceLost(f"{what} does not match its hash")
+            raise AgentWorkspaceLost(f"{what} does not match its hash")
         return archive
 
     async def scan(self, ctx: TenantContext, held: AsyncIterable[bytes]) -> None:
         """Refuses a snapshot whose bytes, `held` as its provider reads them
-        (`WorkspaceProviderInterface.held`), hold the value of a secret the
+        (`AgentWorkspaceProviderInterface.held`), hold the value of a secret the
         catalog's tools may have injected, in any form redaction matches, and
         names the secret, never its value. A secret the tenant does not hold
         was never given, so it is not looked for."""

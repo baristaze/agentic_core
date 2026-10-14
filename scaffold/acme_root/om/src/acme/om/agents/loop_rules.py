@@ -834,7 +834,7 @@ def restored_step(
     names: the record that the restore was done, which references it."""
     header = restore.header
     assert isinstance(header, ControlHeader) and header.snapshot is not None
-    forked = header.snapshot.workspace_id != agent_session_id
+    forked = header.snapshot.agent_workspace_id != agent_session_id
     return AgentStep(
         id=agent_step_id,
         created_at=at,

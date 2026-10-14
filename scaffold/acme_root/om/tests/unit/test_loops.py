@@ -29,16 +29,16 @@ from contracts.loops import (
     use,
 )
 
-from acme.infra.exceptions import InfraException
-from acme.infra.workspaces import (
+from acme.infra.agent_workspaces import (
+    AgentWorkspace,
+    AgentWorkspaceLost,
     EgressMode,
     EgressPolicy,
     IsolationMode,
     IsolationRefused,
     IsolationSpec,
-    Workspace,
-    WorkspaceLost,
 )
+from acme.infra.exceptions import InfraException
 from acme.integrations.model_providers.calls import ModelCall
 from acme.integrations.model_providers.scripted import ScriptedFailure
 from acme.integrations.model_providers.types import Effort, ErrorKind, StopReason
@@ -531,16 +531,16 @@ async def test_a_lost_workspace_parks_the_loop_for_a_person_before_any_call(
     await loop.say(agent_session_id, "Build it.")
     loop.anthropic.add(reply(said("Never asked.")))
 
-    async def lost(*args: object, **kwargs: object) -> Workspace:
-        raise WorkspaceLost("the branch of the session is gone, and nothing says why")
+    async def lost(*args: object, **kwargs: object) -> AgentWorkspace:
+        raise AgentWorkspaceLost("the branch of the session is gone, and nothing says why")
 
-    monkeypatch.setattr(loop.managers.tools, "prepare_workspace", lost)
+    monkeypatch.setattr(loop.managers.tools, "prepare_agent_workspace", lost)
     run = await loop.loops.run(loop.owner, agent_session_id)
 
     assert run.end is RunEnd.PARKED and run.park is not None, "never ended errored"
     assert (run.park.reason, run.park.unlock, run.park.retry_at) == (
         ParkReason.PERSON,
-        "workspace",
+        "agent_workspace",
         None,
     ), "a person clears it, never a clock"
     assert run.park.cause == LOST_SOURCE, "the engine's words, never the provider's message"
@@ -759,7 +759,7 @@ async def test_a_call_a_lost_run_may_have_started_is_settled_by_its_effect_befor
             IsolationRefused("no host can give it the workspace yet", clears=True),
             ParkReason.RESOURCE,
         ),
-        (WorkspaceLost("the branch of the session is gone"), ParkReason.PERSON),
+        (AgentWorkspaceLost("the branch of the session is gone"), ParkReason.PERSON),
     ],
 )
 async def test_a_call_a_lost_run_may_have_started_is_settled_by_its_effect_after_a_workspace_park(
@@ -776,16 +776,16 @@ async def test_a_call_a_lost_run_may_have_started_is_settled_by_its_effect_after
     note.holds = True
     lost = asyncio.ensure_future(loop.loops.run(loop.owner, agent_session_id))
     await note.started.wait()
-    prepare = loop.managers.tools.prepare_workspace
+    prepare = loop.managers.tools.prepare_agent_workspace
 
-    async def refused(*args: object, **kwargs: object) -> Workspace:
+    async def refused(*args: object, **kwargs: object) -> AgentWorkspace:
         raise refusal
 
-    monkeypatch.setattr(loop.managers.tools, "prepare_workspace", refused)
+    monkeypatch.setattr(loop.managers.tools, "prepare_agent_workspace", refused)
     parked = await loop.loops.run(loop.owner, agent_session_id)
     note.release.set()
     await lost
-    monkeypatch.setattr(loop.managers.tools, "prepare_workspace", prepare)
+    monkeypatch.setattr(loop.managers.tools, "prepare_agent_workspace", prepare)
     await loop.managers.agent_steps.append_inputs(
         loop.owner, agent_session_id, [control(loop, agent_session_id, ControlCommand.UNLOCK)]
     )
@@ -818,14 +818,14 @@ async def test_an_approved_call_held_back_by_a_park_runs_once_after_a_workspace_
         if isinstance(s.header, ToolRequestHeader) and s.header.tool == "send"
     )
     await loop.managers.tools.decide_call(loop.owner, agent_session_id, send.seq, approve=True)
-    prepare = loop.managers.tools.prepare_workspace
+    prepare = loop.managers.tools.prepare_agent_workspace
 
-    async def refused(*args: object, **kwargs: object) -> Workspace:
+    async def refused(*args: object, **kwargs: object) -> AgentWorkspace:
         raise IsolationRefused("no host can give it the workspace yet", clears=True)
 
-    monkeypatch.setattr(loop.managers.tools, "prepare_workspace", refused)
+    monkeypatch.setattr(loop.managers.tools, "prepare_agent_workspace", refused)
     waiting = await loop.loops.run(loop.owner, agent_session_id)
-    monkeypatch.setattr(loop.managers.tools, "prepare_workspace", prepare)
+    monkeypatch.setattr(loop.managers.tools, "prepare_agent_workspace", prepare)
     await loop.managers.agent_steps.append_inputs(
         loop.owner, agent_session_id, [control(loop, agent_session_id, ControlCommand.UNLOCK)]
     )
@@ -1051,7 +1051,7 @@ async def test_a_run_that_lost_its_claim_releases_nothing(tmp_path: Path) -> Non
     fenced = await running
 
     assert fenced.end is RunEnd.STALE
-    workspaces = loop.infra.get_workspaces()
+    workspaces = loop.infra.get_agent_workspaces()
     assert agent_session_id in getattr(workspaces, "live", set()), "the person's workspace stays"
 
 

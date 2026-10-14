@@ -21,19 +21,19 @@ from collections.abc import AsyncIterable, Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from acme.infra.buckets import BlobNotFound, Buckets, BucketsInterface
-from acme.infra.cache import CacheInterface
-from acme.infra.exceptions import InfraException
-from acme.infra.transports import CommandSpec, RecordSeal, TransportInterface
-from acme.infra.workspaces import (
+from acme.infra.agent_workspaces import (
+    AgentWorkspaceBase,
+    AgentWorkspaceProviderInterface,
     BaseSetupFailed,
     Durability,
     IsolationRefused,
     IsolationSpec,
     SnapshotRefused,
-    WorkspaceBase,
-    WorkspaceProviderInterface,
 )
+from acme.infra.buckets import BlobNotFound, Buckets, BucketsInterface
+from acme.infra.cache import CacheInterface
+from acme.infra.exceptions import InfraException
+from acme.infra.transports import CommandSpec, RecordSeal, TransportInterface
 from acme.om.base import derived_id, new_id
 from acme.om.context import TenantContext
 
@@ -63,7 +63,7 @@ KEPT_AT = datetime(1970, 1, 1, tzinfo=UTC)
 its key's alone."""
 
 
-def base_workspace_id(org_id: UUID, key: str) -> UUID:
+def base_agent_workspace_id(org_id: UUID, key: str) -> UUID:
     """The workspace a provider keeps a base's snapshot under, when it keeps
     one outside the archive, such as a disk: the tenant's and the key's
     alone, so every build, the base's drop, and the tenant's purge find the
@@ -79,14 +79,14 @@ UNKEPT = RecordSeal(seal=_unkept, open=_unkept)
 """A setup's output is not kept: its record says how it ended alone."""
 
 
-class WorkspaceBases:
+class AgentWorkspaceBases:
     """`build_limit` bounds a build whole, its setup's commands together,
     and is how long its claim holds."""
 
     def __init__(
         self,
         buckets: BucketsInterface,
-        workspaces: WorkspaceProviderInterface,
+        workspaces: AgentWorkspaceProviderInterface,
         transport: TransportInterface,
         claims: CacheInterface,
         scan: Scan,
@@ -95,7 +95,7 @@ class WorkspaceBases:
         clock: Callable[[], datetime],
     ) -> None:
         self._buckets = buckets
-        self._workspaces = workspaces
+        self._agent_workspaces = workspaces
         self._transport = transport
         self._claims = claims
         self._scan = scan
@@ -137,7 +137,7 @@ class WorkspaceBases:
         """The base `spec` names removed, what its provider keeps of it
         first, so the next prepare builds it again."""
         key = base_key(spec)
-        await self._workspaces.purge(ctx.org_id, base_workspace_id(ctx.org_id, key))
+        await self._agent_workspaces.purge(ctx.org_id, base_agent_workspace_id(ctx.org_id, key))
         await self._buckets.delete(ctx.org_id, BUCKET, key)
 
     async def purge(self, org_id: UUID) -> int:
@@ -145,7 +145,7 @@ class WorkspaceBases:
         each first; how many went."""
         keys = await self._buckets.list(org_id, BUCKET, PREFIX, self._purge_batch)
         for key in keys:
-            await self._workspaces.purge(org_id, base_workspace_id(org_id, key))
+            await self._agent_workspaces.purge(org_id, base_agent_workspace_id(org_id, key))
             await self._buckets.delete(org_id, BUCKET, key)
         return len(keys)
 
@@ -161,14 +161,14 @@ class WorkspaceBases:
             update={
                 "egress": base.egress,
                 "durability": Durability.SNAPSHOT,
-                "base": WorkspaceBase(image=base.image),
+                "base": AgentWorkspaceBase(image=base.image),
             }
         )
         build_id = new_id()
-        kept_under = base_workspace_id(ctx.org_id, base_key(spec))
+        kept_under = base_agent_workspace_id(ctx.org_id, base_key(spec))
         deadline = self._clock() + self._build_limit
         try:
-            workspace = await self._workspaces.prepare(
+            workspace = await self._agent_workspaces.prepare(
                 ctx.org_id, build_id, setup_spec, building=True
             )
             for index, command in enumerate(base.setup):
@@ -181,17 +181,17 @@ class WorkspaceBases:
                 )
                 if ran.exit_code != 0:
                     raise BaseSetupFailed(index, command, ran.exit_code)
-            taken = await self._workspaces.snapshot(workspace)
+            taken = await self._agent_workspaces.snapshot(workspace)
             # Kept under the base's own workspace, so the build's purge
             # leaves what the provider keeps outside the archive.
-            archive = await self._workspaces.keep(taken, ctx.org_id, kept_under)
+            archive = await self._agent_workspaces.keep(taken, ctx.org_id, kept_under)
         finally:
-            await self._workspaces.purge(ctx.org_id, build_id)
+            await self._agent_workspaces.purge(ctx.org_id, build_id)
             await self._transport.purge_records(build_id)
         try:
-            await self._scan(ctx, self._workspaces.held(archive))
+            await self._scan(ctx, self._agent_workspaces.held(archive))
         except InfraException as refused:
-            await self._workspaces.purge(ctx.org_id, kept_under)
+            await self._agent_workspaces.purge(ctx.org_id, kept_under)
             if refused.code != SnapshotRefused.code:
                 raise
             raise IsolationRefused(

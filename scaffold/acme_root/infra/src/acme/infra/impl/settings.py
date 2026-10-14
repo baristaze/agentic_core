@@ -103,12 +103,12 @@ class InfraSettings(BaseSettings):
     # beside the workspaces. `account` refuses a host that lets an account
     # link a file it does not own; where this process cannot read the
     # host's fs.protected_hardlinks, as under a unit with ProcSubset=pid,
-    # `workspace_protected_hardlinks` declares it on.
-    workspace_backend: Literal["none", "host", "account", "container", "vm"] = "none"
-    workspaces_root: Path = Path(".local/workspaces")
-    workspace_account: str = "acme-agent"
-    workspace_protected_hardlinks: bool = False
-    workspace_image: str = "python:3.14-slim"
+    # `agent_workspace_protected_hardlinks` declares it on.
+    agent_workspace_backend: Literal["none", "host", "account", "container", "vm"] = "none"
+    agent_workspaces_root: Path = Path(".local/workspaces")
+    agent_workspace_account: str = "acme-agent"
+    agent_workspace_protected_hardlinks: bool = False
+    agent_workspace_image: str = "python:3.14-slim"
     # The VMs a `vm` workspace runs on: `lima` on this host's hypervisor
     # through Lima, or `none`, which runs no VM and refuses every VM
     # workspace. A new VM boots `vm_image`, in the backend's terms

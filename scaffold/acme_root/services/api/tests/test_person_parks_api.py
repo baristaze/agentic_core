@@ -440,7 +440,7 @@ async def test_the_step_guard_is_cleared_by_an_unlock(case: Case) -> None:
     await case.runs_again(agent_session_id, unlocked, runs)
 
 
-@pytest.mark.parametrize("unlock", ["spender", "workspace"])
+@pytest.mark.parametrize("unlock", ["spender", "agent_workspace"])
 async def test_a_spender_or_a_lost_workspace_is_cleared_by_an_unlock(
     case: Case, unlock: str
 ) -> None:

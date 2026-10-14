@@ -3088,6 +3088,11 @@ export interface components {
          *     workspace it was taken from.
          */
         SnapshotView: {
+            /**
+             * Agent Workspace Id
+             * Format: uuid
+             */
+            agent_workspace_id: string;
             /** Hash */
             hash: string;
             /**
@@ -3097,11 +3102,6 @@ export interface components {
             id: string;
             /** Size */
             size: number;
-            /**
-             * Workspace Id
-             * Format: uuid
-             */
-            workspace_id: string;
         };
         /**
          * SsoLinkRequest

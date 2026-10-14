@@ -195,7 +195,7 @@ session's."""
 SNAPSHOT_HASH = re.compile(rf"^{HASH_SCHEME}[0-9a-f]{{64}}$")
 
 
-class WorkspaceSnapshot(Platform):
+class AgentWorkspaceSnapshot(Platform):
     """A workspace's snapshot as the history names it: its id, the hash of
     its bytes keyed by its session, so once the key is revoked nothing can
     confirm what it held, its size, and the workspace it was taken from:
@@ -205,7 +205,7 @@ class WorkspaceSnapshot(Platform):
     id: UUID
     hash: str = Field(pattern=SNAPSHOT_HASH.pattern)
     size: int = Field(ge=0)
-    workspace_id: UUID
+    agent_workspace_id: UUID
 
 
 class InputHeader(Platform):
@@ -268,7 +268,7 @@ class ControlHeader(Platform):
     kind: Literal["control"] = "control"
     command: ControlCommand
     call: DecidedCall | None = None
-    snapshot: WorkspaceSnapshot | None = None
+    snapshot: AgentWorkspaceSnapshot | None = None
     principal: Principal | None = None
 
     @model_validator(mode="after")
@@ -477,7 +477,7 @@ class SnapshotHeader(Platform):
     """A `snapshotted` step: the snapshot the session now holds."""
 
     kind: Literal["snapshot"] = "snapshot"
-    snapshot: WorkspaceSnapshot
+    snapshot: AgentWorkspaceSnapshot
 
 
 class MarkHeader(Platform):

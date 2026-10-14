@@ -22,10 +22,10 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+from acme.infra.agent_workspaces import AgentWorkspace, IsolationSpec
 from acme.infra.transports import OutputSink
-from acme.infra.workspaces import IsolationSpec, Workspace
 from acme.om.agent_steps.types.agent_step import AgentStep
-from acme.om.agent_steps.types.header import WorkspaceSnapshot
+from acme.om.agent_steps.types.header import AgentWorkspaceSnapshot
 from acme.om.context import TenantContext
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.tool import TakenSnapshot
@@ -53,13 +53,13 @@ class ToolsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def prepare_workspace(
+    async def prepare_agent_workspace(
         self,
         ctx: TenantContext,
         agent_session_id: UUID,
         spec: IsolationSpec,
-        restore: WorkspaceSnapshot | None = None,
-    ) -> Workspace:
+        restore: AgentWorkspaceSnapshot | None = None,
+    ) -> AgentWorkspace:
         """The session's workspace, prepared to its spec, before its loop's
         first model call. `IsolationRefused` when the provider cannot meet
         the spec: never a weaker workspace. Its `cause` is what a person
@@ -70,7 +70,7 @@ class ToolsManagerInterface(ABC):
         workspace starts from it, replaced whole. Its bytes are read from
         the store, opened under the session's key, and held to its hash
         first: one that is gone, erased with its key, altered, or of
-        another hash loses the workspace (`WorkspaceLost`) before anything
+        another hash loses the workspace (`AgentWorkspaceLost`) before anything
         starts.
 
         Without it, a spec whose base has setup starts from the base's
@@ -84,16 +84,16 @@ class ToolsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def release_workspace(self, ctx: TenantContext, workspace: Workspace) -> None:
+    async def release_agent_workspace(self, ctx: TenantContext, workspace: AgentWorkspace) -> None:
         """Lets the workspace's instance go between loops; its files stay."""
         ...
 
     @abstractmethod
-    async def snapshot_workspace(
+    async def snapshot_agent_workspace(
         self,
         ctx: TenantContext,
         agent_session_id: UUID,
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         *,
         epoch: int,
         loop_id: UUID,
@@ -114,7 +114,7 @@ class ToolsManagerInterface(ABC):
     @abstractmethod
     async def fork_snapshot(
         self, ctx: TenantContext, child_id: UUID, snapshot_id: UUID, taken: TakenSnapshot
-    ) -> WorkspaceSnapshot:
+    ) -> AgentWorkspaceSnapshot:
         """The child's own copy of its parent's workspace as the spawning
         call took it (`ToolRuntime.snapshot`): sealed under the child's key
         and stored as the child's under `snapshot_id`, with what its
@@ -128,7 +128,7 @@ class ToolsManagerInterface(ABC):
     @abstractmethod
     async def find_snapshot(
         self, ctx: TenantContext, agent_session_id: UUID, snapshot_id: UUID
-    ) -> WorkspaceSnapshot:
+    ) -> AgentWorkspaceSnapshot:
         """The snapshot under `snapshot_id` that the session's history names:
         one it took, or one a restore started it from. `NotFound` when no
         step of it names one, so a session never starts from another's."""
@@ -152,7 +152,7 @@ class ToolsManagerInterface(ABC):
         defaults: ToolPolicyLayer,
         request: AgentStep,
         call_input: Mapping[str, Any],
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         *,
         holds_private: bool = True,
         tree_deadline: datetime | None = None,
@@ -186,7 +186,7 @@ class ToolsManagerInterface(ABC):
         registry: ToolRegistry,
         request: AgentStep,
         call_input: Mapping[str, Any],
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         *,
         epoch: int,
         tree_deadline: datetime | None,
@@ -210,7 +210,7 @@ class ToolsManagerInterface(ABC):
         registry: ToolRegistry,
         request: AgentStep,
         call_input: Mapping[str, Any],
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         *,
         epoch: int,
         tree_deadline: datetime | None,
@@ -232,7 +232,7 @@ class ToolsManagerInterface(ABC):
         registry: ToolRegistry,
         request: AgentStep,
         call_input: Mapping[str, Any],
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         *,
         epoch: int,
         tree_deadline: datetime | None,
@@ -271,7 +271,7 @@ class ToolsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def purge_workspace(self, org_id: UUID, agent_session_id: UUID) -> None:
+    async def purge_agent_workspace(self, org_id: UUID, agent_session_id: UUID) -> None:
         """Platform-internal: what a session the sweep has claimed for its
         purge left where its tools ran goes with its history: its workspace,
         files and instance, the transport's records of how each command

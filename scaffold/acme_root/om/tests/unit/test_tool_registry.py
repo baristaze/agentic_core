@@ -298,7 +298,7 @@ async def test_an_mcp_call_goes_through_the_adopters_client_with_the_typed_input
         return "closed #7"
 
     registry = registry_of(McpToolImpl(DEFINITION, binding(), call))
-    workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
+    workspace = await tools.manager.prepare_agent_workspace(ctx, new_id(), TWIN_SPEC)
     found = await put_call(
         tools.manager, tools.steps, ctx, "close_issue", {"number": 7}, "integration"
     )
@@ -367,7 +367,7 @@ async def test_a_job_starts_by_a_deadline_no_later_than_the_trees(tmp_path: Path
     ctx = context(Role.SERVICE, make_org())
     reindex = Reindex()
     registry = registry_of(reindex)
-    workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
+    workspace = await tools.manager.prepare_agent_workspace(ctx, new_id(), TWIN_SPEC)
     found = await put_call(tools.manager, tools.steps, ctx, "reindex", {"shards": 3}, "execute")
     tree_deadline = tools.clock.now + timedelta(hours=1)
     job = await tools.manager.start_job(
@@ -411,7 +411,7 @@ async def test_a_job_that_will_not_start_is_answered_with_its_failure(tmp_path: 
     tools = tools_over(transport)
     ctx = context(Role.SERVICE, make_org())
     registry = registry_of(Reindex())
-    workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
+    workspace = await tools.manager.prepare_agent_workspace(ctx, new_id(), TWIN_SPEC)
     found = await put_call(
         tools.manager, tools.steps, ctx, "reindex", {"shards": "many"}, "execute"
     )

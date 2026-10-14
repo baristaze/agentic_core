@@ -19,7 +19,7 @@ from typing import Any, Self
 
 from pydantic import Field, model_validator
 
-from acme.infra.workspaces import EgressMode, EgressPolicy, IsolationMode, IsolationSpec
+from acme.infra.agent_workspaces import EgressMode, EgressPolicy, IsolationMode, IsolationSpec
 from acme.om.agent_sessions.limits import Limits
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.attribution.types.principal import MAX_KIND
@@ -30,7 +30,9 @@ from acme.om.models.types.fill import MAIN, SUMMARIZER, ModelAsk, ModelRole
 from acme.om.tools.types.policy import ToolPolicyLayer
 from acme.om.tools.types.toolset import LOAD_TOOLSET, Toolset
 
-NO_WORKSPACE = IsolationSpec(mode=IsolationMode.NONE, egress=EgressPolicy(mode=EgressMode.NONE))
+NO_AGENT_WORKSPACE = IsolationSpec(
+    mode=IsolationMode.NONE, egress=EgressPolicy(mode=EgressMode.NONE)
+)
 """The workspace of a kind that touches none: every transport refuses it."""
 
 
@@ -95,7 +97,7 @@ class AgentKind(Platform):
     policy: ToolPolicyLayer = ToolPolicyLayer()
     # The workspace its sessions work in, prepared to this spec before a
     # loop's first model call and never weakened.
-    isolation: IsolationSpec = NO_WORKSPACE
+    isolation: IsolationSpec = NO_AGENT_WORKSPACE
     # Whether its sessions hold private data, one of the rule of two's
     # three. Only a kind that reads no tenant record and no person's words
     # says False.

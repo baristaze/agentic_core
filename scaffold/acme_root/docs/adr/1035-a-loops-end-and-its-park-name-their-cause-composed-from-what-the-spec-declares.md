@@ -40,7 +40,7 @@ loop's end or park says its outcome or its reason alone. A cause never
 holds a command's output or an environment.
 
 **A lost workspace in the engine's words.** The message of a
-`WorkspaceLost` may quote a pull's answer or a store's error, so the
+`AgentWorkspaceLost` may quote a pull's answer or a store's error, so the
 engine names the cause itself: the snapshot the workspace starts from
 is gone, or no longer matches what was kept; or what the workspace is
 rebuilt from is gone, or cannot be brought in.

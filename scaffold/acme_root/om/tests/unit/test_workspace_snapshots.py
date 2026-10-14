@@ -32,13 +32,9 @@ from contracts.loops import (
 from contracts.sub_agents import SPAWNING, answers, failure_of, text_of
 from contracts.tools import Command, Tools, tools_over, twin_transport
 
-from acme.infra.buckets import Buckets
-from acme.infra.buckets.local import BucketsLocalImpl
-from acme.infra.impl.local import InfraLocalImpl
-from acme.infra.secrets.local import SecretsLocalImpl
-from acme.infra.transports import SecretUse, SecretVia
-from acme.infra.transports.broker import BrokerTwinImpl
-from acme.infra.workspaces import (
+from acme.infra.agent_workspaces import (
+    AgentWorkspace,
+    AgentWorkspaceLost,
     Durability,
     EgressMode,
     EgressPolicy,
@@ -46,16 +42,21 @@ from acme.infra.workspaces import (
     IsolationRefused,
     IsolationSpec,
     SnapshotRefused,
-    Workspace,
-    WorkspaceLost,
 )
-from acme.infra.workspaces.host import UNKEPT, WorkspaceHostImpl
-from acme.infra.workspaces.twin import WorkspaceTwinImpl
+from acme.infra.agent_workspaces.host import UNKEPT, AgentWorkspaceHostImpl
+from acme.infra.agent_workspaces.twin import AgentWorkspaceTwinImpl
+from acme.infra.buckets import Buckets
+from acme.infra.buckets.local import BucketsLocalImpl
+from acme.infra.impl.local import InfraLocalImpl
+from acme.infra.secrets.local import SecretsLocalImpl
+from acme.infra.transports import SecretUse, SecretVia
+from acme.infra.transports.broker import BrokerTwinImpl
 from acme.om.agent_sessions.rules import QUESTION
 from acme.om.agent_steps.rules import control_step
 from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
 from acme.om.agent_steps.types.content import ToolUseBlock
 from acme.om.agent_steps.types.header import (
+    AgentWorkspaceSnapshot,
     ControlCommand,
     ControlHeader,
     LoopOutcome,
@@ -63,7 +64,6 @@ from acme.om.agent_steps.types.header import (
     SnapshotHeader,
     ToolFailure,
     ToolRequestHeader,
-    WorkspaceSnapshot,
 )
 from acme.om.agents.impl.loop import LOST_SNAPSHOT
 from acme.om.agents.loop_rules import FORKED, LOST, REWOUND, pending_restore
@@ -93,7 +93,7 @@ class Kept:
 
     def __init__(self, tmp_path: Path) -> None:
         transport, _ = twin_transport(tmp_path)
-        self.provider = WorkspaceTwinImpl()
+        self.provider = AgentWorkspaceTwinImpl()
         self.broker = BrokerTwinImpl()
         self.buckets = BucketsLocalImpl(tmp_path / "buckets")
         self.secrets = SecretsLocalImpl(tmp_path / "secrets.env")
@@ -107,14 +107,16 @@ class Kept:
         )
         self.ctx = context(Role.SERVICE, make_org())
 
-    async def workspace(self, agent_session_id: UUID, files: bytes) -> Workspace:
-        workspace = await self.tools.manager.prepare_workspace(self.ctx, agent_session_id, KEPT)
+    async def workspace(self, agent_session_id: UUID, files: bytes) -> AgentWorkspace:
+        workspace = await self.tools.manager.prepare_agent_workspace(
+            self.ctx, agent_session_id, KEPT
+        )
         self.provider.files[agent_session_id] = files
         return workspace
 
-    async def snapshot(self, workspace: Workspace) -> AgentStep:
+    async def snapshot(self, workspace: AgentWorkspace) -> AgentStep:
         epoch = await self.tools.steps.begin_run(self.ctx, workspace.id)
-        return await self.tools.manager.snapshot_workspace(
+        return await self.tools.manager.snapshot_agent_workspace(
             self.ctx, workspace.id, workspace, epoch=epoch, loop_id=new_id()
         )
 
@@ -124,7 +126,7 @@ class Kept:
         )
 
 
-def named(step: AgentStep) -> WorkspaceSnapshot:
+def named(step: AgentStep) -> AgentWorkspaceSnapshot:
     assert isinstance(step.header, SnapshotHeader)
     return step.header.snapshot
 
@@ -141,7 +143,7 @@ async def test_a_snapshot_is_sealed_kept_under_its_keyed_hash_and_named_by_a_ste
     snapshot = named(step)
     assert step.type is AgentStepType.SNAPSHOTTED and step.seq > 0, "the history names it"
     assert snapshot.hash.startswith("hmac-sha256:") and snapshot.size == 28
-    assert snapshot.workspace_id == agent_session_id
+    assert snapshot.agent_workspace_id == agent_session_id
     (key,) = await kept.stored(agent_session_id)
     assert key == snapshot_key(agent_session_id, snapshot.hash)
     sealed = await kept.buckets.get(kept.ctx.org_id, BUCKET, key)
@@ -157,9 +159,9 @@ async def test_a_restore_starts_the_workspace_from_the_snapshot_its_step_names(
     workspace = await kept.workspace(agent_session_id, b"kept")
     snapshot = named(await kept.snapshot(workspace))
     kept.provider.files[agent_session_id] = b"changed since"
-    await kept.tools.manager.release_workspace(kept.ctx, workspace)
+    await kept.tools.manager.release_agent_workspace(kept.ctx, workspace)
 
-    restored = await kept.tools.manager.prepare_workspace(
+    restored = await kept.tools.manager.prepare_agent_workspace(
         kept.ctx, agent_session_id, KEPT, restore=snapshot
     )
 
@@ -199,8 +201,8 @@ async def test_a_snapshot_that_does_not_match_its_step_loses_the_workspace_befor
             "application/octet-stream",
         )
 
-    with pytest.raises(WorkspaceLost):
-        await kept.tools.manager.prepare_workspace(
+    with pytest.raises(AgentWorkspaceLost):
+        await kept.tools.manager.prepare_agent_workspace(
             kept.ctx, agent_session_id, KEPT, restore=snapshot
         )
 
@@ -242,7 +244,7 @@ async def test_a_host_workspace_refuses_a_snapshot_with_its_reason_before_anythi
     transport, _ = twin_transport(tmp_path)
     root = tmp_path / "workspaces"
     tools = tools_over(
-        transport, WorkspaceHostImpl(root), buckets=BucketsLocalImpl(tmp_path / "buckets")
+        transport, AgentWorkspaceHostImpl(root), buckets=BucketsLocalImpl(tmp_path / "buckets")
     )
     ctx = context(Role.SERVICE, make_org())
     asked = IsolationSpec(
@@ -251,14 +253,14 @@ async def test_a_host_workspace_refuses_a_snapshot_with_its_reason_before_anythi
         durability=Durability.SNAPSHOT,
     )
     with pytest.raises(IsolationRefused, match=UNKEPT):
-        await tools.manager.prepare_workspace(ctx, new_id(), asked)
+        await tools.manager.prepare_agent_workspace(ctx, new_id(), asked)
     assert not root.exists(), "nothing made"
     agent_session_id = new_id()
     cached = asked.model_copy(update={"durability": Durability.CACHE})
-    workspace = await tools.manager.prepare_workspace(ctx, agent_session_id, cached)
+    workspace = await tools.manager.prepare_agent_workspace(ctx, agent_session_id, cached)
     epoch = await tools.steps.begin_run(ctx, agent_session_id)
     with pytest.raises(SnapshotRefused, match=UNKEPT):
-        await tools.manager.snapshot_workspace(
+        await tools.manager.snapshot_agent_workspace(
             ctx, agent_session_id, workspace, epoch=epoch, loop_id=new_id()
         )
     assert (await tools.steps.get_cursor(ctx, agent_session_id)).head == 0, "no step names one"
@@ -274,7 +276,7 @@ async def test_a_purge_removes_every_snapshot_of_its_session_and_none_of_another
     await kept.snapshot(await kept.workspace(second, b"other"))
     assert len(await kept.stored(first)) == 2
 
-    await kept.tools.manager.purge_workspace(kept.ctx.org_id, first)
+    await kept.tools.manager.purge_agent_workspace(kept.ctx.org_id, first)
 
     assert await kept.stored(first) == []
     assert len(await kept.stored(second)) == 1
@@ -298,7 +300,7 @@ class Scribble(Lookup):
     files hold, as a command that writes inside and outside a container's
     volume would leave them."""
 
-    def __init__(self, twin: WorkspaceTwinImpl) -> None:
+    def __init__(self, twin: AgentWorkspaceTwinImpl) -> None:
         super().__init__("scribble", effect=Effect.IDEMPOTENT, authorization_class=ToolClass.WRITE)
         self._twin = twin
 
@@ -336,13 +338,13 @@ CACHE_FORKER = FORKER.model_copy(
 TOKEN = "SERVICE_TOKEN"
 
 
-def kept_loop(tmp_path: Path) -> tuple[Loop, WorkspaceTwinImpl]:
+def kept_loop(tmp_path: Path) -> tuple[Loop, AgentWorkspaceTwinImpl]:
     """A loop over the twin, with kinds that keep their workspace by
     snapshots, or by none and fork, and a tool that writes into it. The
     catalog's command may inject `TOKEN`, so a snapshot is scanned for it."""
     infra = InfraLocalImpl(tmp_path)
-    twin = infra.get_workspaces()
-    assert isinstance(twin, WorkspaceTwinImpl)
+    twin = infra.get_agent_workspaces()
+    assert isinstance(twin, AgentWorkspaceTwinImpl)
     injected = SecretUse(name=TOKEN, via=SecretVia.INJECTED, env=TOKEN)
     loop = loop_over(
         tmp_path,
@@ -353,7 +355,7 @@ def kept_loop(tmp_path: Path) -> tuple[Loop, WorkspaceTwinImpl]:
     return loop, twin
 
 
-async def wrote(loop: Loop, agent_session_id: UUID, files: bytes) -> WorkspaceSnapshot:
+async def wrote(loop: Loop, agent_session_id: UUID, files: bytes) -> AgentWorkspaceSnapshot:
     """A loop that writes `files` into the workspace and ends: its run
     snapshots the workspace at its end, and the step names the snapshot."""
     await loop.say(agent_session_id, "Write it.")
@@ -395,7 +397,7 @@ async def test_a_kept_workspace_is_snapshotted_at_each_runs_end_and_the_next_run
     assert parked.end is RunEnd.PARKED and parked.park == QUESTION
     history = await loop.history(agent_session_id)
     assert [step.type for step in history[-2:]] == [AgentStepType.SNAPSHOTTED, AgentStepType.PARKED]
-    assert named(history[-2]).workspace_id == agent_session_id
+    assert named(history[-2]).agent_workspace_id == agent_session_id
     assert agent_session_id not in twin.live, "its instance went once the snapshot held it"
     for text in ("Version 1.", "Check it again."):
         # On the twin the files outlive a release; a container's layer does not.
@@ -421,7 +423,7 @@ async def test_a_run_whose_snapshot_fails_keeps_its_instance_and_the_next_starts
         raise SnapshotRefused("the workspace holds the secret 'SERVICE_TOKEN'")
 
     with monkeypatch.context() as patched:
-        patched.setattr(loop.managers.tools, "snapshot_workspace", refused)
+        patched.setattr(loop.managers.tools, "snapshot_agent_workspace", refused)
         await loop.say(agent_session_id, "Change it.")
         loop.anthropic.add(reply(call("scribble", q="written since")), reply(said("Changed.")))
         assert (await loop.loops.run(loop.owner, agent_session_id)).outcome is LoopOutcome.SUCCEEDED
@@ -522,7 +524,7 @@ async def test_a_restore_whose_bytes_are_gone_parks_once_and_the_unlock_goes_on_
     parked = await loop.loops.run(loop.owner, agent_session_id)
 
     assert parked.park is not None
-    assert (parked.park.reason, parked.park.unlock) == (ParkReason.PERSON, "workspace")
+    assert (parked.park.reason, parked.park.unlock) == (ParkReason.PERSON, "agent_workspace")
     assert parked.park.cause == LOST_SNAPSHOT, "a person reads why it waits"
     assert len(loop.anthropic.calls) == calls, "no model call on a lost restore"
 
@@ -597,7 +599,7 @@ async def test_a_fork_in_the_parents_first_run_starts_from_its_workspace_at_the_
     (restore,) = [s for s in await loop.history(child) if s.type is AgentStepType.CONTROL]
     assert isinstance(restore.header, ControlHeader)
     copy = restore.header.snapshot
-    assert copy is not None and copy.workspace_id == parent
+    assert copy is not None and copy.agent_workspace_id == parent
     assert copy.hash != named(spawned).hash, "its own copy, keyed by its own session"
     loop.anthropic.add(reply(call("scribble", q="the child's own writes")), reply(said("Held.")))
     assert (await loop.loops.run(loop.owner, child)).outcome is LoopOutcome.SUCCEEDED
@@ -607,7 +609,7 @@ async def test_a_fork_in_the_parents_first_run_starts_from_its_workspace_at_the_
     assert twin.files[child] == b"the child's own writes"
     assert twin.files[parent] == b"after the spawn", "the child's writes never reach it"
     # The copy is the child's own: the parent's purge leaves it.
-    await loop.managers.tools.purge_workspace(loop.owner.org_id, parent)
+    await loop.managers.tools.purge_agent_workspace(loop.owner.org_id, parent)
     kept = await loop.infra.get_buckets().list(
         loop.owner.org_id, Buckets.SNAPSHOTS, session_prefix(child), 10
     )
@@ -646,7 +648,7 @@ async def test_a_fork_asked_again_answers_its_child_on_the_copy_it_was_made_with
 
     async def take() -> TakenSnapshot:
         taken.append(b"the parent's files")
-        return TakenSnapshot(workspace_id=parent, archive=taken[-1])
+        return TakenSnapshot(agent_workspace_id=parent, archive=taken[-1])
 
     asked = Spawn(id=new_id(), kind=FORKER.name, title="a try", objective="Try it.")
     first = await loop.managers.agents.spawn(loop.owner, parent, asked, take)

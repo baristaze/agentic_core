@@ -7,12 +7,12 @@ import enum
 
 import pytest
 
+from acme.infra.agent_workspaces import EgressMode, IsolationMode
 from acme.infra.buckets import Buckets
 from acme.infra.cache import CacheScope
 from acme.infra.queues import Queues
 from acme.infra.topics import Topics
 from acme.infra.transports import SecretVia
-from acme.infra.workspaces import EgressMode, IsolationMode
 from acme.integrations.model_providers.types import (
     Effort,
     ErrorAnswer,

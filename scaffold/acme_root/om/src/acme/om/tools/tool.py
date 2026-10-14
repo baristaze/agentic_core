@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
 
+from acme.infra.agent_workspaces import AgentWorkspace
 from acme.infra.transports import (
     CommandResult,
     CommandSpec,
@@ -29,7 +30,6 @@ from acme.infra.transports import (
     SecretUse,
     TransportInterface,
 )
-from acme.infra.workspaces import Workspace
 from acme.om.agent_steps.types.header import ToolFailure
 from acme.om.base import Platform
 from acme.om.context import TenantContext
@@ -53,7 +53,7 @@ class TakenSnapshot:
     own snapshot too. What one that does not keep it holds outside the
     archive, such as a disk, goes once the child's copy is kept."""
 
-    workspace_id: UUID
+    agent_workspace_id: UUID
     archive: bytes = field(repr=False)
     kept: bool = False
 
@@ -72,7 +72,7 @@ class ToolRuntime:
     def __init__(
         self,
         transport: TransportInterface,
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         *,
         agent_session_id: UUID,
         seal: RecordSeal,

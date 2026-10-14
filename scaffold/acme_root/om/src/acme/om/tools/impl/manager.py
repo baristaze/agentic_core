@@ -7,6 +7,16 @@ from uuid import UUID
 
 from pydantic import Field, ValidationError
 
+from acme.infra.agent_workspaces import (
+    AgentWorkspace,
+    AgentWorkspaceLost,
+    AgentWorkspaceProviderInterface,
+    Durability,
+    IsolationMode,
+    IsolationRefused,
+    IsolationSpec,
+    SnapshotRefused,
+)
 from acme.infra.exceptions import InfraException
 from acme.infra.transports import (
     CredentialBrokerInterface,
@@ -15,27 +25,17 @@ from acme.infra.transports import (
     SecretUse,
     TransportInterface,
 )
-from acme.infra.workspaces import (
-    Durability,
-    IsolationMode,
-    IsolationRefused,
-    IsolationSpec,
-    SnapshotRefused,
-    Workspace,
-    WorkspaceLost,
-    WorkspaceProviderInterface,
-)
 from acme.om.agent_steps import AgentStepsManagerInterface
 from acme.om.agent_steps.rules import actor_of, origin_of
 from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
 from acme.om.agent_steps.types.content import UNPARSED, Content, TextBlock
 from acme.om.agent_steps.types.header import (
+    AgentWorkspaceSnapshot,
     ControlCommand,
     ControlHeader,
     DecidedCall,
     ToolFailure,
     ToolRequestHeader,
-    WorkspaceSnapshot,
 )
 from acme.om.attribution import AttributionManagerInterface
 from acme.om.attribution.types.authority import CallReach
@@ -58,7 +58,7 @@ from acme.om.exceptions import (
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.types.row import OutboxRow, versioned_row
 from acme.om.tenancy import TenancyManagerInterface
-from acme.om.tools.impl.bases import WorkspaceBases
+from acme.om.tools.impl.bases import AgentWorkspaceBases
 from acme.om.tools.impl.snapshots import SnapshotStore
 from acme.om.tools.manager import KeyedHash, ToolsManagerInterface
 from acme.om.tools.registry import ToolRegistry
@@ -135,7 +135,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         tenancy: TenancyManagerInterface,
         events: EventsManagerInterface,
         relay: OutboxRelayInterface,
-        workspaces: WorkspaceProviderInterface,
+        workspaces: AgentWorkspaceProviderInterface,
         transport: TransportInterface,
         options: ToolsOptions,
         clock: Callable[[], datetime] = utcnow,
@@ -145,7 +145,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         attribution: AttributionManagerInterface,
         broker: CredentialBrokerInterface,
         snapshots: SnapshotStore,
-        bases: WorkspaceBases,
+        bases: AgentWorkspaceBases,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self._broker = broker
@@ -160,7 +160,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         self._tenancy = tenancy
         self._events = events
         self._relay = relay
-        self._workspaces = workspaces
+        self._agent_workspaces = workspaces
         self._transport = transport
         self._options = options
         self._clock = clock
@@ -216,13 +216,13 @@ class ToolsManagerImpl(ToolsManagerInterface):
 
     # The workspace.
 
-    async def prepare_workspace(
+    async def prepare_agent_workspace(
         self,
         ctx: TenantContext,
         agent_session_id: UUID,
         spec: IsolationSpec,
-        restore: WorkspaceSnapshot | None = None,
-    ) -> Workspace:
+        restore: AgentWorkspaceSnapshot | None = None,
+    ) -> AgentWorkspace:
         ctx.require(Permission.WRITE)
         if spec.mode is IsolationMode.NONE:
             if restore is not None:
@@ -230,7 +230,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
                     f"agent session {agent_session_id} has no workspace to start from a snapshot",
                     cause="a session with no workspace starts from no snapshot",
                 )
-            return Workspace.absent(ctx.org_id, agent_session_id)
+            return AgentWorkspace.absent(ctx.org_id, agent_session_id)
         # Its bytes are trusted by their hash before the provider sees them:
         # a snapshot that does not match starts nothing.
         archive = (
@@ -242,11 +242,11 @@ class ToolsManagerImpl(ToolsManagerInterface):
         if archive is None and spec.base is not None and spec.base.setup:
             base = await self._bases.archive(ctx, spec)
         try:
-            return await self._workspaces.prepare(
+            return await self._agent_workspaces.prepare(
                 ctx.org_id, agent_session_id, spec, snapshot=archive, base=base
             )
         except InfraException as lost:
-            if base is None or lost.code != WorkspaceLost.code:
+            if base is None or lost.code != AgentWorkspaceLost.code:
                 raise
             # A base this host cannot bring in, such as one on an image this
             # host cannot pull, holds nothing of the session's: it is built
@@ -258,16 +258,16 @@ class ToolsManagerImpl(ToolsManagerInterface):
                 cause="the workspace base is built again",
             ) from lost
 
-    async def release_workspace(self, ctx: TenantContext, workspace: Workspace) -> None:
+    async def release_agent_workspace(self, ctx: TenantContext, workspace: AgentWorkspace) -> None:
         ctx.require(Permission.WRITE)
         if workspace.spec.mode is not IsolationMode.NONE:
-            await self._workspaces.release(workspace)
+            await self._agent_workspaces.release(workspace)
 
-    async def snapshot_workspace(
+    async def snapshot_agent_workspace(
         self,
         ctx: TenantContext,
         agent_session_id: UUID,
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         *,
         epoch: int,
         loop_id: UUID,
@@ -280,26 +280,28 @@ class ToolsManagerImpl(ToolsManagerInterface):
 
     async def fork_snapshot(
         self, ctx: TenantContext, child_id: UUID, snapshot_id: UUID, taken: TakenSnapshot
-    ) -> WorkspaceSnapshot:
+    ) -> AgentWorkspaceSnapshot:
         ctx.require(Permission.WRITE)
         # The child's own copy: what the provider keeps outside the archive,
         # such as a disk, is copied under the child's workspace, so neither
         # session's purge nor revocation reaches the other's.
-        copy = await self._workspaces.keep(taken.archive, ctx.org_id, child_id)
+        copy = await self._agent_workspaces.keep(taken.archive, ctx.org_id, child_id)
         try:
-            kept = await self._snapshots.keep(ctx, child_id, snapshot_id, taken.workspace_id, copy)
+            kept = await self._snapshots.keep(
+                ctx, child_id, snapshot_id, taken.agent_workspace_id, copy
+            )
         except BaseException:
-            await self._workspaces.discard(copy)
+            await self._agent_workspaces.discard(copy)
             raise
         if not taken.kept:
             # A cache keeps nothing of what the spawn took: the child's copy
             # holds it all.
-            await self._workspaces.discard(taken.archive)
+            await self._agent_workspaces.discard(taken.archive)
         return kept
 
     async def find_snapshot(
         self, ctx: TenantContext, agent_session_id: UUID, snapshot_id: UUID
-    ) -> WorkspaceSnapshot:
+    ) -> AgentWorkspaceSnapshot:
         ctx.require(Permission.READ)
         async for step in self._history(ctx, agent_session_id):
             named = named_snapshot(step)
@@ -308,7 +310,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         raise NotFound(f"agent session {agent_session_id} names no snapshot {snapshot_id}")
 
     async def _take(
-        self, ctx: TenantContext, agent_session_id: UUID, workspace: Workspace
+        self, ctx: TenantContext, agent_session_id: UUID, workspace: AgentWorkspace
     ) -> bytes:
         """The live workspace's archive, refused before anything runs when
         there is none to take or the session keeps no content at rest. No
@@ -319,13 +321,13 @@ class ToolsManagerImpl(ToolsManagerInterface):
             raise SnapshotRefused(f"agent session {agent_session_id} has no workspace to snapshot")
         await self._snapshots.at_rest(ctx, agent_session_id)
         await self._broker.detach_all(workspace)
-        archive = await self._workspaces.snapshot(workspace)
+        archive = await self._agent_workspaces.snapshot(workspace)
         try:
-            await self._snapshots.scan(ctx, self._workspaces.held(archive))
+            await self._snapshots.scan(ctx, self._agent_workspaces.held(archive))
         except BaseException:
             # Refused, so nothing of it stays: a disk its provider keeps
             # apart, one that holds a secret's value included, goes too.
-            await self._workspaces.discard(archive)
+            await self._agent_workspaces.discard(archive)
             raise
         return archive
 
@@ -333,7 +335,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         self,
         ctx: TenantContext,
         agent_session_id: UUID,
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         archive: bytes,
         *,
         epoch: int,
@@ -347,14 +349,14 @@ class ToolsManagerImpl(ToolsManagerInterface):
             )
         except BaseException:
             # Not kept, so nothing of it stays, a disk kept apart included.
-            await self._workspaces.discard(archive)
+            await self._agent_workspaces.discard(archive)
             raise
         step = snapshotted_step(new_id(), self._clock(), agent_session_id, loop_id, kept)
         (stored,) = await self._steps.append_agent_steps(ctx, agent_session_id, epoch, [step])
         return stored
 
     async def _fork_point(
-        self, ctx: TenantContext, request: AgentStep, workspace: Workspace, epoch: int
+        self, ctx: TenantContext, request: AgentStep, workspace: AgentWorkspace, epoch: int
     ) -> TakenSnapshot:
         """The call's workspace as it stands, taken for a sub-agent to start
         from. A workspace kept by snapshots keeps it as its own too, named in
@@ -367,7 +369,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
             await self._name(
                 ctx, agent_session_id, workspace, archive, epoch=epoch, loop_id=request.loop_id
             )
-        return TakenSnapshot(workspace_id=workspace.id, archive=archive, kept=kept)
+        return TakenSnapshot(agent_workspace_id=workspace.id, archive=archive, kept=kept)
 
     # A call.
 
@@ -386,7 +388,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         defaults: ToolPolicyLayer,
         request: AgentStep,
         call_input: Mapping[str, Any],
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         *,
         holds_private: bool = True,
         tree_deadline: datetime | None = None,
@@ -474,7 +476,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         registry: ToolRegistry,
         request: AgentStep,
         call_input: Mapping[str, Any],
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         *,
         epoch: int,
         tree_deadline: datetime | None,
@@ -530,7 +532,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         registry: ToolRegistry,
         request: AgentStep,
         call_input: Mapping[str, Any],
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         *,
         epoch: int,
         tree_deadline: datetime | None,
@@ -576,7 +578,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         registry: ToolRegistry,
         request: AgentStep,
         call_input: Mapping[str, Any],
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         *,
         epoch: int,
         tree_deadline: datetime | None,
@@ -669,11 +671,11 @@ class ToolsManagerImpl(ToolsManagerInterface):
         (stored,) = await self._steps.append_inputs(ctx, agent_session_id, [decision])
         return stored
 
-    async def purge_workspace(self, org_id: UUID, agent_session_id: UUID) -> None:
+    async def purge_agent_workspace(self, org_id: UUID, agent_session_id: UUID) -> None:
         # A session's workspace is prepared under the session's id. Its files
         # go first: what still runs there ends with them. Its snapshots are
         # content too, and go with them.
-        await self._workspaces.purge(org_id, agent_session_id)
+        await self._agent_workspaces.purge(org_id, agent_session_id)
         await self._transport.purge_records(agent_session_id)
         await self._snapshots.purge(org_id, agent_session_id)
 
@@ -681,7 +683,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         ctx.require(Permission.WRITE)
         # A session's workspace is prepared under the session's id, and its
         # snapshots are kept under it.
-        await self._workspaces.erase_snapshots(ctx.org_id, agent_session_id)
+        await self._agent_workspaces.erase_snapshots(ctx.org_id, agent_session_id)
 
     async def purge_tenant(self, ctx: TenantContext) -> int:
         ctx.require(Permission.WRITE)
@@ -773,7 +775,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         ctx: TenantContext,
         request: AgentStep,
         tool: ToolInterface,
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         epoch: int,
         deadline: datetime,
         on_output: OutputSink | None,

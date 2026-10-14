@@ -79,7 +79,7 @@ what a session's snapshots keep outside the seal.
 
 ## How another namespace composes it
 
-The root wires the sealing layer under the [steps](../steps/README.md),
+The root wires the sealing layer under the [steps](../agent_steps/README.md),
 so every append and read of the history passes through it by the
 session's policy. A tool that records a hash of its input asks for one
 keyed by the session.

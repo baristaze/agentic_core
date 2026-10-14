@@ -11,6 +11,15 @@ from uuid import uuid4
 import pytest
 from contracts.doubles import APP, context
 
+from acme.infra.agent_workspaces import (
+    AgentWorkspace,
+    AgentWorkspaceProviderInterface,
+    EgressMode,
+    EgressPolicy,
+    IsolationMode,
+    IsolationSpec,
+)
+from acme.infra.agent_workspaces.twin import AgentWorkspaceNullImpl
 from acme.infra.base import QuietNull
 from acme.infra.exceptions import InfraException
 from acme.infra.impl.local import InfraLocalImpl
@@ -25,15 +34,6 @@ from acme.infra.transports import (
 )
 from acme.infra.transports.broker import BrokerNullImpl
 from acme.infra.transports.twin import RecordSealTwin, TransportNullImpl
-from acme.infra.workspaces import (
-    EgressMode,
-    EgressPolicy,
-    IsolationMode,
-    IsolationSpec,
-    Workspace,
-    WorkspaceProviderInterface,
-)
-from acme.infra.workspaces.twin import WorkspaceNullImpl
 from acme.integrations.model_providers import ModelProviderInterface, reply_of
 from acme.integrations.model_providers.absent import ModelProviderAbsentImpl
 from acme.integrations.model_providers.calls import ModelCall
@@ -70,7 +70,7 @@ CTX = context(Role.OWNER)
 PAYER = Principal(kind=PrincipalKind.PERSON, id=CTX.user_id)
 CALL = ModelCall(model="any", messages=(), max_output_tokens=1)
 NONE_SPEC = IsolationSpec(mode=IsolationMode.CONTAINER, egress=EgressPolicy(mode=EgressMode.NONE))
-ABSENT = Workspace.absent(CTX.org_id, uuid4())
+ABSENT = AgentWorkspace.absent(CTX.org_id, uuid4())
 
 
 def refusing(act: Callable[[], Awaitable[Any]]) -> Callable[[], Awaitable[BaseException]]:
@@ -137,9 +137,9 @@ LOUD: list[tuple[object, object, Callable[[], Awaitable[Any]]]] = [
         ),
     ),
     (
-        WorkspaceProviderInterface,
-        WorkspaceNullImpl(),
-        lambda: WorkspaceNullImpl().prepare(CTX.org_id, uuid4(), NONE_SPEC),
+        AgentWorkspaceProviderInterface,
+        AgentWorkspaceNullImpl(),
+        lambda: AgentWorkspaceNullImpl().prepare(CTX.org_id, uuid4(), NONE_SPEC),
     ),
     (
         ModelProviderInterface,

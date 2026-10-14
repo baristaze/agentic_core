@@ -8,7 +8,7 @@ of](../../../../README.md).
 
 One record per [agent session](../agent_sessions/README.md), its
 authority. The rest is read off the session and its
-[steps](../steps/README.md).
+[steps](../agent_steps/README.md).
 
 - **Actor**: who produced a step: a person, a program, an agent, the
   model, the engine, or something outside. Every step names one.

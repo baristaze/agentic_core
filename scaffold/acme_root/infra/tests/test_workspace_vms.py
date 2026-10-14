@@ -26,6 +26,21 @@ from uuid import UUID
 import pytest
 from annotated_types import MaxLen
 
+from acme.infra.agent_workspaces import (
+    AgentWorkspace,
+    AgentWorkspaceBase,
+    AgentWorkspaceLost,
+    AgentWorkspaceProviderInterface,
+    Durability,
+    EgressMode,
+    EgressPolicy,
+    IsolationMode,
+    IsolationRefused,
+    IsolationSpec,
+    ResourceLimits,
+    SnapshotRefused,
+)
+from acme.infra.agent_workspaces.vm import AgentWorkspaceVmImpl, longest_name, vm_name
 from acme.infra.base import new_id, utcnow
 from acme.infra.exceptions import InfraValidationFailed
 from acme.infra.impl.settings import InfraSettings
@@ -44,21 +59,6 @@ from acme.infra.vms.lima import (
     template,
 )
 from acme.infra.vms.twin import VmsNullImpl, VmsTwinImpl
-from acme.infra.workspaces import (
-    Durability,
-    EgressMode,
-    EgressPolicy,
-    IsolationMode,
-    IsolationRefused,
-    IsolationSpec,
-    ResourceLimits,
-    SnapshotRefused,
-    Workspace,
-    WorkspaceBase,
-    WorkspaceLost,
-    WorkspaceProviderInterface,
-)
-from acme.infra.workspaces.vm import WorkspaceVmImpl, longest_name, vm_name
 
 PREFIX = "acme-test-"
 ENGINE_CREDENTIAL = "ACME_DATABASE_URL"
@@ -81,9 +81,9 @@ def vm(
     )
 
 
-def over_twin(tmp_path: Path, **vms: object) -> tuple[WorkspaceVmImpl, VmsTwinImpl]:
+def over_twin(tmp_path: Path, **vms: object) -> tuple[AgentWorkspaceVmImpl, VmsTwinImpl]:
     twin = VmsTwinImpl(tmp_path / "vms", **vms)  # type: ignore[arg-type]
-    return WorkspaceVmImpl(twin, "twin-image", PREFIX, TIMEOUT), twin
+    return AgentWorkspaceVmImpl(twin, "twin-image", PREFIX, TIMEOUT), twin
 
 
 def transport_over(vms: VmsTwinImpl | VmsLimaImpl, tmp_path: Path, org: UUID) -> TransportVmImpl:
@@ -98,7 +98,7 @@ def command(*argv: str, seconds: float = 600) -> CommandSpec:
 
 
 async def written(
-    transport: TransportInterface, workspace: Workspace, script: str
+    transport: TransportInterface, workspace: AgentWorkspace, script: str
 ) -> tuple[int | None, str]:
     ran = await transport.run(workspace, command("sh", "-c", script), seal=SEAL)
     return ran.exit_code, ran.stdout + ran.stderr
@@ -112,9 +112,9 @@ async def test_a_vm_workspace_is_snapshotted_restored_and_purged_over_the_twin(
     workspace whole from that disk; a purge takes the VM and every
     snapshot kept under it."""
     provider, twin = over_twin(tmp_path)
-    org, workspace_id = new_id(), new_id()
+    org, agent_workspace_id = new_id(), new_id()
     transport = transport_over(twin, tmp_path, org)
-    workspace = await provider.prepare(org, workspace_id, vm(durability=Durability.SNAPSHOT))
+    workspace = await provider.prepare(org, agent_workspace_id, vm(durability=Durability.SNAPSHOT))
     assert await written(transport, workspace, "echo kept > kept.txt") == (0, "")
 
     snapshot = await provider.snapshot(workspace)
@@ -125,11 +125,11 @@ async def test_a_vm_workspace_is_snapshotted_restored_and_purged_over_the_twin(
     assert await twin.state(workspace.location) is VmState.RUNNING, "it keeps its instance"
     assert await written(transport, workspace, "echo later > kept.txt; touch new.txt") == (0, "")
 
-    restored = await provider.prepare(org, workspace_id, vm(), snapshot=snapshot)
+    restored = await provider.prepare(org, agent_workspace_id, vm(), snapshot=snapshot)
     assert await written(transport, restored, "cat kept.txt; ls") == (0, "kept\nkept.txt\n")
 
-    await provider.purge(org, workspace_id)
-    assert await twin.names(vm_name(PREFIX, workspace_id)) == [], "the VM and its disks"
+    await provider.purge(org, agent_workspace_id)
+    assert await twin.names(vm_name(PREFIX, agent_workspace_id)) == [], "the VM and its disks"
 
 
 async def test_a_restore_holds_the_disk_to_its_digest_before_the_workspace_goes(
@@ -139,22 +139,22 @@ async def test_a_restore_holds_the_disk_to_its_digest_before_the_workspace_goes(
     VM it would have replaced stands as it was. So does an archive of
     another tenant's, or of another provider's."""
     provider, twin = over_twin(tmp_path)
-    org, workspace_id = new_id(), new_id()
-    workspace = await provider.prepare(org, workspace_id, vm())
+    org, agent_workspace_id = new_id(), new_id()
+    workspace = await provider.prepare(org, agent_workspace_id, vm())
     snapshot = await provider.snapshot(workspace)
     disk = twin.vms[json.loads(snapshot)["name"]].folder
     (disk / "workspace" / "planted.txt").write_text("not the commands'")
 
-    with pytest.raises(WorkspaceLost, match="does not match its digest"):
-        await provider.prepare(org, workspace_id, vm(), snapshot=snapshot)
-    with pytest.raises(WorkspaceLost, match="another tenant"):
-        await provider.prepare(new_id(), workspace_id, vm(), snapshot=snapshot)
-    with pytest.raises(WorkspaceLost, match="no vm's"):
-        await provider.prepare(org, workspace_id, vm(), snapshot=b"a container's tar")
+    with pytest.raises(AgentWorkspaceLost, match="does not match its digest"):
+        await provider.prepare(org, agent_workspace_id, vm(), snapshot=snapshot)
+    with pytest.raises(AgentWorkspaceLost, match="another tenant"):
+        await provider.prepare(new_id(), agent_workspace_id, vm(), snapshot=snapshot)
+    with pytest.raises(AgentWorkspaceLost, match="no vm's"):
+        await provider.prepare(org, agent_workspace_id, vm(), snapshot=b"a container's tar")
     shutil.rmtree(disk)
     twin.vms.pop(json.loads(snapshot)["name"])
-    with pytest.raises(WorkspaceLost, match="gone"):
-        await provider.prepare(org, workspace_id, vm(), snapshot=snapshot)
+    with pytest.raises(AgentWorkspaceLost, match="gone"):
+        await provider.prepare(org, agent_workspace_id, vm(), snapshot=snapshot)
 
     assert await twin.state(workspace.location) is VmState.RUNNING, "nothing of it went"
 
@@ -189,13 +189,13 @@ async def test_a_machine_found_again_keeps_its_disk_and_a_new_one_starts_on_the_
     org = new_id()
     transport = transport_over(twin, tmp_path, org)
     setup = vm(durability=Durability.SNAPSHOT).model_copy(
-        update={"base": WorkspaceBase(image="twin-image")}
+        update={"base": AgentWorkspaceBase(image="twin-image")}
     )
     builder = await provider.prepare(org, new_id(), setup)
     await written(transport, builder, "echo from-the-base > base.txt")
     base = await provider.keep(await provider.snapshot(builder), org, new_id())
     spec = vm().model_copy(
-        update={"base": WorkspaceBase(image="twin-image", setup=("echo set up",))}
+        update={"base": AgentWorkspaceBase(image="twin-image", setup=("echo set up",))}
     )
 
     fresh = await provider.prepare(org, new_id(), spec, base=base)
@@ -229,7 +229,7 @@ async def test_egress_the_machines_cannot_close_is_refused_before_a_machine_star
     a VM. VMs that can close egress meet it."""
     provider, twin = over_twin(tmp_path, closes_egress=False)
     closed_setup = vm().model_copy(
-        update={"base": WorkspaceBase(image="twin-image", setup=("true",), egress=NONE)}
+        update={"base": AgentWorkspaceBase(image="twin-image", setup=("true",), egress=NONE)}
     )
     allowlist = EgressPolicy(mode=EgressMode.ALLOWLIST, hosts=("pypi.org",))
     for refused, why in (
@@ -254,7 +254,9 @@ async def test_a_store_not_encrypted_at_rest_keeps_no_snapshot(tmp_path: Path) -
     asks for a snapshot, or a base, is refused before a VM starts, and
     a snapshot is refused before anything stops."""
     provider, twin = over_twin(tmp_path, encrypted=False)
-    based = vm().model_copy(update={"base": WorkspaceBase(image="twin-image", setup=("true",))})
+    based = vm().model_copy(
+        update={"base": AgentWorkspaceBase(image="twin-image", setup=("true",))}
+    )
     for refused in (vm(durability=Durability.SNAPSHOT), based):
         with pytest.raises(IsolationRefused, match="not encrypted at rest"):
             await provider.prepare(new_id(), new_id(), refused, base=b"{}")
@@ -300,7 +302,7 @@ async def test_a_disks_secret_value_is_found_by_the_scan_of_what_the_snapshot_ho
 
 
 async def test_the_null_machines_refuse_every_vm_workspace(tmp_path: Path) -> None:
-    provider = WorkspaceVmImpl(VmsNullImpl(), "image", PREFIX, TIMEOUT)
+    provider = AgentWorkspaceVmImpl(VmsNullImpl(), "image", PREFIX, TIMEOUT)
     with pytest.raises(IsolationRefused, match="runs no VMs"):
         await provider.prepare(new_id(), new_id(), vm())
 
@@ -329,7 +331,7 @@ def lima(fake: FakeLima, hypervisor_says: str | None = None) -> VmsLimaImpl:
 
 async def test_lima_with_no_hypervisor_refuses_before_any_machine_command() -> None:
     fake = FakeLima()
-    provider = WorkspaceVmImpl(
+    provider = AgentWorkspaceVmImpl(
         lima(fake, "this Mac offers no hypervisor (kern.hv_support)"), "template:x", PREFIX, TIMEOUT
     )
 
@@ -364,7 +366,7 @@ async def test_lima_names_fit_its_socket_path_or_its_probe_refuses_before_any_co
         monkeypatch.setattr("acme.infra.vms.lima.socket_bound", lambda: 104)
         fake = FakeLima()
         vms = lima(fake)
-        provider = WorkspaceVmImpl(vms, "template:x", prefix, TIMEOUT)
+        provider = AgentWorkspaceVmImpl(vms, "template:x", prefix, TIMEOUT)
         refused = name_refused(longest_name(prefix), home, 104)
         if refused is None:
             workspace = await provider.prepare(new_id(), new_id(), vm())
@@ -383,7 +385,7 @@ async def test_lima_names_fit_its_socket_path_or_its_probe_refuses_before_any_co
 
 async def test_lima_refuses_no_egress_and_a_process_limit_before_it_is_called() -> None:
     fake = FakeLima()
-    provider = WorkspaceVmImpl(lima(fake), "template:x", PREFIX, TIMEOUT)
+    provider = AgentWorkspaceVmImpl(lima(fake), "template:x", PREFIX, TIMEOUT)
     for refused in (vm(NONE), vm(processes=10)):
         with pytest.raises(IsolationRefused):
             await provider.prepare(new_id(), new_id(), refused)
@@ -447,13 +449,13 @@ def lima_prefix() -> str:
     return os.environ.get("ACME_VM_PREFIX", PREFIX)
 
 
-def on_lima() -> tuple[WorkspaceVmImpl, VmsLimaImpl]:
+def on_lima() -> tuple[AgentWorkspaceVmImpl, VmsLimaImpl]:
     vms = VmsLimaImpl(TIMEOUT * 5, timedelta(minutes=15), encrypted=True)
     image = os.environ.get("ACME_VM_IMAGE", "template:_images/ubuntu-lts")
-    return WorkspaceVmImpl(vms, image, lima_prefix(), TIMEOUT * 5), vms
+    return AgentWorkspaceVmImpl(vms, image, lima_prefix(), TIMEOUT * 5), vms
 
 
-async def purged(provider: WorkspaceProviderInterface, workspace: Workspace) -> None:
+async def purged(provider: AgentWorkspaceProviderInterface, workspace: AgentWorkspace) -> None:
     await provider.purge(workspace.org_id, workspace.id)
 
 
@@ -530,9 +532,9 @@ async def test_nothing_of_the_engines_environment_reaches_the_guest(
 @pytest.mark.skipif(not lima_runs(), reason="needs Lima and a hypervisor")
 async def test_lima_refuses_egress_it_cannot_close_before_a_machine_starts() -> None:
     provider, vms = on_lima()
-    workspace_id = new_id()
+    agent_workspace_id = new_id()
 
     with pytest.raises(IsolationRefused, match="egress to none"):
-        await provider.prepare(new_id(), workspace_id, vm(NONE))
+        await provider.prepare(new_id(), agent_workspace_id, vm(NONE))
 
-    assert await vms.names(vm_name(lima_prefix(), workspace_id)) == []
+    assert await vms.names(vm_name(lima_prefix(), agent_workspace_id)) == []

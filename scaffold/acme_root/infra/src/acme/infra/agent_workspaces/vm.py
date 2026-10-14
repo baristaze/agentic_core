@@ -7,19 +7,19 @@ from dataclasses import dataclass
 from datetime import timedelta
 from uuid import UUID
 
-from acme.infra.exceptions import BackendFailed, InfraException
-from acme.infra.vms import VmsInterface, VmSpec, VmState
-from acme.infra.workspaces import (
+from acme.infra.agent_workspaces import (
+    AgentWorkspace,
+    AgentWorkspaceLost,
+    AgentWorkspaceProviderInterface,
     EgressMode,
     IsolationMode,
     IsolationRefused,
     IsolationSpec,
     SnapshotRefused,
-    Workspace,
-    WorkspaceLost,
-    WorkspaceProviderInterface,
     refusal,
 )
+from acme.infra.exceptions import BackendFailed, InfraException
+from acme.infra.vms import VmsInterface, VmSpec, VmState
 
 WORKSPACE = "workspace"
 """Where a workspace's files sit, from the VM's root: commands start
@@ -45,17 +45,17 @@ TAG = 8
 SNAPSHOT_NAME = re.compile(rf"^[a-z0-9][a-z0-9-]*[0-9a-f]{{{HASHED}}}-[0-9a-f]{{{TAG}}}$")
 
 
-def vm_name(prefix: str, workspace_id: UUID) -> str:
+def vm_name(prefix: str, agent_workspace_id: UUID) -> str:
     """The VM of a workspace: one per workspace, under the prefix,
     named by a hash of its id. A name is short, since a backend may keep a
     socket under it, whose path the host bounds."""
-    return prefix + hashlib.sha256(workspace_id.bytes).hexdigest()[:HASHED]
+    return prefix + hashlib.sha256(agent_workspace_id.bytes).hexdigest()[:HASHED]
 
 
-def snapshot_name(prefix: str, workspace_id: UUID, tag: str) -> str:
+def snapshot_name(prefix: str, agent_workspace_id: UUID, tag: str) -> str:
     """A snapshot kept under a workspace: its VM's name, then a tag, so
     the workspace's purge finds it by that name."""
-    return f"{vm_name(prefix, workspace_id)}-{tag}"
+    return f"{vm_name(prefix, agent_workspace_id)}-{tag}"
 
 
 def longest_name(prefix: str) -> str:
@@ -74,7 +74,7 @@ class Kept:
     digest: str
 
 
-class WorkspaceVmImpl(WorkspaceProviderInterface):
+class AgentWorkspaceVmImpl(AgentWorkspaceProviderInterface):
     """A VM per workspace on the VMs it is given, Docker inside it,
     so a workspace's commands can build and run containers of their own.
     It meets the VM mode with the egress the VMs can close, open
@@ -107,13 +107,13 @@ class WorkspaceVmImpl(WorkspaceProviderInterface):
     async def prepare(
         self,
         org_id: UUID,
-        workspace_id: UUID,
+        agent_workspace_id: UUID,
         spec: IsolationSpec,
         snapshot: bytes | None = None,
         base: bytes | None = None,
         *,
         building: bool = False,
-    ) -> Workspace:
+    ) -> AgentWorkspace:
         why = self._refusal(spec)
         built = snapshot is None and spec.base is not None and bool(spec.base.setup)
         if why is None and built and base is None:
@@ -123,8 +123,8 @@ class WorkspaceVmImpl(WorkspaceProviderInterface):
         missing = await self._vms.probe(longest_name(self._prefix))
         if missing is not None:
             raise IsolationRefused(f"a vm workspace needs a VM: {missing}")
-        name = vm_name(self._prefix, workspace_id)
-        workspace = Workspace(id=workspace_id, org_id=org_id, spec=spec, location=name)
+        name = vm_name(self._prefix, agent_workspace_id)
+        workspace = AgentWorkspace(id=agent_workspace_id, org_id=org_id, spec=spec, location=name)
         vm = self._vm_spec(spec)
         if snapshot is not None:
             # The disk is held to its digest before the VM it replaces
@@ -143,7 +143,7 @@ class WorkspaceVmImpl(WorkspaceProviderInterface):
             await self._start(name, vm, None, new=new)
         return workspace
 
-    async def snapshot(self, workspace: Workspace) -> bytes:
+    async def snapshot(self, workspace: AgentWorkspace) -> bytes:
         name = workspace.location
         unkept = self._unkept()
         if unkept is not None:
@@ -164,31 +164,31 @@ class WorkspaceVmImpl(WorkspaceProviderInterface):
         async for part in self._vms.read(kept.name):
             yield part
 
-    async def keep(self, snapshot: bytes, org_id: UUID, workspace_id: UUID) -> bytes:
+    async def keep(self, snapshot: bytes, org_id: UUID, agent_workspace_id: UUID) -> bytes:
         kept = await self._held_to(snapshot, org_id)
         # Named by what it copies, so a copy asked again is the one made.
         tag = hashlib.sha256(kept.name.encode()).hexdigest()[:TAG]
-        to = snapshot_name(self._prefix, workspace_id, tag)
+        to = snapshot_name(self._prefix, agent_workspace_id, tag)
         digest = await self._vms.snapshot(kept.name, to)
         if digest != kept.digest:
             await self._vms.destroy(to)
-            raise WorkspaceLost(f"the snapshot {kept.name} changed while it was copied")
+            raise AgentWorkspaceLost(f"the snapshot {kept.name} changed while it was copied")
         return _archive(Kept(org_id=org_id, name=to, digest=digest))
 
     async def discard(self, snapshot: bytes) -> None:
         await self._vms.destroy(_opened(snapshot, self._prefix).name)
 
-    async def erase_snapshots(self, org_id: UUID, workspace_id: UUID) -> None:
+    async def erase_snapshots(self, org_id: UUID, agent_workspace_id: UUID) -> None:
         # Every snapshot is named under its workspace's VM, a hyphen,
         # and its tag; the VM itself stands under the name alone.
-        for found in await self._vms.names(f"{vm_name(self._prefix, workspace_id)}-"):
+        for found in await self._vms.names(f"{vm_name(self._prefix, agent_workspace_id)}-"):
             await self._vms.destroy(found)
 
-    async def release(self, workspace: Workspace) -> None:
+    async def release(self, workspace: AgentWorkspace) -> None:
         await self._vms.stop(workspace.location)
 
-    async def purge(self, org_id: UUID, workspace_id: UUID) -> None:
-        name = vm_name(self._prefix, workspace_id)
+    async def purge(self, org_id: UUID, agent_workspace_id: UUID) -> None:
+        name = vm_name(self._prefix, agent_workspace_id)
         for found in await self._vms.names(name):
             if found == name or found.startswith(f"{name}-"):
                 await self._vms.destroy(found)
@@ -202,12 +202,12 @@ class WorkspaceVmImpl(WorkspaceProviderInterface):
     async def close(self) -> None:
         return None
 
-    async def _unused(self, workspace_id: UUID) -> str:
+    async def _unused(self, agent_workspace_id: UUID) -> str:
         """A name for a new snapshot of the workspace that no snapshot
         stands under: the VMs answer a name kept already as the
         snapshot made, so a tag drawn twice would name an older disk."""
         while True:
-            to = snapshot_name(self._prefix, workspace_id, secrets.token_hex(TAG // 2))
+            to = snapshot_name(self._prefix, agent_workspace_id, secrets.token_hex(TAG // 2))
             if await self._vms.state(to) is VmState.ABSENT:
                 return to
 
@@ -264,18 +264,18 @@ class WorkspaceVmImpl(WorkspaceProviderInterface):
     async def _held_to(self, snapshot: bytes, org_id: UUID) -> Kept:
         """What an archive names, once the disk it names is found and holds
         its digest. Anything else loses the workspace that would start from
-        it (`WorkspaceLost`)."""
+        it (`AgentWorkspaceLost`)."""
         kept = _opened(snapshot, self._prefix)
         if kept.org_id != org_id:
-            raise WorkspaceLost("the snapshot was taken in another tenant")
+            raise AgentWorkspaceLost("the snapshot was taken in another tenant")
         try:
             digest = await self._vms.digest(kept.name)
         except InfraException as error:
-            raise WorkspaceLost(f"the snapshot {kept.name} cannot be read: {error}") from error
+            raise AgentWorkspaceLost(f"the snapshot {kept.name} cannot be read: {error}") from error
         if digest is None:
-            raise WorkspaceLost(f"the snapshot {kept.name} is gone from the VMs' store")
+            raise AgentWorkspaceLost(f"the snapshot {kept.name} is gone from the VMs' store")
         if digest != kept.digest:
-            raise WorkspaceLost(f"the snapshot {kept.name} does not match its digest")
+            raise AgentWorkspaceLost(f"the snapshot {kept.name} does not match its digest")
         return kept
 
 
@@ -293,11 +293,11 @@ def _opened(snapshot: bytes, prefix: str) -> Kept:
         format_, name, digest = named["format"], named["name"], named["digest"]
         org_id = UUID(named["org"])
     except (KeyError, TypeError, ValueError, AttributeError) as error:
-        raise WorkspaceLost(f"the snapshot is no vm's: {error}") from error
+        raise AgentWorkspaceLost(f"the snapshot is no vm's: {error}") from error
     if format_ != FORMAT:
-        raise WorkspaceLost(f"the snapshot is {format_!r}, not a vm's")
+        raise AgentWorkspaceLost(f"the snapshot is {format_!r}, not a vm's")
     if not isinstance(name, str) or not name.startswith(prefix) or not SNAPSHOT_NAME.match(name):
-        raise WorkspaceLost("the snapshot names no VM snapshot of this provider")
+        raise AgentWorkspaceLost("the snapshot names no VM snapshot of this provider")
     if not isinstance(digest, str) or not digest:
-        raise WorkspaceLost("the snapshot names no digest")
+        raise AgentWorkspaceLost("the snapshot names no digest")
     return Kept(org_id=org_id, name=name, digest=digest)

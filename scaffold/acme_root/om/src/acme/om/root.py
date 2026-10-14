@@ -92,7 +92,7 @@ from acme.om.tenancy.storage import TenancyStorageInterface
 from acme.om.tools import ToolRegistry, ToolsManagerInterface
 from acme.om.tools.attachments import AttachmentReaderInterface
 from acme.om.tools.impl.attachments import AttachmentReaderNullImpl
-from acme.om.tools.impl.bases import WorkspaceBases
+from acme.om.tools.impl.bases import AgentWorkspaceBases
 from acme.om.tools.impl.manager import ToolsManagerImpl, ToolsOptions
 from acme.om.tools.impl.snapshots import SnapshotStore
 from acme.om.tools.native.ask_person import AskPersonToolImpl
@@ -171,7 +171,7 @@ async def purge_held(
     transport's records, which go with its history, its authority, and its
     tree when it was the tree's last session."""
     await managers.windows.purge_tool_outputs(org_id, agent_session_id)
-    await managers.tools.purge_workspace(org_id, agent_session_id)
+    await managers.tools.purge_agent_workspace(org_id, agent_session_id)
     await managers.attribution.purge_authority(org_id, agent_session_id)
     if tree_id is not None:
         await managers.agents.purge_tree(org_id, tree_id)
@@ -535,7 +535,7 @@ def build_managers(
         tenancy,
         events,
         outbox,
-        infra.get_workspaces(),
+        infra.get_agent_workspaces(),
         infra.get_transport(),
         tools_settings,
         keyed_hash=privacy.keyed_hash,
@@ -544,11 +544,11 @@ def build_managers(
         attribution=attribution,
         broker=infra.get_broker(),
         snapshots=snapshots,
-        bases=WorkspaceBases(
+        bases=AgentWorkspaceBases(
             infra.get_buckets(),
-            infra.get_workspaces(),
+            infra.get_agent_workspaces(),
             infra.get_transport(),
-            infra.get_cache(CacheScope.WORKSPACE_BASE),
+            infra.get_cache(CacheScope.AGENT_WORKSPACE_BASE),
             snapshots.scan,
             tools_settings.base_build_limit,
             tools_settings.purge_batch,

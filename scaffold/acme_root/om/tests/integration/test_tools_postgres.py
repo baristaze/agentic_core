@@ -103,8 +103,8 @@ def settings(tmp_path: Path, overrides: dict[str, str]) -> InfraSettings:
             "buckets_root": tmp_path / "buckets",
             "secrets_file": tmp_path / "secrets.env",
             "secret_overrides": overrides,
-            "workspace_backend": "host",
-            "workspaces_root": tmp_path / "workspaces",
+            "agent_workspace_backend": "host",
+            "agent_workspaces_root": tmp_path / "workspaces",
         }
     )
 
@@ -125,7 +125,7 @@ async def test_a_call_is_approved_run_audited_and_recovered_over_postgres(
     assert (await tools.get_policy(owner)) == stored
 
     session = await an_agent_session(managers, owner)
-    workspace = await tools.prepare_workspace(owner, session, HOST_SPEC)
+    workspace = await tools.prepare_agent_workspace(owner, session, HOST_SPEC)
     script = "import os; print('token', os.environ['API_TOKEN'])"
     found = await put_call(
         tools,

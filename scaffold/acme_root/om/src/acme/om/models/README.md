@@ -70,6 +70,6 @@ is one of the kinds of thing [Acme is made of](../../../../README.md).
 The agent's loop resolves a session's fills when it first needs one,
 reads the fill for each call, and switches when a provider fails or a
 model is gone. A switch writes its step through [the
-steps](../steps/README.md). The calls themselves go to the model
+steps](../agent_steps/README.md). The calls themselves go to the model
 providers, under `integrations/`, which read a provider's failure into
 the kind that decides what the loop does.

@@ -31,6 +31,14 @@ from worker_support import (
     upload,
 )
 
+from acme.infra.agent_workspaces import (
+    AgentWorkspace,
+    EgressMode,
+    EgressPolicy,
+    IsolationMode,
+    IsolationSpec,
+)
+from acme.infra.agent_workspaces.twin import AgentWorkspaceTwinImpl
 from acme.infra.buckets import Buckets
 from acme.infra.cache import CacheScope
 from acme.infra.exceptions import InfraNotFound
@@ -41,14 +49,6 @@ from acme.infra.observability import (
 )
 from acme.infra.transports import CommandSpec, RecordSeal
 from acme.infra.transports.twin import TransportTwinImpl
-from acme.infra.workspaces import (
-    EgressMode,
-    EgressPolicy,
-    IsolationMode,
-    IsolationSpec,
-    Workspace,
-)
-from acme.infra.workspaces.twin import WorkspaceTwinImpl
 from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
 from acme.om.agent_steps.types.header import InputHeader
@@ -737,12 +737,12 @@ async def test_a_deleted_tenants_history_goes_and_it_is_marked_purged_only_after
     assert marked is not None and marked.purged_at is not None, "nothing was left"
 
 
-async def a_workspace(
+async def an_agent_workspace(
     container: WorkerContainer, org_id: UUID, agent_session_id: UUID
-) -> Workspace:
+) -> AgentWorkspace:
     """The session's twin workspace, prepared under its id, with a file in it
     and a record of one command its transport ran there."""
-    workspaces, transport = container.infra.get_workspaces(), container.infra.get_transport()
+    workspaces, transport = container.infra.get_agent_workspaces(), container.infra.get_transport()
     spec = IsolationSpec(mode=IsolationMode.TWIN, egress=EgressPolicy(mode=EgressMode.NONE))
     workspace = await workspaces.prepare(org_id, agent_session_id, spec)
     await transport.write_file(workspace, "notes.txt", b"the build log", 1)
@@ -755,11 +755,13 @@ async def a_workspace(
     return workspace
 
 
-async def holds(container: WorkerContainer, workspace: Workspace) -> bool:
+async def holds(container: WorkerContainer, workspace: AgentWorkspace) -> bool:
     """Whether the twin keeps anything of the workspace: an instance, a
     file, or a record."""
-    workspaces, transport = container.infra.get_workspaces(), container.infra.get_transport()
-    assert isinstance(workspaces, WorkspaceTwinImpl) and isinstance(transport, TransportTwinImpl)
+    workspaces, transport = container.infra.get_agent_workspaces(), container.infra.get_transport()
+    assert isinstance(workspaces, AgentWorkspaceTwinImpl) and isinstance(
+        transport, TransportTwinImpl
+    )
     try:
         await transport.read_file(workspace, "notes.txt", 10)
         has_file = True
@@ -784,18 +786,18 @@ async def test_a_deleted_tenants_workspaces_go_with_its_sessions_before_it_is_ma
     stuck, purged, kept = an_agent_session(), an_agent_session(), an_agent_session()
     for owner, session in ((org_id, stuck), (org_id, purged), (living, kept)):
         assert await storage.create_agent_session(owner, session, ())
-    stuck_at = await a_workspace(container, org_id, stuck.id)
-    purged_at = await a_workspace(container, org_id, purged.id)
-    kept_at = await a_workspace(container, living, kept.id)
-    workspaces = container.infra.get_workspaces()
+    stuck_at = await an_agent_workspace(container, org_id, stuck.id)
+    purged_at = await an_agent_workspace(container, org_id, purged.id)
+    kept_at = await an_agent_workspace(container, living, kept.id)
+    workspaces = container.infra.get_agent_workspaces()
     tenancy = container.storage.get_tenancy_storage()
     loop = build_loop(container)
     real_purge = workspaces.purge
 
-    async def refused(owner: UUID, workspace_id: UUID) -> None:
-        if workspace_id == stuck.id:
+    async def refused(owner: UUID, agent_workspace_id: UUID) -> None:
+        if agent_workspace_id == stuck.id:
             raise RuntimeError("the host refuses the removal")
-        await real_purge(owner, workspace_id)
+        await real_purge(owner, agent_workspace_id)
 
     monkeypatch.setattr(workspaces, "purge", refused)
     for _ in range(2):

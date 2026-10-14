@@ -25,7 +25,7 @@ from contracts.tools import (
 )
 from pydantic import ValidationError
 
-from acme.infra.workspaces import Workspace
+from acme.infra.agent_workspaces import AgentWorkspace
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
 from acme.om.agent_steps.types.content import Content, TextBlock
 from acme.om.agent_steps.types.header import (
@@ -67,7 +67,7 @@ def setting(tmp_path: Path) -> Setting:
 async def test_an_approval_binds_the_call_and_a_changed_input_asks_again(setting: Setting) -> None:
     tools, org, push, registry = setting.tools, setting.org, setting.push, setting.registry
     agent, owner = context(Role.SERVICE, org), context(Role.OWNER, org)
-    workspace = Workspace.absent(org.id, new_id())
+    workspace = AgentWorkspace.absent(org.id, new_id())
     first = await put_call(
         tools.manager, tools.steps, agent, "push_branch", {"branch": "feature"}, "integration"
     )
@@ -119,7 +119,7 @@ async def test_an_approval_binds_the_call_and_a_changed_input_asks_again(setting
 async def test_an_expired_approval_asks_again(setting: Setting) -> None:
     tools, org, registry = setting.tools, setting.org, setting.registry
     agent, owner = context(Role.SERVICE, org), context(Role.OWNER, org)
-    workspace = Workspace.absent(org.id, new_id())
+    workspace = AgentWorkspace.absent(org.id, new_id())
     found = await put_call(
         tools.manager, tools.steps, agent, "push_branch", {"branch": "feature"}, "integration"
     )
@@ -140,7 +140,7 @@ async def test_an_expired_approval_asks_again(setting: Setting) -> None:
 async def test_a_denial_is_a_denied_tool_response_with_the_persons_note(setting: Setting) -> None:
     tools, org, push, registry = setting.tools, setting.org, setting.push, setting.registry
     agent, owner = context(Role.SERVICE, org), context(Role.OWNER, org)
-    workspace = Workspace.absent(org.id, new_id())
+    workspace = AgentWorkspace.absent(org.id, new_id())
     found = await put_call(
         tools.manager, tools.steps, agent, "push_branch", {"branch": "feature"}, "integration"
     )
@@ -259,7 +259,7 @@ async def test_a_decision_counts_only_in_a_role_the_policy_lets_decide(setting: 
     tools, org, registry = setting.tools, setting.org, setting.registry
     agent, member = context(Role.SERVICE, org), context(Role.MEMBER, org)
     owner, admin = context(Role.OWNER, org), context(Role.ADMIN, org)
-    workspace = Workspace.absent(org.id, new_id())
+    workspace = AgentWorkspace.absent(org.id, new_id())
     found = await put_call(
         tools.manager, tools.steps, agent, "push_branch", {"branch": "feature"}, "integration"
     )
@@ -301,7 +301,7 @@ async def test_a_decision_sent_on_an_api_key_is_a_programs_and_approves_nothing(
         permissions=permissions_of(Role.OWNER),
         credential_kind=CredentialKind.API_KEY,
     )
-    workspace = Workspace.absent(org.id, new_id())
+    workspace = AgentWorkspace.absent(org.id, new_id())
     found = await put_call(
         tools.manager, tools.steps, agent, "push_branch", {"branch": "feature"}, "integration"
     )

@@ -5,6 +5,8 @@ from datetime import timedelta
 from pathlib import Path
 from uuid import UUID
 
+from acme.infra.agent_workspaces import AgentWorkspace, IsolationMode
+from acme.infra.agent_workspaces.vm import WORKSPACE
 from acme.infra.base import utcnow
 from acme.infra.exceptions import BackendFailed, InfraNotFound
 from acme.infra.secrets import SecretsInterface
@@ -25,8 +27,6 @@ from acme.infra.transports.injection import BASE_LANG, injected
 from acme.infra.transports.processes import drive, end_tree, spawn
 from acme.infra.transports.records import RecordBook, opened_result, sealed_record
 from acme.infra.vms import VmsInterface
-from acme.infra.workspaces import IsolationMode, Workspace
-from acme.infra.workspaces.vm import WORKSPACE
 
 LAUNCHER = r"""
 pidfile=$1 folder=$2
@@ -96,7 +96,7 @@ class TransportVmImpl(TransportInterface):
 
     async def run(
         self,
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         command: CommandSpec,
         on_output: OutputSink | None = None,
         *,
@@ -160,18 +160,18 @@ class TransportVmImpl(TransportInterface):
         return result
 
     async def outcome(
-        self, workspace: Workspace, key: UUID, epoch: int, *, seal: RecordSeal
+        self, workspace: AgentWorkspace, key: UUID, epoch: int, *, seal: RecordSeal
     ) -> CommandResult | None:
         self._vm(workspace)
         await asyncio.to_thread(self._book.admit, workspace.id, epoch)
         record = await asyncio.to_thread(self._book.read, workspace.id, key)
         return None if record is None else await opened_result(record, seal)
 
-    async def purge_records(self, workspace_id: UUID) -> None:
-        await asyncio.to_thread(self._book.purge, workspace_id)
+    async def purge_records(self, agent_workspace_id: UUID) -> None:
+        await asyncio.to_thread(self._book.purge, agent_workspace_id)
 
     async def read_file(
-        self, workspace: Workspace, path: str, max_bytes: int, offset: int = 0
+        self, workspace: AgentWorkspace, path: str, max_bytes: int, offset: int = 0
     ) -> bytes:
         name = self._vm(workspace)
         start = file_offset(offset) + 1
@@ -184,7 +184,9 @@ class TransportVmImpl(TransportInterface):
             raise InfraNotFound(f"no file {path!r} in the workspace: {reply.reason()}")
         return reply.stdout
 
-    async def write_file(self, workspace: Workspace, path: str, data: bytes, epoch: int) -> None:
+    async def write_file(
+        self, workspace: AgentWorkspace, path: str, data: bytes, epoch: int
+    ) -> None:
         name = self._vm(workspace)
         await asyncio.to_thread(self._book.admit, workspace.id, epoch)
         reply = await self._vms.run(
@@ -193,7 +195,7 @@ class TransportVmImpl(TransportInterface):
         if not reply.ok:
             raise BackendFailed("vm", "write", reply.reason())
 
-    async def list_files(self, workspace: Workspace, path: str, limit: int) -> list[FileEntry]:
+    async def list_files(self, workspace: AgentWorkspace, path: str, limit: int) -> list[FileEntry]:
         name = self._vm(workspace)
         folder = _inside(path)
         reply = await self._vms.run(
@@ -223,7 +225,7 @@ class TransportVmImpl(TransportInterface):
     async def close(self) -> None:
         return None
 
-    def _vm(self, workspace: Workspace) -> str:
+    def _vm(self, workspace: AgentWorkspace) -> str:
         require_mode(workspace, IsolationMode.VM, "vm")
         return workspace.location
 
