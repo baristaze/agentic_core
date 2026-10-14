@@ -46,8 +46,8 @@ The shape is the rows of `MAIN` and `SUMMARIZER`.
 | `om/src/<name>/om/language_models/types/fill.py` | `<ROLE>`, a `ModelRole` beside `MAIN` and `SUMMARIZER`, with a docstring naming its task |
 | `om/src/<name>/om/language_models/impl/resolver.py` | a `RoleFill` in `DEFAULT_TABLE`: the fill and its fallbacks; the table's docstring names the roles it holds |
 | `om/src/<name>/om/spend_budgets/impl/pricing.py` (a model with no row) | its row in `LIST_PRICES`, and the table's next version |
-| `om/tests/unit/test_budgets.py` (a new row) | the model in `ADAPTER_MODELS`, and the table's version |
-| `om/tests/unit/test_models.py` | the role's cases |
+| `om/tests/unit/test_spend_budgets.py` (a new row) | the model in `ADAPTER_MODELS`, and the table's version |
+| `om/tests/unit/test_language_models.py` | the role's cases |
 | `om/src/<name>/om/language_models/README.md` | the role, in the product's language, beside the agent's own turns and the summary |
 
 ## Procedure
@@ -72,7 +72,7 @@ The shape is the rows of `MAIN` and `SUMMARIZER`.
    the rows read before keep theirs. The table's next version is
    today's date; when it already carries today's, it is that date with
    `.2`, then `.3`.
-3. The tests, in `om/tests/unit/test_models.py`, hold: the role
+3. The tests, in `om/tests/unit/test_language_models.py`, hold: the role
    resolves from `DEFAULT_TABLE` to its fill and its fallbacks, in
    order, priced as `EVERY_DEFAULT` prices them; and the list table,
    `LIST_PRICES`, prices every model the table names.
