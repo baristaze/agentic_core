@@ -8,7 +8,9 @@ from typing import Literal
 
 from dotenv import dotenv_values
 from pydantic import Field, SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
+
+from acme.infra.agent_root import AgentInfraSettings
 
 ENVIRONMENTS = frozenset({"local", "test", "dev", "staging", "production"})
 """The one set of environment names, shared with deployment/terraform."""
@@ -41,7 +43,7 @@ def secret_overrides_from_environment() -> dict[str, str]:
     }
 
 
-class InfraSettings(BaseSettings):
+class InfraSettings(AgentInfraSettings):
     model_config = SettingsConfigDict(env_prefix="ACME_", env_file=ENV_FILE, extra="ignore")
 
     environment: str = "local"
@@ -82,48 +84,6 @@ class InfraSettings(BaseSettings):
         default_factory=secret_overrides_from_environment, exclude=True, repr=False
     )
 
-    # The key service the session keys are wrapped by. The memory one holds
-    # each tenant's wrapping key in the process, derived from
-    # `keys_root_key`: URL-safe base64 of 32 bytes, or none, for a random
-    # root whose keys die with the process. KMS wraps under the key
-    # `kms_key_id` names, with `{org_id}` in it for a key per tenant.
-    keys_backend: Literal["memory", "kms"] = "memory"
-    keys_root_key: SecretStr | None = Field(default=None, repr=False)
-    kms_key_id: str = "alias/acme-sessions"
-
-    # Where tools run (ADR 1003 for their secrets). `none` prepares no
-    # workspace and refuses every command; `host` a directory per workspace
-    # under the root, run as processes of this host; `account` the same,
-    # each command run as the account named, one workspace at a time
-    # (ADR 1021); `container` a container per workspace on the local Docker,
-    # from the image; `vm` a VM per workspace, Docker inside it, on
-    # `vms_backend` (ADR 1029). A deployed environment refuses `host`
-    # and `account`.
-    # The root also holds each transport's records of how commands ended,
-    # beside the workspaces. `account` refuses a host that lets an account
-    # link a file it does not own; where this process cannot read the
-    # host's fs.protected_hardlinks, as under a unit with ProcSubset=pid,
-    # `agent_workspace_protected_hardlinks` declares it on.
-    agent_workspace_backend: Literal["none", "host", "account", "container", "vm"] = "none"
-    agent_workspaces_root: Path = Path(".local/workspaces")
-    agent_workspace_account: str = "acme-agent"
-    agent_workspace_protected_hardlinks: bool = False
-    agent_workspace_image: str = "python:3.14-slim"
-    # The VMs a `vm` workspace runs on: `lima` on this host's hypervisor
-    # through Lima, or `none`, which runs no VM and refuses every VM
-    # workspace. A new VM boots `vm_image`, in the backend's terms
-    # (a Lima template here), and every VM and snapshot is named under
-    # `vm_prefix`. It holds a project's name and `-vm-`, and no more:
-    # Lima keeps a socket under each name, the host bounds its path, and a
-    # probe refuses a Lima home too deep for the longest name. A VM's
-    # snapshot is its disk, kept in the backend's store;
-    # `vm_store_encrypted` declares that store encrypted at rest, and
-    # without it a VM workspace keeps no snapshot.
-    vms_backend: Literal["none", "lima"] = "none"
-    vm_image: str = "template:_images/ubuntu-lts"
-    vm_prefix: str = Field(default="acme-vm-", pattern=r"^[a-z][a-z0-9-]*-$", max_length=21)
-    vm_store_encrypted: bool = False
-
     # Where the flags' rules come from: the memory impl over a rules file
     # (local only, refused at boot anywhere else), LaunchDarkly through
     # OpenFeature, or none, where every flag reads the default its
@@ -144,13 +104,6 @@ class InfraSettings(BaseSettings):
     aws_timeout_seconds: float = 10.0
     valkey_timeout_seconds: float = 5.0
     otel_timeout_seconds: float = 10.0
-    # A Docker command that prepares, releases, or reaches into a container
-    # workspace; the first prepare may pull the image.
-    docker_timeout_seconds: float = 120.0
-    # A command a VM runs for a VM workspace, and a VM's start,
-    # which may download its image and install Docker in it.
-    vm_timeout_seconds: float = Field(default=120.0, gt=0)
-    vm_boot_timeout_seconds: float = Field(default=900.0, gt=0)
     # The flag vendor's connect and read, and the most boot waits for its
     # first rules before it runs on the code's defaults.
     flags_timeout_seconds: float = Field(default=10.0, gt=0)
@@ -165,14 +118,6 @@ class InfraSettings(BaseSettings):
     def _presign_endpoint_empty_is_none(cls, value: str | None) -> str | None:
         """Empty, as `.env.example` leaves it, means the endpoint itself."""
         return value or None
-
-    @field_validator("keys_root_key")
-    @classmethod
-    def _root_key_empty_is_none(cls, value: SecretStr | None) -> SecretStr | None:
-        """Empty, a random root per process."""
-        if value is None or not value.get_secret_value().strip():
-            return None
-        return value
 
     @field_validator("launchdarkly_sdk_key")
     @classmethod

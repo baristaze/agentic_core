@@ -24,6 +24,15 @@ CLOUD_BACKENDS = {
 
 SDK_KEY = "sdk-0b1d4c2e-flags-test-key"
 
+AGENT_INFRA_NONE = [
+    "keys=memory(random root)",
+    "vms=none",
+    "workspaces=none",
+    "transport=none",
+    "broker=none",
+]
+"""What the engine's infra describes when its settings choose nothing."""
+
 
 @pytest.fixture(autouse=True)
 def _away_from_the_checkout(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -52,10 +61,6 @@ def local_settings(tmp_path: Path, **overrides: object) -> InfraSettings:
         ("topics_backend", "memory"),
         ("buckets_backend", "local"),
         ("queues_backend", "memory"),
-        ("keys_backend", "memory"),
-        ("agent_workspace_backend", "host"),
-        ("agent_workspace_backend", "account"),
-        ("vms_backend", "lima"),
         ("flags_backend", "memory"),
     ],
 )
@@ -88,11 +93,7 @@ async def test_local_environment_builds_local_impls(tmp_path: Path) -> None:
         f"buckets=local({tmp_path / 'buckets'})",
         "queues=memory",
         f"secrets=local({tmp_path / 'secrets.env'})",
-        "keys=memory(random root)",
-        "vms=none",
-        "workspaces=none",
-        "transport=none",
-        "broker=none",
+        *AGENT_INFRA_NONE,
         f"flags=memory({tmp_path / 'flags.json'})",
     ]
     await infra.start()
@@ -109,10 +110,7 @@ def test_cloud_backends_are_constructed_without_connecting(tmp_path: Path) -> No
         "queues=sqs(us-east-1)",
         "secrets=aws(us-east-1)",
         "keys=kms(us-east-1)",
-        "vms=none",
-        "workspaces=none",
-        "transport=none",
-        "broker=none",
+        *AGENT_INFRA_NONE[1:],
         "flags=none(every flag reads its default)",
     ]
     assert (
@@ -240,37 +238,3 @@ def test_an_empty_or_off_sentry_dsn_turns_reporting_off(tmp_path: Path, value: s
 def test_a_sentry_dsn_is_kept(tmp_path: Path) -> None:
     dsn = "http://key@glitchtip:8000/1"
     assert local_settings(tmp_path, sentry_dsn=dsn).sentry_dsn == dsn
-
-
-def test_the_keys_root_comes_from_settings_and_refuses_another_shape(tmp_path: Path) -> None:
-    rooted = InfraConfiguredImpl(
-        local_settings(tmp_path, keys_root_key="bG9jYWwtb25seS1rZXlzLXJvb3Qtbm90LXNlY3JldCE=")
-    )
-    assert rooted.get_keys().describe() == "keys=memory(root from settings)"
-    with pytest.raises(ValueError, match="32 bytes"):
-        InfraConfiguredImpl(local_settings(tmp_path, keys_root_key="c2hvcnQ="))
-
-
-@pytest.mark.parametrize(
-    ("backend", "lines"),
-    [
-        ("host", ["workspaces=host({root})", "transport=local"]),
-        (
-            "account",
-            ["workspaces=account(acme-agent, {root})", "transport=local(acme-agent)"],
-        ),
-        ("container", ["workspaces=container(python:3.14-slim)", "transport=container"]),
-        ("vm", ["workspaces=vm(template:_images/ubuntu-lts)", "transport=vm"]),
-    ],
-)
-def test_a_workspace_backend_builds_its_provider_and_its_transport_together(
-    tmp_path: Path, backend: str, lines: list[str]
-) -> None:
-    """The provider and the transport that runs in what it prepares are one
-    choice, and building them reaches nothing."""
-    root = tmp_path / "workspaces"
-    infra = InfraConfiguredImpl(
-        local_settings(tmp_path, agent_workspace_backend=backend, agent_workspaces_root=root)
-    )
-    runtime = [line for line in infra.describe() if line.startswith(("workspaces=", "transport="))]
-    assert runtime == [line.format(root=root) for line in lines]
