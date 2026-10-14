@@ -44,4 +44,4 @@ class AgentRef(Platform):
 
     kind: str = Field(min_length=1, max_length=MAX_KIND)
     version: int = Field(ge=1)
-    session_id: UUID
+    agent_session_id: UUID

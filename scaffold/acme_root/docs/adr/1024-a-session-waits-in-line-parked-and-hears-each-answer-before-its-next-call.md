@@ -20,8 +20,8 @@ it to clear.
 
 ## Decision
 
-**A session is a waiter kind.** The engine registers `session` beside
-the orchestration. A session still waits while its loop is open, that
+**A session is a waiter kind.** The engine registers `agent_session`
+beside the orchestration. A session still waits while its loop is open, that
 is, while it is not idle. A grant, an end without a lease, and a
 revocation each land a `LEASE_NOTICE` work item for the session in the
 same commit.

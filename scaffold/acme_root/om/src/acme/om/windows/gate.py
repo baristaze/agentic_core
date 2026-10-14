@@ -16,9 +16,9 @@ from uuid import UUID
 from acme.integrations.model_providers.calls import ModelCall
 from acme.integrations.model_providers.types import Usage
 from acme.om.attribution.types.principal import Principal
-from acme.om.budgets.types.usage import CallSite
 from acme.om.context import TenantContext
-from acme.om.models.types.fill import Fill, ModelRole
+from acme.om.language_models.types.fill import Fill, ModelRole
+from acme.om.spend_budgets.types.usage import CallSite
 
 
 class CallGateInterface(ABC):
@@ -26,7 +26,7 @@ class CallGateInterface(ABC):
     async def authorize(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         spender: Principal,
         role: ModelRole,
         fill: Fill,
@@ -45,7 +45,7 @@ class CallGateInterface(ABC):
     async def settle(
         self,
         ctx: TenantContext,
-        hold_id: UUID,
+        spend_hold_id: UUID,
         usage: Usage | None,
         *,
         billed: bool,
@@ -68,7 +68,7 @@ class CallGateInterface(ABC):
     async def authorize_job(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         spender: Principal,
         tool: str,
         rate_micros_per_hour: int,
@@ -81,7 +81,7 @@ class CallGateInterface(ABC):
 
     @abstractmethod
     async def settle_job(
-        self, ctx: TenantContext, hold_id: UUID, cost_micros: int | None, *, started: bool
+        self, ctx: TenantContext, spend_hold_id: UUID, cost_micros: int | None, *, started: bool
     ) -> None:
         """Closes a job's hold once: released when `started` is False, which
         the caller says only when the start was refused before any work

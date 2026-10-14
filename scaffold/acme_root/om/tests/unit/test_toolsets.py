@@ -17,14 +17,9 @@ from contracts.loops import ALLOWED, Loop, call, loop_over, reply, said, tools, 
 
 from acme.integrations.model_providers.anthropic import request_body
 from acme.integrations.model_providers.calls import ModelCall
-from acme.om.agents.loop_rules import kind_prompts
-from acme.om.agents.types.kind import AgentKind, AgentKindCatalog, DoneRule
-from acme.om.agents.types.run import RunEnd
-from acme.om.attribution.types.authority import AuthorityMode
-from acme.om.context import TenantContext
-from acme.om.models.types.fill import MAIN
-from acme.om.steps.types.content import TextBlock
-from acme.om.steps.types.header import (
+from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
+from acme.om.agent_steps.types.content import TextBlock
+from acme.om.agent_steps.types.header import (
     LoopOutcome,
     ModelRequestHeader,
     SwitchedHeader,
@@ -33,9 +28,14 @@ from acme.om.steps.types.header import (
     ToolResponseHeader,
     ToolsetSwitch,
 )
-from acme.om.steps.types.step import Step, StepType
+from acme.om.agents.loop_rules import kind_prompts
+from acme.om.agents.types.kind import AgentKind, AgentKindCatalog, DoneRule
+from acme.om.agents.types.run import RunEnd
+from acme.om.attribution.types.authority import AuthorityMode
+from acme.om.context import TenantContext
+from acme.om.language_models.types.fill import MAIN
 from acme.om.tools.native.load_toolset import LoadToolsetToolImpl, callable_tools, loads
-from acme.om.tools.native.write_plan import current_plan
+from acme.om.tools.native.write_agent_plan import current_agent_plan
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.types.toolset import LOAD_TOOLSET, Toolset
 from acme.om.windows.rules import render_main
@@ -73,25 +73,25 @@ def names(call_: ModelCall) -> list[str]:
     return [tool.name for tool in call_.tools]
 
 
-def failure_of(step: Step) -> ToolFailure | None:
+def failure_of(step: AgentStep) -> ToolFailure | None:
     header = step.header
     assert isinstance(header, ToolResponseHeader)
     return header.failure
 
 
-async def ran(loop: Loop, session_id: UUID) -> list[Step]:
-    run = await loop.loops.run(loop.owner, session_id)
+async def ran(loop: Loop, agent_session_id: UUID) -> list[AgentStep]:
+    run = await loop.loops.run(loop.owner, agent_session_id)
     assert (run.end, run.outcome) == (RunEnd.ENDED, LoopOutcome.SUCCEEDED)
-    return await loop.history(session_id)
+    return await loop.history(agent_session_id)
 
 
-async def replayed(loop: Loop, kind: AgentKind, session_id: UUID) -> list[ModelCall]:
+async def replayed(loop: Loop, kind: AgentKind, agent_session_id: UUID) -> list[ModelCall]:
     """Each main request of the history rendered again from the steps before
     it, its registry and its loads read off those steps as a run reads
     them."""
-    steps = await loop.history(session_id)
-    session = await loop.managers.agent_sessions.get_session(loop.owner, session_id)
-    fill_set = await loop.managers.models.get_fill_set(loop.owner, session_id)
+    steps = await loop.history(agent_session_id)
+    session = await loop.managers.agent_sessions.get_agent_session(loop.owner, agent_session_id)
+    fill_set = await loop.managers.language_models.get_fill_set(loop.owner, agent_session_id)
     fill = fill_set.fill_for(MAIN)
     assert fill is not None
     catalog = (LoadToolsetToolImpl(), *loop.tools.values())
@@ -104,7 +104,7 @@ async def replayed(loop: Loop, kind: AgentKind, session_id: UUID) -> list[ModelC
         held = callable_tools(session.tools, kind.waiting, loads(before))
         registry = ToolRegistry(tool for tool in catalog if tool.spec.name in held)
         prompts = kind_prompts(kind, registry, loads(before))
-        kept = current_plan(before)
+        kept = current_agent_plan(before)
         plan = None if kept is None else kept.text
         drafted = render_main(
             before, prompts, fill, header.fill_set_version, plan, CompactionPolicy()
@@ -171,10 +171,10 @@ async def test_a_kind_built_from_toolsets_renders_the_bytes_of_its_flat_tool_lis
     bodies: list[list[bytes]] = []
     for index, kind in enumerate((FLAT, BUILT)):
         loop = loop_over(tmp_path / str(index), kinds=(kind,))
-        session_id = await loop.start("operator")
-        await loop.say(session_id, "What is the total?")
+        agent_session_id = await loop.start("operator")
+        await loop.say(agent_session_id, "What is the total?")
         loop.anthropic.add(reply(use("lookup", use_id="use_1")), reply(said("It is 12.")))
-        await ran(loop, session_id)
+        await ran(loop, agent_session_id)
         bodies.append([json.dumps(request_body(c)[0]).encode() for c in loop.anthropic.calls])
     flat, built = bodies
     assert len(flat) == 2 and flat == built
@@ -187,8 +187,8 @@ async def test_a_deferred_toolset_loads_as_a_recorded_switch_and_its_history_rep
     tmp_path: Path,
 ) -> None:
     loop = loop_over(tmp_path, kinds=(DEFERS,))
-    session_id = await loop.start("operator")
-    await loop.say(session_id, "Note the total.")
+    agent_session_id = await loop.start("operator")
+    await loop.say(agent_session_id, "Note the total.")
     loop.anthropic.add(
         reply(use("note", use_id="use_early")),
         reply(call("load_toolset", toolset="writes")),
@@ -196,16 +196,16 @@ async def test_a_deferred_toolset_loads_as_a_recorded_switch_and_its_history_rep
         reply(said("Noted.")),
     )
 
-    steps = await ran(loop, session_id)
+    steps = await ran(loop, agent_session_id)
 
     first, early, loaded, late = loop.anthropic.calls
     assert names(first) == [LOAD_TOOLSET, "lookup", "slow"]
     described = first.tools[0].description.splitlines()
     assert described[1:] == ["- writes: Write a note, and send it out."], "one line"
-    responses = [step for step in steps if step.type is StepType.TOOL_RESPONSE]
+    responses = [step for step in steps if step.type is AgentStepType.TOOL_RESPONSE]
     assert failure_of(responses[0]) is not None, "a waiting tool is not callable"
     assert early.tools == first.tools
-    switches = [step for step in steps if step.type is StepType.SWITCHED]
+    switches = [step for step in steps if step.type is AgentStepType.SWITCHED]
     assert len(switches) == 1
     (switch,) = switches
     assert isinstance(switch.header, SwitchedHeader)
@@ -216,7 +216,7 @@ async def test_a_deferred_toolset_loads_as_a_recorded_switch_and_its_history_rep
     assert names(loaded)[len(first.tools) :] == ["note", "send"], "then the new tools"
     assert late.tools == loaded.tools
     assert failure_of(responses[2]) is None and loop.tools["note"].ran_as, "callable now"
-    assert await replayed(loop, DEFERS, session_id) == loop.anthropic.calls
+    assert await replayed(loop, DEFERS, agent_session_id) == loop.anthropic.calls
 
 
 # Check 3: only a recorded load changes the tool definitions of a session.
@@ -230,7 +230,7 @@ async def test_a_sessions_tool_definitions_change_only_by_a_recorded_load(
     tmp_path: Path,
 ) -> None:
     loop = loop_over(tmp_path, kinds=(DEFERS,))
-    session_id = await loop.start("operator")
+    agent_session_id = await loop.start("operator")
     for question, replies in (
         ("What is the total?", [reply(use("lookup")), reply(said("It is 12."))]),
         (
@@ -247,23 +247,23 @@ async def test_a_sessions_tool_definitions_change_only_by_a_recorded_load(
     ):
         # Each message is a loop of its own, and each run builds its registry
         # again from the session and its history.
-        await loop.say(session_id, question)
+        await loop.say(agent_session_id, question)
         loop.anthropic.add(*replies)
-        await ran(loop, session_id)
+        await ran(loop, agent_session_id)
 
-    steps = await loop.history(session_id)
+    steps = await loop.history(agent_session_id)
     calls = loop.anthropic.calls
     assert len(calls) == 9
     assert changes(calls) == [
         ([LOAD_TOOLSET, "lookup", "slow"], [LOAD_TOOLSET, "lookup", "slow", "note", "send"])
     ], "one change: the load"
-    switches = [step for step in steps if step.type is StepType.SWITCHED]
+    switches = [step for step in steps if step.type is AgentStepType.SWITCHED]
     assert len(switches) == 1, "a refused load and a second one switch nothing"
-    responses = [step for step in steps if step.type is StepType.TOOL_RESPONSE]
+    responses = [step for step in steps if step.type is AgentStepType.TOOL_RESPONSE]
     assert failure_of(responses[1]) is ToolFailure.INVALID_INPUT
     again = responses[3].as_tool_response().parts
     assert any(isinstance(p, TextBlock) and "already yours" in p.text for p in again)
-    assert await replayed(loop, DEFERS, session_id) == calls
+    assert await replayed(loop, DEFERS, agent_session_id) == calls
 
 
 # Check 5: a response that loads a toolset and calls one of its tools.
@@ -279,33 +279,33 @@ async def test_a_call_of_a_tool_its_own_turn_loads_is_not_offered_and_the_sessio
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, lost: bool
 ) -> None:
     loop = loop_over(tmp_path, kinds=(DEFERS,))
-    session_id = await loop.start("operator")
-    await loop.say(session_id, "Note the total.")
+    agent_session_id = await loop.start("operator")
+    await loop.say(agent_session_id, "Note the total.")
     loop.anthropic.add(
         reply(call("load_toolset", toolset="writes"), use("note", use_id="use_early")),
         reply(use("note", use_id="use_late")),
         reply(said("Noted.")),
     )
     if lost:
-        append = loop.managers.steps.append_steps
+        append = loop.managers.agent_steps.append_agent_steps
 
         async def lost_after_the_load(
-            ctx: TenantContext, session_id: UUID, epoch: int, steps: Sequence[Step]
-        ) -> tuple[Step, ...]:
-            stored = await append(ctx, session_id, epoch, steps)
-            if any(step.type is StepType.SWITCHED for step in stored):
+            ctx: TenantContext, agent_session_id: UUID, epoch: int, steps: Sequence[AgentStep]
+        ) -> tuple[AgentStep, ...]:
+            stored = await append(ctx, agent_session_id, epoch, steps)
+            if any(step.type is AgentStepType.SWITCHED for step in stored):
                 raise Lost
             return stored
 
-        monkeypatch.setattr(loop.managers.steps, "append_steps", lost_after_the_load)
+        monkeypatch.setattr(loop.managers.agent_steps, "append_agent_steps", lost_after_the_load)
         with pytest.raises(Lost):
-            await loop.loops.run(loop.owner, session_id)
+            await loop.loops.run(loop.owner, agent_session_id)
         monkeypatch.undo()
 
-    steps = await ran(loop, session_id)
+    steps = await ran(loop, agent_session_id)
 
     first, loaded, last = loop.anthropic.calls
-    answers = {step.responds_to: step for step in steps if step.type is StepType.TOOL_RESPONSE}
+    answers = {step.responds_to: step for step in steps if step.type is AgentStepType.TOOL_RESPONSE}
     early, late = (
         step
         for step in steps
@@ -319,7 +319,7 @@ async def test_a_call_of_a_tool_its_own_turn_loads_is_not_offered_and_the_sessio
     assert names(loaded)[len(first.tools) :] == ["note", "send"], "the next request has them"
     assert failure_of(answers[late.id]) is None and len(loop.tools["note"].ran_as) == 1
     assert last.tools == loaded.tools
-    assert await replayed(loop, DEFERS, session_id) == loop.anthropic.calls
+    assert await replayed(loop, DEFERS, agent_session_id) == loop.anthropic.calls
 
 
 def test_a_sub_agent_cut_to_a_parent_without_the_load_still_loads_what_it_holds() -> None:

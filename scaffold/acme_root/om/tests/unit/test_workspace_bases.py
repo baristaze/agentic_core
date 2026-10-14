@@ -16,13 +16,10 @@ from contracts.doubles import context
 from contracts.factories import make_org
 from contracts.tools import Tools, tools_over
 
-from acme.infra.buckets import Buckets
-from acme.infra.buckets.local import BucketsLocalImpl
-from acme.infra.secrets.local import SecretsLocalImpl
-from acme.infra.transports import CommandSpec
-from acme.infra.transports.broker import BrokerTwinImpl
-from acme.infra.transports.twin import TransportTwinImpl, TwinReply
-from acme.infra.workspaces import (
+from acme.infra.agent_workspaces import (
+    AgentWorkspace,
+    AgentWorkspaceBase,
+    AgentWorkspaceLost,
     BaseSetupFailed,
     Durability,
     EgressMode,
@@ -30,14 +27,17 @@ from acme.infra.workspaces import (
     IsolationMode,
     IsolationRefused,
     IsolationSpec,
-    Workspace,
-    WorkspaceBase,
-    WorkspaceLost,
 )
-from acme.infra.workspaces.twin import WorkspaceTwinImpl
+from acme.infra.agent_workspaces.twin import AgentWorkspaceTwinImpl
+from acme.infra.buckets import Buckets
+from acme.infra.buckets.local import BucketsLocalImpl
+from acme.infra.secrets.local import SecretsLocalImpl
+from acme.infra.transports import CommandSpec
+from acme.infra.transports.broker import BrokerTwinImpl
+from acme.infra.transports.twin import TransportTwinImpl, TwinReply
+from acme.om.agent_steps.types.header import SnapshotHeader
 from acme.om.base import new_id
 from acme.om.context import Role, TenantContext
-from acme.om.steps.types.header import SnapshotHeader
 from acme.om.tools.impl.bases import BUCKET, PREFIX, base_key
 from acme.om.tools.impl.manager import ToolsOptions
 
@@ -45,7 +45,7 @@ IMAGE = "python:3.14-slim"
 OPEN = EgressPolicy(mode=EgressMode.OPEN)
 NONE = EgressPolicy(mode=EgressMode.NONE)
 SETUP = ("pip install acme-tools", "echo built >> /opt/count")
-BASE = WorkspaceBase(image=IMAGE, setup=SETUP, egress=OPEN)
+BASE = AgentWorkspaceBase(image=IMAGE, setup=SETUP, egress=OPEN)
 ON_BASE = IsolationSpec(mode=IsolationMode.TWIN, egress=NONE, base=BASE)
 TOKEN = "tok-0123456789abcdef"
 
@@ -73,7 +73,7 @@ class Setup:
         return [command.argv[-1] for command in self.ran]
 
 
-class BuiltTwin(WorkspaceTwinImpl):
+class BuiltTwin(AgentWorkspaceTwinImpl):
     """The twin provider: what a snapshot of a workspace holds is what a
     test wrote there and each command its transport ran there, so a base
     holds its setup. Each spec it prepared to is kept, in order."""
@@ -81,31 +81,31 @@ class BuiltTwin(WorkspaceTwinImpl):
     def __init__(self, transport: TransportTwinImpl) -> None:
         super().__init__()
         self._transport = transport
-        self.specs: list[tuple[Workspace, IsolationSpec]] = []
+        self.specs: list[tuple[AgentWorkspace, IsolationSpec]] = []
         self.lost = False
         self.building: set[UUID] = set()
 
     async def prepare(
         self,
         org_id: UUID,
-        workspace_id: UUID,
+        agent_workspace_id: UUID,
         spec: IsolationSpec,
         snapshot: bytes | None = None,
         base: bytes | None = None,
         *,
         building: bool = False,
-    ) -> Workspace:
+    ) -> AgentWorkspace:
         if self.lost and base is not None:
-            raise WorkspaceLost("the image the base was built on is gone")
+            raise AgentWorkspaceLost("the image the base was built on is gone")
         workspace = await super().prepare(
-            org_id, workspace_id, spec, snapshot, base, building=building
+            org_id, agent_workspace_id, spec, snapshot, base, building=building
         )
         self.specs.append((workspace, spec))
         if building:
-            self.building.add(workspace_id)
+            self.building.add(agent_workspace_id)
         return workspace
 
-    async def snapshot(self, workspace: Workspace) -> bytes:
+    async def snapshot(self, workspace: AgentWorkspace) -> bytes:
         ran = [
             command.argv[-1]
             for command in self._transport.commands
@@ -136,14 +136,14 @@ class Bases:
 
     async def prepare(
         self, spec: IsolationSpec = ON_BASE, ctx: TenantContext | None = None
-    ) -> Workspace:
-        return await self.tools.manager.prepare_workspace(ctx or self.ctx, new_id(), spec)
+    ) -> AgentWorkspace:
+        return await self.tools.manager.prepare_agent_workspace(ctx or self.ctx, new_id(), spec)
 
     async def kept(self, ctx: TenantContext | None = None) -> list[str]:
         org_id = (ctx or self.ctx).org_id
         return await self.buckets.list(org_id, Buckets.SNAPSHOTS, PREFIX, 100)
 
-    def builds(self) -> list[Workspace]:
+    def builds(self) -> list[AgentWorkspace]:
         """Each workspace a setup ran in."""
         return [workspace for workspace, spec in self.provider.specs if spec.base != BASE]
 
@@ -203,7 +203,7 @@ async def test_the_setup_runs_with_its_own_egress_and_the_workspace_with_its_spe
     setup_spec = next(spec for found, spec in bases.provider.specs if found.id == build.id)
     assert setup_spec.egress == OPEN, "the setup reaches its registry"
     assert setup_spec.durability is Durability.SNAPSHOT
-    assert setup_spec.base == WorkspaceBase(image=IMAGE), "on the base's image alone"
+    assert setup_spec.base == AgentWorkspaceBase(image=IMAGE), "on the base's image alone"
     assert workspace.spec.egress == NONE, "the workspace never holds the setup's egress"
 
 
@@ -290,11 +290,13 @@ async def test_a_base_is_its_tenants_alone(tmp_path: Path) -> None:
 
 async def test_a_restore_starts_from_its_snapshot_and_reads_no_base(tmp_path: Path) -> None:
     bases = Bases(tmp_path)
-    session_id = new_id()
-    workspace = await bases.tools.manager.prepare_workspace(bases.ctx, session_id, ON_BASE)
-    epoch = await bases.tools.steps.begin_run(bases.ctx, session_id)
-    step = await bases.tools.manager.snapshot_workspace(
-        bases.ctx, session_id, workspace, epoch=epoch, loop_id=new_id()
+    agent_session_id = new_id()
+    workspace = await bases.tools.manager.prepare_agent_workspace(
+        bases.ctx, agent_session_id, ON_BASE
+    )
+    epoch = await bases.tools.steps.begin_run(bases.ctx, agent_session_id)
+    step = await bases.tools.manager.snapshot_agent_workspace(
+        bases.ctx, agent_session_id, workspace, epoch=epoch, loop_id=new_id()
     )
     assert isinstance(step.header, SnapshotHeader)
     snapshot = step.header.snapshot
@@ -302,12 +304,12 @@ async def test_a_restore_starts_from_its_snapshot_and_reads_no_base(tmp_path: Pa
         await bases.buckets.delete(bases.ctx.org_id, BUCKET, key)
     ran = len(bases.setup.ran)
 
-    restored = await bases.tools.manager.prepare_workspace(
-        bases.ctx, session_id, ON_BASE, restore=snapshot
+    restored = await bases.tools.manager.prepare_agent_workspace(
+        bases.ctx, agent_session_id, ON_BASE, restore=snapshot
     )
 
     assert len(bases.setup.ran) == ran, "no base is built for a restore"
-    assert restored.id == session_id
+    assert restored.id == agent_session_id
 
 
 async def test_a_base_the_provider_cannot_bring_in_is_built_again(tmp_path: Path) -> None:
@@ -345,7 +347,7 @@ async def test_a_base_that_holds_a_secrets_value_is_not_kept(tmp_path: Path) -> 
 
 async def test_a_base_with_no_setup_is_the_image_alone(tmp_path: Path) -> None:
     bases = Bases(tmp_path)
-    alone = ON_BASE.model_copy(update={"base": WorkspaceBase(image=IMAGE)})
+    alone = ON_BASE.model_copy(update={"base": AgentWorkspaceBase(image=IMAGE)})
 
     workspace = await bases.prepare(alone)
 
@@ -371,7 +373,7 @@ async def test_the_tenants_purge_removes_its_bases(tmp_path: Path) -> None:
 def test_a_long_setup_command_keeps_how_it_ended_in_its_cause(
     exit_code: int | None, ended: str
 ) -> None:
-    from acme.om.steps.types.header import MAX_CAUSE, LoopEndedHeader
+    from acme.om.agent_steps.types.header import MAX_CAUSE, LoopEndedHeader
 
     failed = BaseSetupFailed(0, "x" * 600, exit_code)
     assert failed.cause is not None

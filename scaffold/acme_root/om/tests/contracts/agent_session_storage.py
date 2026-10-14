@@ -8,38 +8,38 @@ from datetime import datetime, timedelta
 import pytest
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
-from acme.om.agent_sessions.types.agent_session import AgentSession, Among, SessionStatus
+from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus, Among
+from acme.om.agent_steps.types.header import Park, ParkReason
 from acme.om.attribution.types.authority import Visibility
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
 from acme.om.exceptions import PreconditionFailed
-from acme.om.steps.types.header import Park, ParkReason
 
 CROSS_TENANT_CASES: frozenset[str] = frozenset(
     {
-        "create_session",
-        "purge_session",
+        "create_agent_session",
+        "purge_agent_session",
         "purge_tenant",
         "read_children",
-        "read_session",
-        "read_sessions",
-        "read_tenant_sessions",
+        "read_agent_session",
+        "read_agent_sessions",
+        "read_tenant_agent_sessions",
         "tree_holds_others",
-        "write_session",
+        "write_agent_session",
     }
 )
 """Every method of `AgentSessionStorageInterface` that takes a tenant has a
 case in this module that presents another tenant's."""
 
 
-def make_session(
+def make_agent_session(
     *, parent: AgentSession | None = None, visibility: Visibility = Visibility.PRIVATE
 ) -> AgentSession:
     now = utcnow()
     actor = new_id()
-    session_id = new_id()
+    agent_session_id = new_id()
     return AgentSession(
-        id=session_id,
+        id=agent_session_id,
         created_at=now,
         updated_at=now,
         created_by=actor,
@@ -50,7 +50,7 @@ def make_session(
         kind_version=1,
         tools=("read_log", "run_tests"),
         parent_id=None if parent is None else parent.id,
-        root_id=session_id if parent is None else parent.root_id,
+        root_id=agent_session_id if parent is None else parent.root_id,
         depth=1 if parent is None else parent.depth + 1,
         visibility=visibility,
     )
@@ -60,9 +60,11 @@ def parked(session: AgentSession, version: int) -> AgentSession:
     """The session as a projection leaves it when its loop parks."""
     return session.model_copy(
         update={
-            "status": SessionStatus.PARKED,
+            "status": AgentSessionStatus.PARKED,
             "park": Park(
-                reason=ParkReason.BUDGET, unlock="raise", retry_at=utcnow() + timedelta(hours=1)
+                reason=ParkReason.SPEND_BUDGET,
+                unlock="raise",
+                retry_at=utcnow() + timedelta(hours=1),
             ),
             "status_seq": 7,
             "pending_input": new_id(),
@@ -96,39 +98,39 @@ class AgentSessionStorageContract:
 
     async def test_round_trip(self, storage: AgentSessionStorageInterface) -> None:
         org = new_id()
-        root = make_session()
-        child = make_session(parent=root)
-        assert await storage.create_session(org, root, ())
-        assert await storage.create_session(org, child, ())
-        assert await storage.read_session(org, root.id) == root
-        assert await storage.read_session(org, child.id) == child
-        assert await storage.read_session(org, new_id()) is None
+        root = make_agent_session()
+        child = make_agent_session(parent=root)
+        assert await storage.create_agent_session(org, root, ())
+        assert await storage.create_agent_session(org, child, ())
+        assert await storage.read_agent_session(org, root.id) == root
+        assert await storage.read_agent_session(org, child.id) == child
+        assert await storage.read_agent_session(org, new_id()) is None
 
     async def test_what_attribution_reads_round_trips(
         self, storage: AgentSessionStorageInterface
     ) -> None:
         org = new_id()
-        session = make_session().model_copy(
+        session = make_agent_session().model_copy(
             update={
                 "speaker": Principal(kind=PrincipalKind.SERVICE, id=new_id()),
                 "untrusted": True,
                 "handed_off_from": new_id(),
             }
         )
-        assert await storage.create_session(org, session, ())
-        assert await storage.read_session(org, session.id) == session
+        assert await storage.create_agent_session(org, session, ())
+        assert await storage.read_agent_session(org, session.id) == session
 
     async def test_read_children_by_parent_and_tenant_in_id_order(
         self, storage: AgentSessionStorageInterface
     ) -> None:
         org, elsewhere = new_id(), new_id()
-        root = make_session()
-        assert await storage.create_session(org, root, ())
-        children = sorted((make_session(parent=root) for _ in range(3)), key=lambda s: s.id)
+        root = make_agent_session()
+        assert await storage.create_agent_session(org, root, ())
+        children = sorted((make_agent_session(parent=root) for _ in range(3)), key=lambda s: s.id)
         for child in children:
-            assert await storage.create_session(org, child, ())
-        grandchild = make_session(parent=children[0])
-        assert await storage.create_session(org, grandchild, ())
+            assert await storage.create_agent_session(org, child, ())
+        grandchild = make_agent_session(parent=children[0])
+        assert await storage.create_agent_session(org, grandchild, ())
         assert await storage.read_children(org, root.id, None, 10) == children
         assert await storage.read_children(org, root.id, children[0].id, 1) == [children[1]]
         assert await storage.read_children(org, children[0].id, None, 10) == [grandchild]
@@ -140,34 +142,34 @@ class AgentSessionStorageContract:
     ) -> None:
         org = new_id()
         session = AgentSession.model_validate(
-            {**make_session().model_dump(), "title": f"a\x00b{chr(0xDFFF)}c"}
+            {**make_agent_session().model_dump(), "title": f"a\x00b{chr(0xDFFF)}c"}
         )
         assert session.title == "a\ufffdb\ufffdc"
-        assert await storage.create_session(org, session, ())
-        assert await storage.read_session(org, session.id) == session
+        assert await storage.create_agent_session(org, session, ())
+        assert await storage.read_agent_session(org, session.id) == session
 
     async def test_purge_tenant_deletes_exactly_the_batch_read_and_no_other_tenants(
         self, storage: AgentSessionStorageInterface
     ) -> None:
         gone, kept = new_id(), new_id()
-        made = [make_session() for _ in range(3)]
+        made = [make_agent_session() for _ in range(3)]
         for session in made:
-            assert await storage.create_session(gone, session, ())
-        stays = make_session()
-        assert await storage.create_session(kept, stays, ())
-        batch = await storage.read_tenant_sessions(gone, 2)
+            assert await storage.create_agent_session(gone, session, ())
+        stays = make_agent_session()
+        assert await storage.create_agent_session(kept, stays, ())
+        batch = await storage.read_tenant_agent_sessions(gone, 2)
         assert len(batch) == 2 and set(batch) <= {s.id for s in made}
-        assert await storage.read_tenant_sessions(kept, 10) == [stays.id]
+        assert await storage.read_tenant_agent_sessions(kept, 10) == [stays.id]
         assert await storage.purge_tenant(kept, batch) == 0, "another tenant's ids"
         assert await storage.purge_tenant(gone, [stays.id]) == 0, "an id of another tenant's"
-        assert await storage.read_session(kept, stays.id) == stays
+        assert await storage.read_agent_session(kept, stays.id) == stays
         assert await storage.purge_tenant(gone, []) == 0
         assert await storage.purge_tenant(gone, batch) == 2
         assert await storage.purge_tenant(gone, batch) == 0, "gone already"
         (left,) = [s for s in made if s.id not in batch]
-        assert await storage.read_sessions(gone, None, None, 10) == [left]
-        assert await storage.read_tenant_sessions(gone, 10) == [left.id]
-        assert await storage.read_sessions(kept, None, None, 10) == [stays]
+        assert await storage.read_agent_sessions(gone, None, None, 10) == [left]
+        assert await storage.read_tenant_agent_sessions(gone, 10) == [left.id]
+        assert await storage.read_agent_sessions(kept, None, None, 10) == [stays]
 
     async def test_a_persons_page_holds_their_roots_and_the_org_wide_ones(
         self, storage: AgentSessionStorageInterface
@@ -177,25 +179,27 @@ class AgentSessionStorageContract:
         root when it names no person. A sub-agent is on no such page. Who
         sees a session, and who steers it, read back as written."""
         org, person = new_id(), new_id()
-        made = make_session().model_copy(update={"created_by": person})
-        joined = make_session().model_copy(
+        made = make_agent_session().model_copy(update={"created_by": person})
+        joined = make_agent_session().model_copy(
             update={"participants": (new_id(), person), "steerer": person}
         )
-        seen, closed = make_session(visibility=Visibility.ORG_WIDE), make_session()
-        child = make_session(parent=made, visibility=Visibility.ORG_WIDE)
+        seen, closed = make_agent_session(visibility=Visibility.ORG_WIDE), make_agent_session()
+        child = make_agent_session(parent=made, visibility=Visibility.ORG_WIDE)
         for session in (made, joined, seen, closed, child):
-            assert await storage.create_session(org, session, ())
-        mine = await storage.read_sessions(org, None, None, 10, among=Among.MINE, person=person)
-        visible = await storage.read_sessions(
+            assert await storage.create_agent_session(org, session, ())
+        mine = await storage.read_agent_sessions(
+            org, None, None, 10, among=Among.MINE, person=person
+        )
+        visible = await storage.read_agent_sessions(
             org, None, None, 10, among=Among.VISIBLE, person=person
         )
-        every = await storage.read_sessions(org, None, None, 10, among=Among.VISIBLE)
+        every = await storage.read_agent_sessions(org, None, None, 10, among=Among.VISIBLE)
         assert [s.id for s in mine] == sorted([made.id, joined.id])
         assert [s.id for s in visible] == sorted([made.id, joined.id, seen.id])
         assert [s.id for s in every] == sorted([made.id, joined.id, seen.id, closed.id])
-        assert len(await storage.read_sessions(org, None, None, 10)) == 5
-        assert await storage.read_session(org, joined.id) == joined
-        assert await storage.read_session(org, seen.id) == seen
+        assert len(await storage.read_agent_sessions(org, None, None, 10)) == 5
+        assert await storage.read_agent_session(org, joined.id) == joined
+        assert await storage.read_agent_session(org, seen.id) == seen
 
     async def test_a_deleted_session_is_on_no_page_and_still_read_by_id(
         self, storage: AgentSessionStorageInterface
@@ -205,17 +209,17 @@ class AgentSessionStorageContract:
         it as it is, for the manager to hide, unmark, or find claimed, and
         an unmark puts it back on the page."""
         org = new_id()
-        kept, gone = make_session(), make_session()
+        kept, gone = make_agent_session(), make_agent_session()
         for session in (kept, gone):
-            assert await storage.create_session(org, session, ())
+            assert await storage.create_agent_session(org, session, ())
         deleted = marked(gone, 2, utcnow())
-        await storage.write_session(org, deleted, 1, ())
-        assert await storage.read_sessions(org, None, None, 10) == [kept]
-        assert await storage.read_sessions(org, SessionStatus.IDLE, None, 10) == [kept]
-        assert await storage.read_session(org, gone.id) == deleted
+        await storage.write_agent_session(org, deleted, 1, ())
+        assert await storage.read_agent_sessions(org, None, None, 10) == [kept]
+        assert await storage.read_agent_sessions(org, AgentSessionStatus.IDLE, None, 10) == [kept]
+        assert await storage.read_agent_session(org, gone.id) == deleted
         restored = deleted.model_copy(update={"deleted_at": None, "deleted_by": None, "version": 3})
-        await storage.write_session(org, restored, 2, ())
-        page = await storage.read_sessions(org, None, None, 10)
+        await storage.write_agent_session(org, restored, 2, ())
+        page = await storage.read_agent_sessions(org, None, None, 10)
         assert page == sorted([kept, restored], key=lambda session: session.id)
 
     async def test_read_purgeable_answers_sessions_deleted_before_the_cut_with_their_tenant(
@@ -225,7 +229,7 @@ class AgentSessionStorageContract:
         before the cut, claimed or not, each with its tenant, a batch at most;
         never one marked since the cut, nor one not marked."""
         first, second, now = new_id(), new_id(), utcnow()
-        old, older, claimed, recent, live = (make_session() for _ in range(5))
+        old, older, claimed, recent, live = (make_agent_session() for _ in range(5))
         for org, session in (
             (first, old),
             (first, recent),
@@ -233,15 +237,15 @@ class AgentSessionStorageContract:
             (second, older),
             (second, claimed),
         ):
-            assert await storage.create_session(org, session, ())
+            assert await storage.create_agent_session(org, session, ())
         due = {
             (first, old.id): marked(old, 2, now - timedelta(days=31)),
             (second, older.id): marked(older, 2, now - timedelta(days=40)),
             (second, claimed.id): marked(claimed, 2, now - timedelta(days=50), claimed=True),
         }
         for (org, _), session in due.items():
-            await storage.write_session(org, session, 1, ())
-        await storage.write_session(first, marked(recent, 2, now - timedelta(days=1)), 1, ())
+            await storage.write_agent_session(org, session, 1, ())
+        await storage.write_agent_session(first, marked(recent, 2, now - timedelta(days=1)), 1, ())
         found = await storage.read_purgeable(now - timedelta(days=30), 10)
         assert {(org, session.id): session for org, session in found} == due
         assert len(await storage.read_purgeable(now - timedelta(days=30), 2)) == 2
@@ -250,10 +254,10 @@ class AgentSessionStorageContract:
         self, storage: AgentSessionStorageInterface
     ) -> None:
         org, other = new_id(), new_id()
-        root, alone = make_session(), make_session()
-        child = make_session(parent=root)
+        root, alone = make_agent_session(), make_agent_session()
+        child = make_agent_session(parent=root)
         for session in (root, child, alone):
-            assert await storage.create_session(org, session, ())
+            assert await storage.create_agent_session(org, session, ())
         assert await storage.tree_holds_others(org, root.id, root.id), "its child"
         assert await storage.tree_holds_others(org, root.id, child.id), "its root"
         assert not await storage.tree_holds_others(org, alone.id, alone.id)
@@ -266,84 +270,88 @@ class AgentSessionStorageContract:
         merely marked deleted stays, and so does a claimed one named under
         another tenant."""
         org, other, now = new_id(), new_id(), utcnow()
-        unclaimed, claimed = make_session(), make_session()
+        unclaimed, claimed = make_agent_session(), make_agent_session()
         for session in (unclaimed, claimed):
-            assert await storage.create_session(org, session, ())
-        await storage.write_session(org, marked(unclaimed, 2, now), 1, ())
+            assert await storage.create_agent_session(org, session, ())
+        await storage.write_agent_session(org, marked(unclaimed, 2, now), 1, ())
         purgeable = marked(claimed, 2, now, claimed=True)
-        await storage.write_session(org, purgeable, 1, ())
-        assert not await storage.purge_session(other, claimed.id), "another tenant's"
-        assert not await storage.purge_session(org, unclaimed.id), "marked, never claimed"
-        assert await storage.read_session(org, claimed.id) == purgeable
-        assert await storage.purge_session(org, claimed.id)
-        assert await storage.read_session(org, claimed.id) is None
-        assert not await storage.purge_session(org, claimed.id), "gone already"
-        assert await storage.read_session(org, unclaimed.id) is not None
+        await storage.write_agent_session(org, purgeable, 1, ())
+        assert not await storage.purge_agent_session(other, claimed.id), "another tenant's"
+        assert not await storage.purge_agent_session(org, unclaimed.id), "marked, never claimed"
+        assert await storage.read_agent_session(org, claimed.id) == purgeable
+        assert await storage.purge_agent_session(org, claimed.id)
+        assert await storage.read_agent_session(org, claimed.id) is None
+        assert not await storage.purge_agent_session(org, claimed.id), "gone already"
+        assert await storage.read_agent_session(org, unclaimed.id) is not None
 
     async def test_create_reports_an_existing_id_and_changes_nothing(
         self, storage: AgentSessionStorageInterface
     ) -> None:
         org = new_id()
-        session = make_session()
-        assert await storage.create_session(org, session, ())
-        assert not await storage.create_session(org, session.model_copy(update={"title": "x"}), ())
-        assert await storage.read_session(org, session.id) == session
+        session = make_agent_session()
+        assert await storage.create_agent_session(org, session, ())
+        assert not await storage.create_agent_session(
+            org, session.model_copy(update={"title": "x"}), ()
+        )
+        assert await storage.read_agent_session(org, session.id) == session
 
     async def test_create_session_under_another_tenant_is_not_read_here(
         self, storage: AgentSessionStorageInterface
     ) -> None:
         org_a, org_b = new_id(), new_id()
-        session = make_session()
-        assert await storage.create_session(org_a, session, ())
-        assert not await storage.create_session(
+        session = make_agent_session()
+        assert await storage.create_agent_session(org_a, session, ())
+        assert not await storage.create_agent_session(
             org_b, session.model_copy(update={"title": "x"}), ()
         )
-        assert await storage.read_session(org_b, session.id) is None
-        assert await storage.read_session(org_a, session.id) == session
+        assert await storage.read_agent_session(org_b, session.id) is None
+        assert await storage.read_agent_session(org_a, session.id) == session
 
     async def test_read_sessions_by_status_and_tenant_in_id_order(
         self, storage: AgentSessionStorageInterface
     ) -> None:
         org, elsewhere = new_id(), new_id()
-        sessions = sorted((make_session() for _ in range(3)), key=lambda s: s.id)
+        sessions = sorted((make_agent_session() for _ in range(3)), key=lambda s: s.id)
         for session in sessions:
-            assert await storage.create_session(org, session, ())
-        assert await storage.create_session(elsewhere, make_session(), ())
+            assert await storage.create_agent_session(org, session, ())
+        assert await storage.create_agent_session(elsewhere, make_agent_session(), ())
         waiting = parked(sessions[1], version=2)
-        await storage.write_session(org, waiting, 1, ())
-        assert await storage.read_sessions(org, None, None, 10) == [
+        await storage.write_agent_session(org, waiting, 1, ())
+        assert await storage.read_agent_sessions(org, None, None, 10) == [
             sessions[0],
             waiting,
             sessions[2],
         ]
-        assert await storage.read_sessions(org, None, sessions[0].id, 1) == [waiting]
-        assert await storage.read_sessions(org, SessionStatus.PARKED, None, 10) == [waiting]
-        assert await storage.read_sessions(org, SessionStatus.IDLE, None, 10) == [
+        assert await storage.read_agent_sessions(org, None, sessions[0].id, 1) == [waiting]
+        assert await storage.read_agent_sessions(org, AgentSessionStatus.PARKED, None, 10) == [
+            waiting
+        ]
+        assert await storage.read_agent_sessions(org, AgentSessionStatus.IDLE, None, 10) == [
             sessions[0],
             sessions[2],
         ]
-        assert await storage.read_sessions(new_id(), None, None, 10) == []
+        assert await storage.read_agent_sessions(new_id(), None, None, 10) == []
 
     async def test_write_is_a_compare_and_set_on_the_version(
         self, storage: AgentSessionStorageInterface
     ) -> None:
         org = new_id()
-        session = make_session()
-        assert await storage.create_session(org, session, ())
+        session = make_agent_session()
+        assert await storage.create_agent_session(org, session, ())
         moved = parked(session, version=2)
-        await storage.write_session(org, moved, 1, ())
-        assert await storage.read_session(org, session.id) == moved
+        await storage.write_agent_session(org, moved, 1, ())
+        assert await storage.read_agent_session(org, session.id) == moved
         with pytest.raises(PreconditionFailed):
-            await storage.write_session(org, parked(session, version=2), 1, ())
-        assert await storage.read_session(org, session.id) == moved
+            await storage.write_agent_session(org, parked(session, version=2), 1, ())
+        assert await storage.read_agent_session(org, session.id) == moved
 
     async def test_write_session_under_another_tenant_lands_nothing(
         self, storage: AgentSessionStorageInterface
     ) -> None:
         org_a, org_b = new_id(), new_id()
-        session = make_session()
-        assert await storage.create_session(org_a, session, ())
+        session = make_agent_session()
+        assert await storage.create_agent_session(org_a, session, ())
         with pytest.raises(PreconditionFailed):
-            await storage.write_session(org_b, parked(session, version=2), 1, ())
-        assert await storage.read_session(org_a, session.id) == session
-        assert await storage.read_sessions(org_b, None, None, 10) == []
+            await storage.write_agent_session(org_b, parked(session, version=2), 1, ())
+        assert await storage.read_agent_session(org_a, session.id) == session
+        assert await storage.read_agent_sessions(org_b, None, None, 10) == []

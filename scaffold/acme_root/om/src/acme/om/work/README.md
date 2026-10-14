@@ -13,7 +13,7 @@ kinds of thing [Acme is made of](../../../../README.md).
   person needs to ask for it. The core has nine: `NOOP`, a step of an
   `ORCHESTRATION`, `WAKE_PARKED` for the records a cleared reason
   frees, `DELETE_ACCOUNT` and `DELETE_ORG` for the identity provider's
-  side of a deletion, `WAKE_SESSION` and `WAKE_SESSIONS` for the
+  side of a deletion, `WAKE_AGENT_SESSION` and `WAKE_AGENT_SESSIONS` for the
   agent sessions a park's time or a raised budget frees,
   `LEASE_NOTICE` for a session in line whose request was answered or
   whose lease was revoked, and `LOOP` for a session's loop, which the

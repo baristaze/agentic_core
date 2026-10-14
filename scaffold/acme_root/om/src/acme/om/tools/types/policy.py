@@ -43,7 +43,7 @@ class Target(Platform):
     attributes: FrozenMapping = Field(default_factory=dict, validate_default=True)
 
 
-class PolicyCall(Platform):
+class ToolPolicyCall(Platform):
     """Everything policy reads of a call, and all of it: the model's text and
     the call's input are not among it."""
 
@@ -53,7 +53,7 @@ class PolicyCall(Platform):
     target: Target = Field(default_factory=Target)
 
 
-class PolicyRule(Platform):
+class ToolPolicyRule(Platform):
     """One row of a layer: what it matches and what it decides. A selector
     left unset matches any call; every target attribute it names must equal
     the target's. The more selectors a rule sets, the more specific it is."""
@@ -66,8 +66,8 @@ class PolicyRule(Platform):
     decision: Decision
 
 
-class PolicyLayer(Platform):
-    rules: tuple[PolicyRule, ...] = ()
+class ToolPolicyLayer(Platform):
+    rules: tuple[ToolPolicyRule, ...] = ()
 
 
 class ApproverRule(Platform):
@@ -93,7 +93,7 @@ class ToolPolicy(Identifiable, Trackable):
 
     MANAGER_OWNED_FIELDS: ClassVar[tuple[str, ...]] = ("version",)
 
-    rules: tuple[PolicyRule, ...] = ()
+    rules: tuple[ToolPolicyRule, ...] = ()
     approvers: tuple[ApproverRule, ...] = ()
     # Every write after the create is a compare-and-set on it.
     version: int = Field(default=1, ge=1)
@@ -105,5 +105,5 @@ class ToolPolicy(Identifiable, Trackable):
             raise ValueError("each class has one approver rule")
         return self
 
-    def layer(self) -> PolicyLayer:
-        return PolicyLayer(rules=self.rules)
+    def layer(self) -> ToolPolicyLayer:
+        return ToolPolicyLayer(rules=self.rules)

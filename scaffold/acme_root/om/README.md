@@ -112,7 +112,7 @@ reads, sized for that model. When the agent's own window nears its limit,
 its oldest part is folded into a **summary**, a step of its own, and the
 **pinned zone** carries the session's objective and its principals'
 standing instructions through every fold. A tool's result too large for
-a step is kept whole as an **artifact** in the object store.
+a step is kept whole as a **tool output** in the object store.
 
 ## The loop
 
@@ -176,7 +176,7 @@ arrive twice, so the second copy gets the first one's answer.
 - An agent session's fill set names the model for each of its jobs, and
   each switch of it is a step of the session's history.
 - A window and its summaries read a session's steps and change none of
-  them; an artifact belongs to the session whose step names it.
+  them; a tool output belongs to the session whose step names it.
 - An agent session's steps are its truth. Its status is read off them,
   and a change of it writes an outbox row like any other change. A
   session and its steps name their org.
@@ -199,12 +199,12 @@ arrive twice, so the second copy gets the first one's answer.
 - [Orgs, identities, users, memberships, and credentials](src/acme/om/tenancy/README.md)
 - [Files](src/acme/om/media/README.md)
 - [Agent sessions](src/acme/om/agent_sessions/README.md)
-- [Steps](src/acme/om/steps/README.md)
+- [Steps](src/acme/om/agent_steps/README.md)
 - [Agents](src/acme/om/agents/README.md)
 - [Attribution](src/acme/om/attribution/README.md)
 - [Privacy](src/acme/om/privacy/README.md)
-- [Budgets](src/acme/om/budgets/README.md)
-- [Models](src/acme/om/models/README.md)
+- [Budgets](src/acme/om/spend_budgets/README.md)
+- [Models](src/acme/om/language_models/README.md)
 - [Windows](src/acme/om/windows/README.md)
 - [Tools](src/acme/om/tools/README.md)
 - [Events](src/acme/om/events/README.md)

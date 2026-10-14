@@ -122,7 +122,7 @@ ended as a leftover.
   group, under a root the account passes through, on a filesystem that
   keeps ACLs. Its tests are skipped elsewhere, with the reason.
 - Under a unit with `ProcSubset=pid`, the runner declares the host's
-  `fs.protected_hardlinks` on (`ACME_WORKSPACE_PROTECTED_HARDLINKS`). A
+  `fs.protected_hardlinks` on (`ACME_AGENT_WORKSPACE_PROTECTED_HARDLINKS`). A
   product uses the provider whole there: the workspace's directories, its
   records, and its clearing.
 - Under a unit with `SystemCallFilter=~@privileged`, the unit allows

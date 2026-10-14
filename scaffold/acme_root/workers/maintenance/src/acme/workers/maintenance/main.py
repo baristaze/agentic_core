@@ -23,6 +23,11 @@ from acme.om.context import RequestContext
 from acme.om.orchestrations.types.orchestration import OrchestrationKind
 from acme.om.work.types.work_item import WorkKind
 from acme.workers.maintenance.accounts import DeleteAccountHandlerImpl, DeleteOrgHandlerImpl
+from acme.workers.maintenance.agent_sessions import (
+    LeaseNoticeHandlerImpl,
+    WakeAgentSessionHandlerImpl,
+    WakeAgentSessionsHandlerImpl,
+)
 from acme.workers.maintenance.container import (
     AGENT_SESSION_PURGE_BATCH,
     LEASE_SWEEP_BATCH,
@@ -42,11 +47,6 @@ from acme.workers.maintenance.orchestrations import (
     WakeParkedHandlerImpl,
 )
 from acme.workers.maintenance.providers import ProviderCalls
-from acme.workers.maintenance.sessions import (
-    LeaseNoticeHandlerImpl,
-    WakeSessionHandlerImpl,
-    WakeSessionsHandlerImpl,
-)
 from acme.workers.maintenance.settings import MaintenanceSettings
 
 log = logging.getLogger(__name__)
@@ -105,21 +105,21 @@ def build_loop(container: WorkerContainer, lane: str | None = None) -> WorkerLoo
             "leases": managers.leases.purge_tenant,
             "work": managers.work.purge_tenant,
             "agent_trees": managers.agents.purge_tenant,
-            "session_authorities": managers.attribution.purge_tenant,
-            "models": managers.models.purge_tenant,
+            "agent_session_authorities": managers.attribution.purge_tenant,
+            "language_models": managers.language_models.purge_tenant,
             "tools": managers.tools.purge_tenant,
-            # Every artifact's object, then its record, under the purge login.
-            "artifacts": managers.windows.purge_tenant,
+            # Every tool output's object, then its record, under the purge login.
+            "tool_outputs": managers.windows.purge_tenant,
             # The history, then its sessions, both under the purge login: a
             # tenant is marked purged only once a pass finds none of either.
-            "steps": managers.steps.purge_tenant,
+            "agent_steps": managers.agent_steps.purge_tenant,
             "agent_sessions": managers.agent_sessions.purge_tenant,
             # Each session's key versions, then its privacy record: the
             # content sealed under them is noise from the first batch.
             "privacy": managers.privacy.purge_tenant,
             # What a call held and spent is not a purge of its tenant's: no
             # serving login deletes it, so it never holds the tenant's mark.
-            "budgets": managers.budgets.purge_tenant,
+            "spend_budgets": managers.spend_budgets.purge_tenant,
         },
         # Once a pass, across every tenant: each namespace's rows past their
         # retention.
@@ -171,8 +171,8 @@ def build_loop(container: WorkerContainer, lane: str | None = None) -> WorkerLoo
             WorkKind.DELETE_ORG: DeleteOrgHandlerImpl(
                 managers.tenancy, container.identity_provider, identity_calls
             ),
-            WorkKind.WAKE_SESSION: WakeSessionHandlerImpl(managers.agent_sessions),
-            WorkKind.WAKE_SESSIONS: WakeSessionsHandlerImpl(managers.agent_sessions),
+            WorkKind.WAKE_AGENT_SESSION: WakeAgentSessionHandlerImpl(managers.agent_sessions),
+            WorkKind.WAKE_AGENT_SESSIONS: WakeAgentSessionsHandlerImpl(managers.agent_sessions),
             WorkKind.LEASE_NOTICE: LeaseNoticeHandlerImpl(managers.agent_sessions),
         },
         topics=container.infra.get_topics(),

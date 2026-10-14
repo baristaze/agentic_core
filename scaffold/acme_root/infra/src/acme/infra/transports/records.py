@@ -79,45 +79,45 @@ class RecordBook:
     def __init__(self, root: Path) -> None:
         self._root = root
 
-    def admit(self, workspace_id: UUID, epoch: int) -> None:
+    def admit(self, agent_workspace_id: UUID, epoch: int) -> None:
         """Admits a command under `epoch`, and raises `StaleCommand` when this
         workspace has admitted a higher one. One lock on the workspace's
         epoch file holds the read and the write together."""
-        folder = self._folder(workspace_id)
+        folder = self._folder(agent_workspace_id)
         with open(folder / "epoch", "a+") as handle:
             fcntl.flock(handle, fcntl.LOCK_EX)
             handle.seek(0)
             seen = int(handle.read().strip() or "0")
             if epoch < seen:
                 raise StaleCommand(
-                    f"workspace {workspace_id} runs commands at epoch {seen}; {epoch} is stale"
+                    f"workspace {agent_workspace_id} runs commands at epoch {seen}; {epoch} is stale"
                 )
             handle.seek(0)
             handle.truncate()
             handle.write(str(epoch))
 
-    def record(self, workspace_id: UUID, record: CommandRecord) -> None:
+    def record(self, agent_workspace_id: UUID, record: CommandRecord) -> None:
         """Writes how a command ended, whole or not at all."""
-        folder = self._folder(workspace_id)
+        folder = self._folder(agent_workspace_id)
         partial = folder / f"{record.key}.partial"
         partial.write_text(record.model_dump_json())
         os.replace(partial, folder / f"{record.key}.json")
 
-    def read(self, workspace_id: UUID, key: UUID) -> CommandRecord | None:
-        path = self._root / workspace_id.hex / f"{key}.json"
+    def read(self, agent_workspace_id: UUID, key: UUID) -> CommandRecord | None:
+        path = self._root / agent_workspace_id.hex / f"{key}.json"
         if not path.is_file():
             return None
         return CommandRecord.model_validate_json(path.read_text())
 
-    def purge(self, workspace_id: UUID) -> None:
+    def purge(self, agent_workspace_id: UUID) -> None:
         """Removes every record of the workspace and its epoch. A workspace
         with none is no error; a record that cannot be removed is."""
         try:
-            shutil.rmtree(self._root / workspace_id.hex)
+            shutil.rmtree(self._root / agent_workspace_id.hex)
         except FileNotFoundError:
             return
 
-    def _folder(self, workspace_id: UUID) -> Path:
-        folder = self._root / workspace_id.hex
+    def _folder(self, agent_workspace_id: UUID) -> Path:
+        folder = self._root / agent_workspace_id.hex
         folder.mkdir(mode=0o700, parents=True, exist_ok=True)
         return folder

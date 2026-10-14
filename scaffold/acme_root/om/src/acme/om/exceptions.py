@@ -5,8 +5,8 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from acme.om.budgets.types.breach import Refusal
-    from acme.om.steps.types.header import Park, ToolFailure
+    from acme.om.agent_steps.types.header import Park, ToolFailure
+    from acme.om.spend_budgets.types.spend_breach import Refusal
 
 
 class PlatformException(Exception):
@@ -299,10 +299,10 @@ class InvitationClosed(TenancyException, Conflict):
     code = "invitation_closed"
 
 
-class StepsException(PlatformException): ...
+class AgentStepsException(PlatformException): ...
 
 
-class StaleWriter(StepsException, PreconditionFailed):
+class StaleWriter(AgentStepsException, PreconditionFailed):
     """An append under a writer epoch the session's cursor row no longer
     holds: a run that lost its claim to another run, or one that never took
     it. Refused with nothing written, never trusted to stop on its own; the
@@ -372,13 +372,13 @@ class PolicyFixed(PrivacyException, Conflict):
     code = "policy_fixed"
 
 
-class BudgetsException(PlatformException): ...
+class SpendBudgetsException(PlatformException): ...
 
 
-class BudgetRefused(BudgetsException):
+class SpendBudgetRefused(SpendBudgetsException):
     """The gate refused a model call: nothing is held, nothing is spent, and
     the call is never made. `refusal` lists every breach, each with what
-    clears it, and the loop parks on it (`budgets.rules.budget_park`)."""
+    clears it, and the loop parks on it (`spend_budgets.rules.spend_budget_park`)."""
 
     code = "budget_refused"
 
@@ -387,14 +387,14 @@ class BudgetRefused(BudgetsException):
         self.refusal = refusal
 
 
-class SpenderUnknown(BudgetsException, NotAuthorized):
+class SpenderUnknown(SpendBudgetsException, NotAuthorized):
     """A call or a job whose payer the engine cannot tell. The gate fails
     closed for spend: nothing is held and nothing is spent."""
 
     code = "spender_unknown"
 
 
-class GateParked(BudgetsException):
+class GateParked(SpendBudgetsException):
     """A gate that parks the call itself, on a reason and an unlock of its
     own: a platform's gate, for what no breach of a budget says, such as a
     call far above its session's norm. Nothing is held, nothing is spent,
@@ -407,10 +407,10 @@ class GateParked(BudgetsException):
         self.park = park
 
 
-class ModelsException(PlatformException): ...
+class LanguageModelsException(PlatformException): ...
 
 
-class UnpricedModel(ModelsException, ValidationFailed):
+class UnpricedModel(LanguageModelsException, ValidationFailed):
     """A model with no row in the one source of prices. A resolver never
     picks one, and a switch never lands on one: every figure built on a
     default row would be a guess, the budgets that bind on it included."""
@@ -418,14 +418,14 @@ class UnpricedModel(ModelsException, ValidationFailed):
     code = "unpriced_model"
 
 
-class UnresolvedRole(ModelsException, ValidationFailed):
+class UnresolvedRole(LanguageModelsException, ValidationFailed):
     """A model role the resolver does not know, or one with no fill the
     session's eligibility admits."""
 
     code = "unresolved_model_role"
 
 
-class NoCredential(ModelsException, PreconditionFailed):
+class NoCredential(LanguageModelsException, PreconditionFailed):
     """A call that needs a key the tenant does not hold, or holds no longer:
     nothing is spent, nothing falls back to the platform's key, and the
     session parks on the provider until a key is saved (`unlock`)."""

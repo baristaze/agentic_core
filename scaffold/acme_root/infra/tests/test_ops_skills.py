@@ -47,7 +47,7 @@ READERS = [
 ]
 # The skills that read model spend from the usage records, through the
 # operator plane with the read token alone: no cloud profile.
-SPEND_READERS = ["audit-model-spend", "ops-loop-spend", "ops-session-spend"]
+SPEND_READERS = ["audit-model-spend", "ops-loop-spend", "ops-agent-session-spend"]
 # The skills that reach the env file's tokens.
 TOKEN_HOLDERS = [
     "ops-investigate",
@@ -318,7 +318,7 @@ def test_every_read_of_the_operator_plane_goes_through_jq(name: str) -> None:
 
 # What a spend skill reads: who the plane admitted, and one session's usage.
 SPEND_ROUTE = re.compile(
-    r"me|orgs/<org_id>/sessions/<session_id>/usage\?limit=200(?:&cursor=<next_cursor>)?"
+    r"me|orgs/<org_id>/agent-sessions/<agent_session_id>/usage\?limit=200(?:&cursor=<next_cursor>)?"
 )
 # A request that is not a plain read: a method named, a body, or a file sent.
 WRITE_CALL = re.compile(
@@ -399,7 +399,7 @@ def test_the_root_cause_reads_print_what_the_report_needs() -> None:
             assert isinstance(printed, dict) and printed["error"] == code, route
 
 
-USAGE_FIRST = "orgs/<org_id>/sessions/<session_id>/usage?limit=200"
+USAGE_FIRST = "orgs/<org_id>/agent-sessions/<agent_session_id>/usage?limit=200"
 USAGE_NEXT = USAGE_FIRST + "&cursor=<next_cursor>"
 
 
@@ -407,11 +407,11 @@ def _usage_record(at: str, settled_whole: bool) -> dict[str, object]:
     return {
         "id": "5" * 32,
         "created_at": at,
-        "hold_id": "6" * 32,
-        "session_id": "7" * 32,
+        "spend_hold_id": "6" * 32,
+        "agent_session_id": "7" * 32,
         "tree_id": "8" * 32,
         "loop_id": "9" * 32,
-        "step_id": "a" * 32,
+        "agent_step_id": "a" * 32,
         "agent_kind": "assistant",
         "kind_version": 1,
         "role": "main",
@@ -449,7 +449,7 @@ def test_a_spend_read_prints_the_calls_settled_whole_and_the_sessions_count(name
         "latency_ms": 1000,
     }
     page = {
-        "session_id": "7" * 32,
+        "agent_session_id": "7" * 32,
         "items": [
             _usage_record("2026-01-01T00:00:00Z", False),
             _usage_record("2026-01-01T00:01:00Z", True),
@@ -474,7 +474,7 @@ def test_a_spend_read_prints_the_calls_settled_whole_and_the_sessions_count(name
             assert [group["settled_whole"] for group in printed["groups"]] == [1], route
         calls = printed["total_calls"] if "total_calls" in printed else printed["total"]["calls"]
         assert calls == 2, route
-    if name == "ops-session-spend":
+    if name == "ops-agent-session-spend":
         first = _jq(kept[USAGE_FIRST], page)
         assert isinstance(first, dict) and first["tree_id"] == "8" * 32
 
@@ -702,7 +702,7 @@ COUNT_BOUNDS = {
     ],
     "stress-test-run": ["A session follows at most 2 hops of Next."],
     "ops-loop-spend": ["Read at most 5 pages, 1,000 records.", "never more than 5 pages"],
-    "ops-session-spend": [
+    "ops-agent-session-spend": [
         "Read at most 5 pages, 1,000 records.",
         "Run it over at most 10 loops",
         "never more than 5 pages, and never more than 10 loops read turn by turn",

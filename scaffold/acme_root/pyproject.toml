@@ -15,7 +15,7 @@ members = [
     "integrations",
     "services/api",
     "workers/maintenance",
-    "workers/session_runner",
+    "workers/agent_session_runner",
     "clients/python",
     "apps/cli",
     "ops",
@@ -28,7 +28,7 @@ acme-infra = { workspace = true }
 acme-integrations = { workspace = true }
 acme-api = { workspace = true }
 acme-maintenance = { workspace = true }
-acme-session-runner = { workspace = true }
+acme-agent-session-runner = { workspace = true }
 acme-client = { workspace = true }
 acme-cli = { workspace = true }
 acme-ops = { workspace = true }
@@ -53,7 +53,7 @@ pythonpath = [
     "om/tests",
     "services/api/tests",
     "workers/maintenance/tests",
-    "workers/session_runner/tests",
+    "workers/agent_session_runner/tests",
     "clients/python/tests",
     "apps/cli/tests",
     "ops/tests",
@@ -67,7 +67,7 @@ testpaths = [
     "integrations/tests",
     "services/api/tests",
     "workers/maintenance/tests",
-    "workers/session_runner/tests",
+    "workers/agent_session_runner/tests",
     "clients/python/tests",
     "apps/cli/tests",
     "ops/tests",

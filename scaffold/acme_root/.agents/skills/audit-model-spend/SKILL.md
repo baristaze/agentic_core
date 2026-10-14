@@ -24,7 +24,7 @@ before the first step: the env file and the token's refresh are there.
 
 ## Input
 
-`--env local|staging|production --org <org_id> --session <session_id> [--session <session_id>]...`
+`--env local|staging|production --org <org_id> --session <agent_session_id> [--session <agent_session_id>]...`
 
 `--env`, `--org`, and one `--session` at least are required; ask for
 them when missing. The audit reads at most 20 sessions: the first 20
@@ -41,7 +41,7 @@ Supporter, the operator plane's read alone: the env file's operator
 token, whose permission is `read`. No cloud profile is needed or used.
 Every read is a plain read of one of two routes at `ACME_API_URL`:
 `/v1/admin/me`, and the usage route,
-`/v1/admin/orgs/<org_id>/sessions/<session_id>/usage`. A record holds
+`/v1/admin/orgs/<org_id>/agent-sessions/<agent_session_id>/usage`. A record holds
 ids, counts, money, a duration, and labels, and no content.
 
 Before step 2 sources the env file, run `uv run acme-ops size --env
@@ -78,7 +78,7 @@ the preamble gives.
 
    ```bash
    set -a; . ~/.config/acme/ops/<env>.env; set +a
-   curl -s -H "Authorization: Bearer $ACME_OPERATOR_TOKEN" "$ACME_API_URL/v1/admin/orgs/<org_id>/sessions/<session_id>/usage?limit=200" \
+   curl -s -H "Authorization: Bearer $ACME_OPERATOR_TOKEN" "$ACME_API_URL/v1/admin/orgs/<org_id>/agent-sessions/<agent_session_id>/usage?limit=200" \
      | jq -c '{error: .error.code, next_cursor, total, groups: ([.items[]?] | group_by([.agent_kind, .kind_version, .role, .provider, .model]) | map({group: (.[0] | [.agent_kind, .kind_version, .role, .provider, .model]), calls: length, input: (map(.input_tokens) | add), cache_read: (map(.cache_read_tokens) | add), cache_write: (map(.cache_write_tokens) | add), output: (map(.output_tokens) | add), thinking: (map(.thinking_tokens) | add), cost_micros: (map(.cost_micros // 0) | add), unpriced: (map(select(.cost_micros == null)) | length), settled_whole: (map(select(.settled_whole)) | length)}))}'
    ```
 
@@ -109,7 +109,7 @@ the preamble gives.
    cache, `cache_write / prompt`; its share of the tokens; and its share
    of the spend. A cost in dollars is `cost_micros` divided by
    1,000,000. The rates of a cache write and an uncached input token are
-   the price table's, in `om/src/acme/om/budgets/impl/pricing.py` (read
+   the price table's, in `om/src/acme/om/spend_budgets/impl/pricing.py` (read
    it with `Read`), so the cost of rebuilt caches is each group's cache
    writes at the write rate's premium over the input rate, as an
    estimate the report labels so. Each kind version's total across its

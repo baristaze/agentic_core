@@ -1,4 +1,4 @@
-"""A blob sealed under one version of a session's key, the form an artifact's
+"""A blob sealed under one version of a session's key, the form a tool output's
 text and a command's record both take: the version at its head, then the
 nonce, then AES-GCM over the data, bound to what its caller names with the
 version, so a blob copied anywhere else opens nothing. It opens with the
@@ -10,7 +10,7 @@ from collections.abc import Callable
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from acme.om.privacy.impl.sealed_steps import NONCE_BYTES
+from acme.om.privacy.impl.sealed_agent_steps import NONCE_BYTES
 from acme.om.privacy.keys import OpenKey
 
 VERSION_BYTES = 8

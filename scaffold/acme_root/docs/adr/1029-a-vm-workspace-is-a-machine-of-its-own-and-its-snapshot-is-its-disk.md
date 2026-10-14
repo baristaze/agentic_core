@@ -16,8 +16,8 @@ the end of every run, it would cost more than the run.
 
 ## Decision
 
-**Machines, a capability.** The engine's infrastructure gains
-`machines`, in the shape of the guideline's buckets: an interface, an
+**VMs, a capability.** The engine's infrastructure gains
+`vms`, in the shape of the guideline's buckets: an interface, an
 implementation per backend, a twin, and a setting that picks one. It
 starts a machine from an image or a snapshot, runs a command in it,
 stops it, snapshots its disk, and destroys it, each by a name its caller
@@ -97,7 +97,7 @@ session's key: encrypting gigabytes per session at each run's end is
 the cost this decision avoids. The machines' store stands for the seal.
 It is encrypted at rest: locally, the disk that holds Lima's instances,
 under FileVault or LUKS, which the operator declares
-(`machine_store_encrypted`); in a cloud, its disk snapshots under its
+(`vm_store_encrypted`); in a cloud, its disk snapshots under its
 keys. Revoking a session's key erases every archive, and the disks kept
 for its snapshots go with it: the revocation calls the tools'
 `erase_snapshots`, and the provider destroys every snapshot kept under

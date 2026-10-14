@@ -21,28 +21,29 @@ way in and opens it on its way out, unseen by the rest of the engine. A
 database reader sees ciphertext. Opening content takes the session's
 key, which opens to whom the session is visible: its org when it is
 org-wide, its creator and participants when private, and
-`manage_sessions`, an admin's permission of its own, for audit.
+`manage_agent_sessions`, an admin's permission of its own, for audit.
 
 **Source.** Privacy, A Key per Session; Identity, Trust, and
 Attribution, Who Is Who.
 
 **Look for.** The sealing decorator and where it is wired; the key a
 step is sealed under; the check that opens a session's history and its
-artifacts to whom it is visible, and the permission that opens every
+tool outputs to whom it is visible, and the permission that opens every
 one; the checks that add and remove a participant.
 
 **Violation.** Content written in the clear, or sealed under a key per
 tenant; sealing done in the engine's own code instead of a decorator
-over step storage; a read of a session's history or artifacts that does
+over step storage; a read of a session's history or tool outputs that does
 not ask whom the session is visible to, or serves a private one to a
 member who is neither its creator nor a participant; a member who makes
-themselves a participant of a private session, `manage_sessions`
+themselves a participant of a private session, `manage_agent_sessions`
 included, other than by taking a lapsed steer; a participant no route
 removes.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/privacy/impl/sealed_steps.py` and
+**Shape.**
+`scaffold/acme_root/om/src/acme/om/privacy/impl/sealed_agent_steps.py` and
 `scaffold/acme_root/om/src/acme/om/privacy/impl/keys.py`
 
 **Check.** review
@@ -75,7 +76,7 @@ content; a null key service that passes content through unsealed.
 ## PRV-03 Content is sealed, and shape stays readable
 
 **Principle.** Content is sealed: messages, events, tool inputs and
-outputs, thinking, summaries, the plan, attachments and artifacts, and
+outputs, thinking, summaries, the plan, attachments and tool outputs, and
 anything derived, such as caches, indexes, and embeddings. Shape stays
 readable: ids, types, sequence numbers, actors, origins, references,
 times, sizes, stop reasons, failure classes, usage, cost, budgets, that
@@ -96,8 +97,8 @@ billing or audit that reads content.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/steps/types/header.py` and
-`scaffold/acme_root/om/src/acme/om/steps/types/content.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_steps/types/header.py` and
+`scaffold/acme_root/om/src/acme/om/agent_steps/types/content.py`
 
 **Check.** review
 
@@ -153,8 +154,9 @@ declared time.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/privacy/impl/routed_steps.py` and
-`scaffold/acme_root/om/src/acme/om/privacy/types/session_privacy.py`
+**Shape.**
+`scaffold/acme_root/om/src/acme/om/privacy/impl/routed_agent_steps.py` and
+`scaffold/acme_root/om/src/acme/om/privacy/types/agent_session_privacy.py`
 
 **Check.** review
 

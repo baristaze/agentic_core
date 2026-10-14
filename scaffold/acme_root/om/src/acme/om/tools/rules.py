@@ -9,43 +9,43 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+from acme.infra.agent_workspaces import EgressMode
 from acme.infra.transports import CommandResult
-from acme.infra.workspaces import EgressMode
-from acme.om.attribution.types.authority import AuthorityMode
-from acme.om.attribution.types.principal import AgentRef, Principal
-from acme.om.base import derived_id, thaw_mapping
-from acme.om.context import Permission, Role, TenantContext
-from acme.om.steps.types.content import Content, TextBlock, ToolResultBlock, ToolUseBlock
-from acme.om.steps.types.header import (
+from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
+from acme.om.agent_steps.types.content import Content, TextBlock, ToolResultBlock, ToolUseBlock
+from acme.om.agent_steps.types.header import (
+    AgentWorkspaceSnapshot,
     ControlCommand,
     ControlHeader,
     SnapshotHeader,
     ToolFailure,
     ToolRequestHeader,
     ToolResponseHeader,
-    WorkspaceSnapshot,
 )
-from acme.om.steps.types.step import Actor, Origin, Step, StepType
+from acme.om.attribution.types.authority import AuthorityMode
+from acme.om.attribution.types.principal import AgentRef, Principal
+from acme.om.base import derived_id, thaw_mapping
+from acme.om.context import Permission, Role, TenantContext
 from acme.om.tools.types.call import Verdict
 from acme.om.tools.types.mcp import McpBinding, McpToolDefinition
 from acme.om.tools.types.policy import (
     DEFAULT_APPROVERS,
     Decision,
-    PolicyCall,
-    PolicyLayer,
-    PolicyRule,
     Target,
     ToolPolicy,
+    ToolPolicyCall,
+    ToolPolicyLayer,
+    ToolPolicyRule,
 )
 from acme.om.tools.types.tool import Effect, ToolClass
 
 UNMATCHED = Decision.APPROVE
 """What a call no layer speaks to gets: a person decides."""
 
-DEFAULT_CEILINGS = PolicyLayer(
+DEFAULT_CEILINGS = ToolPolicyLayer(
     rules=(
-        PolicyRule(authorization_class=ToolClass.DESTRUCTIVE, decision=Decision.APPROVE),
-        PolicyRule(target={"outward": True}, decision=Decision.APPROVE),
+        ToolPolicyRule(authorization_class=ToolClass.DESTRUCTIVE, decision=Decision.APPROVE),
+        ToolPolicyRule(target={"outward": True}, decision=Decision.APPROVE),
     )
 )
 """The platform's ceilings out of the box: what is destructive, and what
@@ -158,9 +158,9 @@ def unreviewed(binding: McpBinding, definition: McpToolDefinition | None) -> str
 
 
 def tool_request(
-    step_id: UUID,
+    agent_step_id: UUID,
     at: datetime,
-    response: Step,
+    response: AgentStep,
     use: ToolUseBlock,
     authorization_class: str,
     *,
@@ -168,17 +168,17 @@ def tool_request(
     principal: Principal,
     authority: AuthorityMode,
     agent: AgentRef,
-) -> Step:
+) -> AgentStep:
     """The request step of one tool use of a model response, the agent's act:
     it references the response and the use's id, carries the input's hash
     keyed by its session, never the input, and names the principal the call
     runs under."""
-    return Step(
-        id=step_id,
+    return AgentStep(
+        id=agent_step_id,
         created_at=at,
-        session_id=response.session_id,
+        agent_session_id=response.agent_session_id,
         loop_id=response.loop_id,
-        type=StepType.TOOL_REQUEST,
+        type=AgentStepType.TOOL_REQUEST,
         actor=Actor.AGENT,
         origin=Origin.ENGINE,
         refs=(response.id,),
@@ -197,7 +197,7 @@ def tool_request(
 # Policy.
 
 
-def matches(rule: PolicyRule, call: PolicyCall) -> bool:
+def matches(rule: ToolPolicyRule, call: ToolPolicyCall) -> bool:
     return (
         (rule.tool is None or rule.tool == call.tool)
         and (
@@ -212,7 +212,7 @@ def matches(rule: PolicyRule, call: PolicyCall) -> bool:
     )
 
 
-def reaches_outward(call: PolicyCall, egress: EgressMode) -> bool:
+def reaches_outward(call: ToolPolicyCall, egress: EgressMode) -> bool:
     """Whether a call acts outward, for the rule of two: on external state
     beyond the session's own work product, or past its egress allowlist.
     The target's `outward` attribute answers, as the system it acts on
@@ -227,7 +227,7 @@ def reaches_outward(call: PolicyCall, egress: EgressMode) -> bool:
     return call.authorization_class not in INWARD_CLASSES
 
 
-def with_reach(call: PolicyCall) -> PolicyCall:
+def with_reach(call: ToolPolicyCall) -> ToolPolicyCall:
     """The call as policy reads it: its target says whether it acts outward,
     in the target's own word or, where the target does not say, by its class
     alone. So the platform's outward ceiling, and any rule keyed on
@@ -242,7 +242,7 @@ def with_reach(call: PolicyCall) -> PolicyCall:
     return call.model_copy(update={"target": Target(kind=call.target.kind, attributes=attributes)})
 
 
-def specificity(rule: PolicyRule) -> int:
+def specificity(rule: ToolPolicyRule) -> int:
     selectors = (rule.tool, rule.authorization_class, rule.effect, rule.target_kind)
     return sum(selector is not None for selector in selectors) + len(rule.target)
 
@@ -252,7 +252,10 @@ def strictest(*decisions: Decision) -> Decision:
 
 
 def decide(
-    call: PolicyCall, defaults: PolicyLayer, tenant: PolicyLayer, ceilings: PolicyLayer
+    call: ToolPolicyCall,
+    defaults: ToolPolicyLayer,
+    tenant: ToolPolicyLayer,
+    ceilings: ToolPolicyLayer,
 ) -> Decision:
     """The most specific rule that matches, of the kind's defaults and the
     tenant's layer together, decides; where the two are equally specific
@@ -302,7 +305,7 @@ def job_deadline(now: datetime, timeout: timedelta, tree_deadline: datetime | No
 # A person's decision.
 
 
-def decides(control: Step, request: Step, approvers: Sequence[Role]) -> bool:
+def decides(control: AgentStep, request: AgentStep, approvers: Sequence[Role]) -> bool:
     """Whether a control step is a person's decision on exactly this call:
     it references the request, names its tool and its input's hash, and
     was made in a role among `approvers`, those the tenant's policy lets
@@ -311,7 +314,7 @@ def decides(control: Step, request: Step, approvers: Sequence[Role]) -> bool:
     header = control.header
     call = request.header
     return (
-        control.type is StepType.CONTROL
+        control.type is AgentStepType.CONTROL
         and control.actor is Actor.PERSON
         and isinstance(header, ControlHeader)
         and header.call is not None
@@ -324,8 +327,8 @@ def decides(control: Step, request: Step, approvers: Sequence[Role]) -> bool:
 
 
 def verdict(
-    request: Step, later: Sequence[Step], now: datetime, approvers: Sequence[Role]
-) -> tuple[Verdict, Step | None]:
+    request: AgentStep, later: Sequence[AgentStep], now: datetime, approvers: Sequence[Role]
+) -> tuple[Verdict, AgentStep | None]:
     """A person's verdict on a call, from the steps after its request in
     order: the latest decision on exactly this call, by a role among
     `approvers`, holds. An approval that has expired asks again; a denial
@@ -353,7 +356,7 @@ CAPABILITY_MISSING = "capability_missing"
 ISOLATION_REFUSED = "isolation_refused"
 """The code of a workspace provider's refusal of a spec it cannot meet."""
 
-INFRA_FAILURES: dict[str, ToolFailure] = {"path_outside_workspace": ToolFailure.INVALID_INPUT}
+INFRA_FAILURES: dict[str, ToolFailure] = {"path_outside_agent_workspace": ToolFailure.INVALID_INPUT}
 """A failure infra raised whose class its code decides: a path the model
 chose that leads out of the workspace is an input it can correct."""
 
@@ -458,7 +461,7 @@ def bounded_json(value: Any, limit: int) -> str:
     return _json(_put(value, iter(fit(texts, room, size=lambda text: len(_json(text))))))
 
 
-def response_id(request: Step, epoch: int) -> UUID:
+def response_id(request: AgentStep, epoch: int) -> UUID:
     """The id of the response a run writes for a request, derived from the
     request and the run's writer epoch: the parts a call's output streams
     carry it before the response is written, and no two runs share it, so a
@@ -468,14 +471,14 @@ def response_id(request: Step, epoch: int) -> UUID:
 
 
 def response(
-    step_id: UUID,
+    agent_step_id: UUID,
     at: datetime,
-    request: Step,
+    request: AgentStep,
     text: str,
     failure: ToolFailure | None = None,
     *,
     limit: int,
-) -> Step:
+) -> AgentStep:
     """The response step to a request: a result, or a failure with its class
     and the advice the model reads with it. The text is bounded to `limit`
     characters whatever it holds, a failure's included; the class and the
@@ -486,12 +489,12 @@ def response(
     text = bounded(text, limit)
     if failure is not None:
         text = f"{failure.value}: {text}\n{ADVICE[failure]}"
-    return Step(
-        id=step_id,
+    return AgentStep(
+        id=agent_step_id,
         created_at=at,
-        session_id=request.session_id,
+        agent_session_id=request.agent_session_id,
         loop_id=request.loop_id,
-        type=StepType.TOOL_RESPONSE,
+        type=AgentStepType.TOOL_RESPONSE,
         actor=Actor.ENGINE,
         origin=Origin.ENGINE,
         responds_to=request.id,
@@ -540,7 +543,7 @@ def recovered_text(result: CommandResult, limit: int) -> str:
 # Workspace snapshots.
 
 
-def named_snapshot(step: Step) -> WorkspaceSnapshot | None:
+def named_snapshot(step: AgentStep) -> AgentWorkspaceSnapshot | None:
     """The snapshot a step names: the one a `snapshotted` step says the
     session took, or the one a restore starts its workspace from."""
     header = step.header
@@ -552,15 +555,19 @@ def named_snapshot(step: Step) -> WorkspaceSnapshot | None:
 
 
 def snapshotted_step(
-    step_id: UUID, at: datetime, session_id: UUID, loop_id: UUID, snapshot: WorkspaceSnapshot
-) -> Step:
+    agent_step_id: UUID,
+    at: datetime,
+    agent_session_id: UUID,
+    loop_id: UUID,
+    snapshot: AgentWorkspaceSnapshot,
+) -> AgentStep:
     """The step that names a snapshot the session took of its workspace."""
-    return Step(
-        id=step_id,
+    return AgentStep(
+        id=agent_step_id,
         created_at=at,
-        session_id=session_id,
+        agent_session_id=agent_session_id,
         loop_id=loop_id,
-        type=StepType.SNAPSHOTTED,
+        type=AgentStepType.SNAPSHOTTED,
         actor=Actor.ENGINE,
         origin=Origin.ENGINE,
         header=SnapshotHeader(snapshot=snapshot),

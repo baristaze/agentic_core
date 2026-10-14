@@ -14,42 +14,42 @@ from pathlib import Path
 
 import pytest
 
-from acme.infra.base import new_id
-from acme.infra.docker import DockerReply, docker
-from acme.infra.workspaces import (
+from acme.infra.agent_workspaces import (
+    AgentWorkspace,
+    AgentWorkspaceBase,
     EgressMode,
     EgressPolicy,
     IsolationMode,
     IsolationRefused,
     IsolationSpec,
-    Workspace,
-    WorkspaceBase,
 )
-from acme.infra.workspaces.account import WorkspaceAccountImpl
-from acme.infra.workspaces.container import WorkspaceContainerImpl
-from acme.infra.workspaces.host import UNKEPT, WorkspaceHostImpl
+from acme.infra.agent_workspaces.account import AgentWorkspaceAccountImpl
+from acme.infra.agent_workspaces.container import AgentWorkspaceContainerImpl
+from acme.infra.agent_workspaces.host import UNKEPT, AgentWorkspaceHostImpl
+from acme.infra.base import new_id
+from acme.infra.docker import DockerReply, docker
 
 NONE = EgressPolicy(mode=EgressMode.NONE)
 OPEN = EgressPolicy(mode=EgressMode.OPEN)
 IMAGE = "python:3.14-slim"
-BASE = WorkspaceBase(image=IMAGE, setup=("echo layer > /opt/tool",), egress=OPEN)
+BASE = AgentWorkspaceBase(image=IMAGE, setup=("echo layer > /opt/tool",), egress=OPEN)
 
 
 def on(
-    mode: IsolationMode, base: WorkspaceBase = BASE, egress: EgressPolicy = OPEN
+    mode: IsolationMode, base: AgentWorkspaceBase = BASE, egress: EgressPolicy = OPEN
 ) -> IsolationSpec:
     return IsolationSpec(mode=mode, egress=egress, base=base)
 
 
-@pytest.mark.parametrize("base", [BASE, WorkspaceBase(image=IMAGE)], ids=["setup", "image"])
+@pytest.mark.parametrize("base", [BASE, AgentWorkspaceBase(image=IMAGE)], ids=["setup", "image"])
 async def test_a_host_directory_and_an_account_refuse_a_base_and_make_nothing(
-    tmp_path: Path, base: WorkspaceBase
+    tmp_path: Path, base: AgentWorkspaceBase
 ) -> None:
     """A directory's commands write outside it, so no base's snapshot can
     start one, and it has no image: refused, before its directory is made."""
     for provider, mode in (
-        (WorkspaceHostImpl(tmp_path / "workspaces"), IsolationMode.HOST),
-        (WorkspaceAccountImpl(tmp_path / "workspaces", "acme-agent"), IsolationMode.ACCOUNT),
+        (AgentWorkspaceHostImpl(tmp_path / "workspaces"), IsolationMode.HOST),
+        (AgentWorkspaceAccountImpl(tmp_path / "workspaces", "acme-agent"), IsolationMode.ACCOUNT),
     ):
         with pytest.raises(IsolationRefused, match="cannot start from a base") as refused:
             await provider.prepare(new_id(), new_id(), on(mode, base))
@@ -70,8 +70,8 @@ async def test_the_container_provider_refuses_what_it_cannot_hold_before_docker(
         calls.append(args)
         return DockerReply(0, b"", b"")
 
-    monkeypatch.setattr("acme.infra.workspaces.container.docker", recorded)
-    provider = WorkspaceContainerImpl(IMAGE, timedelta(seconds=5))
+    monkeypatch.setattr("acme.infra.agent_workspaces.container.docker", recorded)
+    provider = AgentWorkspaceContainerImpl(IMAGE, timedelta(seconds=5))
     listed = BASE.model_copy(
         update={"egress": EgressPolicy(mode=EgressMode.ALLOWLIST, hosts=("pypi.org",))}
     )
@@ -90,7 +90,7 @@ def docker_runs() -> bool:
     return reply.returncode == 0
 
 
-async def inside(workspace: Workspace, *argv: str) -> tuple[int | None, str]:
+async def inside(workspace: AgentWorkspace, *argv: str) -> tuple[int | None, str]:
     reply = await docker("exec", workspace.location, *argv, bound=timedelta(seconds=120))
     return reply.code, reply.stdout.decode()
 
@@ -101,10 +101,10 @@ async def test_a_container_on_a_base_starts_on_its_setup_and_keeps_its_own_files
     """The setup's layer is in every container on the base, and its files
     seed a new volume alone: a workspace found again after a release keeps
     what it wrote, and gets the setup's layer back."""
-    provider = WorkspaceContainerImpl(IMAGE, timedelta(seconds=300))
-    org, build_id, workspace_id = new_id(), new_id(), new_id()
+    provider = AgentWorkspaceContainerImpl(IMAGE, timedelta(seconds=300))
+    org, build_id, agent_workspace_id = new_id(), new_id(), new_id()
     build = await provider.prepare(
-        org, build_id, on(IsolationMode.CONTAINER, WorkspaceBase(image=IMAGE), NONE)
+        org, build_id, on(IsolationMode.CONTAINER, AgentWorkspaceBase(image=IMAGE), NONE)
     )
     try:
         setup = "echo layer > /opt/tool && echo seed > /workspace/seed && rm /etc/issue"
@@ -114,7 +114,7 @@ async def test_a_container_on_a_base_starts_on_its_setup_and_keeps_its_own_files
         await provider.purge(org, build_id)
     spec = on(IsolationMode.CONTAINER, egress=NONE)
     try:
-        workspace = await provider.prepare(org, workspace_id, spec, base=base)
+        workspace = await provider.prepare(org, agent_workspace_id, spec, base=base)
         assert await inside(workspace, "cat", "/opt/tool", "/workspace/seed") == (
             0,
             "layer\nseed\n",
@@ -123,8 +123,8 @@ async def test_a_container_on_a_base_starts_on_its_setup_and_keeps_its_own_files
         await inside(workspace, "sh", "-c", "echo mine > /workspace/seed && rm /opt/tool")
         await provider.release(workspace)
 
-        again = await provider.prepare(org, workspace_id, spec, base=base)
+        again = await provider.prepare(org, agent_workspace_id, spec, base=base)
 
         assert await inside(again, "cat", "/opt/tool", "/workspace/seed") == (0, "layer\nmine\n")
     finally:
-        await provider.purge(org, workspace_id)
+        await provider.purge(org, agent_workspace_id)

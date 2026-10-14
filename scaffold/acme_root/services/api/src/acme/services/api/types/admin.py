@@ -146,8 +146,8 @@ class UsageRecordView(View):
     """One model call a provider billed, as the ledger keeps it: ids, tokens
     by disjoint class, reference cost in millionths (null when no price
     applied), the provider's latency, and the labels of what served it. It
-    holds no content, so it reads the same in every storage mode. `step_id`
-    is the call's response step; `hold_id` its hold; `tree_id` the
+    holds no content, so it reads the same in every storage mode. `agent_step_id`
+    is the call's response step; `spend_hold_id` its hold; `tree_id` the
     session's tree; `kind_version` the agent kind's version the session
     ran. `settled_whole` marks a call whose usage was never reported whole
     (a broken stream, a lost run): its cost is its whole hold, and its
@@ -155,11 +155,11 @@ class UsageRecordView(View):
 
     id: UUID
     created_at: datetime
-    hold_id: UUID
-    session_id: UUID
+    spend_hold_id: UUID
+    agent_session_id: UUID
     tree_id: UUID
     loop_id: UUID
-    step_id: UUID
+    agent_step_id: UUID
     agent_kind: str
     kind_version: int
     role: str
@@ -198,14 +198,14 @@ class LoopUsageView(View):
     rollup: UsageRollupView
 
 
-class SessionUsageView(View):
+class AgentSessionUsageView(View):
     """A page of a session's usage records, oldest first, with the rollup of
     each loop, in the order it first called, and of the whole session. The
     rollups cover every record, whatever the page; `has_more_loops` says the
     session ran more loops than `loops` holds. With `next_cursor`, the next
     page of `items` starts there."""
 
-    session_id: UUID
+    agent_session_id: UUID
     items: list[UsageRecordView]
     next_cursor: str | None
     loops: list[LoopUsageView]

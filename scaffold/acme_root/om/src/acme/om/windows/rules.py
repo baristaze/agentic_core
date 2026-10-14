@@ -29,12 +29,9 @@ from uuid import UUID
 
 from acme.infra.base import thaw_mapping
 from acme.integrations.model_providers.calls import Message, ModelCall, OutputSchema, ToolSpec
-from acme.om.attribution.rules import trust_of
-from acme.om.attribution.types.authority import RequestAttribution, Trust
-from acme.om.budgets.types.exposure import CacheWrite, CallShape, PromptCount, PromptSize
-from acme.om.models.types.fill import MAIN, SUMMARIZER, Fill, ModelRole, OutputShape
-from acme.om.steps.rules import completes
-from acme.om.steps.types.content import (
+from acme.om.agent_steps.rules import completes
+from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
+from acme.om.agent_steps.types.content import (
     Attachment,
     Block,
     DocumentBlock,
@@ -45,8 +42,7 @@ from acme.om.steps.types.content import (
     ToolResultBlock,
     ToolUseBlock,
 )
-from acme.om.steps.types.header import (
-    ArtifactRef,
+from acme.om.agent_steps.types.header import (
     ControlCommand,
     ControlHeader,
     InputHeader,
@@ -54,10 +50,14 @@ from acme.om.steps.types.header import (
     ModelResponseHeader,
     SummaryHeader,
     SwitchedHeader,
+    ToolOutputRef,
     ToolRequestHeader,
     ToolResponseHeader,
 )
-from acme.om.steps.types.step import Actor, Origin, Step, StepType
+from acme.om.attribution.rules import trust_of
+from acme.om.attribution.types.authority import RequestAttribution, Trust
+from acme.om.language_models.types.fill import MAIN, SUMMARIZER, Fill, ModelRole, OutputShape
+from acme.om.spend_budgets.types.exposure import CacheWrite, CallShape, PromptCount, PromptSize
 from acme.om.windows.types.kind import KindPrompts
 from acme.om.windows.types.pinned import PinnedItem, PinnedZone
 from acme.om.windows.types.policy import CompactionPolicy
@@ -79,7 +79,7 @@ STANDING_LEAD = "Standing instructions a principal set for this session. They ho
 """What opens the session's standing text, in the system layer after the
 kind's prompts: whole on every request, never cut by a compaction."""
 
-READ_ARTIFACT = "read_artifact"
+READ_TOOL_OUTPUT = "read_tool_output"
 """The engine's tool that reads a result kept whole outside the window, by
 the handle a notice or a stub names: the tool both name to the model."""
 
@@ -90,12 +90,14 @@ PINNED_LEAD = (
 EARLIER = "Earlier steps of this session are not shown here."
 CONTINUE = "Go on from the record above."
 
-DELIVERABLE = frozenset({StepType.MESSAGE, StepType.EVENT, StepType.ENVIRONMENT_CHANGED})
+DELIVERABLE = frozenset(
+    {AgentStepType.MESSAGE, AgentStepType.EVENT, AgentStepType.ENVIRONMENT_CHANGED}
+)
 """What a model request delivers to the model: what arrived from outside the
 loop, and the notice that the world under it changed."""
 
 
-def delivers(step: Step) -> bool:
+def delivers(step: AgentStep) -> bool:
     """Whether a model request delivers a step: it is `DELIVERABLE`, and no
     job's completion, which the response written from it delivers."""
     return step.type in DELIVERABLE and completes(step) is None
@@ -107,7 +109,7 @@ Role = Literal["user", "assistant"]
 # The two trust tiers.
 
 
-def is_instruction(step: Step) -> bool:
+def is_instruction(step: AgentStep) -> bool:
     """Whether an input renders as an instruction, as attribution's one rule
     of the two tiers says: a principal's message, a parent's message to its
     child, the standing text the session's maker pinned through the inbox,
@@ -116,11 +118,15 @@ def is_instruction(step: Step) -> bool:
     return trust_of(step) is Trust.INSTRUCTION
 
 
-def pins(step: Step) -> bool:
+def pins(step: AgentStep) -> bool:
     """Whether a step feeds the pinned zone: a message that instructs, which
     a principal wrote or a parent sent its child, never the engine's
     notice."""
-    return step.type is StepType.MESSAGE and step.actor is not Actor.ENGINE and is_instruction(step)
+    return (
+        step.type is AgentStepType.MESSAGE
+        and step.actor is not Actor.ENGINE
+        and is_instruction(step)
+    )
 
 
 def escape(text: str) -> str:
@@ -171,13 +177,13 @@ def _part_chars(part: ResultPart, policy: CompactionPolicy) -> int:
     return len(part.text) if isinstance(part, TextBlock) else policy.step_overhead
 
 
-def result_chars(step: Step) -> int:
+def result_chars(step: AgentStep) -> int:
     """The characters of a tool response's result text."""
     result = step.as_tool_response()
     return sum(len(part.text) for part in result.parts if isinstance(part, TextBlock))
 
 
-def step_chars(step: Step, policy: CompactionPolicy) -> int:
+def step_chars(step: AgentStep, policy: CompactionPolicy) -> int:
     """An estimate of the characters a step adds to a request."""
     total = policy.step_overhead
     for block in step.content.blocks:
@@ -236,25 +242,25 @@ class Exchanges:
     that renders (`rendered`). A response cut short or abandoned renders
     nothing, so the inputs its request carried are still new."""
 
-    by_id: Mapping[UUID, Step]
-    responses: Mapping[UUID, Step]
-    answers: Mapping[tuple[UUID, str], Step]
-    delivered_by: Mapping[UUID, tuple[Step, ...]]
+    by_id: Mapping[UUID, AgentStep]
+    responses: Mapping[UUID, AgentStep]
+    answers: Mapping[tuple[UUID, str], AgentStep]
+    delivered_by: Mapping[UUID, tuple[AgentStep, ...]]
     delivered: frozenset[UUID]
     rendered: frozenset[UUID]
 
-    def is_response(self, step: Step) -> bool:
+    def is_response(self, step: AgentStep) -> bool:
         return step.responds_to is not None and self.responses.get(step.responds_to) is step
 
 
-def exchanges(steps: Sequence[Step]) -> Exchanges:
+def exchanges(steps: Sequence[AgentStep]) -> Exchanges:
     by_id = {step.id: step for step in steps}
     requests = {
         step.id: step
         for step in steps
         if isinstance(step.header, ModelRequestHeader) and step.header.role == MAIN
     }
-    responses: dict[UUID, Step] = {}
+    responses: dict[UUID, AgentStep] = {}
     for step in steps:
         header = step.header
         complete = isinstance(header, ModelResponseHeader) and not (
@@ -264,9 +270,9 @@ def exchanges(steps: Sequence[Step]) -> Exchanges:
         if complete and asked is not None and asked in requests:
             responses[asked] = step
     answered = {response.id for response in responses.values()}
-    answers: dict[tuple[UUID, str], Step] = {}
+    answers: dict[tuple[UUID, str], AgentStep] = {}
     for step in steps:
-        if step.type is not StepType.TOOL_RESPONSE or step.responds_to is None:
+        if step.type is not AgentStepType.TOOL_RESPONSE or step.responds_to is None:
             continue
         call = by_id.get(step.responds_to)
         if call is None or not isinstance(call.header, ToolRequestHeader):
@@ -289,17 +295,17 @@ def exchanges(steps: Sequence[Step]) -> Exchanges:
     return Exchanges(by_id, responses, answers, delivered_by, delivered, rendered)
 
 
-def _pointers(step: Step) -> tuple[UUID, ...]:
+def _pointers(step: AgentStep) -> tuple[UUID, ...]:
     """The steps a step must sit beside in any window that reads it: a
     response's request, the response a tool call came from, and the inputs
     a model request delivered."""
     pointed = (step.responds_to,) if step.responds_to is not None else ()
-    if step.type in (StepType.TOOL_REQUEST, StepType.MODEL_REQUEST):
+    if step.type in (AgentStepType.TOOL_REQUEST, AgentStepType.MODEL_REQUEST):
         pointed = (*pointed, *step.refs)
     return pointed
 
 
-def consistent_cuts(steps: Sequence[Step]) -> frozenset[int]:
+def consistent_cuts(steps: Sequence[AgentStep]) -> frozenset[int]:
     """Every index where a window over `steps` may begin or end: no step at
     or after it points at a step before it, so no cut there separates a tool
     request from its response, nor a message from what answers it."""
@@ -320,7 +326,7 @@ def consistent_cuts(steps: Sequence[Step]) -> frozenset[int]:
     return frozenset(cuts)
 
 
-def open_use(steps: Sequence[Step], ex: Exchanges) -> int | None:
+def open_use(steps: Sequence[AgentStep], ex: Exchanges) -> int | None:
     """The index of the first complete response with a tool use no tool
     response answers yet, or None when every call is answered."""
     for index, step in enumerate(steps):
@@ -331,24 +337,24 @@ def open_use(steps: Sequence[Step], ex: Exchanges) -> int | None:
     return None
 
 
-def latest_request_seq(steps: Sequence[Step]) -> int:
+def latest_request_seq(steps: Sequence[AgentStep]) -> int:
     """The seq of the latest model request of any role among `steps`, 0 when
     none: where attribution's range for the next request starts."""
-    return max((step.seq for step in steps if step.type is StepType.MODEL_REQUEST), default=0)
+    return max((step.seq for step in steps if step.type is AgentStepType.MODEL_REQUEST), default=0)
 
 
-def latest_summary(steps: Sequence[Step]) -> Step | None:
-    return next((step for step in reversed(steps) if step.type is StepType.SUMMARY), None)
+def latest_summary(steps: Sequence[AgentStep]) -> AgentStep | None:
+    return next((step for step in reversed(steps) if step.type is AgentStepType.SUMMARY), None)
 
 
-def summary_range(summary: Step) -> SummaryHeader:
+def summary_range(summary: AgentStep) -> SummaryHeader:
     header = summary.header
     if not isinstance(header, SummaryHeader):
         raise ValueError(f"step {summary.id} is no summary")
     return header
 
 
-def summary_text(steps: Sequence[Step], summary: Step) -> str:
+def summary_text(steps: Sequence[AgentStep], summary: AgentStep) -> str:
     """The text a summary stands for: the summarizer's reply it references.
     A summary copies nothing; the reply is written once, as a response."""
     by_id = {step.id: step for step in steps}
@@ -356,7 +362,7 @@ def summary_text(steps: Sequence[Step], summary: Step) -> str:
     return "" if reply is None else reply.as_text()
 
 
-def window_start(steps: Sequence[Step], summary: Step | None) -> int:
+def window_start(steps: Sequence[AgentStep], summary: AgentStep | None) -> int:
     """The index of the first step a main window reads verbatim: the first
     after the latest summary's range, or the session's first step."""
     if summary is None:
@@ -365,10 +371,10 @@ def window_start(steps: Sequence[Step], summary: Step | None) -> int:
     return next((index for index, step in enumerate(steps) if step.seq > last), len(steps))
 
 
-def _attempts(steps: Sequence[Step]) -> list[Step]:
+def _attempts(steps: Sequence[AgentStep]) -> list[AgentStep]:
     """Every compaction attempt that ended: a summarizer's request whose
     reply was recorded, whether a summary followed it or not."""
-    answered = {step.responds_to for step in steps if step.type is StepType.MODEL_RESPONSE}
+    answered = {step.responds_to for step in steps if step.type is AgentStepType.MODEL_RESPONSE}
     return [
         step
         for step in steps
@@ -378,7 +384,7 @@ def _attempts(steps: Sequence[Step]) -> list[Step]:
     ]
 
 
-def compact_requested(steps: Sequence[Step]) -> bool:
+def compact_requested(steps: Sequence[AgentStep]) -> bool:
     """Whether a principal asked for a compaction no attempt has answered
     yet. A failed attempt answers it too: the principal asks again."""
     attempts = _attempts(steps)
@@ -391,7 +397,7 @@ def compact_requested(steps: Sequence[Step]) -> bool:
     )
 
 
-def compaction_failed(steps: Sequence[Step]) -> bool:
+def compaction_failed(steps: Sequence[AgentStep]) -> bool:
     """Whether a compaction was attempted since the latest summary and wrote
     none: its reply was cut, refused, or empty. Until the next summary, a
     window that still fits its model is read uncompacted, and the
@@ -408,15 +414,18 @@ def _excerpt(text: str, policy: CompactionPolicy) -> str:
     return text if len(text) <= policy.digest_chars else text[: policy.digest_chars] + "…"
 
 
-def _item(step: Step, whole: bool, policy: CompactionPolicy) -> PinnedItem:
+def _item(step: AgentStep, whole: bool, policy: CompactionPolicy) -> PinnedItem:
     text = step.as_text()
     return PinnedItem(
-        step_id=step.id, seq=step.seq, text=text if whole else _excerpt(text, policy), whole=whole
+        agent_step_id=step.id,
+        seq=step.seq,
+        text=text if whole else _excerpt(text, policy),
+        whole=whole,
     )
 
 
 def pinned_zone(
-    steps: Sequence[Step], through_seq: int | None, policy: CompactionPolicy
+    steps: Sequence[AgentStep], through_seq: int | None, policy: CompactionPolicy
 ) -> PinnedZone:
     """The pinned zone as of a summary that stands for the history through
     `through_seq`, built from principal-authored messages alone. The first
@@ -457,7 +466,7 @@ def pinned_zone(
 
 
 def _pinned_element(name: str, item: PinnedItem) -> str:
-    labels: dict[str, object] = {"seq": item.seq, "step": item.step_id}
+    labels: dict[str, object] = {"seq": item.seq, "step": item.agent_step_id}
     if not item.whole:
         labels["excerpt"] = "true"
     return _element(name, item.text, labels)
@@ -512,10 +521,10 @@ def _output_schema(kind: KindPrompts, fill: Fill) -> OutputSchema | None:
     return kind.output_schema
 
 
-def _origin(step: Step) -> str:
-    if step.type is StepType.EVENT:
+def _origin(step: AgentStep) -> str:
+    if step.type is AgentStepType.EVENT:
         return "event"
-    if step.type is StepType.ENVIRONMENT_CHANGED:
+    if step.type is AgentStepType.ENVIRONMENT_CHANGED:
         return "environment"
     return "message"
 
@@ -538,14 +547,14 @@ class _Walk:
         if blocks:
             self.messages.append((role, blocks))
 
-    def files_of(self, step: Step, blocks: Sequence[Block | ResultPart]) -> list[Block]:
+    def files_of(self, step: AgentStep, blocks: Sequence[Block | ResultPart]) -> list[Block]:
         held = {attachment.id: attachment for attachment in step.children.attachments}
         named = _files(blocks)
         for block in named:
             self.attachments.setdefault(block.attachment_id, held[block.attachment_id])
         return list(named)
 
-    def labelled(self, step: Step) -> list[Block]:
+    def labelled(self, step: AgentStep) -> list[Block]:
         """An input's files, each after a label that names it as data: its
         name, the input it came with, that input's step, and the
         attachment's id, which a bounded read of it names."""
@@ -565,7 +574,7 @@ class _Walk:
             labelled.extend((label, block))
         return labelled
 
-    def deliverable(self, step: Step) -> list[Block]:
+    def deliverable(self, step: AgentStep) -> list[Block]:
         files = self.labelled(step)
         if is_instruction(step):
             said: list[Block] = [
@@ -584,15 +593,15 @@ class _Walk:
         )
         return [quoted, *files]
 
-    def result(self, use: ToolUseBlock, answer: Step, elided: bool) -> ToolResultBlock:
+    def result(self, use: ToolUseBlock, answer: AgentStep, elided: bool) -> ToolResultBlock:
         result = answer.as_tool_response()
         header = answer.header
-        artifact = header.artifact if isinstance(header, ToolResponseHeader) else None
+        tool_output = header.tool_output if isinstance(header, ToolResponseHeader) else None
         if elided:
-            parts: tuple[ResultPart, ...] = (TextBlock(text=_stub(answer, artifact)),)
-        elif artifact is not None:
+            parts: tuple[ResultPart, ...] = (TextBlock(text=_stub(answer, tool_output)),)
+        elif tool_output is not None:
             head, tail, *rest = result.parts
-            notice = TextBlock(text=_artifact_notice(artifact, head, tail))
+            notice = TextBlock(text=_tool_output_notice(tool_output, head, tail))
             parts = (head, notice, tail, *rest)
         else:
             parts = result.parts
@@ -600,7 +609,7 @@ class _Walk:
         return ToolResultBlock(tool_use_id=use.id, parts=parts, is_error=result.is_error)
 
 
-def _author(step: Step) -> dict[str, object]:
+def _author(step: AgentStep) -> dict[str, object]:
     """The label of who wrote a participant's message, which is data: the
     person, by id, never their name."""
     header = step.header
@@ -609,42 +618,46 @@ def _author(step: Step) -> dict[str, object]:
     return {}
 
 
-def _stub(answer: Step, artifact: ArtifactRef | None) -> str:
-    size = result_chars(answer) if artifact is None else artifact.characters
-    kept = f"artifact {artifact.id}" if artifact is not None else f"step {answer.id} of the history"
+def _stub(answer: AgentStep, tool_output: ToolOutputRef | None) -> str:
+    size = result_chars(answer) if tool_output is None else tool_output.characters
+    kept = (
+        f"tool output {tool_output.id}"
+        if tool_output is not None
+        else f"step {answer.id} of the history"
+    )
     return (
         f"[A tool result of {size} characters, elided once read. It is kept whole as {kept}; "
-        f"{READ_ARTIFACT} reads it by that handle.]"
+        f"{READ_TOOL_OUTPUT} reads it by that handle.]"
     )
 
 
-def _artifact_notice(
-    artifact: ArtifactRef, head: ResultPart, tail: ResultPart, what: str = "result"
+def _tool_output_notice(
+    tool_output: ToolOutputRef, head: ResultPart, tail: ResultPart, what: str = "result"
 ) -> str:
     shown = sum(len(part.text) for part in (head, tail) if isinstance(part, TextBlock))
     return (
-        f"[{artifact.characters - shown} characters between the head above and the tail "
-        f"below are not shown. The whole {what} is artifact {artifact.id}, "
-        f"{artifact.characters} characters; {READ_ARTIFACT} pages through it by that handle.]"
+        f"[{tool_output.characters - shown} characters between the head above and the tail "
+        f"below are not shown. The whole {what} is tool output {tool_output.id}, "
+        f"{tool_output.characters} characters; {READ_TOOL_OUTPUT} pages through it by that handle.]"
     )
 
 
-def _input_text(step: Step) -> str:
+def _input_text(step: AgentStep) -> str:
     """An input's text as the model reads it: a child's report above the
     size bound is its head, the notice of what is not shown and where it is
     kept, and its tail."""
     header = step.header
-    if not isinstance(header, InputHeader) or header.artifact is None:
+    if not isinstance(header, InputHeader) or header.tool_output is None:
         return step.as_text()
     texts = [block for block in step.content.blocks if isinstance(block, TextBlock)]
     head, tail = texts[0], texts[-1]
-    notice = _artifact_notice(header.artifact, head, tail, "report")
+    notice = _tool_output_notice(header.tool_output, head, tail, "report")
     return "\n".join((head.text, notice, tail.text))
 
 
 def _conversation(
-    window: Sequence[Step], ex: Exchanges, elide_before: int | None, policy: CompactionPolicy
-) -> tuple[_Walk, list[Step]]:
+    window: Sequence[AgentStep], ex: Exchanges, elide_before: int | None, policy: CompactionPolicy
+) -> tuple[_Walk, list[AgentStep]]:
     """The window's turns, and the inputs in it no request has delivered.
     A request's inputs render as the turn before its response, and a
     response's tool results as the turn after it, in the order of its uses.
@@ -666,7 +679,7 @@ def _conversation(
         # given here, so no block's place is read again against a turn that
         # lost an empty text.
         said: list[Block] = []
-        uses: list[tuple[ToolUseBlock, Step]] = []
+        uses: list[tuple[ToolUseBlock, AgentStep]] = []
         for block in step.as_turn():
             if isinstance(block, ThinkingBlock):
                 said.append(block.model_copy(update={"at": None}))
@@ -756,7 +769,7 @@ def _close(messages: list[tuple[Role, list[Block]]], plan: str | None) -> int:
 
 
 def _used(
-    steps: Sequence[Step],
+    steps: Sequence[AgentStep],
     start: int,
     ex: Exchanges,
     fill: Fill,
@@ -785,14 +798,14 @@ def _used(
     return tokens(len(prompt_bytes(call, attachments)), policy)
 
 
-def _edge(steps: Sequence[Step], index: int) -> int:
+def _edge(steps: Sequence[AgentStep], index: int) -> int:
     """The seq at `index`, or the next one a step would take past the end."""
     if index < len(steps):
         return steps[index].seq
     return steps[-1].seq + 1 if steps else 1
 
 
-def thinking_held(steps: Sequence[Step]) -> bool:
+def thinking_held(steps: Sequence[AgentStep]) -> bool:
     """Whether the main role's next request runs with thinking off: the role
     switched while a tool-use cycle was open, and that cycle is open still.
     A cycle opens with a main response that asks for a tool and closes with
@@ -816,7 +829,7 @@ def thinking_held(steps: Sequence[Step]) -> bool:
 
 
 def render_main(
-    steps: Sequence[Step],
+    steps: Sequence[AgentStep],
     kind: KindPrompts,
     fill: Fill,
     fill_set_version: int,
@@ -866,7 +879,7 @@ def render_main(
 
 
 def render_side(
-    steps: Sequence[Step],
+    steps: Sequence[AgentStep],
     kind: KindPrompts,
     role: ModelRole,
     fill: Fill,
@@ -918,24 +931,24 @@ def render_side(
 def request_step(
     rendered: RenderedRequest,
     attribution: RequestAttribution,
-    session_id: UUID,
+    agent_session_id: UUID,
     loop_id: UUID,
-    step_id: UUID,
+    agent_step_id: UUID,
     at: datetime,
     *,
-    hold_id: UUID | None = None,
-) -> Step:
+    spend_hold_id: UUID | None = None,
+) -> AgentStep:
     """The `model_request` a rendered request is recorded as: it references
     the inputs it delivers and names its window, its prompt's hash, who
     spoke and who pays as attribution answered for it, and the hold the gate
     reserved its worst case by."""
     window = rendered.window
-    return Step(
-        id=step_id,
+    return AgentStep(
+        id=agent_step_id,
         created_at=at,
-        session_id=session_id,
+        agent_session_id=agent_session_id,
         loop_id=loop_id,
-        type=StepType.MODEL_REQUEST,
+        type=AgentStepType.MODEL_REQUEST,
         actor=Actor.ENGINE,
         origin=Origin.ENGINE,
         refs=rendered.delivers,
@@ -948,7 +961,7 @@ def request_step(
             left_edge=window.left_edge,
             summary_id=window.summary_id,
             prompt_hash=rendered.prompt_hash,
-            hold_id=hold_id,
+            spend_hold_id=spend_hold_id,
         ),
     )
 
@@ -969,7 +982,7 @@ def fits(window: ContextWindow, fill: Fill) -> bool:
 
 
 def fold_cut(
-    steps: Sequence[Step],
+    steps: Sequence[AgentStep],
     main: Fill,
     summarizer: Fill,
     policy: CompactionPolicy,
@@ -1023,21 +1036,21 @@ def fold_cut(
     return fitting[-1] if fitting else candidates[0]
 
 
-def _clipped(text: str, step: Step, policy: CompactionPolicy) -> str:
+def _clipped(text: str, step: AgentStep, policy: CompactionPolicy) -> str:
     if len(text) <= policy.elide_over:
         return text
     rest = len(text) - policy.elide_over
     return f"{text[: policy.elide_over]}\n[{rest} more characters; the whole is step {step.id}.]"
 
 
-def _transcript(step: Step, ex: Exchanges, policy: CompactionPolicy) -> TextBlock:
+def _transcript(step: AgentStep, ex: Exchanges, policy: CompactionPolicy) -> TextBlock:
     """One step of a fold as the summarizer reads it: data, clipped."""
     if delivers(step):
         text = _clipped(step.as_text(), step, policy)
         return data_block(
             _origin(step), text, seq=step.seq, actor=step.actor.value, via=step.origin.value
         )
-    if step.type is StepType.TOOL_RESPONSE:
+    if step.type is AgentStepType.TOOL_RESPONSE:
         call = ex.by_id[step.responds_to] if step.responds_to is not None else None
         tool = (
             call.header.tool
@@ -1055,7 +1068,7 @@ def _transcript(step: Step, ex: Exchanges, policy: CompactionPolicy) -> TextBloc
 
 
 def summarizer_call(
-    steps: Sequence[Step], cut: int, fill: Fill, policy: CompactionPolicy
+    steps: Sequence[AgentStep], cut: int, fill: Fill, policy: CompactionPolicy
 ) -> ModelCall:
     """The summarizer's request for a fold of the main window up to `cut`:
     the previous summary and every step of the fold that renders, all of it
@@ -1090,7 +1103,7 @@ def summarizer_call(
     )
 
 
-def fold_range(steps: Sequence[Step], cut: int) -> tuple[int, int]:
+def fold_range(steps: Sequence[AgentStep], cut: int) -> tuple[int, int]:
     """The range of the history a new summary stands for: from where the
     previous one began, or the session's first step, to the last step it
     folds."""
@@ -1102,16 +1115,16 @@ def fold_range(steps: Sequence[Step], cut: int) -> tuple[int, int]:
 # Large results.
 
 
-def artifact_key(session_id: UUID, artifact_id: UUID) -> str:
-    """Where an artifact lives in its bucket, under the tenant's prefix the
-    buckets put first: by session, so a session's artifacts sit together."""
-    return f"agent-sessions/{session_id}/{artifact_id}"
+def tool_output_key(agent_session_id: UUID, tool_output_id: UUID) -> str:
+    """Where a tool output lives in its bucket, under the tenant's prefix the
+    buckets put first: by session, so a session's tool outputs sit together."""
+    return f"agent-sessions/{agent_session_id}/{tool_output_id}"
 
 
 def preview(
     result: ToolResultBlock, policy: CompactionPolicy
 ) -> tuple[str, tuple[ResultPart, ...]] | None:
-    """A result above the size bound as an artifact keeps it: the whole text,
+    """A result above the size bound as a tool output keeps it: the whole text,
     and the parts the step keeps, its head and its tail first, then what
     else it held. None when the result is within the bound."""
     whole = result_text(result)
@@ -1123,7 +1136,7 @@ def preview(
 
 
 def result_text(result: ToolResultBlock) -> str:
-    """A tool result's whole text, as an artifact keeps it and a read of it
+    """A tool result's whole text, as a tool output keeps it and a read of it
     answers: its text parts, a line apart."""
     return "\n".join(part.text for part in result.parts if isinstance(part, TextBlock))
 
@@ -1138,8 +1151,10 @@ def clip(whole: str, policy: CompactionPolicy) -> tuple[TextBlock, TextBlock] | 
     return head, tail
 
 
-def artifact_page(text: str, offset: int, limit: int, policy: CompactionPolicy) -> tuple[str, bool]:
-    """The characters of an artifact from `offset`, at most `limit` and the
+def tool_output_page(
+    text: str, offset: int, limit: int, policy: CompactionPolicy
+) -> tuple[str, bool]:
+    """The characters of a tool output from `offset`, at most `limit` and the
     policy's page, and whether more follow."""
     size = max(1, min(limit, policy.page_max))
     start = max(0, offset)

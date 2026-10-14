@@ -1,7 +1,7 @@
 """Pure rules of a loop's limits of time, steps, and streaks: what each one
 measures, and what it does when it trips. Values in, values out; no clock,
 no storage. The budget, a guard too, trips at the gate
-(`budgets.rules.budget_park`).
+(`spend_budgets.rules.spend_budget_park`).
 
 | Limit | Measures | Kind | When it trips |
 |---|---|---|---|
@@ -33,9 +33,8 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
-from acme.om.base import Platform
-from acme.om.models.types.fill import MAIN
-from acme.om.steps.types.header import (
+from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
+from acme.om.agent_steps.types.header import (
     LoopOutcome,
     ModelRequestHeader,
     ModelResponseHeader,
@@ -44,7 +43,8 @@ from acme.om.steps.types.header import (
     ParkReason,
     ToolRequestHeader,
 )
-from acme.om.steps.types.step import Step, StepType
+from acme.om.base import Platform
+from acme.om.language_models.types.fill import MAIN
 
 STEP_GUARD_CEILING = 1000
 """The most model calls a step guard lets one loop make between two looks
@@ -58,7 +58,7 @@ DEADLINE_UNLOCK = "deadline"
 
 
 class Limit(StrEnum):
-    BUDGET = "budget"
+    SPEND_BUDGET = "spend_budget"
     DEADLINE = "deadline"
     STEP_GUARD = "step_guard"
     ERROR_STREAK = "error_streak"
@@ -73,7 +73,7 @@ class LimitKind(StrEnum):
 
 
 LIMIT_KINDS: dict[Limit, LimitKind] = {
-    Limit.BUDGET: LimitKind.GUARD,
+    Limit.SPEND_BUDGET: LimitKind.GUARD,
     Limit.DEADLINE: LimitKind.GUARD,
     Limit.STEP_GUARD: LimitKind.GUARD,
     Limit.ERROR_STREAK: LimitKind.BOUND,
@@ -143,7 +143,7 @@ def deadline_park() -> Park:
     return Park(reason=ParkReason.PERSON, unlock=DEADLINE_UNLOCK)
 
 
-def tallied(tally: LoopTally, step: Step) -> LoopTally:
+def tallied(tally: LoopTally, step: AgentStep) -> LoopTally:
     """The tally once `step` is read. A truncated or abandoned response is
     continued or retried, so it is no turn of its own."""
     header = step.header
@@ -170,7 +170,7 @@ def tallied(tally: LoopTally, step: Step) -> LoopTally:
         call = (header.tool, header.input_hash)
         repeats = tally.repeats + 1 if call == tally.last_call else 1
         return tally.model_copy(update={"repeats": repeats, "last_call": call})
-    if step.type is StepType.TOOL_RESPONSE:
+    if step.type is AgentStepType.TOOL_RESPONSE:
         failed = step.as_tool_response().is_error
         return tally.model_copy(update={"tool_errors": tally.tool_errors + 1 if failed else 0})
     if isinstance(header, ParkedHeader) and header.park == step_guard_park():
@@ -182,7 +182,7 @@ def tallied(tally: LoopTally, step: Step) -> LoopTally:
     return tally
 
 
-def tally_loop(steps: Iterable[Step], loop_id: UUID) -> LoopTally:
+def tally_loop(steps: Iterable[AgentStep], loop_id: UUID) -> LoopTally:
     """The tally of one loop: its own steps alone, in `seq` order, so every
     loop starts each count afresh."""
     tally = LoopTally()

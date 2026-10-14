@@ -14,9 +14,9 @@ import pytest
 from acme.om.base import new_id, utcnow
 from acme.om.exceptions import KeyRevoked, NotFound, TenantMismatch
 from acme.om.privacy.storage import PrivacyStorageInterface
-from acme.om.privacy.types.session_privacy import (
-    SessionKey,
-    SessionPrivacy,
+from acme.om.privacy.types.agent_session_privacy import (
+    AgentSessionKey,
+    AgentSessionPrivacy,
     StorageMode,
     StoragePolicy,
 )
@@ -39,20 +39,23 @@ in this module that presents another tenant's."""
 MEMORY_ONLY = StoragePolicy(mode=StorageMode.MEMORY_ONLY, keep_shape=False)
 
 
-def make_record(session_id: UUID, policy: StoragePolicy | None = None) -> SessionPrivacy:
-    return SessionPrivacy(
-        id=new_id(), session_id=session_id, created_at=utcnow(), policy=policy or StoragePolicy()
+def make_record(agent_session_id: UUID, policy: StoragePolicy | None = None) -> AgentSessionPrivacy:
+    return AgentSessionPrivacy(
+        id=new_id(),
+        agent_session_id=agent_session_id,
+        created_at=utcnow(),
+        policy=policy or StoragePolicy(),
     )
 
 
 def make_key(
-    session_id: UUID, version: int, wrapped_at_ago: timedelta = timedelta(0)
-) -> SessionKey:
+    agent_session_id: UUID, version: int, wrapped_at_ago: timedelta = timedelta(0)
+) -> AgentSessionKey:
     now = utcnow()
-    return SessionKey(
+    return AgentSessionKey(
         id=new_id(),
         created_at=now,
-        session_id=session_id,
+        agent_session_id=agent_session_id,
         version=version,
         wrapped=os.urandom(48),
         wrapping="memory:1",
@@ -60,10 +63,14 @@ def make_key(
     )
 
 
-def revocation(session_id: UUID) -> SessionPrivacy:
+def revocation(agent_session_id: UUID) -> AgentSessionPrivacy:
     now = utcnow()
-    return SessionPrivacy(
-        id=new_id(), session_id=session_id, created_at=now, revoked_at=now, revoked_by=new_id()
+    return AgentSessionPrivacy(
+        id=new_id(),
+        agent_session_id=agent_session_id,
+        created_at=now,
+        revoked_at=now,
+        revoked_by=new_id(),
     )
 
 

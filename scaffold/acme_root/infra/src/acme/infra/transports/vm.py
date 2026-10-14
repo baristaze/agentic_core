@@ -5,9 +5,10 @@ from datetime import timedelta
 from pathlib import Path
 from uuid import UUID
 
+from acme.infra.agent_workspaces import AgentWorkspace, IsolationMode
+from acme.infra.agent_workspaces.vm import WORKSPACE
 from acme.infra.base import utcnow
 from acme.infra.exceptions import BackendFailed, InfraNotFound
-from acme.infra.machines import MachinesInterface
 from acme.infra.secrets import SecretsInterface
 from acme.infra.transports import (
     CommandResult,
@@ -25,8 +26,7 @@ from acme.infra.transports.container import END_TREE, READ_FROM
 from acme.infra.transports.injection import BASE_LANG, injected
 from acme.infra.transports.processes import drive, end_tree, spawn
 from acme.infra.transports.records import RecordBook, opened_result, sealed_record
-from acme.infra.workspaces import IsolationMode, Workspace
-from acme.infra.workspaces.vm import WORKSPACE
+from acme.infra.vms import VmsInterface
 
 LAUNCHER = r"""
 pidfile=$1 folder=$2
@@ -43,7 +43,7 @@ exec "$@" < /dev/null
 """
 """Reads the command's variables from its input, one `NAME=base64` a line
 until an empty one, so no value is on a command line another process
-lists; makes a home named from the machine's root absolute; writes the
+lists; makes a home named from the VM's root absolute; writes the
 command's own pid where the end of its tree finds it; then becomes the
 command, in its folder, with nothing on its input."""
 
@@ -71,12 +71,12 @@ def variables(env: Mapping[str, str]) -> bytes:
 
 
 class TransportVmImpl(TransportInterface):
-    """Runs commands in a VM workspace through the channel its machines
+    """Runs commands in a VM workspace through the channel its VMs
     give. A command's environment inside is the guest's login, the
     workspace as its home, a locale, its own variables, and its injected
     secrets, passed on the command's input, never on a command line. The
-    command line that reaches the machine carries nothing of the engine's
-    environment. At the deadline the command's tree inside the machine ends,
+    command line that reaches the VM carries nothing of the engine's
+    environment. At the deadline the command's tree inside the VM ends,
     and the command line with it. Records and the epoch fence are kept on
     this host, beside the workspaces."""
 
@@ -85,24 +85,24 @@ class TransportVmImpl(TransportInterface):
         records: Path,
         secrets: SecretsInterface,
         broker: CredentialBrokerInterface,
-        machines: MachinesInterface,
+        vms: VmsInterface,
         timeout: timedelta,
     ) -> None:
         self._book = RecordBook(records)
         self._secrets = secrets
         self._broker = broker
-        self._machines = machines
+        self._vms = vms
         self._timeout = timeout
 
     async def run(
         self,
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         command: CommandSpec,
         on_output: OutputSink | None = None,
         *,
         seal: RecordSeal,
     ) -> CommandResult:
-        name = self._machine(workspace)
+        name = self._vm(workspace)
         await asyncio.to_thread(self._book.admit, workspace.id, command.epoch)
         folder = _inside(command.cwd)
         if utcnow() >= command.deadline:
@@ -111,7 +111,7 @@ class TransportVmImpl(TransportInterface):
             pidfile = f"/tmp/acme-{command.key.hex}.pid"
             async with injected(self._secrets, self._broker, workspace, command) as injection:
                 env = {"HOME": WORKSPACE, "LANG": BASE_LANG, **dict(command.env), **injection.env}
-                channel = self._machines.channel(name)
+                channel = self._vms.channel(name)
                 process = await spawn(
                     launch_argv(channel.argv, pidfile, folder, command.argv),
                     Path("/"),
@@ -127,7 +127,7 @@ class TransportVmImpl(TransportInterface):
                 process.stdin.close()
 
                 async def end_inside() -> None:
-                    await self._machines.run(
+                    await self._vms.run(
                         name, ("sh", "-c", END_TREE, "sh", pidfile), bound=self._timeout
                     )
 
@@ -160,22 +160,22 @@ class TransportVmImpl(TransportInterface):
         return result
 
     async def outcome(
-        self, workspace: Workspace, key: UUID, epoch: int, *, seal: RecordSeal
+        self, workspace: AgentWorkspace, key: UUID, epoch: int, *, seal: RecordSeal
     ) -> CommandResult | None:
-        self._machine(workspace)
+        self._vm(workspace)
         await asyncio.to_thread(self._book.admit, workspace.id, epoch)
         record = await asyncio.to_thread(self._book.read, workspace.id, key)
         return None if record is None else await opened_result(record, seal)
 
-    async def purge_records(self, workspace_id: UUID) -> None:
-        await asyncio.to_thread(self._book.purge, workspace_id)
+    async def purge_records(self, agent_workspace_id: UUID) -> None:
+        await asyncio.to_thread(self._book.purge, agent_workspace_id)
 
     async def read_file(
-        self, workspace: Workspace, path: str, max_bytes: int, offset: int = 0
+        self, workspace: AgentWorkspace, path: str, max_bytes: int, offset: int = 0
     ) -> bytes:
-        name = self._machine(workspace)
+        name = self._vm(workspace)
         start = file_offset(offset) + 1
-        reply = await self._machines.run(
+        reply = await self._vms.run(
             name,
             ("sh", "-c", READ_FROM, "sh", _inside(path), str(start), str(max_bytes)),
             bound=self._timeout,
@@ -184,19 +184,21 @@ class TransportVmImpl(TransportInterface):
             raise InfraNotFound(f"no file {path!r} in the workspace: {reply.reason()}")
         return reply.stdout
 
-    async def write_file(self, workspace: Workspace, path: str, data: bytes, epoch: int) -> None:
-        name = self._machine(workspace)
+    async def write_file(
+        self, workspace: AgentWorkspace, path: str, data: bytes, epoch: int
+    ) -> None:
+        name = self._vm(workspace)
         await asyncio.to_thread(self._book.admit, workspace.id, epoch)
-        reply = await self._machines.run(
+        reply = await self._vms.run(
             name, ("sh", "-c", WRITE, "sh", _inside(path)), stdin=data, bound=self._timeout
         )
         if not reply.ok:
-            raise BackendFailed("machine", "write", reply.reason())
+            raise BackendFailed("vm", "write", reply.reason())
 
-    async def list_files(self, workspace: Workspace, path: str, limit: int) -> list[FileEntry]:
-        name = self._machine(workspace)
+    async def list_files(self, workspace: AgentWorkspace, path: str, limit: int) -> list[FileEntry]:
+        name = self._vm(workspace)
         folder = _inside(path)
-        reply = await self._machines.run(
+        reply = await self._vms.run(
             name, ("sh", "-c", f'[ -d "$1" ] || exit 1\n{LIST}', "sh", folder), bound=self._timeout
         )
         if not reply.ok:
@@ -223,7 +225,7 @@ class TransportVmImpl(TransportInterface):
     async def close(self) -> None:
         return None
 
-    def _machine(self, workspace: Workspace) -> str:
+    def _vm(self, workspace: AgentWorkspace) -> str:
         require_mode(workspace, IsolationMode.VM, "vm")
         return workspace.location
 
@@ -231,14 +233,14 @@ class TransportVmImpl(TransportInterface):
 def launch_argv(
     channel: Sequence[str], pidfile: str, folder: str, argv: Sequence[str]
 ) -> list[str]:
-    """The command line that runs a command in the machine, through the
+    """The command line that runs a command in the VM, through the
     launcher."""
     return [*channel, "sh", "-c", LAUNCHER, "sh", pidfile, folder, *argv]
 
 
 def _inside(path: str) -> str:
     """The place `path` names under the workspace's folder, from the
-    machine's root. Inside the machine a link leads nowhere but the machine,
+    VM's root. Inside the VM a link leads nowhere but the VM,
     so the path alone is held."""
     relative = relative_path(path)
     return WORKSPACE if str(relative) == "." else f"{WORKSPACE}/{relative}"

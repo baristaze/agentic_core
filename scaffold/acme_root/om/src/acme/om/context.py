@@ -64,7 +64,7 @@ class Permission(StrEnum):
     WRITE = "write"
     MANAGE_MEMBERS = "manage_members"
     MANAGE_KEYS = "manage_keys"
-    MANAGE_SESSIONS = "manage_sessions"
+    MANAGE_AGENT_SESSIONS = "manage_agent_sessions"
     """Opens any agent session of the org, a private one included, for
     audit, and takes over one whose steerer lapsed. An admin's."""
 

@@ -25,8 +25,8 @@ ADR = "docs/adr/2001-the-import-job-builds-its-tools-with-no-gate.md"
 OM = "om/src/acme/om"
 
 TOOL = f"{OM}/tools/echo.py"
-POSTGRES = f"{OM}/steps/storage/impl/postgres.py"
-MANAGER = f"{OM}/budgets/impl/manager.py"
+POSTGRES = f"{OM}/agent_steps/storage/impl/postgres.py"
+MANAGER = f"{OM}/spend_budgets/impl/manager.py"
 
 BASE: dict[str, str] = {
     "om/src/acme/__init__.py": "",
@@ -67,57 +67,58 @@ BASE: dict[str, str] = {
         "            mode=ToolMode.SYNC,\n        )\n"
     ),
     # the history: its table, a step type, and a storage that appends and purges
-    f"{OM}/steps/__init__.py": "",
-    f"{OM}/steps/types/__init__.py": "",
-    f"{OM}/steps/types/step.py": (
-        "from acme.om.base import Platform\n\n\nclass Step(Platform):\n    seq: int\n    text: str\n"
+    f"{OM}/agent_steps/__init__.py": "",
+    f"{OM}/agent_steps/types/__init__.py": "",
+    f"{OM}/agent_steps/types/agent_step.py": (
+        "from acme.om.base import Platform\n\n\nclass AgentStep(Platform):\n    seq: int\n    text: str\n"
     ),
-    f"{OM}/steps/storage/__init__.py": "",
-    f"{OM}/steps/storage/tables/__init__.py": "",
-    f"{OM}/steps/storage/tables/steps.py": (
-        'class Steps:\n    __tablename__ = "steps"\n\n\nclass StepCursors:\n    __tablename__ = "step_cursors"\n'
+    f"{OM}/agent_steps/storage/__init__.py": "",
+    f"{OM}/agent_steps/storage/tables/__init__.py": "",
+    f"{OM}/agent_steps/storage/tables/agent_steps.py": (
+        'class AgentSteps:\n    __tablename__ = "agent_steps"\n\n\n'
+        'class AgentStepCursors:\n    __tablename__ = "agent_step_cursors"\n'
     ),
-    f"{OM}/steps/storage/impl/__init__.py": "",
+    f"{OM}/agent_steps/storage/impl/__init__.py": "",
     POSTGRES: (
         "from sqlalchemy import delete, insert, update\n\n"
-        "from acme.om.steps.storage.tables.steps import StepCursors, Steps\n\n\n"
-        "class StepStoragePostgresImpl:\n"
+        "from acme.om.agent_steps.storage.tables.agent_steps import AgentStepCursors, AgentSteps\n\n\n"
+        "class AgentStepStoragePostgresImpl:\n"
         "    async def append(self, rows: list[dict]) -> None:\n"
         '        """No UPDATE steps here: a step is written once."""\n'
         "        stored: dict = {}\n        stored.update({})\n"
-        "        insert(Steps).values(rows)\n        update(StepCursors).values(head=1)\n\n"
-        "    async def purge_history(self, session_id: str) -> None:\n"
-        "        delete(Steps).where(Steps.session_id == session_id)\n"
-        '        "DELETE FROM activity.steps WHERE session_id = :id"\n'
+        "        insert(AgentSteps).values(rows)\n        update(AgentStepCursors).values(head=1)\n\n"
+        "    async def purge_history(self, agent_session_id: str) -> None:\n"
+        "        delete(AgentSteps).where(AgentSteps.agent_session_id == agent_session_id)\n"
+        '        "DELETE FROM activity.agent_steps WHERE agent_session_id = :id"\n'
     ),
     # the fills and the price table: the two places a model is named
-    f"{OM}/models/__init__.py": "",
-    f"{OM}/models/impl/__init__.py": "",
-    f"{OM}/models/impl/resolver.py": 'FILLS = [dict(provider="anthropic", model="claude-x")]\n',
-    f"{OM}/budgets/__init__.py": "",
-    f"{OM}/budgets/impl/__init__.py": "",
-    f"{OM}/budgets/impl/pricing.py": (
+    f"{OM}/language_models/__init__.py": "",
+    f"{OM}/language_models/impl/__init__.py": "",
+    f"{OM}/language_models/impl/resolver.py": 'FILLS = [dict(provider="anthropic", model="claude-x")]\n',
+    f"{OM}/spend_budgets/__init__.py": "",
+    f"{OM}/spend_budgets/impl/__init__.py": "",
+    f"{OM}/spend_budgets/impl/pricing.py": (
         'def row(model: str) -> dict:\n    return {"model": model}\n\n\nROWS = [row("claude-x")]\n'
     ),
     # a manager over an injected gate, a memory storage, and the root that wires a null gate
-    f"{OM}/budgets/gate.py": "from abc import ABC\n\n\nclass BudgetGateInterface(ABC):\n    pass\n",
+    f"{OM}/spend_budgets/gate.py": "from abc import ABC\n\n\nclass SpendBudgetGateInterface(ABC):\n    pass\n",
     MANAGER: (
-        "from acme.om.budgets.gate import BudgetGateInterface\n\n\n"
-        "class BudgetsManagerImpl:\n"
-        "    def __init__(self, gate: BudgetGateInterface) -> None:\n        self._gate = gate\n\n"
+        "from acme.om.spend_budgets.gate import SpendBudgetGateInterface\n\n\n"
+        "class SpendBudgetsManagerImpl:\n"
+        "    def __init__(self, gate: SpendBudgetGateInterface) -> None:\n        self._gate = gate\n\n"
         "    async def charge(self, fill) -> None:\n        await self.call(model=fill.model)\n"
     ),
-    f"{OM}/budgets/storage/__init__.py": "",
-    f"{OM}/budgets/storage/impl/__init__.py": "",
-    f"{OM}/budgets/storage/impl/memory.py": (
+    f"{OM}/spend_budgets/storage/__init__.py": "",
+    f"{OM}/spend_budgets/storage/impl/__init__.py": "",
+    f"{OM}/spend_budgets/storage/impl/memory.py": (
         "class OutboxLandingInterface:\n    pass\n\n\n"
-        "class BudgetStorageMemoryImpl:\n"
+        "class SpendBudgetStorageMemoryImpl:\n"
         "    def __init__(self, outbox: OutboxLandingInterface | None = None) -> None:\n"
         "        self._outbox = outbox\n"
     ),
     f"{OM}/root.py": (
-        "from acme.om.budgets.gate import BudgetGateInterface\n\n\n"
-        "def build(gate: BudgetGateInterface | None = None) -> None:\n    pass\n"
+        "from acme.om.spend_budgets.gate import SpendBudgetGateInterface\n\n\n"
+        "def build(gate: SpendBudgetGateInterface | None = None) -> None:\n    pass\n"
     ),
     # a module outside the tools that may start a process
     "infra/src/acme/infra/__init__.py": "",

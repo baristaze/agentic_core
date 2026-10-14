@@ -60,7 +60,7 @@ row names.
 | `ops-simulate-traffic` | Provisioner | How the platform looks under traffic at a profile. |
 | `stress-test-create-or-update` | none | Write or change a scenario, with its target stated first. |
 | `stress-test-run` | Provisioner, Investigator | Run a scenario and say whether the target held. |
-| `ops-session-spend` | Supporter (the `read` operator token alone) | What one session's model calls used and cost, loop by loop. |
+| `ops-agent-session-spend` | Supporter (the `read` operator token alone) | What one session's model calls used and cost, loop by loop. |
 | `ops-loop-spend` | Supporter (the `read` operator token alone) | What one loop's model calls used and cost, turn by turn, and where it grew. |
 
 The audits read and never fix. The database ones build a database of

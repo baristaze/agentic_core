@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from uuid import UUID
 
 from acme.infra.impl.local import InfraLocalImpl
+from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
 from acme.om.attribution.types.authority import RequestAttribution
 from acme.om.base import new_id
 from acme.om.context import (
@@ -22,12 +23,11 @@ from acme.om.media.storage.impl.memory import MediaStorageMemoryImpl
 from acme.om.outbox.impl.relay import OutboxRelayImpl
 from acme.om.outbox.storage.impl.memory import OutboxStorageMemoryImpl
 from acme.om.root import Managers
-from acme.om.steps.types.step import Step, StepType
 from acme.om.tenancy import TenancyManagerInterface
 from acme.om.tenancy.rules import permissions_of
 from acme.om.tenancy.types.org import Org
+from contracts.agent_step_storage import make_request
 from contracts.factories import make_org, make_user
-from contracts.step_storage import make_request
 
 APP = AppContext(type=AppType.PORTAL, version="portal@test")
 
@@ -78,7 +78,7 @@ def media_of(
 
 
 async def next_attribution(
-    managers: Managers, ctx: TenantContext, session_id: UUID
+    managers: Managers, ctx: TenantContext, agent_session_id: UUID
 ) -> RequestAttribution:
     """What the session's next model request records, as the loop asks it:
     from the inputs since the latest model request, which the request
@@ -86,33 +86,35 @@ async def next_attribution(
     after, read = 0, 0
     inputs: dict[UUID, int] = {}
     while True:
-        page = await managers.steps.get_steps(ctx, session_id, read, 200)
+        page = await managers.agent_steps.get_agent_steps(ctx, agent_session_id, read, 200)
         for step in page.items:
-            if step.type is StepType.MODEL_REQUEST:
+            if step.type is AgentStepType.MODEL_REQUEST:
                 after, inputs = step.seq, {}
             elif step.type.is_input():
                 inputs[step.id] = step.seq
         if not page.has_more or not page.items:
             break
         read = page.items[-1].seq
-    return await managers.attribution.attribute_request(ctx, session_id, after, inputs)
+    return await managers.attribution.attribute_request(ctx, agent_session_id, after, inputs)
 
 
 async def model_request(
-    managers: Managers, ctx: TenantContext, session_id: UUID, delivered: Sequence[Step]
-) -> Step:
+    managers: Managers, ctx: TenantContext, agent_session_id: UUID, delivered: Sequence[AgentStep]
+) -> AgentStep:
     """The loop's model request over the inputs it delivers, as a run
     appends it: it records the speaker and the spender attribution answers
     for them."""
-    said = await next_attribution(managers, ctx, session_id)
-    epoch = await managers.steps.begin_run(ctx, session_id)
+    said = await next_attribution(managers, ctx, agent_session_id)
+    epoch = await managers.agent_steps.begin_run(ctx, agent_session_id)
     loop = delivered[0].loop_id if delivered else new_id()
     request = make_request(
-        session_id,
+        agent_session_id,
         loop,
         tuple(step.id for step in delivered),
         spender=said.spender,
         speaker=said.speaker,
     )
-    (stored,) = await managers.steps.append_steps(ctx, session_id, epoch, [request])
+    (stored,) = await managers.agent_steps.append_agent_steps(
+        ctx, agent_session_id, epoch, [request]
+    )
     return stored

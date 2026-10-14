@@ -7,7 +7,7 @@ changes."""
 import pytest
 
 from acme.om.attribution.storage import AttributionStorageInterface
-from acme.om.attribution.types.authority import AuthorityMode, SessionAuthority
+from acme.om.attribution.types.authority import AgentSessionAuthority, AuthorityMode
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
 from acme.om.exceptions import PreconditionFailed
@@ -19,9 +19,9 @@ CROSS_TENANT_CASES: frozenset[str] = frozenset(
 case in this module that presents another tenant's."""
 
 
-def make_authority() -> SessionAuthority:
+def make_authority() -> AgentSessionAuthority:
     now, by = utcnow(), new_id()
-    return SessionAuthority(
+    return AgentSessionAuthority(
         id=new_id(),
         created_at=now,
         updated_at=now,
@@ -33,7 +33,7 @@ def make_authority() -> SessionAuthority:
     )
 
 
-def taken_over(authority: SessionAuthority, version: int) -> SessionAuthority:
+def taken_over(authority: AgentSessionAuthority, version: int) -> AgentSessionAuthority:
     """The authority as a person leaves it when they take the session over."""
     principal = Principal(kind=PrincipalKind.PERSON, id=new_id())
     return authority.model_copy(

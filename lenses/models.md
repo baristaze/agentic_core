@@ -36,8 +36,8 @@ fill set does not hold is MOD-02.)
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/models/types/fill.py` and
-`scaffold/acme_root/om/src/acme/om/models/resolver.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/language_models/types/fill.py` and
+`scaffold/acme_root/om/src/acme/om/language_models/resolver.py`
 
 **Check.** `agentic-check` decides that no string is written as a `model`
 argument, key, field, or default outside the price table and the fills;
@@ -67,8 +67,8 @@ compaction first, or one inside an open tool-use cycle with thinking on.
 
 **Severity.** high
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/models/impl/manager.py` and
-`scaffold/acme_root/om/src/acme/om/models/rules.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/language_models/impl/manager.py`
+and `scaffold/acme_root/om/src/acme/om/language_models/rules.py`
 
 **Check.** review
 
@@ -98,8 +98,8 @@ fill that retains.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/models/impl/resolver.py` and
-`scaffold/acme_root/om/src/acme/om/models/rules.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/language_models/impl/resolver.py`
+and `scaffold/acme_root/om/src/acme/om/language_models/rules.py`
 
 **Check.** review
 

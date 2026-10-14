@@ -10,7 +10,7 @@ removes its rows after the shape's retention, and it is the guideline's
 one hard delete, never an on-demand one.
 
 The history is written once: the serving logins hold SELECT and INSERT
-on `activity.steps` and nothing more
+on `activity.agent_steps` and nothing more
 ([ADR 1002](1002-the-history-is-written-once-and-a-stale-run-is-refused.md)).
 So no login the guideline names can purge it. The guideline names three
 logins (STO-28): the migration login, which owns the tables and runs in
@@ -27,7 +27,7 @@ transactions, and an unmark can land between them.
 ## Decision
 
 **A fourth login, `acme_purge`, deletes a history.** It holds SELECT and
-DELETE on `agent_sessions`, `steps`, and `step_cursors`
+DELETE on `agent_sessions`, `agent_steps`, and `agent_step_cursors`
 (`PURGED_TABLES`), usage on their schemas, and nothing else: no INSERT,
 no UPDATE, no other table, no ownership, no superuser, no `BYPASSRLS`.
 The migrations that admit it grant it, and `ensure-logins` grants it

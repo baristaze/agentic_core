@@ -40,7 +40,7 @@ class ToolClass(StrEnum):
     classes of its own by declaring them to the registry; a class is a name
     either way, and policy keys on it."""
 
-    READ = "read"  # reading the workspace, records, or artifacts
+    READ = "read"  # reading the workspace, records, or tool outputs
     WRITE = "write"  # changing files in the workspace
     EXECUTE = "execute"  # running code in the workspace; a build script runs anything
     NETWORK = "network"  # reaching an arbitrary external endpoint

@@ -232,14 +232,14 @@ ROLE_PERMISSIONS: dict[Role, tuple[Permission, ...]] = {
         Permission.WRITE,
         Permission.MANAGE_MEMBERS,
         Permission.MANAGE_KEYS,
-        Permission.MANAGE_SESSIONS,
+        Permission.MANAGE_AGENT_SESSIONS,
     ),
     Role.ADMIN: (
         Permission.READ,
         Permission.WRITE,
         Permission.MANAGE_MEMBERS,
         Permission.MANAGE_KEYS,
-        Permission.MANAGE_SESSIONS,
+        Permission.MANAGE_AGENT_SESSIONS,
     ),
     Role.MEMBER: (Permission.READ, Permission.WRITE, Permission.MANAGE_KEYS),
     Role.VIEWER: (Permission.READ,),
@@ -247,12 +247,12 @@ ROLE_PERMISSIONS: dict[Role, tuple[Permission, ...]] = {
         Permission.READ,
         Permission.WRITE,
         Permission.MANAGE_MEMBERS,
-        Permission.MANAGE_SESSIONS,
+        Permission.MANAGE_AGENT_SESSIONS,
     ),
 }
 """The role-to-permission table. Permissions are a function of role: a
 context is built with the tuple this table gives, and nothing stores them
-per user or per credential. The service role holds `manage_sessions`
+per user or per credential. The service role holds `manage_agent_sessions`
 because the engine's own plumbing, a run of a session's loop, reads the
 session whoever it is visible to."""
 

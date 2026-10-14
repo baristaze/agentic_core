@@ -9,7 +9,7 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
   its title, the people who take part in it, who sees it, its [agent
   kind](../agents/README.md) and the tools it may call, the session that
   spawned it or handed it the work, the root of its tree, and a status it
-  keeps up to date from its [steps](../steps/README.md). The steps are
+  keeps up to date from its [steps](../agent_steps/README.md). The steps are
   the truth; the status is kept for listing and finding, and so are the
   person who spoke last and the untrusted mark
   ([attribution](../attribution/README.md)).
@@ -28,7 +28,7 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
   `inconclusive`; a run that has run long hands its loop to the next run.
 - **Visibility**: org-wide, seen by every member of the org, or
   private, seen by its creator and the participants its creator adds,
-  and by `manage_sessions` for audit. A steady kind's sessions start
+  and by `manage_agent_sessions` for audit. A steady kind's sessions start
   org-wide and a delegated kind's private
   ([attribution](../attribution/README.md)).
 - **Participant**: a member who takes part in a session. They see it
@@ -45,12 +45,12 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
 - **Join.** A member joins an org-wide session, and becomes a
   participant; its creator adds anyone. A private session's participants
   are the ones its creator adds: an audit read is not a membership, so
-  a holder of `manage_sessions` who joins one on their own is refused.
+  a holder of `manage_agent_sessions` who joins one on their own is refused.
   Its steerer alone joins it on their own, as one who takes a lapsed
   steer does. A sub-agent is joined through its root.
 - **Leave.** Its creator removes a participant, and a participant
   leaves on their own. The steerer stays until they hand the steer on.
-  Removed from a private session, a person without `manage_sessions` no
+  Removed from a private session, a person without `manage_agent_sessions` no
   longer sees it.
 - **Switch who sees it.** Its creator makes it org-wide or private, a
   recorded step. A switch to private keeps who takes part.
@@ -115,9 +115,9 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
 - **Every session belongs to one org.** Another org's session answers as
   one that never existed, and a session's parent is in its own org.
 - **A session opens to whom it is visible.** Every operation that names
-  a session, its history, and its artifacts reads it as the person sees
+  a session, its history, and its tool outputs reads it as the person sees
   it: an org-wide one by every member, a private one by its creator and
-  its participants, and every one by `manage_sessions`, an admin's, for
+  its participants, and every one by `manage_agent_sessions`, an admin's, for
   audit. To anyone else it answers as one that never existed. A sub-agent
   is seen as its root is, and a session made from a private one is
   private (ADR 1038).

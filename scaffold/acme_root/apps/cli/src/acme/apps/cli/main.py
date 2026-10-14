@@ -2,7 +2,7 @@
 the orgs, the switch between them, who the session is, a file's upload, and
 a session with an agent: started, spoken to, steered, and read.
 `listen` stays and prints every change in the org as it happens, and
-`session steps --follow` every step of a loop until it stops. Every
+`agent-session steps --follow` every step of a loop until it stops. Every
 command is a thin call into the client; the API decides, the CLI shows.
 Exit codes: 0 done, 1 the API refused, 2 usage, 3 not signed in, 4 the API
 is unreachable, 5 a followed loop stopped without succeeding."""
@@ -35,11 +35,11 @@ from acme.apps.cli.model import (
 from acme.client.client import ApiClient, ApiError
 from acme.client.realtime import ChannelRefused
 from acme.client.types import (
+    AgentSessionControl,
     AgentSessionView,
+    AgentStepView,
     IssuedLoginView,
     IssuedSessionView,
-    SessionControl,
-    StepView,
 )
 
 EXIT_REFUSED = 1
@@ -407,19 +407,21 @@ def upload(
 
 # Sessions with an agent
 
-session_app = typer.Typer(
+agent_session_app = typer.Typer(
     help="A session with an agent: start one, speak to it, steer it, read its history.",
     no_args_is_help=True,
 )
-app.add_typer(session_app, name="session")
+app.add_typer(agent_session_app, name="agent-session")
 
-SessionId = Annotated[UUID, typer.Argument(help="The session's id, as `session start` printed it.")]
+AgentSessionId = Annotated[
+    UUID, typer.Argument(help="The session's id, as `agent-session start` printed it.")
+]
 FOLLOW_SECONDS = 1.0
 """How long `steps --follow` waits between two reads of the history."""
 
 
-@session_app.command("start")
-def start_session(
+@agent_session_app.command("start")
+def start_agent_session(
     kind: Annotated[str, typer.Argument(help="The agent kind the session runs.")],
     title: Annotated[str, typer.Argument(help="What the session is about.")],
     as_json: Json = False,
@@ -437,23 +439,23 @@ def start_session(
     run(go, api)
 
 
-@session_app.command("say")
+@agent_session_app.command("say")
 def say(
-    session_id: SessionId,
+    agent_session_id: AgentSessionId,
     text: Annotated[str, typer.Argument(help="The message, in your name.")],
     as_json: Json = False,
     api: Api = None,
 ) -> None:
     """Send a message. It is kept when this returns; an idle session wakes,
     and a running loop reads it at its next model call."""
-    said = run(lambda client: client.send_message(session_id, text), api)
+    said = run(lambda client: client.send_message(agent_session_id, text), api)
     typer.echo(said.model_dump_json(indent=2) if as_json else step_line(said))
 
 
-@session_app.command("control")
+@agent_session_app.command("control")
 def control(
-    session_id: SessionId,
-    command: Annotated[SessionControl, typer.Argument(help="What the loop is told.")],
+    agent_session_id: AgentSessionId,
+    command: Annotated[AgentSessionControl, typer.Argument(help="What the loop is told.")],
     call: Annotated[
         int | None,
         typer.Option("--call", help="The seq of the tool request an interrupt stops."),
@@ -470,16 +472,16 @@ def control(
     the snapshot the session's workspace starts from next."""
     sent = run(
         lambda client: client.send_control(
-            session_id, command, request_seq=call, snapshot_id=snapshot
+            agent_session_id, command, request_seq=call, snapshot_id=snapshot
         ),
         api,
     )
     typer.echo(sent.model_dump_json(indent=2) if as_json else step_line(sent))
 
 
-@session_app.command("decide")
+@agent_session_app.command("decide")
 def decide(
-    session_id: SessionId,
+    agent_session_id: AgentSessionId,
     seq: Annotated[int, typer.Argument(help="The seq of the tool request the loop waits on.")],
     approve: Annotated[
         bool, typer.Option("--approve/--deny", help="Let the call run, or refuse it.")
@@ -489,14 +491,14 @@ def decide(
 ) -> None:
     """Decide a tool call the loop parked on."""
     decided = run(
-        lambda client: client.decide_call(session_id, seq, approve=approve, note=note), api
+        lambda client: client.decide_call(agent_session_id, seq, approve=approve, note=note), api
     )
     typer.echo(step_line(decided))
 
 
-@session_app.command("steps")
+@agent_session_app.command("steps")
 def steps(
-    session_id: SessionId,
+    agent_session_id: AgentSessionId,
     after: Annotated[int, typer.Option("--after", help="Start after this seq.")] = 0,
     follow: Annotated[
         bool,
@@ -511,11 +513,11 @@ def steps(
     """The session's history, one step a line, in its order."""
 
     async def go(client: ApiClient) -> bool:
-        seen: list[StepView] = []
+        seen: list[AgentStepView] = []
         cursor = after
         stopped: AgentSessionView | None = None
         while True:
-            page = await client.agent_session_steps(session_id, cursor)
+            page = await client.agent_session_steps(agent_session_id, cursor)
             for step in page.items:
                 typer.echo(step.model_dump_json() if as_json else step_line(step))
             seen.extend(page.items)
@@ -526,7 +528,7 @@ def steps(
                 return True
             if stopped is not None:
                 return follow_succeeded(stopped, seen)
-            session = await client.agent_session(session_id)
+            session = await client.agent_session(agent_session_id)
             if settled(session):
                 # One more read: the steps the loop wrote before it stopped.
                 stopped = session

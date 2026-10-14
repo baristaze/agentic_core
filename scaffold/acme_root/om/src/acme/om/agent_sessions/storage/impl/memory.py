@@ -3,7 +3,7 @@ from datetime import datetime
 from uuid import UUID
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
-from acme.om.agent_sessions.types.agent_session import AgentSession, Among, SessionStatus
+from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus, Among
 from acme.om.attribution.types.authority import Visibility
 from acme.om.exceptions import PreconditionFailed
 from acme.om.outbox.storage import OutboxLandingInterface
@@ -16,14 +16,14 @@ class AgentSessionStorageMemoryImpl(MemoryStorageBase, AgentSessionStorageInterf
         super().__init__(outbox)
         self._sessions: MemoryTable[AgentSession] = {}
 
-    async def create_session(
+    async def create_agent_session(
         self, org_id: UUID, session: AgentSession, outbox_rows: tuple[OutboxRow, ...]
     ) -> bool:
         async with self._lock:
             return self._insert(self._sessions, org_id, session, outbox_rows)
 
-    async def read_session(self, org_id: UUID, session_id: UUID) -> AgentSession | None:
-        return self._get(self._sessions, org_id, session_id)
+    async def read_agent_session(self, org_id: UUID, agent_session_id: UUID) -> AgentSession | None:
+        return self._get(self._sessions, org_id, agent_session_id)
 
     async def read_children(
         self, org_id: UUID, parent_id: UUID, after: UUID | None, limit: int
@@ -34,10 +34,10 @@ class AgentSessionStorageMemoryImpl(MemoryStorageBase, AgentSessionStorageInterf
             if s.parent_id == parent_id and (after is None or s.id > after)
         ][:limit]
 
-    async def read_sessions(
+    async def read_agent_sessions(
         self,
         org_id: UUID,
-        status: SessionStatus | None,
+        status: AgentSessionStatus | None,
         after: UUID | None,
         limit: int,
         *,
@@ -53,7 +53,7 @@ class AgentSessionStorageMemoryImpl(MemoryStorageBase, AgentSessionStorageInterf
             and (among is None or _listed(s, among, person))
         ][:limit]
 
-    async def write_session(
+    async def write_agent_session(
         self,
         org_id: UUID,
         session: AgentSession,
@@ -83,27 +83,30 @@ class AgentSessionStorageMemoryImpl(MemoryStorageBase, AgentSessionStorageInterf
             if s.deleted_at is not None and s.deleted_at < deleted_before
         ][:limit]
 
-    async def tree_holds_others(self, org_id: UUID, root_id: UUID, session_id: UUID) -> bool:
+    async def tree_holds_others(self, org_id: UUID, root_id: UUID, agent_session_id: UUID) -> bool:
         return any(
-            s.root_id == root_id and s.id != session_id for s in self._rows(self._sessions, org_id)
+            s.root_id == root_id and s.id != agent_session_id
+            for s in self._rows(self._sessions, org_id)
         )
 
-    async def purge_session(self, org_id: UUID, session_id: UUID) -> bool:
+    async def purge_agent_session(self, org_id: UUID, agent_session_id: UUID) -> bool:
         async with self._lock:
-            found = self._get(self._sessions, org_id, session_id)
+            found = self._get(self._sessions, org_id, agent_session_id)
             if found is None or found.purge_started_at is None:
                 return False
-            del self._sessions[session_id]
+            del self._sessions[agent_session_id]
             return True
 
-    async def read_tenant_sessions(self, org_id: UUID, limit: int) -> list[UUID]:
+    async def read_tenant_agent_sessions(self, org_id: UUID, limit: int) -> list[UUID]:
         return [s.id for s in self._rows(self._sessions, org_id)][:limit]
 
-    async def purge_tenant(self, org_id: UUID, session_ids: Sequence[UUID]) -> int:
+    async def purge_tenant(self, org_id: UUID, agent_session_ids: Sequence[UUID]) -> int:
         async with self._lock:
-            gone = {i for i in session_ids if self._get(self._sessions, org_id, i) is not None}
-            for session_id in gone:
-                del self._sessions[session_id]
+            gone = {
+                i for i in agent_session_ids if self._get(self._sessions, org_id, i) is not None
+            }
+            for agent_session_id in gone:
+                del self._sessions[agent_session_id]
             return len(gone)
 
 

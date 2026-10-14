@@ -4,23 +4,22 @@ from acme.infra.impl.local import InfraLocalImpl
 from acme.integrations.impl.configured import absent_integrations
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
+from acme.om.agent_steps import AgentStepsManagerInterface
+from acme.om.agent_steps.storage import AgentStepStorageInterface
 from acme.om.agents import AgentsManagerInterface
 from acme.om.agents.storage import AgentStorageInterface
 from acme.om.attribution import AttributionManagerInterface
 from acme.om.attribution.storage import AttributionStorageInterface
-from acme.om.budgets import BudgetGateInterface, BudgetsManagerInterface
-from acme.om.budgets.pricing import PricingInterface
-from acme.om.budgets.storage import BudgetStorageInterface, LedgerStorageInterface
 from acme.om.events import EventsManagerInterface
 from acme.om.events.storage import EventStorageInterface
 from acme.om.idempotency import IdempotencyManagerInterface
 from acme.om.idempotency.storage import IdempotencyStorageInterface
+from acme.om.language_models.manager import LanguageModelsManagerInterface
+from acme.om.language_models.storage import FillSetStorageInterface
 from acme.om.leases import LeasesManagerInterface
 from acme.om.leases.storage import LeasesStorageInterface
 from acme.om.media import MediaManagerInterface
 from acme.om.media.storage import MediaStorageInterface
-from acme.om.models.manager import ModelsManagerInterface
-from acme.om.models.storage import FillSetStorageInterface
 from acme.om.orchestrations import OrchestrationsManagerInterface
 from acme.om.orchestrations.storage import OrchestrationsStorageInterface
 from acme.om.outbox import OutboxRelayInterface
@@ -28,8 +27,9 @@ from acme.om.outbox.storage import OutboxStorageInterface
 from acme.om.privacy import PrivacyManagerInterface
 from acme.om.privacy.storage import PrivacyStorageInterface
 from acme.om.root import build_managers
-from acme.om.steps import StepsManagerInterface
-from acme.om.steps.storage import StepStorageInterface
+from acme.om.spend_budgets import SpendBudgetGateInterface, SpendBudgetsManagerInterface
+from acme.om.spend_budgets.pricing import PricingInterface
+from acme.om.spend_budgets.storage import LedgerStorageInterface, SpendBudgetStorageInterface
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.storage.impl.postgres import StoragePostgresImpl
 from acme.om.storage.roles import DatabaseRole
@@ -61,12 +61,12 @@ async def test_memory_root_serves_every_storage() -> None:
     assert isinstance(root.get_outbox_storage(), OutboxStorageInterface)
     assert isinstance(root.get_orchestrations_storage(), OrchestrationsStorageInterface)
     assert isinstance(root.get_lease_storage(), LeasesStorageInterface)
-    assert isinstance(root.get_step_storage(), StepStorageInterface)
+    assert isinstance(root.get_agent_step_storage(), AgentStepStorageInterface)
     assert isinstance(root.get_agent_session_storage(), AgentSessionStorageInterface)
     assert isinstance(root.get_agent_storage(), AgentStorageInterface)
     assert isinstance(root.get_attribution_storage(), AttributionStorageInterface)
     assert isinstance(root.get_privacy_storage(), PrivacyStorageInterface)
-    assert isinstance(root.get_budget_storage(), BudgetStorageInterface)
+    assert isinstance(root.get_spend_budget_storage(), SpendBudgetStorageInterface)
     assert isinstance(root.get_ledger_storage(), LedgerStorageInterface)
     assert isinstance(root.get_fill_set_storage(), FillSetStorageInterface)
     assert isinstance(root.get_window_storage(), WindowStorageInterface)
@@ -147,15 +147,15 @@ def test_business_root_has_a_field_per_manager(tmp_path: Path) -> None:
     assert isinstance(managers.outbox, OutboxRelayInterface)
     assert isinstance(managers.orchestrations, OrchestrationsManagerInterface)
     assert isinstance(managers.leases, LeasesManagerInterface)
-    assert isinstance(managers.steps, StepsManagerInterface)
+    assert isinstance(managers.agent_steps, AgentStepsManagerInterface)
     assert isinstance(managers.agent_sessions, AgentSessionsManagerInterface)
     assert isinstance(managers.attribution, AttributionManagerInterface)
     assert isinstance(managers.agents, AgentsManagerInterface)
     assert isinstance(managers.privacy, PrivacyManagerInterface)
-    assert isinstance(managers.budgets, BudgetsManagerInterface)
-    assert isinstance(managers.budget_gate, BudgetGateInterface)
+    assert isinstance(managers.spend_budgets, SpendBudgetsManagerInterface)
+    assert isinstance(managers.spend_budget_gate, SpendBudgetGateInterface)
     assert isinstance(managers.pricing, PricingInterface)
-    assert isinstance(managers.models, ModelsManagerInterface)
+    assert isinstance(managers.language_models, LanguageModelsManagerInterface)
     assert isinstance(managers.windows, WindowsManagerInterface)
     assert isinstance(managers.tools, ToolsManagerInterface)
 

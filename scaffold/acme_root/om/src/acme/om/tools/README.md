@@ -113,7 +113,7 @@ thing [Acme is made of](../../../../README.md).
   has its workspace kept whole at the end of each run, live: everything
   its commands wrote, sealed under the session's key and named by a step
   in its history, and the next run starts from it. A VM's disk stays
-  with its machines, in a store encrypted at rest, and the sealed archive
+  with its vms, in a store encrypted at rest, and the sealed archive
   names it (ADR 1029). A credential is never
   in it, and a workspace that holds an injected secret's value keeps
   none. A released workspace, and a directory on a host, cannot be kept
@@ -166,7 +166,7 @@ thing [Acme is made of](../../../../README.md).
 ## How another namespace composes it
 
 The agent's loop asks where each call stands, runs it, and writes the
-response it gets back into the session's [steps](../steps/README.md). A
+response it gets back into the session's [steps](../agent_steps/README.md). A
 person's decision lands in the same history. Where a tool runs, the
 workspace and the commands in it, is the infrastructure's
 ([infra](../../../../../infra/README.md)).

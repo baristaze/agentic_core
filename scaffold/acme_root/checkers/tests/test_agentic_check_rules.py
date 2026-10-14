@@ -23,25 +23,26 @@ def test_the_base_tree_is_clean_under_every_rule(tmp_path):
 STORAGE = (
     "from typing import cast\n\nimport sqlalchemy as sa\nfrom sqlalchemy import Table, delete, update\n"
     "from sqlalchemy.dialects.postgresql import insert as pg_insert\n\n"
-    "from acme.om.steps.storage.tables.steps import Steps\n\n\n"
-    "def fix(step_id: str) -> None:\n"
-    "    update(Steps).where(Steps.id == step_id)\n"
-    "    table = cast(Table, Steps.__table__)\n"
+    "from acme.om.agent_steps.storage.tables.agent_steps import AgentSteps\n\n\n"
+    "def fix(agent_step_id: str) -> None:\n"
+    "    update(AgentSteps).where(AgentSteps.id == agent_step_id)\n"
+    "    table = cast(Table, AgentSteps.__table__)\n"
     "    sa.update(table).values(text='')\n"
-    "    Steps.__table__.update()\n"
-    "    delete(Steps).where(Steps.id == step_id)\n"
-    "    pg_insert(Steps).values(id=step_id).on_conflict_do_update(index_elements=['id'], set_={'text': ''})\n"
-    "    \"UPDATE activity.steps SET text = ''\"\n"
-    "    'DELETE FROM \"steps\" WHERE id = :id'\n"
-    "    \"INSERT INTO steps (id) VALUES (:id) ON CONFLICT (id) DO UPDATE SET text = ''\"\n"
+    "    AgentSteps.__table__.update()\n"
+    "    delete(AgentSteps).where(AgentSteps.id == agent_step_id)\n"
+    "    pg_insert(AgentSteps).values(id=agent_step_id)"
+    ".on_conflict_do_update(index_elements=['id'], set_={'text': ''})\n"
+    "    \"UPDATE activity.agent_steps SET text = ''\"\n"
+    "    'DELETE FROM \"agent_steps\" WHERE id = :id'\n"
+    "    \"INSERT INTO agent_steps (id) VALUES (:id) ON CONFLICT (id) DO UPDATE SET text = ''\"\n"
 )
 
 
 def test_stp07_an_update_of_a_step_and_a_delete_outside_a_purge_are_findings(tmp_path):
-    write_project(tmp_path, {f"{OM}/steps/storage/impl/repair.py": STORAGE})
+    write_project(tmp_path, {f"{OM}/agent_steps/storage/impl/repair.py": STORAGE})
     hits = found(tmp_path, "STP-07")
     assert [line for _, line, _ in hits] == [11, 13, 14, 15, 16, 17, 18, 19]
-    assert all(path == f"{OM}/steps/storage/impl/repair.py" for path, _, _ in hits)
+    assert all(path == f"{OM}/agent_steps/storage/impl/repair.py" for path, _, _ in hits)
     messages = [m.split(";")[0] for _, _, m in hits]
     assert messages == [
         "updates a step",
@@ -81,10 +82,10 @@ def test_mod01_a_model_written_outside_the_fills_and_the_prices_is_a_finding(tmp
 
 
 def test_mod01_the_sites_option_names_the_files_that_may_name_a_model(tmp_path):
-    catalog = {f"{OM}/models/impl/catalog.py": "CATALOG = dict(model='claude-x')\n"}
+    catalog = {f"{OM}/language_models/impl/catalog.py": "CATALOG = dict(model='claude-x')\n"}
     write_project(tmp_path, catalog)
     assert len(found(tmp_path, "MOD-01")) == 1
-    sites = '\n[tool.agentic-check.options.MOD-01]\nsites = ["om/src/acme/om/models/impl/*.py"]\n'
+    sites = '\n[tool.agentic-check.options.MOD-01]\nsites = ["om/src/acme/om/language_models/impl/*.py"]\n'
     write_project(tmp_path, catalog, pyproject='[tool.agentic-check]\npackage = "acme"\n' + sites)
     assert found(tmp_path, "MOD-01") == []
 
@@ -127,19 +128,19 @@ def test_tol11_a_secret_typed_field_on_a_tool_input_output_or_step_is_a_finding(
         )
     )
     step = "from pydantic import SecretStr\n\nfrom acme.om.base import Platform\n\n\n"
-    step += "class Step(Platform):\n    secret: 'SecretStr'\n"
-    write_project(tmp_path, {TOOL: tool, f"{OM}/steps/types/step.py": step})
+    step += "class AgentStep(Platform):\n    secret: 'SecretStr'\n"
+    write_project(tmp_path, {TOOL: tool, f"{OM}/agent_steps/types/agent_step.py": step})
     hits = found(tmp_path, "TOL-11")
     assert sorted(m.split(" is a")[0] for _, _, m in hits) == [
+        "AgentStep.secret",
         "EchoInput.token",
         "EchoOutput.key",
-        "Step.secret",
     ]
 
 
 def test_tol11_a_secret_outside_what_a_step_carries_is_no_finding(tmp_path):
     settings = "from pydantic import BaseModel, SecretStr\n\n\nclass Settings(BaseModel):\n    api_key: SecretStr\n"
-    write_project(tmp_path, {f"{OM}/budgets/settings.py": settings})
+    write_project(tmp_path, {f"{OM}/spend_budgets/settings.py": settings})
     assert found(tmp_path, "TOL-11") == []
 
 
@@ -172,22 +173,22 @@ def test_tol13_a_module_that_defines_no_tool_may_start_a_process(tmp_path):
 
 def test_prv06_an_optional_or_defaulted_interface_in_an_engine_constructor_is_a_finding(tmp_path):
     manager = BASE[MANAGER].replace(
-        "gate: BudgetGateInterface)", "gate: BudgetGateInterface | None = None)"
+        "gate: SpendBudgetGateInterface)", "gate: SpendBudgetGateInterface | None = None)"
     )
     sink = (
         "from dataclasses import dataclass\nfrom typing import Optional\n\n"
-        "from acme.om.budgets.gate import BudgetGateInterface\n\n\n"
+        "from acme.om.spend_budgets.gate import SpendBudgetGateInterface\n\n\n"
         "class Meter:\n"
-        "    def __init__(self, *, gate: Optional[BudgetGateInterface]) -> None:\n"
+        "    def __init__(self, *, gate: Optional[SpendBudgetGateInterface]) -> None:\n"
         "        self._gate = gate\n\n\n"
-        "@dataclass(frozen=True)\nclass Wiring:\n    gate: BudgetGateInterface = None\n"
+        "@dataclass(frozen=True)\nclass Wiring:\n    gate: SpendBudgetGateInterface = None\n"
     )
-    write_project(tmp_path, {MANAGER: manager, f"{OM}/budgets/impl/meter.py": sink})
+    write_project(tmp_path, {MANAGER: manager, f"{OM}/spend_budgets/impl/meter.py": sink})
     hits = found(tmp_path, "PRV-06")
     assert [m.split(";")[0] for _, _, m in hits] == [
-        "BudgetsManagerImpl takes gate: BudgetGateInterface with a default",
-        "Meter takes gate: BudgetGateInterface as optional",
-        "Wiring takes gate: BudgetGateInterface with a default",
+        "SpendBudgetsManagerImpl takes gate: SpendBudgetGateInterface with a default",
+        "Meter takes gate: SpendBudgetGateInterface as optional",
+        "Wiring takes gate: SpendBudgetGateInterface with a default",
     ]
 
 

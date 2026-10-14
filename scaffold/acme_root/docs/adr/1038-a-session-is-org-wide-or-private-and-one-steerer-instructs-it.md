@@ -4,7 +4,7 @@
 
 ## Context
 
-A session's history and its artifacts opened on the tenant's `read`
+A session's history and its tool outputs opened on the tenant's `read`
 alone, so a viewer could read the results of an admin's delegated calls
 that the viewer's own permissions could not fetch. The spec says opening
 content takes a permission of its own. The session's participants were
@@ -24,9 +24,9 @@ in the org can find, join, and revive months later.
 the team: there is no axis between the two. An org-wide session is seen
 by every member of its org, and any member may join it as a participant.
 A private session is seen by its creator, the participants its creator
-adds, and `manage_sessions`, a new permission the owner and the admin
+adds, and `manage_agent_sessions`, a new permission the owner and the admin
 hold, for audit. A sub-agent is seen as its root is. To anyone else, a
-session, its history, and its artifacts answer `NotFound`, as one that
+session, its history, and its tool outputs answer `NotFound`, as one that
 never existed; the steps and the windows managers ask before they open
 anything, and the sessions manager before every operation that names a
 session.
@@ -50,12 +50,12 @@ takes the environment over.
 
 **A hand-off, recorded.** `PUT /principal` with a body naming a
 participant is the steerer's hand-off. With no body the caller takes the
-steer: for a steerer who lapsed, someone who holds `manage_sessions`,
+steer: for a steerer who lapsed, someone who holds `manage_agent_sessions`,
 who joins the session as they take it. Each move is a `switched` step,
 under an id the move derives, so a retry records it once. A sub-agent's
 steer is its parent's, and it is never taken over.
 
-**One permission for audit and for a lapsed steer.** `manage_sessions`
+**One permission for audit and for a lapsed steer.** `manage_agent_sessions`
 opens every session and takes over one whose steerer lapsed. Whoever may
 take a session over may read it, so the steerer always sees the session
 they steer. The service role holds it too, since a run of a session's
@@ -76,7 +76,7 @@ loop reads its session whoever it is visible to.
   recorded, so after a hand-off they run under the previous steerer
   until the new one speaks.
 - A hand-off to someone who left the org lapses at once, as a steerer
-  who leaves does, and `manage_sessions` takes it.
+  who leaves does, and `manage_agent_sessions` takes it.
 - A list of an org's sessions filters on the creator, the participants,
   and the visibility over the tenant's index by id. Not now: an index of
   its own, when the list's p95 passes 100 ms for an org.

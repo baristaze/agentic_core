@@ -10,29 +10,35 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.agent_session_storage import make_session
+from contracts.agent_session_storage import make_agent_session
 from contracts.histories import History
 from contracts.loops import ASSISTANT, SONNET, Loop, loop_over, reply, said, use
 from pydantic import BaseModel, ValidationError
 
 from acme.integrations.model_providers.anthropic import request_body
 from acme.integrations.model_providers.calls import ModelCall, ModelReply
-from acme.om.agent_sessions.types.agent_session import SessionStatus
-from acme.om.agents.loop_rules import kind_prompts, standing_text, start_seq
-from acme.om.agents.types.request import MAX_STANDING, Handoff, Spawn, Start, SwitchStanding
-from acme.om.agents.types.run import RunEnd
-from acme.om.base import new_id
-from acme.om.exceptions import NotAuthorized
-from acme.om.models.types.fill import MAIN
-from acme.om.steps.types.content import Content, TextBlock
-from acme.om.steps.types.header import (
+from acme.om.agent_sessions.types.agent_session import AgentSessionStatus
+from acme.om.agent_steps.types.agent_step import (
+    Actor,
+    AgentStep,
+    AgentStepType,
+    Origin,
+    shape_refusal,
+)
+from acme.om.agent_steps.types.content import Content, TextBlock
+from acme.om.agent_steps.types.header import (
     ControlCommand,
     LoopOutcome,
     ModelRequestHeader,
     StandingSwitch,
     SwitchedHeader,
 )
-from acme.om.steps.types.step import Actor, Origin, Step, StepType, shape_refusal
+from acme.om.agents.loop_rules import kind_prompts, standing_text, start_seq
+from acme.om.agents.types.request import MAX_STANDING, Handoff, Spawn, Start, SwitchStanding
+from acme.om.agents.types.run import RunEnd
+from acme.om.base import new_id
+from acme.om.exceptions import NotAuthorized
+from acme.om.language_models.types.fill import MAIN
 from acme.om.tools.native.load_toolset import loads
 from acme.om.tools.registry import ToolRegistry
 from acme.om.windows.rules import DATA_NOTICE, STANDING_LEAD, render_main
@@ -77,22 +83,24 @@ def texts(call: ModelCall) -> list[str]:
 
 async def started(loop: Loop, standing: str) -> UUID:
     start = Start(id=new_id(), kind="assistant", title="the ledger", standing=standing)
-    return (await loop.managers.agents.start_session(loop.owner, start)).id
+    return (await loop.managers.agents.start_agent_session(loop.owner, start)).id
 
 
-async def asked(loop: Loop, session_id: UUID, question: str, *replies: ModelReply) -> None:
-    await loop.say(session_id, question)
+async def asked(loop: Loop, agent_session_id: UUID, question: str, *replies: ModelReply) -> None:
+    await loop.say(agent_session_id, question)
     loop.anthropic.add(*replies)
-    run = await loop.loops.run(loop.owner, session_id)
+    run = await loop.loops.run(loop.owner, agent_session_id)
     assert (run.end, run.outcome) == (RunEnd.ENDED, LoopOutcome.SUCCEEDED)
 
 
-async def replayed(loop: Loop, session_id: UUID) -> list[ModelCall]:
+async def replayed(loop: Loop, agent_session_id: UUID) -> list[ModelCall]:
     """Each main request rendered again from the steps before it, its
     standing text read off them as the run of its loop read it."""
-    steps = await loop.history(session_id)
-    session = await loop.managers.agent_sessions.get_session(loop.owner, session_id)
-    fill = (await loop.managers.models.get_fill_set(loop.owner, session_id)).fill_for(MAIN)
+    steps = await loop.history(agent_session_id)
+    session = await loop.managers.agent_sessions.get_agent_session(loop.owner, agent_session_id)
+    fill = (
+        await loop.managers.language_models.get_fill_set(loop.owner, agent_session_id)
+    ).fill_for(MAIN)
     assert fill is not None
     registry = ToolRegistry(tool for tool in loop.tools.values() if tool.spec.name in session.tools)
     calls: list[ModelCall] = []
@@ -117,24 +125,26 @@ async def test_standing_text_renders_whole_in_the_system_layer_through_a_compact
     tmp_path: Path,
 ) -> None:
     loop = loop_over(tmp_path)
-    session_id = await started(loop, MANUAL)
-    await asked(loop, session_id, "What is the total?", reply(use("lookup")), reply(said("12.")))
-    compact = History(session_id).control(ControlCommand.COMPACT)
-    await loop.managers.steps.append_inputs(loop.owner, session_id, [compact])
+    agent_session_id = await started(loop, MANUAL)
+    await asked(
+        loop, agent_session_id, "What is the total?", reply(use("lookup")), reply(said("12."))
+    )
+    compact = History(agent_session_id).control(ControlCommand.COMPACT)
+    await loop.managers.agent_steps.append_inputs(loop.owner, agent_session_id, [compact])
     await asked(
         loop,
-        session_id,
+        agent_session_id,
         "And the tax?",
         reply(said("Asked for the total; it is 12."), model="claude-haiku-4-5"),
         reply(use("lookup")),
         reply(said("1.2.")),
     )
-    await asked(loop, session_id, "Thanks.", reply(said("Glad to help.")))
+    await asked(loop, agent_session_id, "Thanks.", reply(said("Glad to help.")))
 
-    steps = await loop.history(session_id)
-    (summary,) = [step for step in steps if step.type is StepType.SUMMARY]
-    (pinned,) = [step for step in steps if step.type is StepType.SWITCHED]
-    first = min(step.seq for step in steps if step.type is StepType.MESSAGE)
+    steps = await loop.history(agent_session_id)
+    (summary,) = [step for step in steps if step.type is AgentStepType.SUMMARY]
+    (pinned,) = [step for step in steps if step.type is AgentStepType.SWITCHED]
+    first = min(step.seq for step in steps if step.type is AgentStepType.MESSAGE)
     assert pinned.seq < first, "pinned before anything arrives"
     after = [
         step
@@ -189,35 +199,35 @@ async def test_a_running_session_keeps_its_standing_text_until_a_recorded_switch
     tmp_path: Path,
 ) -> None:
     loop = loop_over(tmp_path)
-    session_id = await started(loop, MANUAL)
-    await asked(loop, session_id, "What is the total?", reply(said("12.")))
+    agent_session_id = await started(loop, MANUAL)
+    await asked(loop, agent_session_id, "What is the total?", reply(said("12.")))
     # The organization revises its text: a session made now pins the new
     # one, and the running session's requests stay as they were.
     other = await started(loop, REVISED)
-    await asked(loop, session_id, "And the tax?", reply(said("1.2.")))
+    await asked(loop, agent_session_id, "And the tax?", reply(said("1.2.")))
     before, unchanged = main_calls(loop)
     assert prefix(before) == prefix(unchanged) and MANUAL in unchanged.system[1].text
-    (theirs,) = [step for step in await loop.history(other) if step.type is StepType.SWITCHED]
+    (theirs,) = [step for step in await loop.history(other) if step.type is AgentStepType.SWITCHED]
     assert theirs.as_text() == REVISED
 
     switch = SwitchStanding(id=new_id(), standing=REVISED)
-    recorded = await loop.managers.agents.switch_standing(loop.owner, session_id, switch)
-    again = await loop.managers.agents.switch_standing(loop.owner, session_id, switch)
+    recorded = await loop.managers.agents.switch_standing(loop.owner, agent_session_id, switch)
+    again = await loop.managers.agents.switch_standing(loop.owner, agent_session_id, switch)
     assert again == recorded, "a switch asked again answers the step it recorded"
     assert isinstance(recorded.header, SwitchedHeader)
     assert recorded.header.standing == StandingSwitch(chars=len(REVISED))
-    await asked(loop, session_id, "And now?", reply(said("Still 12.")))
+    await asked(loop, agent_session_id, "And now?", reply(said("Still 12.")))
     switched = main_calls(loop)[2]
     assert switched.system[1].text == f"{STANDING_LEAD}\n\n{REVISED}"
     assert (switched.tools, switched.system[0]) == (unchanged.tools, unchanged.system[0])
-    steps = await loop.history(session_id)
-    assert [s.as_text() for s in steps if s.type is StepType.SWITCHED] == [MANUAL, REVISED]
-    assert await replayed(loop, session_id) == main_calls(loop), "the steps render the bytes"
+    steps = await loop.history(agent_session_id)
+    assert [s.as_text() for s in steps if s.type is AgentStepType.SWITCHED] == [MANUAL, REVISED]
+    assert await replayed(loop, agent_session_id) == main_calls(loop), "the steps render the bytes"
 
 
-def a_standing(history: History, text: str) -> Step:
+def a_standing(history: History, text: str) -> AgentStep:
     return history.add(
-        type=StepType.SWITCHED,
+        type=AgentStepType.SWITCHED,
         actor=Actor.PERSON,
         origin=Origin.API,
         header=SwitchedHeader(standing=StandingSwitch(chars=len(text))),
@@ -243,23 +253,23 @@ async def test_a_switch_arrives_through_the_inbox_and_says_nothing_of_a_run(
     tmp_path: Path,
 ) -> None:
     loop = loop_over(tmp_path)
-    session_id = await started(loop, "")
-    await loop.say(session_id, "What is the total?")
+    agent_session_id = await started(loop, "")
+    await loop.say(agent_session_id, "What is the total?")
     switch = SwitchStanding(id=new_id(), standing=MANUAL)
-    await loop.managers.agents.switch_standing(loop.owner, session_id, switch)
-    session = await loop.managers.agent_sessions.project_status(loop.owner, session_id)
-    assert session.status is SessionStatus.PENDING, "still waiting for its run"
+    await loop.managers.agents.switch_standing(loop.owner, agent_session_id, switch)
+    session = await loop.managers.agent_sessions.project_status(loop.owner, agent_session_id)
+    assert session.status is AgentSessionStatus.PENDING, "still waiting for its run"
     loop.anthropic.add(reply(said("12.")))
-    run = await loop.loops.run(loop.owner, session_id)
+    run = await loop.loops.run(loop.owner, agent_session_id)
     assert (run.end, run.outcome) == (RunEnd.ENDED, LoopOutcome.SUCCEEDED)
-    await asked(loop, session_id, "And the tax?", reply(said("1.2.")))
+    await asked(loop, agent_session_id, "And the tax?", reply(said("1.2.")))
     began, next_loop = main_calls(loop)
     assert len(began.system) == 2, "its loop began from the input before the switch"
     assert next_loop.system[1].text.endswith(MANUAL), "the next loop takes it"
     # A switch instructs: whoever records one may make every call the
     # session's registry offers, as for a message.
-    stored = make_session().model_copy(update={"tools": ("lookup", "grant_admin")})
-    await loop.managers.agent_sessions.create_session(loop.owner, stored)
+    stored = make_agent_session().model_copy(update={"tools": ("lookup", "grant_admin")})
+    await loop.managers.agent_sessions.create_agent_session(loop.owner, stored)
     with pytest.raises(NotAuthorized, match="grant_admin"):
         await loop.managers.agents.switch_standing(loop.owner, stored.id, switch)
 

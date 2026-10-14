@@ -25,19 +25,19 @@ from contracts.tools import (
 )
 from pydantic import ValidationError
 
-from acme.infra.workspaces import Workspace
-from acme.om.base import new_id, utcnow
-from acme.om.context import CredentialKind, Role, build_context
-from acme.om.exceptions import NotAuthorized, NotFound, ValidationFailed
-from acme.om.steps.types.content import Content, TextBlock
-from acme.om.steps.types.header import (
+from acme.infra.agent_workspaces import AgentWorkspace
+from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
+from acme.om.agent_steps.types.content import Content, TextBlock
+from acme.om.agent_steps.types.header import (
     ControlCommand,
     ControlHeader,
     DecidedCall,
     ToolFailure,
     ToolRequestHeader,
 )
-from acme.om.steps.types.step import Actor, Origin, Step, StepType
+from acme.om.base import new_id, utcnow
+from acme.om.context import CredentialKind, Role, build_context
+from acme.om.exceptions import NotAuthorized, NotFound, ValidationFailed
 from acme.om.tenancy.rules import permissions_of
 from acme.om.tenancy.types.org import Org
 from acme.om.tools.registry import ToolRegistry
@@ -67,7 +67,7 @@ def setting(tmp_path: Path) -> Setting:
 async def test_an_approval_binds_the_call_and_a_changed_input_asks_again(setting: Setting) -> None:
     tools, org, push, registry = setting.tools, setting.org, setting.push, setting.registry
     agent, owner = context(Role.SERVICE, org), context(Role.OWNER, org)
-    workspace = Workspace.absent(org.id, new_id())
+    workspace = AgentWorkspace.absent(org.id, new_id())
     first = await put_call(
         tools.manager, tools.steps, agent, "push_branch", {"branch": "feature"}, "integration"
     )
@@ -77,13 +77,13 @@ async def test_an_approval_binds_the_call_and_a_changed_input_asks_again(setting
     assert gate.outcome is GateOutcome.ASK and gate.decision is Decision.APPROVE
 
     decision = await tools.manager.decide_call(
-        owner, first.session_id, first.request.seq, approve=True
+        owner, first.agent_session_id, first.request.seq, approve=True
     )
     header = decision.header
     assert isinstance(header, ControlHeader) and header.call is not None
     assert decision.actor is Actor.PERSON and decision.refs == (first.request.id,)
     assert header.call.tool == "push_branch"
-    bound = await tools.manager.input_hash(agent, first.session_id, {"branch": "feature"})
+    bound = await tools.manager.input_hash(agent, first.agent_session_id, {"branch": "feature"})
     assert header.call.input_hash == bound
     assert header.call.decided_by == owner.user_id
 
@@ -100,7 +100,7 @@ async def test_an_approval_binds_the_call_and_a_changed_input_asks_again(setting
         "push_branch",
         {"branch": "hotfix"},
         "integration",
-        session_id=first.session_id,
+        agent_session_id=first.agent_session_id,
         epoch=first.epoch,
     )
     gate = await tools.manager.gate(
@@ -119,18 +119,18 @@ async def test_an_approval_binds_the_call_and_a_changed_input_asks_again(setting
 async def test_an_expired_approval_asks_again(setting: Setting) -> None:
     tools, org, registry = setting.tools, setting.org, setting.registry
     agent, owner = context(Role.SERVICE, org), context(Role.OWNER, org)
-    workspace = Workspace.absent(org.id, new_id())
+    workspace = AgentWorkspace.absent(org.id, new_id())
     found = await put_call(
         tools.manager, tools.steps, agent, "push_branch", {"branch": "feature"}, "integration"
     )
-    await tools.manager.decide_call(owner, found.session_id, found.request.seq, approve=True)
+    await tools.manager.decide_call(owner, found.agent_session_id, found.request.seq, approve=True)
     tools.clock.now += timedelta(hours=1, seconds=1)
     gate = await tools.manager.gate(
         agent, registry, KIND_DEFAULTS, found.request, found.call_input, workspace
     )
     assert gate.outcome is GateOutcome.ASK
     # Asked again, a new approval lets it run.
-    await tools.manager.decide_call(owner, found.session_id, found.request.seq, approve=True)
+    await tools.manager.decide_call(owner, found.agent_session_id, found.request.seq, approve=True)
     gate = await tools.manager.gate(
         agent, registry, KIND_DEFAULTS, found.request, found.call_input, workspace
     )
@@ -140,12 +140,16 @@ async def test_an_expired_approval_asks_again(setting: Setting) -> None:
 async def test_a_denial_is_a_denied_tool_response_with_the_persons_note(setting: Setting) -> None:
     tools, org, push, registry = setting.tools, setting.org, setting.push, setting.registry
     agent, owner = context(Role.SERVICE, org), context(Role.OWNER, org)
-    workspace = Workspace.absent(org.id, new_id())
+    workspace = AgentWorkspace.absent(org.id, new_id())
     found = await put_call(
         tools.manager, tools.steps, agent, "push_branch", {"branch": "feature"}, "integration"
     )
     await tools.manager.decide_call(
-        owner, found.session_id, found.request.seq, approve=False, note="not during the freeze"
+        owner,
+        found.agent_session_id,
+        found.request.seq,
+        approve=False,
+        note="not during the freeze",
     )
     gate = await tools.manager.gate(
         agent, registry, KIND_DEFAULTS, found.request, found.call_input, workspace
@@ -169,22 +173,24 @@ async def test_only_an_approver_of_the_class_decides(setting: Setting) -> None:
     for nobody in (member, context(Role.VIEWER, org), agent):
         with pytest.raises(NotAuthorized):
             await tools.manager.decide_call(
-                nobody, found.session_id, found.request.seq, approve=True
+                nobody, found.agent_session_id, found.request.seq, approve=True
             )
     policy = await tools.manager.get_policy(admin)
     approvers = (ApproverRule(authorization_class="integration", roles=(Role.MEMBER,)),)
     await tools.manager.write_policy(admin, policy.model_copy(update={"approvers": approvers}))
-    await tools.manager.decide_call(member, found.session_id, found.request.seq, approve=True)
+    await tools.manager.decide_call(member, found.agent_session_id, found.request.seq, approve=True)
     with pytest.raises(NotAuthorized):
-        await tools.manager.decide_call(admin, found.session_id, found.request.seq, approve=True)
+        await tools.manager.decide_call(
+            admin, found.agent_session_id, found.request.seq, approve=True
+        )
     with pytest.raises(NotFound):
         await tools.manager.decide_call(
-            member, found.session_id, found.request.seq - 1, approve=True
+            member, found.agent_session_id, found.request.seq - 1, approve=True
         )
 
 
 def decision_on(
-    request: Step,
+    request: AgentStep,
     *,
     actor: Actor = Actor.PERSON,
     refs: tuple[UUID, ...] | None = None,
@@ -192,16 +198,16 @@ def decision_on(
     hash_: str | None = None,
     command: ControlCommand = ControlCommand.APPROVE,
     role: Role = Role.OWNER,
-) -> Step:
+) -> AgentStep:
     header = request.header
     assert isinstance(header, ToolRequestHeader)
     now = utcnow()
-    return Step(
+    return AgentStep(
         id=new_id(),
         created_at=now,
-        session_id=request.session_id,
+        agent_session_id=request.agent_session_id,
         loop_id=request.loop_id,
-        type=StepType.CONTROL,
+        type=AgentStepType.CONTROL,
         actor=actor,
         origin=Origin.PORTAL,
         refs=(request.id,) if refs is None else refs,
@@ -226,7 +232,7 @@ async def test_only_a_persons_decision_on_exactly_this_call_counts(setting: Sett
         tools.manager, tools.steps, agent, "push_branch", {"branch": "feature"}, "integration"
     )
     request, now = found.request, utcnow()
-    main = await tools.manager.input_hash(agent, found.session_id, {"branch": "main"})
+    main = await tools.manager.input_hash(agent, found.agent_session_id, {"branch": "main"})
     assert verdict(request, [decision_on(request)], now, OWNERS)[0] is Verdict.APPROVED
     for stray in (
         decision_on(request, actor=Actor.ENGINE),
@@ -253,7 +259,7 @@ async def test_a_decision_counts_only_in_a_role_the_policy_lets_decide(setting: 
     tools, org, registry = setting.tools, setting.org, setting.registry
     agent, member = context(Role.SERVICE, org), context(Role.MEMBER, org)
     owner, admin = context(Role.OWNER, org), context(Role.ADMIN, org)
-    workspace = Workspace.absent(org.id, new_id())
+    workspace = AgentWorkspace.absent(org.id, new_id())
     found = await put_call(
         tools.manager, tools.steps, agent, "push_branch", {"branch": "feature"}, "integration"
     )
@@ -265,13 +271,13 @@ async def test_a_decision_counts_only_in_a_role_the_policy_lets_decide(setting: 
         return gate.outcome
 
     (stored,) = await tools.steps.append_inputs(
-        member, found.session_id, [decision_on(found.request)]
+        member, found.agent_session_id, [decision_on(found.request)]
     )
     header = stored.header
     assert isinstance(header, ControlHeader) and header.call is not None
     assert (header.call.decided_by, header.call.role) == (member.user_id, Role.MEMBER)
     assert await outcome() is GateOutcome.ASK, "a member's approval is none"
-    await tools.manager.decide_call(owner, found.session_id, found.request.seq, approve=True)
+    await tools.manager.decide_call(owner, found.agent_session_id, found.request.seq, approve=True)
     assert await outcome() is GateOutcome.RUN
     policy = await tools.manager.get_policy(admin)
     admins = (ApproverRule(authorization_class="integration", roles=(Role.ADMIN,)),)
@@ -295,13 +301,13 @@ async def test_a_decision_sent_on_an_api_key_is_a_programs_and_approves_nothing(
         permissions=permissions_of(Role.OWNER),
         credential_kind=CredentialKind.API_KEY,
     )
-    workspace = Workspace.absent(org.id, new_id())
+    workspace = AgentWorkspace.absent(org.id, new_id())
     found = await put_call(
         tools.manager, tools.steps, agent, "push_branch", {"branch": "feature"}, "integration"
     )
 
     decision = await tools.manager.decide_call(
-        program, found.session_id, found.request.seq, approve=True
+        program, found.agent_session_id, found.request.seq, approve=True
     )
     gate = await tools.manager.gate(
         agent, registry, KIND_DEFAULTS, found.request, found.call_input, workspace

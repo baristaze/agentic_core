@@ -29,7 +29,7 @@ SOURCE_ROOTS = (
     "integrations/src",
     "ops/src",
     "workers/maintenance/src",
-    "workers/session_runner/src",
+    "workers/agent_session_runner/src",
 )
 
 CLIENT_CONSTRUCTORS = {

@@ -22,9 +22,9 @@ import pkgutil
 
 from contracts import (
     agent_session_storage,
+    agent_step_storage,
     agent_storage,
     attribution_storage,
-    budget_storage,
     event_storage,
     fill_set_storage,
     idempotency_storage,
@@ -34,7 +34,7 @@ from contracts import (
     orchestration_storage,
     outbox_storage,
     privacy_storage,
-    step_storage,
+    spend_budget_storage,
     tenancy_storage,
     tool_storage,
     window_storage,
@@ -121,7 +121,7 @@ CROSS_TENANT_CASES: dict[str, frozenset[str]] = {
     "AgentSessionStorageInterface": agent_session_storage.CROSS_TENANT_CASES,
     "AgentStorageInterface": agent_storage.CROSS_TENANT_CASES,
     "AttributionStorageInterface": attribution_storage.CROSS_TENANT_CASES,
-    "BudgetStorageInterface": budget_storage.CROSS_TENANT_CASES,
+    "SpendBudgetStorageInterface": spend_budget_storage.CROSS_TENANT_CASES,
     "EventStorageInterface": event_storage.CROSS_TENANT_CASES,
     "FillSetStorageInterface": fill_set_storage.CROSS_TENANT_CASES,
     "IdempotencyStorageInterface": idempotency_storage.CROSS_TENANT_CASES,
@@ -131,7 +131,7 @@ CROSS_TENANT_CASES: dict[str, frozenset[str]] = {
     "OrchestrationsStorageInterface": orchestration_storage.CROSS_TENANT_CASES,
     "OutboxStorageInterface": outbox_storage.CROSS_TENANT_CASES,
     "PrivacyStorageInterface": privacy_storage.CROSS_TENANT_CASES,
-    "StepStorageInterface": step_storage.CROSS_TENANT_CASES,
+    "AgentStepStorageInterface": agent_step_storage.CROSS_TENANT_CASES,
     "TenancyStorageInterface": tenancy_storage.CROSS_TENANT_CASES,
     "WindowStorageInterface": window_storage.CROSS_TENANT_CASES,
     "ToolStorageInterface": tool_storage.CROSS_TENANT_CASES,
@@ -170,14 +170,14 @@ MANAGER_EXCEPTIONS: frozenset[tuple[str, str]] = frozenset(
         ("AgentSessionsManagerInterface", "purge_across_tenants"),
         # And the history of each session that purge has claimed, named with
         # its tenant: bookkeeping of the same step, for no principal.
-        ("StepsManagerInterface", "purge_histories"),
-        # And the session's authority, its tree, its artifacts, and its
+        ("AgentStepsManagerInterface", "purge_histories"),
+        # And the session's authority, its tree, its tool outputs, and its
         # workspace, named with the tenant, which the same purge takes before
         # the session's row.
         ("AttributionManagerInterface", "purge_authority"),
         ("AgentsManagerInterface", "purge_tree"),
-        ("WindowsManagerInterface", "purge_artifacts"),
-        ("ToolsManagerInterface", "purge_workspace"),
+        ("WindowsManagerInterface", "purge_tool_outputs"),
+        ("ToolsManagerInterface", "purge_agent_workspace"),
         # The sweep's gauges of the queue, read across tenants like the purge.
         ("WorkManagerInterface", "oldest_ready_age"),
         ("WorkManagerInterface", "failed_within"),

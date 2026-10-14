@@ -3,8 +3,8 @@ from uuid import UUID
 from sqlalchemy import Update, delete, select, update
 
 from acme.om.attribution.storage import AttributionStorageInterface
-from acme.om.attribution.storage.tables.session_authorities import SessionAuthorities
-from acme.om.attribution.types.authority import SessionAuthority
+from acme.om.attribution.storage.tables.agent_session_authorities import AgentSessionAuthorities
+from acme.om.attribution.types.authority import AgentSessionAuthority
 from acme.om.exceptions import PreconditionFailed
 from acme.om.outbox.storage.tables.outbox_rows import OutboxRows
 from acme.om.outbox.types.row import OutboxRow
@@ -12,45 +12,47 @@ from acme.om.storage.impl.pg_base import PgStorageBase, delete_batch, deleted
 from acme.om.storage.utils.translation import to_model, to_row, to_values
 
 
-def cas_statement(org_id: UUID, authority: SessionAuthority, expected_version: int) -> Update:
+def cas_statement(org_id: UUID, authority: AgentSessionAuthority, expected_version: int) -> Update:
     """The compare-and-set of one authority: the version is in the WHERE,
     so two writers from one snapshot cannot both land. Returns the id when
     it hit."""
-    values = {k: v for k, v in to_values(authority, SessionAuthorities).items() if k != "id"}
+    values = {k: v for k, v in to_values(authority, AgentSessionAuthorities).items() if k != "id"}
     return (
-        update(SessionAuthorities)
+        update(AgentSessionAuthorities)
         .where(
-            SessionAuthorities.id == authority.id,
-            SessionAuthorities.org_id == org_id,
-            SessionAuthorities.version == expected_version,
+            AgentSessionAuthorities.id == authority.id,
+            AgentSessionAuthorities.org_id == org_id,
+            AgentSessionAuthorities.version == expected_version,
         )
         .values(**values)
-        .returning(SessionAuthorities.id)
+        .returning(AgentSessionAuthorities.id)
     )
 
 
 class AttributionStoragePostgresImpl(PgStorageBase, AttributionStorageInterface):
     async def create_authority(
-        self, org_id: UUID, authority: SessionAuthority, outbox_rows: tuple[OutboxRow, ...]
+        self, org_id: UUID, authority: AgentSessionAuthority, outbox_rows: tuple[OutboxRow, ...]
     ) -> bool:
-        return await self._insert(SessionAuthorities, org_id, authority, outbox_rows)
+        return await self._insert(AgentSessionAuthorities, org_id, authority, outbox_rows)
 
-    async def read_authority(self, org_id: UUID, session_id: UUID) -> SessionAuthority | None:
-        stmt = select(SessionAuthorities).where(
-            SessionAuthorities.org_id == org_id, SessionAuthorities.id == session_id
+    async def read_authority(
+        self, org_id: UUID, agent_session_id: UUID
+    ) -> AgentSessionAuthority | None:
+        stmt = select(AgentSessionAuthorities).where(
+            AgentSessionAuthorities.org_id == org_id, AgentSessionAuthorities.id == agent_session_id
         )
         async with self._session_for(stmt, org_id=org_id) as session:
             row = (await session.execute(stmt)).scalar_one_or_none()
-            return None if row is None else to_model(row, SessionAuthority)
+            return None if row is None else to_model(row, AgentSessionAuthority)
 
     async def write_authority(
         self,
         org_id: UUID,
-        authority: SessionAuthority,
+        authority: AgentSessionAuthority,
         expected_version: int,
         outbox_rows: tuple[OutboxRow, ...],
     ) -> None:
-        async with self._session_for(SessionAuthorities, org_id=org_id) as db:
+        async with self._session_for(AgentSessionAuthorities, org_id=org_id) as db:
             stmt = cas_statement(org_id, authority, expected_version)
             if (await db.execute(stmt)).scalar_one_or_none() is None:
                 # Moved by another writer, or gone, or another tenant's: in
@@ -63,9 +65,9 @@ class AttributionStoragePostgresImpl(PgStorageBase, AttributionStorageInterface)
                 db.add(to_row(outbox_row, OutboxRows, org_id=org_id))
             await db.commit()
 
-    async def purge_authority(self, org_id: UUID, session_id: UUID) -> bool:
-        stmt = delete(SessionAuthorities).where(
-            SessionAuthorities.org_id == org_id, SessionAuthorities.id == session_id
+    async def purge_authority(self, org_id: UUID, agent_session_id: UUID) -> bool:
+        stmt = delete(AgentSessionAuthorities).where(
+            AgentSessionAuthorities.org_id == org_id, AgentSessionAuthorities.id == agent_session_id
         )
         async with self._purge_session_for(stmt, org_id=org_id) as session:
             purged = deleted(await session.execute(stmt))
@@ -73,7 +75,9 @@ class AttributionStoragePostgresImpl(PgStorageBase, AttributionStorageInterface)
             return purged > 0
 
     async def purge_tenant(self, org_id: UUID, limit: int) -> int:
-        stmt = delete_batch(SessionAuthorities, SessionAuthorities.org_id == org_id, limit=limit)
+        stmt = delete_batch(
+            AgentSessionAuthorities, AgentSessionAuthorities.org_id == org_id, limit=limit
+        )
         async with self._session_for(stmt, org_id=org_id) as session:
             purged = deleted(await session.execute(stmt))
             await session.commit()

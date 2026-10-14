@@ -24,10 +24,10 @@ from contracts.tools import (
 
 from acme.infra.transports import StaleCommand
 from acme.infra.transports.twin import RecordSealTwin
+from acme.om.agent_steps.types.header import ToolFailure
 from acme.om.base import new_id
 from acme.om.context import Role
 from acme.om.exceptions import StaleWriter
-from acme.om.steps.types.header import ToolFailure
 from acme.om.tools.rules import engine_retries
 from acme.om.tools.types.tool import Effect
 
@@ -41,7 +41,7 @@ async def test_a_repeatable_call_runs_again_under_the_same_key(
     tools = tools_over(transport)
     ctx = context(Role.SERVICE, make_org())
     registry = registry_of(Command(effect=effect))
-    workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
+    workspace = await tools.manager.prepare_agent_workspace(ctx, new_id(), TWIN_SPEC)
     found = await put_call(
         tools.manager, tools.steps, ctx, "run_command", {"argv": ["make", "test"]}, "execute"
     )
@@ -55,7 +55,7 @@ async def test_a_repeatable_call_runs_again_under_the_same_key(
         epoch=found.epoch,
         tree_deadline=None,
     )
-    later = await tools.steps.begin_run(ctx, found.session_id)
+    later = await tools.steps.begin_run(ctx, found.agent_session_id)
     settled = await tools.manager.recover(
         ctx, registry, found.request, found.call_input, workspace, epoch=later, tree_deadline=None
     )
@@ -70,7 +70,7 @@ async def test_an_unsafe_call_is_answered_from_the_transports_record(tmp_path: P
     tools = tools_over(transport)
     ctx = context(Role.SERVICE, make_org())
     registry = registry_of(Command("deploy", effect=Effect.UNSAFE))
-    workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
+    workspace = await tools.manager.prepare_agent_workspace(ctx, new_id(), TWIN_SPEC)
     found = await put_call(
         tools.manager, tools.steps, ctx, "deploy", {"argv": ["deploy", "staging"]}, "execute"
     )
@@ -83,7 +83,7 @@ async def test_an_unsafe_call_is_answered_from_the_transports_record(tmp_path: P
         epoch=found.epoch,
         tree_deadline=None,
     )
-    later = await tools.steps.begin_run(ctx, found.session_id)
+    later = await tools.steps.begin_run(ctx, found.agent_session_id)
     settled = await tools.manager.recover(
         ctx, registry, found.request, found.call_input, workspace, epoch=later, tree_deadline=None
     )
@@ -100,13 +100,13 @@ async def test_an_unsafe_call_with_no_record_is_interrupted_and_never_repeated(
     ctx = context(Role.SERVICE, make_org())
     push = PushBranch({"feature": False})
     registry = registry_of(Command("deploy", effect=Effect.UNSAFE), push)
-    workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
+    workspace = await tools.manager.prepare_agent_workspace(ctx, new_id(), TWIN_SPEC)
     for tool, call_input, cls in (
         ("deploy", {"argv": ["deploy", "staging"]}, "execute"),
         ("push_branch", {"branch": "feature"}, "integration"),
     ):
         found = await put_call(tools.manager, tools.steps, ctx, tool, call_input, cls)
-        later = await tools.steps.begin_run(ctx, found.session_id)
+        later = await tools.steps.begin_run(ctx, found.agent_session_id)
         settled = await tools.manager.recover(
             ctx,
             registry,
@@ -129,11 +129,11 @@ async def test_recovering_an_unsafe_call_fences_the_lost_runs_command(tmp_path: 
     tools = tools_over(transport)
     ctx = context(Role.SERVICE, make_org())
     registry = registry_of(Command("deploy", effect=Effect.UNSAFE))
-    workspace = await tools.manager.prepare_workspace(ctx, new_id(), TWIN_SPEC)
+    workspace = await tools.manager.prepare_agent_workspace(ctx, new_id(), TWIN_SPEC)
     found = await put_call(
         tools.manager, tools.steps, ctx, "deploy", {"argv": ["deploy", "staging"]}, "execute"
     )
-    later = await tools.steps.begin_run(ctx, found.session_id)
+    later = await tools.steps.begin_run(ctx, found.agent_session_id)
     settled = await tools.manager.recover(
         ctx, registry, found.request, found.call_input, workspace, epoch=later, tree_deadline=None
     )

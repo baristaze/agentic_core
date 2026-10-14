@@ -7,6 +7,16 @@ from uuid import UUID
 
 from pydantic import Field, ValidationError
 
+from acme.infra.agent_workspaces import (
+    AgentWorkspace,
+    AgentWorkspaceLost,
+    AgentWorkspaceProviderInterface,
+    Durability,
+    IsolationMode,
+    IsolationRefused,
+    IsolationSpec,
+    SnapshotRefused,
+)
 from acme.infra.exceptions import InfraException
 from acme.infra.transports import (
     CredentialBrokerInterface,
@@ -15,15 +25,17 @@ from acme.infra.transports import (
     SecretUse,
     TransportInterface,
 )
-from acme.infra.workspaces import (
-    Durability,
-    IsolationMode,
-    IsolationRefused,
-    IsolationSpec,
-    SnapshotRefused,
-    Workspace,
-    WorkspaceLost,
-    WorkspaceProviderInterface,
+from acme.om.agent_steps import AgentStepsManagerInterface
+from acme.om.agent_steps.rules import actor_of, origin_of
+from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
+from acme.om.agent_steps.types.content import UNPARSED, Content, TextBlock
+from acme.om.agent_steps.types.header import (
+    AgentWorkspaceSnapshot,
+    ControlCommand,
+    ControlHeader,
+    DecidedCall,
+    ToolFailure,
+    ToolRequestHeader,
 )
 from acme.om.attribution import AttributionManagerInterface
 from acme.om.attribution.types.authority import CallReach
@@ -45,20 +57,8 @@ from acme.om.exceptions import (
 )
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.types.row import OutboxRow, versioned_row
-from acme.om.steps import StepsManagerInterface
-from acme.om.steps.rules import actor_of, origin_of
-from acme.om.steps.types.content import UNPARSED, Content, TextBlock
-from acme.om.steps.types.header import (
-    ControlCommand,
-    ControlHeader,
-    DecidedCall,
-    ToolFailure,
-    ToolRequestHeader,
-    WorkspaceSnapshot,
-)
-from acme.om.steps.types.step import Step, StepType
 from acme.om.tenancy import TenancyManagerInterface
-from acme.om.tools.impl.bases import WorkspaceBases
+from acme.om.tools.impl.bases import AgentWorkspaceBases
 from acme.om.tools.impl.snapshots import SnapshotStore
 from acme.om.tools.manager import KeyedHash, ToolsManagerInterface
 from acme.om.tools.registry import ToolRegistry
@@ -97,7 +97,7 @@ from acme.om.tools.types.call import (
     JobStarted,
     Verdict,
 )
-from acme.om.tools.types.policy import Decision, PolicyCall, PolicyLayer, ToolPolicy
+from acme.om.tools.types.policy import Decision, ToolPolicy, ToolPolicyCall, ToolPolicyLayer
 from acme.om.tools.types.tool import ToolInput, ToolMode
 
 log = logging.getLogger(__name__)
@@ -109,7 +109,7 @@ SECRET_USED = "tools.secret.used"
 
 class ToolsOptions(Platform):
     # The platform's: no tenant loosens a call past them.
-    ceilings: PolicyLayer = Field(default_factory=lambda: DEFAULT_CEILINGS)
+    ceilings: ToolPolicyLayer = Field(default_factory=lambda: DEFAULT_CEILINGS)
     engine_limit: timedelta = timedelta(minutes=30)  # the engine's ceiling on one call
     approval_lifetime: timedelta = timedelta(hours=1)  # an approval expires, and is asked again
     max_output_chars: int = 50_000  # what the model reads of one output, at most
@@ -131,11 +131,11 @@ class ToolsManagerImpl(ToolsManagerInterface):
     def __init__(
         self,
         storage: ToolStorageInterface,
-        steps: StepsManagerInterface,
+        steps: AgentStepsManagerInterface,
         tenancy: TenancyManagerInterface,
         events: EventsManagerInterface,
         relay: OutboxRelayInterface,
-        workspaces: WorkspaceProviderInterface,
+        workspaces: AgentWorkspaceProviderInterface,
         transport: TransportInterface,
         options: ToolsOptions,
         clock: Callable[[], datetime] = utcnow,
@@ -145,7 +145,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         attribution: AttributionManagerInterface,
         broker: CredentialBrokerInterface,
         snapshots: SnapshotStore,
-        bases: WorkspaceBases,
+        bases: AgentWorkspaceBases,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self._broker = broker
@@ -160,7 +160,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         self._tenancy = tenancy
         self._events = events
         self._relay = relay
-        self._workspaces = workspaces
+        self._agent_workspaces = workspaces
         self._transport = transport
         self._options = options
         self._clock = clock
@@ -216,35 +216,37 @@ class ToolsManagerImpl(ToolsManagerInterface):
 
     # The workspace.
 
-    async def prepare_workspace(
+    async def prepare_agent_workspace(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         spec: IsolationSpec,
-        restore: WorkspaceSnapshot | None = None,
-    ) -> Workspace:
+        restore: AgentWorkspaceSnapshot | None = None,
+    ) -> AgentWorkspace:
         ctx.require(Permission.WRITE)
         if spec.mode is IsolationMode.NONE:
             if restore is not None:
                 raise IsolationRefused(
-                    f"agent session {session_id} has no workspace to start from a snapshot",
+                    f"agent session {agent_session_id} has no workspace to start from a snapshot",
                     cause="a session with no workspace starts from no snapshot",
                 )
-            return Workspace.absent(ctx.org_id, session_id)
+            return AgentWorkspace.absent(ctx.org_id, agent_session_id)
         # Its bytes are trusted by their hash before the provider sees them:
         # a snapshot that does not match starts nothing.
-        archive = None if restore is None else await self._snapshots.load(ctx, session_id, restore)
+        archive = (
+            None if restore is None else await self._snapshots.load(ctx, agent_session_id, restore)
+        )
         # A snapshot holds its base already; without one, a base with setup
         # is read, or built once for the tenant.
         base = None
         if archive is None and spec.base is not None and spec.base.setup:
             base = await self._bases.archive(ctx, spec)
         try:
-            return await self._workspaces.prepare(
-                ctx.org_id, session_id, spec, snapshot=archive, base=base
+            return await self._agent_workspaces.prepare(
+                ctx.org_id, agent_session_id, spec, snapshot=archive, base=base
             )
         except InfraException as lost:
-            if base is None or lost.code != WorkspaceLost.code:
+            if base is None or lost.code != AgentWorkspaceLost.code:
                 raise
             # A base this host cannot bring in, such as one on an image this
             # host cannot pull, holds nothing of the session's: it is built
@@ -256,135 +258,145 @@ class ToolsManagerImpl(ToolsManagerInterface):
                 cause="the workspace base is built again",
             ) from lost
 
-    async def release_workspace(self, ctx: TenantContext, workspace: Workspace) -> None:
+    async def release_agent_workspace(self, ctx: TenantContext, workspace: AgentWorkspace) -> None:
         ctx.require(Permission.WRITE)
         if workspace.spec.mode is not IsolationMode.NONE:
-            await self._workspaces.release(workspace)
+            await self._agent_workspaces.release(workspace)
 
-    async def snapshot_workspace(
+    async def snapshot_agent_workspace(
         self,
         ctx: TenantContext,
-        session_id: UUID,
-        workspace: Workspace,
+        agent_session_id: UUID,
+        workspace: AgentWorkspace,
         *,
         epoch: int,
         loop_id: UUID,
-    ) -> Step:
+    ) -> AgentStep:
         ctx.require(Permission.WRITE)
-        archive = await self._take(ctx, session_id, workspace)
-        return await self._name(ctx, session_id, workspace, archive, epoch=epoch, loop_id=loop_id)
+        archive = await self._take(ctx, agent_session_id, workspace)
+        return await self._name(
+            ctx, agent_session_id, workspace, archive, epoch=epoch, loop_id=loop_id
+        )
 
     async def fork_snapshot(
         self, ctx: TenantContext, child_id: UUID, snapshot_id: UUID, taken: TakenSnapshot
-    ) -> WorkspaceSnapshot:
+    ) -> AgentWorkspaceSnapshot:
         ctx.require(Permission.WRITE)
         # The child's own copy: what the provider keeps outside the archive,
         # such as a disk, is copied under the child's workspace, so neither
         # session's purge nor revocation reaches the other's.
-        copy = await self._workspaces.keep(taken.archive, ctx.org_id, child_id)
+        copy = await self._agent_workspaces.keep(taken.archive, ctx.org_id, child_id)
         try:
-            kept = await self._snapshots.keep(ctx, child_id, snapshot_id, taken.workspace_id, copy)
+            kept = await self._snapshots.keep(
+                ctx, child_id, snapshot_id, taken.agent_workspace_id, copy
+            )
         except BaseException:
-            await self._workspaces.discard(copy)
+            await self._agent_workspaces.discard(copy)
             raise
         if not taken.kept:
             # A cache keeps nothing of what the spawn took: the child's copy
             # holds it all.
-            await self._workspaces.discard(taken.archive)
+            await self._agent_workspaces.discard(taken.archive)
         return kept
 
     async def find_snapshot(
-        self, ctx: TenantContext, session_id: UUID, snapshot_id: UUID
-    ) -> WorkspaceSnapshot:
+        self, ctx: TenantContext, agent_session_id: UUID, snapshot_id: UUID
+    ) -> AgentWorkspaceSnapshot:
         ctx.require(Permission.READ)
-        async for step in self._history(ctx, session_id):
+        async for step in self._history(ctx, agent_session_id):
             named = named_snapshot(step)
             if named is not None and named.id == snapshot_id:
                 return named
-        raise NotFound(f"agent session {session_id} names no snapshot {snapshot_id}")
+        raise NotFound(f"agent session {agent_session_id} names no snapshot {snapshot_id}")
 
-    async def _take(self, ctx: TenantContext, session_id: UUID, workspace: Workspace) -> bytes:
+    async def _take(
+        self, ctx: TenantContext, agent_session_id: UUID, workspace: AgentWorkspace
+    ) -> bytes:
         """The live workspace's archive, refused before anything runs when
         there is none to take or the session keeps no content at rest. No
         credential is in it: the broker takes back all it attached there,
         one a lost run never took back included, and an injected secret's
         value a command wrote there refuses it."""
         if workspace.spec.mode is IsolationMode.NONE:
-            raise SnapshotRefused(f"agent session {session_id} has no workspace to snapshot")
-        await self._snapshots.at_rest(ctx, session_id)
+            raise SnapshotRefused(f"agent session {agent_session_id} has no workspace to snapshot")
+        await self._snapshots.at_rest(ctx, agent_session_id)
         await self._broker.detach_all(workspace)
-        archive = await self._workspaces.snapshot(workspace)
+        archive = await self._agent_workspaces.snapshot(workspace)
         try:
-            await self._snapshots.scan(ctx, self._workspaces.held(archive))
+            await self._snapshots.scan(ctx, self._agent_workspaces.held(archive))
         except BaseException:
             # Refused, so nothing of it stays: a disk its provider keeps
             # apart, one that holds a secret's value included, goes too.
-            await self._workspaces.discard(archive)
+            await self._agent_workspaces.discard(archive)
             raise
         return archive
 
     async def _name(
         self,
         ctx: TenantContext,
-        session_id: UUID,
-        workspace: Workspace,
+        agent_session_id: UUID,
+        workspace: AgentWorkspace,
         archive: bytes,
         *,
         epoch: int,
         loop_id: UUID,
-    ) -> Step:
+    ) -> AgentStep:
         """`archive` kept as the session's snapshot, and the `snapshotted`
         step that names it, appended under the run's epoch."""
         try:
-            kept = await self._snapshots.keep(ctx, session_id, new_id(), workspace.id, archive)
+            kept = await self._snapshots.keep(
+                ctx, agent_session_id, new_id(), workspace.id, archive
+            )
         except BaseException:
             # Not kept, so nothing of it stays, a disk kept apart included.
-            await self._workspaces.discard(archive)
+            await self._agent_workspaces.discard(archive)
             raise
-        step = snapshotted_step(new_id(), self._clock(), session_id, loop_id, kept)
-        (stored,) = await self._steps.append_steps(ctx, session_id, epoch, [step])
+        step = snapshotted_step(new_id(), self._clock(), agent_session_id, loop_id, kept)
+        (stored,) = await self._steps.append_agent_steps(ctx, agent_session_id, epoch, [step])
         return stored
 
     async def _fork_point(
-        self, ctx: TenantContext, request: Step, workspace: Workspace, epoch: int
+        self, ctx: TenantContext, request: AgentStep, workspace: AgentWorkspace, epoch: int
     ) -> TakenSnapshot:
         """The call's workspace as it stands, taken for a sub-agent to start
         from. A workspace kept by snapshots keeps it as its own too, named in
         the call's loop, so its history holds the state the child started
         from; a cache keeps nothing, and the child alone keeps it."""
-        session_id = request.session_id
-        archive = await self._take(ctx, session_id, workspace)
+        agent_session_id = request.agent_session_id
+        archive = await self._take(ctx, agent_session_id, workspace)
         kept = workspace.spec.durability is Durability.SNAPSHOT
         if kept:
             await self._name(
-                ctx, session_id, workspace, archive, epoch=epoch, loop_id=request.loop_id
+                ctx, agent_session_id, workspace, archive, epoch=epoch, loop_id=request.loop_id
             )
-        return TakenSnapshot(workspace_id=workspace.id, archive=archive, kept=kept)
+        return TakenSnapshot(agent_workspace_id=workspace.id, archive=archive, kept=kept)
 
     # A call.
 
     async def input_hash(
-        self, ctx: TenantContext, session_id: UUID, call_input: Mapping[str, Any]
+        self, ctx: TenantContext, agent_session_id: UUID, call_input: Mapping[str, Any]
     ) -> str:
         ctx.require(Permission.WRITE)
-        return INPUT_HASH + await self._keyed_hash(ctx, session_id, canonical_input(call_input))
+        return INPUT_HASH + await self._keyed_hash(
+            ctx, agent_session_id, canonical_input(call_input)
+        )
 
     async def gate(
         self,
         ctx: TenantContext,
         registry: ToolRegistry,
-        defaults: PolicyLayer,
-        request: Step,
+        defaults: ToolPolicyLayer,
+        request: AgentStep,
         call_input: Mapping[str, Any],
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         *,
         holds_private: bool = True,
         tree_deadline: datetime | None = None,
-        above: Sequence[PolicyLayer] = (),
+        above: Sequence[ToolPolicyLayer] = (),
     ) -> Gate:
         ctx.require(Permission.WRITE)
         resolved = await self._resolve(ctx, registry, request, call_input)
-        if isinstance(resolved, Step):
+        if isinstance(resolved, AgentStep):
             return Gate(outcome=GateOutcome.REFUSE, response=resolved)
         tool, parsed = resolved
         if _header(request).authorization_class != tool.spec.authorization_class:
@@ -402,7 +414,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         except Exception as error:
             failure, detail = self._classify(error, tool)
             return Gate(outcome=GateOutcome.REFUSE, response=self._answer(request, detail, failure))
-        asked = PolicyCall(
+        asked = ToolPolicyCall(
             tool=tool.spec.name,
             authorization_class=tool.spec.authorization_class,
             effect=tool.spec.effect,
@@ -419,7 +431,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
             outward=reaches_outward(asked, workspace.spec.egress.mode), holds_private=holds_private
         )
         try:
-            authority = await self._attribution.authorize_call(ctx, request.session_id, reach)
+            authority = await self._attribution.authorize_call(ctx, request.agent_session_id, reach)
         except AuthorityRevoked as revoked:
             denied = self._answer(request, revoked.message, ToolFailure.DENIED)
             return Gate(outcome=GateOutcome.REFUSE, response=denied)
@@ -462,17 +474,17 @@ class ToolsManagerImpl(ToolsManagerInterface):
         self,
         ctx: TenantContext,
         registry: ToolRegistry,
-        request: Step,
+        request: AgentStep,
         call_input: Mapping[str, Any],
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         *,
         epoch: int,
         tree_deadline: datetime | None,
         on_output: OutputSink | None = None,
-    ) -> Step:
+    ) -> AgentStep:
         ctx.require(Permission.WRITE)
         resolved = await self._resolve(ctx, registry, request, call_input)
-        if isinstance(resolved, Step):
+        if isinstance(resolved, AgentStep):
             return resolved
         tool, parsed = resolved
         if tool.spec.mode is ToolMode.JOB:
@@ -518,14 +530,14 @@ class ToolsManagerImpl(ToolsManagerInterface):
         self,
         ctx: TenantContext,
         registry: ToolRegistry,
-        request: Step,
+        request: AgentStep,
         call_input: Mapping[str, Any],
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         *,
         epoch: int,
         tree_deadline: datetime | None,
         on_output: OutputSink | None = None,
-    ) -> Step:
+    ) -> AgentStep:
         ctx.require(Permission.WRITE)
         tool = registry.get(_header(request).tool)
         if tool is not None and tool.spec.effect.repeatable:
@@ -564,16 +576,16 @@ class ToolsManagerImpl(ToolsManagerInterface):
         self,
         ctx: TenantContext,
         registry: ToolRegistry,
-        request: Step,
+        request: AgentStep,
         call_input: Mapping[str, Any],
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         *,
         epoch: int,
         tree_deadline: datetime | None,
-    ) -> JobHandle | JobNotStarted | Step:
+    ) -> JobHandle | JobNotStarted | AgentStep:
         ctx.require(Permission.WRITE)
         resolved = await self._resolve(ctx, registry, request, call_input)
-        if isinstance(resolved, Step):
+        if isinstance(resolved, AgentStep):
             return JobNotStarted(response=resolved)  # refused before its tool ran
         tool, parsed = resolved
         if not isinstance(tool, JobToolInterface):
@@ -615,17 +627,17 @@ class ToolsManagerImpl(ToolsManagerInterface):
     async def decide_call(
         self,
         ctx: TenantContext,
-        session_id: UUID,
+        agent_session_id: UUID,
         request_seq: int,
         *,
         approve: bool,
         note: str = "",
-    ) -> Step:
+    ) -> AgentStep:
         ctx.require(Permission.WRITE)
-        page = await self._steps.get_steps(ctx, session_id, request_seq - 1, 1)
+        page = await self._steps.get_agent_steps(ctx, agent_session_id, request_seq - 1, 1)
         request = next((step for step in page.items if step.seq == request_seq), None)
-        if request is None or request.type is not StepType.TOOL_REQUEST:
-            raise NotFound(f"no tool request at {request_seq} in agent session {session_id}")
+        if request is None or request.type is not AgentStepType.TOOL_REQUEST:
+            raise NotFound(f"no tool request at {request_seq} in agent session {agent_session_id}")
         header = _header(request)
         roles = approver_roles(await self._policy(ctx), header.authorization_class)
         if ctx.role not in roles:
@@ -633,12 +645,12 @@ class ToolsManagerImpl(ToolsManagerInterface):
                 f"{ctx.role.value} does not decide {header.authorization_class} calls"
             )
         now = self._clock()
-        decision = Step(
+        decision = AgentStep(
             id=new_id(),
             created_at=now,
-            session_id=session_id,
+            agent_session_id=agent_session_id,
             loop_id=request.loop_id,
-            type=StepType.CONTROL,
+            type=AgentStepType.CONTROL,
             # A decision sent on an API key is a program's: it is recorded as
             # one, and `decides` never counts it as a person's approval.
             actor=actor_of(ctx.credential_kind),
@@ -656,22 +668,22 @@ class ToolsManagerImpl(ToolsManagerInterface):
             ),
             content=Content(blocks=(TextBlock(text=note),) if note else ()),
         )
-        (stored,) = await self._steps.append_inputs(ctx, session_id, [decision])
+        (stored,) = await self._steps.append_inputs(ctx, agent_session_id, [decision])
         return stored
 
-    async def purge_workspace(self, org_id: UUID, session_id: UUID) -> None:
+    async def purge_agent_workspace(self, org_id: UUID, agent_session_id: UUID) -> None:
         # A session's workspace is prepared under the session's id. Its files
         # go first: what still runs there ends with them. Its snapshots are
         # content too, and go with them.
-        await self._workspaces.purge(org_id, session_id)
-        await self._transport.purge_records(session_id)
-        await self._snapshots.purge(org_id, session_id)
+        await self._agent_workspaces.purge(org_id, agent_session_id)
+        await self._transport.purge_records(agent_session_id)
+        await self._snapshots.purge(org_id, agent_session_id)
 
-    async def erase_snapshots(self, ctx: TenantContext, session_id: UUID) -> None:
+    async def erase_snapshots(self, ctx: TenantContext, agent_session_id: UUID) -> None:
         ctx.require(Permission.WRITE)
         # A session's workspace is prepared under the session's id, and its
         # snapshots are kept under it.
-        await self._workspaces.erase_snapshots(ctx.org_id, session_id)
+        await self._agent_workspaces.erase_snapshots(ctx.org_id, agent_session_id)
 
     async def purge_tenant(self, ctx: TenantContext) -> int:
         ctx.require(Permission.WRITE)
@@ -696,24 +708,28 @@ class ToolsManagerImpl(ToolsManagerInterface):
             updated_by=ctx.user_id,
         )
 
-    async def _history(self, ctx: TenantContext, session_id: UUID) -> AsyncIterator[Step]:
+    async def _history(
+        self, ctx: TenantContext, agent_session_id: UUID
+    ) -> AsyncIterator[AgentStep]:
         """The session's whole history, in `seq` order, a page at a time."""
         after = 0
         while True:
-            page = await self._steps.get_steps(ctx, session_id, after, self._options.history_page)
+            page = await self._steps.get_agent_steps(
+                ctx, agent_session_id, after, self._options.history_page
+            )
             for step in page.items:
                 yield step
             if not page.has_more or not page.items:
                 return
             after = page.items[-1].seq
 
-    async def _after(self, ctx: TenantContext, request: Step) -> list[Step]:
+    async def _after(self, ctx: TenantContext, request: AgentStep) -> list[AgentStep]:
         """The session's history after the request, every page of it."""
-        later: list[Step] = []
+        later: list[AgentStep] = []
         after = request.seq
         while True:
-            page = await self._steps.get_steps(
-                ctx, request.session_id, after, self._options.history_page
+            page = await self._steps.get_agent_steps(
+                ctx, request.agent_session_id, after, self._options.history_page
             )
             later += page.items
             if not page.has_more or not page.items:
@@ -724,14 +740,14 @@ class ToolsManagerImpl(ToolsManagerInterface):
         self,
         ctx: TenantContext,
         registry: ToolRegistry,
-        request: Step,
+        request: AgentStep,
         call_input: Mapping[str, Any],
-    ) -> tuple[ToolInterface, ToolInput] | Step:
+    ) -> tuple[ToolInterface, ToolInput] | AgentStep:
         """The tool and the typed input, or the response that refuses them: a
         name the registry does not hold, or an input its schema refuses. An
         input that is not the one the request recorded is never run."""
         header = _header(request)
-        if await self.input_hash(ctx, request.session_id, call_input) != header.input_hash:
+        if await self.input_hash(ctx, request.agent_session_id, call_input) != header.input_hash:
             raise ValidationFailed(f"the input given is not the one request {request.id} recorded")
         tool = registry.get(header.tool)
         if tool is None:
@@ -757,9 +773,9 @@ class ToolsManagerImpl(ToolsManagerInterface):
     def _runtime(
         self,
         ctx: TenantContext,
-        request: Step,
+        request: AgentStep,
         tool: ToolInterface,
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         epoch: int,
         deadline: datetime,
         on_output: OutputSink | None,
@@ -776,7 +792,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
                     "secret": use.name,
                     "via": use.via.value,
                     "tool": tool.spec.name,
-                    "session_id": str(request.session_id),
+                    "agent_session_id": str(request.agent_session_id),
                 },
             )
             await self._events.append_event(ctx, entry)
@@ -784,7 +800,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         return ToolRuntime(
             self._transport,
             workspace,
-            session_id=request.session_id,
+            agent_session_id=request.agent_session_id,
             seal=self._sealing(ctx, request),
             key=request.id,
             epoch=epoch,
@@ -798,13 +814,13 @@ class ToolsManagerImpl(ToolsManagerInterface):
             answer_chars=self._options.max_output_chars,
         )
 
-    def _sealing(self, ctx: TenantContext, request: Step) -> RecordSeal:
+    def _sealing(self, ctx: TenantContext, request: AgentStep) -> RecordSeal:
         """The seal the call's command goes to the transport with: its
         session's, bound to the call's key."""
-        session_id, key = request.session_id, request.id
+        agent_session_id, key = request.agent_session_id, request.id
         return RecordSeal(
-            seal=lambda data: self._record_seal.seal(ctx, session_id, key, data),
-            open=lambda sealed: self._record_seal.open(ctx, session_id, key, sealed),
+            seal=lambda data: self._record_seal.seal(ctx, agent_session_id, key, data),
+            open=lambda sealed: self._record_seal.open(ctx, agent_session_id, key, sealed),
         )
 
     def _classify(self, error: Exception, tool: ToolInterface) -> tuple[ToolFailure, str]:
@@ -827,7 +843,9 @@ class ToolsManagerImpl(ToolsManagerInterface):
                 log.exception("tool %s failed", tool.spec.name, exc_info=error)
                 return ToolFailure.PERMANENT, f"{tool.spec.name} failed: {type(error).__name__}"
 
-    def _answer(self, request: Step, text: str, failure: ToolFailure | None = None) -> Step:
+    def _answer(
+        self, request: AgentStep, text: str, failure: ToolFailure | None = None
+    ) -> AgentStep:
         limit = self._options.max_output_chars
         return response(new_id(), self._clock(), request, text, failure, limit=limit)
 
@@ -840,7 +858,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
             await self._relay.relay_all(ctx.org_id, rows)
 
 
-def _header(request: Step) -> ToolRequestHeader:
+def _header(request: AgentStep) -> ToolRequestHeader:
     header = request.header
     if not isinstance(header, ToolRequestHeader):
         raise ValidationFailed(f"step {request.id} is not a tool request")

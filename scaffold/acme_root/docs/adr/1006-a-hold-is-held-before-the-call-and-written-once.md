@@ -30,14 +30,14 @@ next call.
 **A tally per budget and window is the lock.** The hold's one transaction
 makes the tally of each line where its window has none, locks the tallies
 in one order (by budget, then window), holds the call against what each
-window spent and holds already (`budgets.rules.breaches`), and either adds
+window spent and holds already (`spend_budgets.rules.breaches`), and either adds
 the call's worst case to every line and writes the hold, or writes
 nothing and answers every breach. Two holds over one line queue on its
 tally, so they never both pass when only one fits, and two calls over the
 same lines never wait on each other crosswise.
 
 **A hold and its settlement are written once.** The serving logins keep
-SELECT and INSERT on `budget_holds` and `budget_settlements` and lose
+SELECT and INSERT on `spend_budget_holds` and `spend_budget_settlements` and lose
 UPDATE and DELETE, as on the history (ADR 1002). A settlement is unique
 per hold and moves the tallies in its own transaction, under the same
 locks: the hold leaves what the window holds and what it spent joins what
@@ -58,8 +58,8 @@ amount, a window that never resets, or a missing price waits on a
 person's raise or price: no retry time. The park tries again when the last
 of its breaches can have cleared, and names the breach that binds
 longest. A park with a retry time lands, with the session's write, a
-`WAKE_SESSION` work item that waits in the queue until then. A raised
-budget lands a `WAKE_SESSIONS` item that wakes every session of the org
+`WAKE_AGENT_SESSION` work item that waits in the queue until then. A raised
+budget lands a `WAKE_AGENT_SESSIONS` item that wakes every session of the org
 parked on a budget. Each wake writes the engine's `unlock` control, and
 the run that takes the session up asks its gates again.
 

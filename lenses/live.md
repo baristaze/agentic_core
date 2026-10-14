@@ -61,7 +61,7 @@ no step.
 
 **Shape.**
 `scaffold/acme_root/integrations/src/acme/integrations/model_providers/calls.py`
-and `scaffold/acme_root/om/src/acme/om/steps/types/header.py`
+and `scaffold/acme_root/om/src/acme/om/agent_steps/types/header.py`
 
 **Check.** review
 
@@ -90,7 +90,7 @@ than answered.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/steps/manager.py` and
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_steps/manager.py` and
 `scaffold/acme_root/om/src/acme/om/agent_sessions/rules.py`
 
 **Check.** review
@@ -116,7 +116,7 @@ session whose park does not wait on it.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/steps/types/header.py` and
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_steps/types/header.py` and
 `scaffold/acme_root/om/src/acme/om/agent_sessions/rules.py`
 
 **Check.** review

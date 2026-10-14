@@ -23,7 +23,7 @@ from acme.om.tools.types.call import JobCompletion
 
 class LoopManagerInterface(ABC):
     @abstractmethod
-    async def run(self, ctx: TenantContext, session_id: UUID) -> LoopRun:
+    async def run(self, ctx: TenantContext, agent_session_id: UUID) -> LoopRun:
         """One run of the session's loop, under a writer epoch it takes
         first, above every one before. A session with nothing to run (idle,
         or parked on an unlock that has not happened) is answered `idle`
@@ -33,7 +33,7 @@ class LoopManagerInterface(ABC):
         its isolation spec that cannot clear ends the loop `errored`; one
         that `clears` parks it on `resource`, to ask again after the
         options' wait; and a workspace whose durable state is gone
-        (`WorkspaceLost`) parks it for a person, all before any call is
+        (`AgentWorkspaceLost`) parks it for a person, all before any call is
         made, each step naming the refusal's cause, or what was lost.
         It settles a lost run's open requests by their effect, then drives the
         loop until it ends, parks, or yields its run time. `stale` when a
@@ -42,7 +42,7 @@ class LoopManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def take_over(self, ctx: TenantContext, session_id: UUID) -> AgentSession:
+    async def take_over(self, ctx: TenantContext, agent_session_id: UUID) -> AgentSession:
         """The caller takes the session's environment to work by hand: a new
         epoch fences the run that holds the loop, and the loop parks on a
         hand-over that names the caller as its holder, which only their
@@ -53,7 +53,9 @@ class LoopManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def give_back(self, ctx: TenantContext, session_id: UUID, summary: str) -> AgentSession:
+    async def give_back(
+        self, ctx: TenantContext, agent_session_id: UUID, summary: str
+    ) -> AgentSession:
         """The caller gives the environment back: an `environment_changed`
         step tells the model a person acted there, the summary arrives as
         the caller's message, and the hand-over park is unlocked by the
@@ -65,7 +67,7 @@ class LoopManagerInterface(ABC):
 
     @abstractmethod
     async def complete_job(
-        self, ctx: TenantContext, session_id: UUID, completion: JobCompletion
+        self, ctx: TenantContext, agent_session_id: UUID, completion: JobCompletion
     ) -> AgentSession:
         """A job's completion arrives: the system the job ran on reports how
         it ended. It is kept only when the session's open loop parked on a

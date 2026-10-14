@@ -10,14 +10,14 @@ from pathlib import Path
 
 import pytest
 
+from acme.infra.agent_workspaces import EgressMode, EgressPolicy, IsolationMode, IsolationSpec
+from acme.infra.agent_workspaces.twin import AgentWorkspaceTwinImpl
 from acme.infra.base import new_id, utcnow
 from acme.infra.secrets.local import SecretsLocalImpl
 from acme.infra.transports import CommandSpec, SecretUse, SecretVia, StaleCommand
 from acme.infra.transports.broker import BrokerTwinImpl
 from acme.infra.transports.redaction import marker
 from acme.infra.transports.twin import RecordSealTwin, TransportTwinImpl, TwinReply
-from acme.infra.workspaces import EgressMode, EgressPolicy, IsolationMode, IsolationSpec
-from acme.infra.workspaces.twin import WorkspaceTwinImpl
 
 TOKEN = SecretUse(name="api_token", via=SecretVia.INJECTED, env="API_TOKEN")
 SEAL = RecordSealTwin().seal
@@ -44,7 +44,7 @@ async def test_the_twin_fences_injects_redacts_and_records(tmp_path: Path) -> No
 
     transport = TransportTwinImpl(secrets, BrokerTwinImpl(), echo)
     spec = IsolationSpec(mode=IsolationMode.TWIN, egress=EgressPolicy(mode=EgressMode.NONE))
-    workspace = await WorkspaceTwinImpl().prepare(org, new_id(), spec)
+    workspace = await AgentWorkspaceTwinImpl().prepare(org, new_id(), spec)
     streamed: list[str] = []
 
     async def sink(stream: str, text: str) -> None:
@@ -67,7 +67,7 @@ async def test_the_twin_times_a_command_out_at_its_deadline(tmp_path: Path) -> N
 
     transport = TransportTwinImpl(SecretsLocalImpl(None), BrokerTwinImpl(), slow)
     spec = IsolationSpec(mode=IsolationMode.TWIN, egress=EgressPolicy(mode=EgressMode.NONE))
-    workspace = await WorkspaceTwinImpl().prepare(new_id(), new_id(), spec)
+    workspace = await AgentWorkspaceTwinImpl().prepare(new_id(), new_id(), spec)
     result = await transport.run(workspace, command("slow", seconds=0.2), seal=SEAL)
     assert result.timed_out and result.exit_code is None
 
@@ -78,7 +78,7 @@ async def test_the_twins_record_keeps_its_output_sealed_and_goes_when_purged() -
 
     transport = TransportTwinImpl(SecretsLocalImpl(None), BrokerTwinImpl(), prints)
     spec = IsolationSpec(mode=IsolationMode.TWIN, egress=EgressPolicy(mode=EgressMode.NONE))
-    workspace = await WorkspaceTwinImpl().prepare(new_id(), new_id(), spec)
+    workspace = await AgentWorkspaceTwinImpl().prepare(new_id(), new_id(), spec)
     sealing, sent = RecordSealTwin(), command("print")
     result = await transport.run(workspace, sent, seal=sealing.seal)
     kept = transport.records[(workspace.id, sent.key)].model_dump_json()

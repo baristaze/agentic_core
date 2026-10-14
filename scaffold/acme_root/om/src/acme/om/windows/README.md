@@ -10,7 +10,7 @@ reads, sized for the model that reads it.
 ## What it holds
 
 - **Request**: what one call of a model sends, rendered from the
-  session's [steps](../steps/README.md). It is laid out from what changes
+  session's [steps](../agent_steps/README.md). It is laid out from what changes
   least to what changes most: the agent kind's prompts and the session's
   standing text, its tools, the pinned zone, the latest summary, the
   steps since it, the inputs the agent has not read yet, and its current
@@ -30,9 +30,9 @@ reads, sized for the model that reads it.
 - **Summary**: a step that stands for a range of the history when a model
   reads it. The model that wrote it, the summarizer, is answered like any
   other call, and the summary points at that answer.
-- **Artifact**: a tool's result too large for a step, kept whole in the
+- **Tool output**: a tool's result too large for a step, kept whole in the
   object store, with a record of it beside the history. The step keeps
-  its head, its tail, and the artifact's handle, and the agent reads the
+  its head, its tail, and the tool output's handle, and the agent reads the
   rest a page at a time. Its text is content, like the step's, so the
   store holds it sealed under the session's key.
 
@@ -52,19 +52,19 @@ reads, sized for the model that reads it.
 - **Retry once.** When a provider refuses a request as too long, the
   window compacts and the request is sent again, once.
 - **Keep a large result.** A tool result above the size bound is kept as
-  an artifact before its step is written, and so is a child's report
-  above the same bound, as an artifact of its parent's session. The
+  a tool output before its step is written, and so is a child's report
+  above the same bound, as a tool output of its parent's session. The
   parent reads its head, its tail, and the handle. A session that keeps no
-  content at rest keeps its artifact, sealed, in the memory of the
+  content at rest keeps its tool output, sealed, in the memory of the
   runtime that holds the session, and nowhere else; its step is bounded
   all the same, and revoking its key erases it there too.
-- **Read an artifact**, a page at a time, opened with the session's key.
-  The agent reads one through `read_artifact`, by the handle the notice
+- **Read a tool output**, a page at a time, opened with the session's key.
+  The agent reads one through `read_tool_output`, by the handle the notice
   beside its head and tail names, and a result elided once read by the
   handle its stub names. It reads its own session's results alone.
-- **Erase.** Revoking the session's key leaves the artifact's record and
+- **Erase.** Revoking the session's key leaves the tool output's record and
   turns its text to noise; a read of it is refused.
-- **Purge.** An artifact goes with its session's history, its object
+- **Purge.** A tool output goes with its session's history, its object
   before its record, and with its tenant's when the tenant is purged.
 
 ## The rules
@@ -86,10 +86,10 @@ reads, sized for the model that reads it.
   short is recorded, and the window is read as it is while it fits; the
   summarizer is not asked again before the next summary unless the window
   fits no more or a person asks.
-- **An artifact is written once,** and belongs to one org and one
+- **A tool output is written once,** and belongs to one org and one
   session: another org, or another session, finds none.
-- **An artifact is sealed like a step.** A reader of the object store
-  sees noise, and a blob moved to another artifact opens nothing. No
+- **A tool output is sealed like a step.** A reader of the object store
+  sees noise, and a blob moved to another tool output opens nothing. No
   serving login removes a record; the purge login does, with the history
   it belongs to.
 
@@ -98,8 +98,8 @@ reads, sized for the model that reads it.
 The agent's loop asks for each request here, records it as a step, and
 calls the model it names. It keeps each large tool result here before it
 writes the result's step. The fills come from [the
-models](../models/README.md), the steps from [the
-steps](../steps/README.md), and the summarizer's call goes to the model
+models](../language_models/README.md), the steps from [the
+steps](../agent_steps/README.md), and the summarizer's call goes to the model
 providers, under `integrations/`, behind the budget gate.
 
 <!-- agents-only
@@ -111,7 +111,7 @@ providers, under `integrations/`, behind the budget gate.
   interfaces a root wires to the budgets' gate and the key service; the
   root's defaults are loud nulls that refuse. The seal (`seal.py`) is the
   same kind of face over the session keys; the root wires the privacy
-  namespace's (`privacy/impl/artifacts.py`), and its null refuses too.
+  namespace's (`privacy/impl/tool_outputs.py`), and its null refuses too.
 - A summary step holds no text: it references the summarizer's response,
   which holds it (ADR 1008).
 -->

@@ -9,11 +9,11 @@ from uuid import UUID
 
 from pydantic import Field
 
+from acme.om.agent_steps.types.header import Park
+from acme.om.agent_steps.types.header import ParkReason as LoopParkReason
 from acme.om.base import FrozenMapping, Identifiable, Platform, Trackable
 from acme.om.context import Permission
 from acme.om.orchestrations.types.orchestration import ParkReason
-from acme.om.steps.types.header import Park
-from acme.om.steps.types.header import ParkReason as LoopParkReason
 
 
 class WorkKind(StrEnum):
@@ -22,8 +22,8 @@ class WorkKind(StrEnum):
     WAKE_PARKED = "WAKE_PARKED"  # the reason an org's records parked for is gone
     DELETE_ACCOUNT = "DELETE_ACCOUNT"  # a deleted account's providers, then its personal org
     DELETE_ORG = "DELETE_ORG"  # a closed team org: its providers, then the org
-    WAKE_SESSION = "WAKE_SESSION"  # a parked session's retry time has come
-    WAKE_SESSIONS = "WAKE_SESSIONS"  # the reason an org's sessions parked for is gone
+    WAKE_AGENT_SESSION = "WAKE_AGENT_SESSION"  # a parked session's retry time has come
+    WAKE_AGENT_SESSIONS = "WAKE_AGENT_SESSIONS"  # the reason an org's sessions parked for is gone
     LOOP = "LOOP"  # a session's loop, for the session runner to run
     LEASE_NOTICE = "LEASE_NOTICE"  # a session's lease request answered, or its lease revoked
 
@@ -123,7 +123,7 @@ class WakeParkedPayload(Platform):
     not_before: datetime | None = None
 
 
-class WakeSessionPayload(ScheduledPayload):
+class WakeAgentSessionPayload(ScheduledPayload):
     """A parked session's retry time: the item waits in the queue until
     `not_before`, the park's retry time, and the item's target is the
     session. When it runs, a session still parked on exactly `park` is
@@ -132,7 +132,7 @@ class WakeSessionPayload(ScheduledPayload):
     park: Park
 
 
-class WakeSessionsPayload(Platform):
+class WakeAgentSessionsPayload(Platform):
     """The reason the org's sessions parked for is gone (a raised budget
     clears `budget`); the item's target is the org. Every session parked for
     it is unlocked when the item runs, and its gates run again. With an
@@ -187,8 +187,8 @@ WORK_PAYLOADS: dict[WorkKind, type[Platform]] = {
     WorkKind.WAKE_PARKED: WakeParkedPayload,
     WorkKind.DELETE_ACCOUNT: DeleteAccountPayload,
     WorkKind.DELETE_ORG: DeleteOrgPayload,
-    WorkKind.WAKE_SESSION: WakeSessionPayload,
-    WorkKind.WAKE_SESSIONS: WakeSessionsPayload,
+    WorkKind.WAKE_AGENT_SESSION: WakeAgentSessionPayload,
+    WorkKind.WAKE_AGENT_SESSIONS: WakeAgentSessionsPayload,
     WorkKind.LOOP: LoopPayload,
     WorkKind.LEASE_NOTICE: LeaseNoticePayload,
 }
@@ -208,8 +208,8 @@ WORK_ENQUEUE_PERMISSIONS: dict[WorkKind, Permission] = {
     # A park asks for the first and a raised budget for the second, each
     # relayed from its own commit; the handlers append a control and project
     # the status, which WRITE covers.
-    WorkKind.WAKE_SESSION: Permission.WRITE,
-    WorkKind.WAKE_SESSIONS: Permission.WRITE,
+    WorkKind.WAKE_AGENT_SESSION: Permission.WRITE,
+    WorkKind.WAKE_AGENT_SESSIONS: Permission.WRITE,
     # A write that wakes a session asks for it, relayed from its own commit;
     # the run appends steps and projects the status, which WRITE covers, and
     # each tool call asks its principal's own permissions again.

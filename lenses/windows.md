@@ -89,7 +89,7 @@ sized for a fill other than its request's.
 **Severity.** medium
 
 **Shape.** `scaffold/acme_root/om/src/acme/om/windows/rules.py` and
-`scaffold/acme_root/om/src/acme/om/steps/types/header.py`
+`scaffold/acme_root/om/src/acme/om/agent_steps/types/header.py`
 
 **Check.** review
 
@@ -204,22 +204,22 @@ overflow retried more than once for one request, or never.
 
 **Check.** review
 
-## WIN-08 Large results are artifacts, read just in time
+## WIN-08 Large results are tool outputs, read just in time
 
-**Principle.** A tool result above a size bound is stored as an
-artifact. The step holds a preview, its head and tail, and a handle. The
-engine's read tool, `read_artifact`, pages through the rest by that
+**Principle.** A tool result above a size bound is stored as a
+tool output. The step holds a preview, its head and tail, and a handle. The
+engine's read tool, `read_tool_output`, pages through the rest by that
 handle, and reads back a result that compaction elided by the handle its
 stub names. The notice beside a preview and the stub both name it. It
 reads the calling session's own results alone. Agents retrieve just in
-time, by searching the history, reading an artifact, or querying a
+time, by searching the history, reading a tool output, or querying a
 record, rather than preload. A sub-agent is the other context tool: it explores
 in a clean context and returns a report.
 
 **Source.** Context, Large Results and Retrieval.
 
 **Look for.** The size bound on a tool's output and what happens above
-it; `read_artifact`, which pages an artifact and reads an elided result
+it; `read_tool_output`, which pages a tool output and reads an elided result
 back, and the session it looks a handle up in; what an agent kind
 preloads into its first request.
 
@@ -232,6 +232,6 @@ documents or histories up front instead of a tool to fetch them.
 **Severity.** medium
 
 **Shape.** `scaffold/acme_root/om/src/acme/om/windows/impl/manager.py` and
-`scaffold/acme_root/om/src/acme/om/tools/native/read_artifact.py`
+`scaffold/acme_root/om/src/acme/om/tools/native/read_tool_output.py`
 
 **Check.** review

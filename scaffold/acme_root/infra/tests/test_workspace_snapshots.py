@@ -16,9 +16,9 @@ from pathlib import Path
 
 import pytest
 
-from acme.infra.base import new_id
-from acme.infra.docker import docker
-from acme.infra.workspaces import (
+from acme.infra.agent_workspaces import (
+    AgentWorkspace,
+    AgentWorkspaceLost,
     Durability,
     EgressMode,
     EgressPolicy,
@@ -26,21 +26,21 @@ from acme.infra.workspaces import (
     IsolationRefused,
     IsolationSpec,
     SnapshotRefused,
-    Workspace,
-    WorkspaceLost,
 )
-from acme.infra.workspaces.account import WorkspaceAccountImpl
-from acme.infra.workspaces.container import (
+from acme.infra.agent_workspaces.account import AgentWorkspaceAccountImpl
+from acme.infra.agent_workspaces.container import (
     FORMAT,
+    AgentWorkspaceContainerImpl,
     Kept,
-    WorkspaceContainerImpl,
     _archive,
     _changes,
     _opened,
     container_name,
 )
-from acme.infra.workspaces.host import UNKEPT, WorkspaceHostImpl
-from acme.infra.workspaces.twin import WorkspaceNullImpl, WorkspaceTwinImpl
+from acme.infra.agent_workspaces.host import UNKEPT, AgentWorkspaceHostImpl
+from acme.infra.agent_workspaces.twin import AgentWorkspaceNullImpl, AgentWorkspaceTwinImpl
+from acme.infra.base import new_id
+from acme.infra.docker import docker
 
 NONE = EgressPolicy(mode=EgressMode.NONE)
 OPEN = EgressPolicy(mode=EgressMode.OPEN)
@@ -58,7 +58,7 @@ async def test_a_host_directory_refuses_a_spec_that_asks_for_snapshots_and_makes
     workspace kept whole is refused at prepare, with the reason, before any
     command runs and before its directory is made: never a cache in its
     stead."""
-    provider = WorkspaceHostImpl(tmp_path / "workspaces")
+    provider = AgentWorkspaceHostImpl(tmp_path / "workspaces")
     with pytest.raises(IsolationRefused, match="cannot be snapshotted") as refused:
         await provider.prepare(new_id(), new_id(), kept(IsolationMode.HOST))
     assert UNKEPT in refused.value.message
@@ -78,12 +78,12 @@ async def test_an_account_workspace_refuses_a_spec_that_asks_for_snapshots_befor
     """The account provider refuses the same way, before it checks the host
     or the account, so even a host that could switch never runs a command
     for a session whose workspace it cannot keep."""
-    provider = WorkspaceAccountImpl(tmp_path / "workspaces", "acme-agent")
+    provider = AgentWorkspaceAccountImpl(tmp_path / "workspaces", "acme-agent")
     with pytest.raises(IsolationRefused, match="cannot be snapshotted") as refused:
         await provider.prepare(new_id(), new_id(), kept(IsolationMode.ACCOUNT))
     assert UNKEPT in refused.value.message
     assert not (tmp_path / "workspaces").exists()
-    workspace = Workspace(
+    workspace = AgentWorkspace(
         id=new_id(),
         org_id=new_id(),
         spec=IsolationSpec(mode=IsolationMode.ACCOUNT, egress=OPEN),
@@ -94,10 +94,10 @@ async def test_an_account_workspace_refuses_a_spec_that_asks_for_snapshots_befor
 
 
 async def test_the_null_provider_snapshots_nothing_and_the_twin_one_only_a_live_workspace() -> None:
-    absent = Workspace.absent(new_id(), new_id())
+    absent = AgentWorkspace.absent(new_id(), new_id())
     with pytest.raises(SnapshotRefused):
-        await WorkspaceNullImpl().snapshot(absent)
-    twin = WorkspaceTwinImpl()
+        await AgentWorkspaceNullImpl().snapshot(absent)
+    twin = AgentWorkspaceTwinImpl()
     spec = kept(IsolationMode.TWIN)
     workspace = await twin.prepare(absent.org_id, absent.id, spec)
     twin.files[workspace.id] = b"files"
@@ -187,9 +187,9 @@ async def test_a_snapshot_the_container_provider_did_not_write_loses_the_workspa
 
         return DockerReply(0, b"29.0.0\n", b"")
 
-    monkeypatch.setattr("acme.infra.workspaces.container.docker", recorded)
-    provider = WorkspaceContainerImpl(IMAGE, timedelta(seconds=5))
-    with pytest.raises(WorkspaceLost, match=says):
+    monkeypatch.setattr("acme.infra.agent_workspaces.container.docker", recorded)
+    provider = AgentWorkspaceContainerImpl(IMAGE, timedelta(seconds=5))
+    with pytest.raises(AgentWorkspaceLost, match=says):
         await provider.prepare(new_id(), new_id(), kept(IsolationMode.CONTAINER), snapshot=snapshot)
     assert [call[0] for call in calls] == ["version"]
 
@@ -223,10 +223,10 @@ async def test_a_restore_whose_image_cannot_be_had_is_refused_with_its_reason_an
             return DockerReply(pulled, b"", b"Error: manifest unknown\n")
         return DockerReply(1, b"", b"Error: No such image\n")
 
-    monkeypatch.setattr("acme.infra.workspaces.container.docker", replied)
-    provider = WorkspaceContainerImpl(IMAGE, timedelta(seconds=5))
+    monkeypatch.setattr("acme.infra.agent_workspaces.container.docker", replied)
+    provider = AgentWorkspaceContainerImpl(IMAGE, timedelta(seconds=5))
     snapshot = _archive(Kept(image=IMAGE_ID, pull=pull, deleted=(), layer=b"", files=b""))
-    with pytest.raises(WorkspaceLost, match=says):
+    with pytest.raises(AgentWorkspaceLost, match=says):
         await provider.prepare(new_id(), new_id(), kept(IsolationMode.CONTAINER), snapshot=snapshot)
     assert {call[0] for call in calls} <= {"version", "image", "pull"}, "nothing removed or made"
     assert [call for call in calls if call[0] == "pull"] == (
@@ -284,7 +284,7 @@ print(whole.hexdigest())
 """
 
 
-async def inside(workspace: Workspace, *argv: str) -> str:
+async def inside(workspace: AgentWorkspace, *argv: str) -> str:
     reply = await docker("exec", workspace.location, *argv, bound=timedelta(seconds=120))
     assert reply.ok, reply.stderr.decode()
     return reply.stdout.decode()
@@ -297,10 +297,10 @@ async def test_a_container_restored_from_its_snapshot_holds_the_whole_tree_it_ke
     image's site-packages, and a file removed from the image: snapshotted,
     purged, and prepared from the snapshot, the tree hashes the same,
     `/proc`, `/sys`, and `/dev` aside."""
-    provider = WorkspaceContainerImpl(IMAGE, timedelta(seconds=300))
-    org, workspace_id = new_id(), new_id()
+    provider = AgentWorkspaceContainerImpl(IMAGE, timedelta(seconds=300))
+    org, agent_workspace_id = new_id(), new_id()
     spec = kept(IsolationMode.CONTAINER, NONE)
-    workspace = await provider.prepare(org, workspace_id, spec)
+    workspace = await provider.prepare(org, agent_workspace_id, spec)
     try:
         await inside(workspace, "sh", "-c", "echo in > /workspace/inside.txt")
         await inside(workspace, "sh", "-c", "mkdir -p /opt/kept && echo out > /opt/kept/out.txt")
@@ -318,13 +318,13 @@ async def test_a_container_restored_from_its_snapshot_holds_the_whole_tree_it_ke
         )
         before = await inside(workspace, "python", "-c", TREE)
         snapshot = await provider.snapshot(workspace)
-        await provider.purge(org, workspace_id)
-        name = container_name(workspace_id)
+        await provider.purge(org, agent_workspace_id)
+        name = container_name(agent_workspace_id)
         gone = await docker("inspect", "--type", "container", name, bound=timedelta(seconds=20))
         assert not gone.ok
         assert not (await docker("volume", "inspect", name, bound=timedelta(seconds=20))).ok
 
-        restored = await provider.prepare(org, workspace_id, spec, snapshot=snapshot)
+        restored = await provider.prepare(org, agent_workspace_id, spec, snapshot=snapshot)
         assert await inside(restored, "python", "-c", TREE) == before
         assert await inside(restored, "cat", "/workspace/inside.txt", "/opt/kept/out.txt") == (
             "in\nout\n"
@@ -337,7 +337,7 @@ async def test_a_container_restored_from_its_snapshot_holds_the_whole_tree_it_ke
             )
         ).code == 1
     finally:
-        await provider.purge(org, workspace_id)
+        await provider.purge(org, agent_workspace_id)
 
 
 @pytest.mark.integration
@@ -347,7 +347,7 @@ async def test_a_snapshot_is_taken_from_a_live_workspace_and_leaves_it_running()
     is refused, never taken from its volume alone. A live one keeps running
     once its snapshot is taken, and a restore of another workspace from it
     leaves the first untouched."""
-    provider = WorkspaceContainerImpl(IMAGE, timedelta(seconds=300))
+    provider = AgentWorkspaceContainerImpl(IMAGE, timedelta(seconds=300))
     org, first, second = new_id(), new_id(), new_id()
     spec = kept(IsolationMode.CONTAINER, NONE)
     workspace = await provider.prepare(org, first, spec)
@@ -390,24 +390,24 @@ async def test_a_restore_on_a_host_without_the_image_pulls_it_by_the_digest_the_
     image is pulled by that digest, and the workspace comes back whole."""
     if not (await docker("pull", PULLED, bound=timedelta(seconds=300))).ok:
         pytest.skip("needs the registry that serves the image")
-    provider = WorkspaceContainerImpl(PULLED, timedelta(seconds=300))
-    org, workspace_id = new_id(), new_id()
+    provider = AgentWorkspaceContainerImpl(PULLED, timedelta(seconds=300))
+    org, agent_workspace_id = new_id(), new_id()
     spec = kept(IsolationMode.CONTAINER, NONE)
-    workspace = await provider.prepare(org, workspace_id, spec)
+    workspace = await provider.prepare(org, agent_workspace_id, spec)
     try:
         await inside(workspace, "sh", "-c", "echo in > /workspace/in.txt")
         await inside(workspace, "sh", "-c", "mkdir -p /opt && echo out > /opt/out.txt")
         snapshot = await provider.snapshot(workspace)
         named = _opened(snapshot)
         assert named.pull is not None and named.pull.startswith("busybox@sha256:")
-        await provider.purge(org, workspace_id)
+        await provider.purge(org, agent_workspace_id)
         removed = await docker("image", "rm", "--force", named.image, bound=timedelta(seconds=60))
         assert removed.ok, removed.reason()
         assert not (await docker("image", "inspect", named.image, bound=timedelta(seconds=20))).ok
 
-        restored = await provider.prepare(org, workspace_id, spec, snapshot=snapshot)
+        restored = await provider.prepare(org, agent_workspace_id, spec, snapshot=snapshot)
 
         assert await inside(restored, "cat", "/workspace/in.txt", "/opt/out.txt") == "in\nout\n"
         assert (await docker("image", "inspect", named.image, bound=timedelta(seconds=20))).ok
     finally:
-        await provider.purge(org, workspace_id)
+        await provider.purge(org, agent_workspace_id)

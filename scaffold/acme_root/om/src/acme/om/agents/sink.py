@@ -14,8 +14,8 @@ tell whoever watches. Neither waits."""
 from abc import ABC, abstractmethod
 from uuid import UUID
 
+from acme.om.agent_steps.types.stream import StreamPart
 from acme.om.context import TenantContext
-from acme.om.steps.types.stream import StreamPart
 
 
 class StreamSinkInterface(ABC):
@@ -25,13 +25,13 @@ class StreamSinkInterface(ABC):
         ...
 
     @abstractmethod
-    def opened(self, ctx: TenantContext, session_id: UUID, step_id: UUID) -> None:
-        """The stream of `step_id` opens, under the run's context. Returns at
+    def opened(self, ctx: TenantContext, agent_session_id: UUID, agent_step_id: UUID) -> None:
+        """The stream of `agent_step_id` opens, under the run's context. Returns at
         once."""
         ...
 
     @abstractmethod
-    def completed(self, ctx: TenantContext, session_id: UUID, step_id: UUID) -> None:
-        """The stream of `step_id` is over: its step is stored, or its call
+    def completed(self, ctx: TenantContext, agent_session_id: UUID, agent_step_id: UUID) -> None:
+        """The stream of `agent_step_id` is over: its step is stored, or its call
         failed. Returns at once."""
         ...

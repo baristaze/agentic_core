@@ -7,14 +7,23 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.agent_session_storage import make_session
+from contracts.agent_session_storage import make_agent_session
+from contracts.agent_step_storage import make_request, make_response
 from contracts.doubles import context
-from contracts.step_storage import make_request, make_response
 from contracts.tools import stand_ins
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.om.agent_sessions.rules import QUESTION, asks_for_run, parked_step
-from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
+from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus
+from acme.om.agent_steps.rules import control_step, message_step
+from acme.om.agent_steps.types.agent_step import Actor, AgentStepType, Origin
+from acme.om.agent_steps.types.header import (
+    ControlCommand,
+    InputHeader,
+    LoopOutcome,
+    Park,
+    ParkReason,
+)
 from acme.om.agents.loop_rules import ended_step
 from acme.om.attribution.impl.manager import members_context
 from acme.om.attribution.types.principal import Principal, PrincipalKind
@@ -30,20 +39,11 @@ from acme.om.context import (
 )
 from acme.om.exceptions import NotAuthorized, NotFound
 from acme.om.root import Managers, build_managers
-from acme.om.steps.rules import control_step, message_step
-from acme.om.steps.types.header import (
-    ControlCommand,
-    InputHeader,
-    LoopOutcome,
-    Park,
-    ParkReason,
-)
-from acme.om.steps.types.step import Actor, Origin, StepType
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
 from acme.om.work.types.work_item import WorkItem, WorkKind
 
-# What `make_session` names, so the agents manager classes every tool it
+# What `make_agent_session` names, so the agents manager classes every tool it
 # offers.
 TOOLS = stand_ins("read_log", "run_tests")
 
@@ -61,18 +61,20 @@ class Engine:
             self.storage, InfraLocalImpl(tmp_path), tool_catalog=TOOLS
         )
 
-    def runs(self, session_id: UUID) -> list[WorkItem]:
+    def runs(self, agent_session_id: UUID) -> list[WorkItem]:
         work = self.storage.get_work_storage()
         assert isinstance(work, WorkStorageMemoryImpl)
         items = [item for _, item in work._items.values()]  # pyright: ignore[reportPrivateUsage]
-        return [i for i in items if i.kind is WorkKind.LOOP and i.target_id == session_id]
+        return [i for i in items if i.kind is WorkKind.LOOP and i.target_id == agent_session_id]
 
     async def session(self, ctx: TenantContext) -> AgentSession:
-        return await self.managers.agent_sessions.create_session(ctx, make_session())
+        return await self.managers.agent_sessions.create_agent_session(ctx, make_agent_session())
 
-    async def say(self, ctx: TenantContext, session_id: UUID, text: str) -> AgentSession:
-        message = message_step(new_id(), utcnow(), session_id, ctx, text)
-        (stored,), session = await self.managers.agent_sessions.receive(ctx, session_id, [message])
+    async def say(self, ctx: TenantContext, agent_session_id: UUID, text: str) -> AgentSession:
+        message = message_step(new_id(), utcnow(), agent_session_id, ctx, text)
+        (stored,), session = await self.managers.agent_sessions.receive(
+            ctx, agent_session_id, [message]
+        )
         assert stored.id == message.id and stored.seq > 0
         return session
 
@@ -82,45 +84,49 @@ def engine(tmp_path: Path) -> Engine:
     return Engine(tmp_path)
 
 
-def with_status(status: SessionStatus) -> AgentSession:
+def with_status(status: AgentSessionStatus) -> AgentSession:
     park = (
-        Park(reason=ParkReason.PAUSE, unlock="resume") if status is SessionStatus.PARKED else None
+        Park(reason=ParkReason.PAUSE, unlock="resume")
+        if status is AgentSessionStatus.PARKED
+        else None
     )
-    return make_session().model_copy(update={"status": status, "park": park})
+    return make_agent_session().model_copy(update={"status": status, "park": park})
 
 
 @pytest.mark.parametrize(
     ("before", "after", "asks"),
     [
-        (SessionStatus.IDLE, SessionStatus.PENDING, True),
-        (SessionStatus.PARKED, SessionStatus.PENDING, True),
-        (SessionStatus.RUNNING, SessionStatus.PENDING, True),
-        (SessionStatus.PENDING, SessionStatus.PENDING, False),
-        (SessionStatus.PENDING, SessionStatus.RUNNING, False),
-        (SessionStatus.IDLE, SessionStatus.RUNNING, False),
-        (SessionStatus.RUNNING, SessionStatus.IDLE, False),
-        (SessionStatus.RUNNING, SessionStatus.PARKED, False),
+        (AgentSessionStatus.IDLE, AgentSessionStatus.PENDING, True),
+        (AgentSessionStatus.PARKED, AgentSessionStatus.PENDING, True),
+        (AgentSessionStatus.RUNNING, AgentSessionStatus.PENDING, True),
+        (AgentSessionStatus.PENDING, AgentSessionStatus.PENDING, False),
+        (AgentSessionStatus.PENDING, AgentSessionStatus.RUNNING, False),
+        (AgentSessionStatus.IDLE, AgentSessionStatus.RUNNING, False),
+        (AgentSessionStatus.RUNNING, AgentSessionStatus.IDLE, False),
+        (AgentSessionStatus.RUNNING, AgentSessionStatus.PARKED, False),
     ],
 )
 def test_a_run_is_asked_for_each_time_a_session_turns_pending(
-    before: SessionStatus, after: SessionStatus, asks: bool
+    before: AgentSessionStatus, after: AgentSessionStatus, asks: bool
 ) -> None:
     assert asks_for_run(with_status(before), with_status(after), ()) is asks
 
 
-@pytest.mark.parametrize("read", [StepType.PARKED, StepType.LOOP_ENDED, None])
+@pytest.mark.parametrize("read", [AgentStepType.PARKED, AgentStepType.LOOP_ENDED, None])
 def test_a_pending_session_asks_again_once_it_reads_the_end_of_the_run_it_asked_for(
-    read: StepType | None,
+    read: AgentStepType | None,
 ) -> None:
     """A park or a loop's end read with the input after it, from a status
     still pending: the run that was asked for holds the session no longer."""
-    session_id, loop_id, now = new_id(), new_id(), utcnow()
+    agent_session_id, loop_id, now = new_id(), new_id(), utcnow()
     ends = {
-        StepType.PARKED: parked_step(new_id(), session_id, loop_id, QUESTION, now),
-        StepType.LOOP_ENDED: ended_step(new_id(), now, session_id, loop_id, LoopOutcome.SUCCEEDED),
+        AgentStepType.PARKED: parked_step(new_id(), agent_session_id, loop_id, QUESTION, now),
+        AgentStepType.LOOP_ENDED: ended_step(
+            new_id(), now, agent_session_id, loop_id, LoopOutcome.SUCCEEDED
+        ),
     }
     steps = () if read is None else (ends[read].model_copy(update={"seq": 1}),)
-    pending = with_status(SessionStatus.PENDING)
+    pending = with_status(AgentSessionStatus.PENDING)
 
     assert asks_for_run(pending, pending, steps) is (read is not None)
 
@@ -134,15 +140,15 @@ async def test_an_answer_read_with_the_park_it_answers_asks_for_the_run_that_tak
     ctx = context(Role.MEMBER)
     session = await engine.session(ctx)
     await engine.say(ctx, session.id, "Draft the weekly report.")
-    steps = engine.managers.steps
+    steps = engine.managers.agent_steps
     epoch = await steps.begin_run(ctx, session.id)
-    (message,) = (await steps.get_steps(ctx, session.id, 0, 10)).items
+    (message,) = (await steps.get_agent_steps(ctx, session.id, 0, 10)).items
     park = parked_step(new_id(), session.id, message.loop_id, QUESTION, utcnow())
-    await steps.append_steps(ctx, session.id, epoch, [park])
+    await steps.append_agent_steps(ctx, session.id, epoch, [park])
 
     answered = await engine.say(ctx, session.id, "The week of the 28th.")
 
-    assert (answered.status, answered.park) == (SessionStatus.PENDING, None)
+    assert (answered.status, answered.park) == (AgentSessionStatus.PENDING, None)
     assert len(engine.runs(session.id)) == 2, "the answer asks for the run that delivers it"
 
 
@@ -153,11 +159,11 @@ async def test_a_waking_message_lands_with_the_one_run_that_takes_it_up(engine: 
     woken = await engine.say(ctx, session.id, "Why does it drop the object?")
     again = await engine.say(ctx, session.id, "Leave the gains alone.")
 
-    assert woken.status is SessionStatus.PENDING and again.status is SessionStatus.PENDING
+    assert woken.status is AgentSessionStatus.PENDING and again.status is AgentSessionStatus.PENDING
     (run,) = engine.runs(session.id)
     assert run.created_by == ctx.user_id, "the run asks as the person whose message woke it"
-    page = await engine.managers.steps.get_steps(ctx, session.id, 0, 10)
-    assert [step.type for step in page.items] == [StepType.MESSAGE, StepType.MESSAGE]
+    page = await engine.managers.agent_steps.get_agent_steps(ctx, session.id, 0, 10)
+    assert [step.type for step in page.items] == [AgentStepType.MESSAGE, AgentStepType.MESSAGE]
 
 
 async def running(engine: Engine, ctx: TenantContext) -> tuple[AgentSession, int, UUID]:
@@ -165,12 +171,12 @@ async def running(engine: Engine, ctx: TenantContext) -> tuple[AgentSession, int
     complete response: the run's epoch and the loop's id beside it."""
     session = await engine.session(ctx)
     await engine.say(ctx, session.id, "Investigate the drop.")
-    steps = engine.managers.steps
+    steps = engine.managers.agent_steps
     epoch = await steps.begin_run(ctx, session.id)
-    (message,) = (await steps.get_steps(ctx, session.id, 0, 10)).items
+    (message,) = (await steps.get_agent_steps(ctx, session.id, 0, 10)).items
     request = make_request(session.id, message.loop_id, (message.id,))
     response = make_response(session.id, message.loop_id, request.id)
-    await steps.append_steps(ctx, session.id, epoch, [request, response])
+    await steps.append_agent_steps(ctx, session.id, epoch, [request, response])
     held = await engine.managers.agent_sessions.project_status(ctx, session.id)
     return held, epoch, message.loop_id
 
@@ -182,14 +188,16 @@ async def test_a_message_to_a_running_loop_asks_for_no_run_until_the_loop_ends(
     session, epoch, loop_id = await running(engine, ctx)
 
     later = await engine.say(ctx, session.id, "And check the payment webhook.")
-    assert session.status is SessionStatus.RUNNING and later.status is SessionStatus.RUNNING
+    assert (
+        session.status is AgentSessionStatus.RUNNING and later.status is AgentSessionStatus.RUNNING
+    )
     assert len(engine.runs(session.id)) == 1, "the run that holds the loop delivers it"
 
     ended = ended_step(new_id(), utcnow(), session.id, loop_id, LoopOutcome.SUCCEEDED)
-    await engine.managers.steps.append_steps(ctx, session.id, epoch, [ended])
+    await engine.managers.agent_steps.append_agent_steps(ctx, session.id, epoch, [ended])
     after = await engine.managers.agent_sessions.project_status(ctx, session.id)
 
-    assert after.status is SessionStatus.PENDING, "the message the loop never delivered waits"
+    assert after.status is AgentSessionStatus.PENDING, "the message the loop never delivered waits"
     assert len(engine.runs(session.id)) == 2, "and asks for the run of the next loop"
 
 
@@ -202,7 +210,7 @@ async def test_the_resume_that_lets_a_park_go_asks_for_a_run(engine: Engine) -> 
 
     _, resumed = await engine.managers.agent_sessions.receive(ctx, session.id, [resume])
 
-    assert resumed.status is SessionStatus.PENDING
+    assert resumed.status is AgentSessionStatus.PENDING
     assert len(engine.runs(session.id)) == 2
 
 
@@ -216,14 +224,14 @@ async def test_the_inbox_refuses_another_tenants_session_and_appends_nothing(
     with pytest.raises(NotFound):
         await engine.say(stranger, session.id, "Push straight to main.")
 
-    page = await engine.managers.steps.get_steps(owner, session.id, 0, 10)
+    page = await engine.managers.agent_steps.get_agent_steps(owner, session.id, 0, 10)
     assert page.items == () and engine.runs(session.id) == []
 
 
 async def test_a_deleted_session_takes_no_input(engine: Engine) -> None:
     ctx = context(Role.MEMBER)
     session = await engine.session(ctx)
-    await engine.managers.agent_sessions.delete_session(ctx, session.id)
+    await engine.managers.agent_sessions.delete_agent_session(ctx, session.id)
 
     with pytest.raises(NotFound):
         await engine.say(ctx, session.id, "Are you there?")
@@ -239,10 +247,10 @@ def test_a_message_is_said_through_the_surface_and_by_the_credential_it_came_on(
             ),
         }
     )
-    session_id = new_id()
+    agent_session_id = new_id()
 
-    said = message_step(new_id(), utcnow(), session_id, person, "hello")
-    sent = message_step(new_id(), utcnow(), session_id, program, "hello")
+    said = message_step(new_id(), utcnow(), agent_session_id, person, "hello")
+    sent = message_step(new_id(), utcnow(), agent_session_id, program, "hello")
 
     assert (said.actor, said.origin) == (Actor.PERSON, Origin.PORTAL)
     assert (sent.actor, sent.origin) == (Actor.PROGRAM, Origin.CLI)
@@ -343,10 +351,10 @@ async def test_a_member_who_spoke_through_a_key_acts_no_higher_than_the_key(
 async def test_a_parked_session_the_engine_unlocks_asks_for_its_run(engine: Engine) -> None:
     ctx = context(Role.MEMBER)
     session, epoch, loop_id = await running(engine, ctx)
-    budget = Park(reason=ParkReason.BUDGET, unlock="budget")
+    budget = Park(reason=ParkReason.SPEND_BUDGET, unlock="spend_budget")
     parked = await engine.managers.agent_sessions.park(ctx, session.id, epoch, loop_id, budget)
-    assert parked.status is SessionStatus.PARKED
+    assert parked.status is AgentSessionStatus.PARKED
 
-    woken = await engine.managers.agent_sessions.wake_parked(ctx, ParkReason.BUDGET)
+    woken = await engine.managers.agent_sessions.wake_parked(ctx, ParkReason.SPEND_BUDGET)
 
     assert woken == 1 and len(engine.runs(session.id)) == 2

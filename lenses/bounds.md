@@ -34,7 +34,8 @@ budgets one call may read; a close that reopens.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/budgets/types/budget.py`
+**Shape.**
+`scaffold/acme_root/om/src/acme/om/spend_budgets/types/spend_budget.py`
 
 **Check.** review
 
@@ -66,7 +67,7 @@ spender or a gate's own park that raises out of the loop or ends it.
 
 **Severity.** high
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/budgets/gate.py` and
+**Shape.** `scaffold/acme_root/om/src/acme/om/spend_budgets/gate.py` and
 `scaffold/acme_root/om/src/acme/om/windows/impl/manager.py`
 
 **Check.** review
@@ -94,8 +95,8 @@ rate times its deadline.
 
 **Severity.** high
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/budgets/rules.py` and
-`scaffold/acme_root/om/src/acme/om/budgets/types/exposure.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/spend_budgets/rules.py` and
+`scaffold/acme_root/om/src/acme/om/spend_budgets/types/exposure.py`
 
 **Check.** review
 
@@ -123,7 +124,8 @@ or an alarm.
 
 **Severity.** high
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/budgets/types/hold.py` and
+**Shape.**
+`scaffold/acme_root/om/src/acme/om/spend_budgets/types/spend_hold.py` and
 `scaffold/acme_root/integrations/src/acme/integrations/model_providers/types.py`
 
 **Check.** review
@@ -148,8 +150,9 @@ postpay.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/budgets/types/breach.py` and
-`scaffold/acme_root/om/src/acme/om/budgets/rules.py`
+**Shape.**
+`scaffold/acme_root/om/src/acme/om/spend_budgets/types/spend_breach.py` and
+`scaffold/acme_root/om/src/acme/om/spend_budgets/rules.py`
 
 **Check.** review
 
@@ -185,8 +188,8 @@ them.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/budgets/types/amount.py` and
-`scaffold/acme_root/om/src/acme/om/budgets/pricing.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/spend_budgets/types/amount.py` and
+`scaffold/acme_root/om/src/acme/om/spend_budgets/pricing.py`
 
 **Check.** review
 
@@ -266,7 +269,7 @@ retry time, which a fix made at the provider never wakes.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/steps/types/header.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_steps/types/header.py`
 
 **Check.** review
 

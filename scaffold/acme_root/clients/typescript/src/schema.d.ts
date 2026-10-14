@@ -156,6 +156,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/orgs/{org_id}/agent-sessions/{agent_session_id}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Agent Session Usage
+         * @description What one session's model calls used and cost, in every storage mode
+         *     (ADR 1014). Requires the read permission.
+         *
+         *     The answer is a `AgentSessionUsageView`: `agent_session_id`; `items`, a page of the
+         *     session's usage records, oldest first, each with `id`, `created_at`,
+         *     `spend_hold_id`, `agent_session_id`, `tree_id`, `loop_id`, `agent_step_id` (the call's
+         *     response step), `agent_kind`, `kind_version`, `role`, `provider`, `model`, `input_tokens`,
+         *     `cache_read_tokens`, `cache_write_tokens`, `output_tokens`,
+         *     `thinking_tokens`, `cost_micros` (reference cost in millionths, null when
+         *     no price applied), `latency_ms`, and `settled_whole` (a call whose usage
+         *     was never reported whole, counted at its whole hold, its tokens partial
+         *     at most); `next_cursor`, the next page's `cursor`, or null; `loops`, one
+         *     `{loop_id, rollup}` per loop in the order it first called;
+         *     `has_more_loops`; and `total`, the session's rollup. A rollup holds
+         *     `calls`, the five token classes, `cost_micros`, `unpriced` (calls no
+         *     price applied to, whose cost no figure holds), `settled_whole` (calls
+         *     counted at their whole hold), and `latency_ms`. The rollups cover every
+         *     record, whatever the page.
+         *
+         *     A record holds ids, counts, money, a duration, and labels, and no
+         *     content. `404 not_found` for an unknown org, and for a session the org
+         *     holds no record of, which is how another tenant's session reads.
+         */
+        get: operations["get_agent_session_usage_v1_admin_orgs__org_id__agent_sessions__agent_session_id__usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/orgs/{org_id}/events": {
         parameters: {
             query?: never;
@@ -185,47 +226,6 @@ export interface paths {
         put?: never;
         /** Add Member */
         post: operations["add_member_v1_admin_orgs__org_id__members_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/admin/orgs/{org_id}/sessions/{session_id}/usage": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Session Usage
-         * @description What one session's model calls used and cost, in every storage mode
-         *     (ADR 1014). Requires the read permission.
-         *
-         *     The answer is a `SessionUsageView`: `session_id`; `items`, a page of the
-         *     session's usage records, oldest first, each with `id`, `created_at`,
-         *     `hold_id`, `session_id`, `tree_id`, `loop_id`, `step_id` (the call's
-         *     response step), `agent_kind`, `kind_version`, `role`, `provider`, `model`, `input_tokens`,
-         *     `cache_read_tokens`, `cache_write_tokens`, `output_tokens`,
-         *     `thinking_tokens`, `cost_micros` (reference cost in millionths, null when
-         *     no price applied), `latency_ms`, and `settled_whole` (a call whose usage
-         *     was never reported whole, counted at its whole hold, its tokens partial
-         *     at most); `next_cursor`, the next page's `cursor`, or null; `loops`, one
-         *     `{loop_id, rollup}` per loop in the order it first called;
-         *     `has_more_loops`; and `total`, the session's rollup. A rollup holds
-         *     `calls`, the five token classes, `cost_micros`, `unpriced` (calls no
-         *     price applied to, whose cost no figure holds), `settled_whole` (calls
-         *     counted at their whole hold), and `latency_ms`. The rollups cover every
-         *     record, whatever the page.
-         *
-         *     A record holds ids, counts, money, a duration, and labels, and no
-         *     content. `404 not_found` for an unknown org, and for a session the org
-         *     holds no record of, which is how another tenant's session reads.
-         */
-        get: operations["get_session_usage_v1_admin_orgs__org_id__sessions__session_id__usage_get"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -324,25 +324,25 @@ export interface paths {
         get: operations["list_sessions_v1_agent_sessions_get"];
         put?: never;
         /**
-         * Start Session
+         * Start Agent Session
          * @description A session on the kind, idle until a message wakes it.
          */
-        post: operations["start_session_v1_agent_sessions_post"];
+        post: operations["start_agent_session_v1_agent_sessions_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/agent-sessions/{session_id}": {
+    "/v1/agent-sessions/{agent_session_id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Session */
-        get: operations["get_session_v1_agent_sessions__session_id__get"];
+        /** Get Agent Session */
+        get: operations["get_agent_session_v1_agent_sessions__agent_session_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -351,29 +351,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/agent-sessions/{session_id}/artifacts/{artifact_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Artifact
-         * @description A page of what the session keeps whole outside its window, from the
-         *     character at `start`: an artifact is written once, so no character's
-         *     place moves between pages. The policy's page bounds `limit`.
-         */
-        get: operations["get_artifact_v1_agent_sessions__session_id__artifacts__artifact_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/agent-sessions/{session_id}/calls/{request_seq}/decision": {
+    "/v1/agent-sessions/{agent_session_id}/calls/{request_seq}/decision": {
         parameters: {
             query?: never;
             header?: never;
@@ -386,14 +364,14 @@ export interface paths {
          * Decide Call
          * @description An approval or a denial of the tool call at `request_seq`, as stored.
          */
-        post: operations["decide_call_v1_agent_sessions__session_id__calls__request_seq__decision_post"];
+        post: operations["decide_call_v1_agent_sessions__agent_session_id__calls__request_seq__decision_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/agent-sessions/{session_id}/controls": {
+    "/v1/agent-sessions/{agent_session_id}/controls": {
         parameters: {
             query?: never;
             header?: never;
@@ -406,14 +384,14 @@ export interface paths {
          * Send Control
          * @description The control as stored, out of band: it never waits behind a message.
          */
-        post: operations["send_control_v1_agent_sessions__session_id__controls_post"];
+        post: operations["send_control_v1_agent_sessions__agent_session_id__controls_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/agent-sessions/{session_id}/deadline": {
+    "/v1/agent-sessions/{agent_session_id}/deadline": {
         parameters: {
             query?: never;
             header?: never;
@@ -426,7 +404,7 @@ export interface paths {
          * @description The deadline of the session's tree, moved for every session of it.
          *     One past now, or null, unlocks each session parked on the deadline.
          */
-        put: operations["set_deadline_v1_agent_sessions__session_id__deadline_put"];
+        put: operations["set_deadline_v1_agent_sessions__agent_session_id__deadline_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -434,7 +412,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/agent-sessions/{session_id}/give-back": {
+    "/v1/agent-sessions/{agent_session_id}/give-back": {
         parameters: {
             query?: never;
             header?: never;
@@ -448,14 +426,14 @@ export interface paths {
          * @description The holder, in person, gives the environment back with what they
          *     did there, and the loop goes on: 403 for anyone else.
          */
-        post: operations["give_back_v1_agent_sessions__session_id__give_back_post"];
+        post: operations["give_back_v1_agent_sessions__agent_session_id__give_back_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/agent-sessions/{session_id}/jobs/{key}/completion": {
+    "/v1/agent-sessions/{agent_session_id}/jobs/{key}/completion": {
         parameters: {
             query?: never;
             header?: never;
@@ -469,14 +447,14 @@ export interface paths {
          * @description How the job of `key` ended, from the system it ran on: the loop that
          *     waits on it goes on. 404 for a job the session does not wait on.
          */
-        post: operations["complete_job_v1_agent_sessions__session_id__jobs__key__completion_post"];
+        post: operations["complete_job_v1_agent_sessions__agent_session_id__jobs__key__completion_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/agent-sessions/{session_id}/messages": {
+    "/v1/agent-sessions/{agent_session_id}/messages": {
         parameters: {
             query?: never;
             header?: never;
@@ -489,14 +467,14 @@ export interface paths {
          * Send Message
          * @description The message as stored, durable when this answers.
          */
-        post: operations["send_message_v1_agent_sessions__session_id__messages_post"];
+        post: operations["send_message_v1_agent_sessions__agent_session_id__messages_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/agent-sessions/{session_id}/participants/{user_id}": {
+    "/v1/agent-sessions/{agent_session_id}/participants/{user_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -509,9 +487,9 @@ export interface paths {
          * @description `user_id` takes part in the session: any member joins an org-wide
          *     one, and its creator adds anyone. A private one is joined only by whom
          *     its creator adds and by its steerer: 403 for any other self-join,
-         *     `manage_sessions` included, and for anyone else's add.
+         *     `manage_agent_sessions` included, and for anyone else's add.
          */
-        put: operations["add_participant_v1_agent_sessions__session_id__participants__user_id__put"];
+        put: operations["add_participant_v1_agent_sessions__agent_session_id__participants__user_id__put"];
         post?: never;
         /**
          * Remove Participant
@@ -519,13 +497,13 @@ export interface paths {
          *     and a participant leaves on their own. 403 for anyone else, 409 for
          *     its steerer until the steer is handed on.
          */
-        delete: operations["remove_participant_v1_agent_sessions__session_id__participants__user_id__delete"];
+        delete: operations["remove_participant_v1_agent_sessions__agent_session_id__participants__user_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/agent-sessions/{session_id}/principal": {
+    "/v1/agent-sessions/{agent_session_id}/principal": {
         parameters: {
             query?: never;
             header?: never;
@@ -537,11 +515,11 @@ export interface paths {
          * Assign Principal
          * @description The steer moves, recorded as a step: its steerer hands it to the
          *     participant the body names, or with no body the caller takes it, for a
-         *     steerer who lapsed with `manage_sessions`. Its tool calls run under the
+         *     steerer who lapsed with `manage_agent_sessions`. Its tool calls run under the
          *     steerer, and a loop parked on a principal who no longer holds goes on.
          *     403 for anyone else, 422 for one who takes no part in it.
          */
-        put: operations["assign_principal_v1_agent_sessions__session_id__principal_put"];
+        put: operations["assign_principal_v1_agent_sessions__agent_session_id__principal_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -549,7 +527,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/agent-sessions/{session_id}/steps": {
+    "/v1/agent-sessions/{agent_session_id}/steps": {
         parameters: {
             query?: never;
             header?: never;
@@ -557,10 +535,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Steps
+         * Get Agent Steps
          * @description The history in order, strictly after `after_seq`.
          */
-        get: operations["get_steps_v1_agent_sessions__session_id__steps_get"];
+        get: operations["get_agent_steps_v1_agent_sessions__agent_session_id__steps_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -569,7 +547,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/agent-sessions/{session_id}/take-over": {
+    "/v1/agent-sessions/{agent_session_id}/take-over": {
         parameters: {
             query?: never;
             header?: never;
@@ -583,14 +561,36 @@ export interface paths {
          * @description The caller, in person, takes the environment to work by hand: the
          *     loop parks on a hand-over they hold. 409 when another person holds it.
          */
-        post: operations["take_over_v1_agent_sessions__session_id__take_over_post"];
+        post: operations["take_over_v1_agent_sessions__agent_session_id__take_over_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/agent-sessions/{session_id}/visibility": {
+    "/v1/agent-sessions/{agent_session_id}/tool-outputs/{tool_output_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Tool Output
+         * @description A page of what the session keeps whole outside its window, from the
+         *     character at `start`: a tool output is written once, so no character's
+         *     place moves between pages. The policy's page bounds `limit`.
+         */
+        get: operations["get_tool_output_v1_agent_sessions__agent_session_id__tool_outputs__tool_output_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agent-sessions/{agent_session_id}/visibility": {
         parameters: {
             query?: never;
             header?: never;
@@ -603,7 +603,7 @@ export interface paths {
          * @description Its creator switches who sees the session, recorded as a step: 403
          *     for anyone else.
          */
-        put: operations["switch_visibility_v1_agent_sessions__session_id__visibility_put"];
+        put: operations["switch_visibility_v1_agent_sessions__agent_session_id__visibility_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1525,6 +1525,13 @@ export interface components {
             role: components["schemas"]["Role"];
         };
         /**
+         * AgentSessionControl
+         * @description The controls a person sends a session out of band. A decision on one
+         *     tool call is a route of its own.
+         * @enum {string}
+         */
+        AgentSessionControl: "pause" | "resume" | "cancel" | "interrupt" | "compact" | "unlock" | "restore";
+        /**
          * AgentSessionPageView
          * @description One page of root sessions by id. With `has_more`, the next page
          *     starts after the last one's id.
@@ -1534,6 +1541,35 @@ export interface components {
             has_more: boolean;
             /** Items */
             items: components["schemas"]["AgentSessionView"][];
+        };
+        /**
+         * AgentSessionStatus
+         * @enum {string}
+         */
+        AgentSessionStatus: "pending" | "running" | "parked" | "idle";
+        /**
+         * AgentSessionUsageView
+         * @description A page of a session's usage records, oldest first, with the rollup of
+         *     each loop, in the order it first called, and of the whole session. The
+         *     rollups cover every record, whatever the page; `has_more_loops` says the
+         *     session ran more loops than `loops` holds. With `next_cursor`, the next
+         *     page of `items` starts there.
+         */
+        AgentSessionUsageView: {
+            /**
+             * Agent Session Id
+             * Format: uuid
+             */
+            agent_session_id: string;
+            /** Has More Loops */
+            has_more_loops: boolean;
+            /** Items */
+            items: components["schemas"]["UsageRecordView"][];
+            /** Loops */
+            loops: components["schemas"]["LoopUsageView"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+            total: components["schemas"]["UsageRollupView"];
         };
         /**
          * AgentSessionView
@@ -1573,12 +1609,109 @@ export interface components {
             park: components["schemas"]["ParkView"] | null;
             /** Participants */
             participants: string[];
-            status: components["schemas"]["SessionStatus"];
+            status: components["schemas"]["AgentSessionStatus"];
             /** Steerer */
             steerer: string | null;
             /** Title */
             title: string;
             visibility: components["schemas"]["Visibility"];
+        };
+        /**
+         * AgentStepPageView
+         * @description One page of a session's history, after the seq the request named.
+         *     With `has_more`, the next page starts after the last step's seq.
+         */
+        AgentStepPageView: {
+            /** Has More */
+            has_more: boolean;
+            /** Items */
+            items: components["schemas"]["AgentStepView"][];
+        };
+        /**
+         * AgentStepType
+         * @description What a step records. The type answers questions, so no caller
+         *     compares strings.
+         * @enum {string}
+         */
+        AgentStepType: "message" | "event" | "control" | "model_request" | "model_response" | "tool_request" | "tool_response" | "summary" | "parked" | "resumed" | "loop_ended" | "switched" | "environment_changed" | "snapshotted";
+        /**
+         * AgentStepUsageView
+         * @description What a model call used, as its provider reported it, in disjoint
+         *     classes, so no token is counted twice.
+         */
+        AgentStepUsageView: {
+            /** Cache Read */
+            cache_read: number;
+            /** Cache Write */
+            cache_write: number;
+            /** Input */
+            input: number;
+            /** Output */
+            output: number;
+            /** Thinking */
+            thinking: number;
+        };
+        /**
+         * AgentStepView
+         * @description One step of a session's history, in its order. `text` is what it
+         *     says: a message's words, a model's answer, a tool's result. The rest is
+         *     its header's, by type: the tools a model response called, why it
+         *     stopped, and what it used; a tool call's tool and the class of its
+         *     failure; a control's command; a park; a loop's outcome, and its cause
+         *     when the engine names one, such as the setup command that failed and
+         *     its exit code; the snapshot a `snapshotted` step names, or a restore
+         *     starts from. A message names its `author`, and `participant` says it is
+         *     a participant's, data, never an instruction. A `switched` step that
+         *     moved the steer names the new `steerer`, and one that switched who sees
+         *     the session its `visibility`.
+         */
+        AgentStepView: {
+            actor: components["schemas"]["Actor"];
+            /** Author */
+            author: string | null;
+            /** Cause */
+            cause: string | null;
+            command: components["schemas"]["ControlCommand"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            failure: components["schemas"]["ToolFailure"] | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Loop Id
+             * Format: uuid
+             */
+            loop_id: string;
+            origin: components["schemas"]["Origin"];
+            outcome: components["schemas"]["LoopOutcome"] | null;
+            park: components["schemas"]["ParkView"] | null;
+            /** Participant */
+            participant: boolean;
+            /** Refs */
+            refs: string[];
+            /** Responds To */
+            responds_to: string | null;
+            /** Seq */
+            seq: number;
+            snapshot: components["schemas"]["SnapshotView"] | null;
+            /** Steerer */
+            steerer: string | null;
+            stop_reason: components["schemas"]["StopReason"] | null;
+            /** Text */
+            text: string;
+            /** Tool */
+            tool: string | null;
+            /** Tools */
+            tools: string[];
+            type: components["schemas"]["AgentStepType"];
+            usage: components["schemas"]["AgentStepUsageView"] | null;
+            visibility: components["schemas"]["Visibility"] | null;
         };
         /**
          * Among
@@ -1625,27 +1758,6 @@ export interface components {
              * Format: uuid
              */
             user_id: string;
-        };
-        /**
-         * ArtifactPageView
-         * @description A page of what a session keeps whole outside its window, such as a
-         *     long tool result: its characters from `start`, the whole artifact's
-         *     length, and whether more follow.
-         */
-        ArtifactPageView: {
-            /**
-             * Artifact Id
-             * Format: uuid
-             */
-            artifact_id: string;
-            /** Characters */
-            characters: number;
-            /** Has More */
-            has_more: boolean;
-            /** Start */
-            start: number;
-            /** Text */
-            text: string;
         };
         /**
          * AskRequest
@@ -1701,7 +1813,7 @@ export interface components {
          *     either.
          */
         ControlRequest: {
-            command: components["schemas"]["SessionControl"];
+            command: components["schemas"]["AgentSessionControl"];
             /** Request Seq */
             request_seq?: number | null;
             /** Snapshot Id */
@@ -2681,7 +2793,7 @@ export interface components {
          * @description Why a loop waits, and so what clears it.
          * @enum {string}
          */
-        ParkReason: "person" | "provider" | "budget" | "resource" | "job" | "children" | "handover" | "pause";
+        ParkReason: "person" | "provider" | "spend_budget" | "resource" | "job" | "children" | "handover" | "pause";
         /**
          * ParkView
          * @description Why a parked loop waits, what clears it, and when it tries again by
@@ -2707,7 +2819,7 @@ export interface components {
          * Permission
          * @enum {string}
          */
-        Permission: "read" | "write" | "manage_members" | "manage_keys" | "manage_sessions";
+        Permission: "read" | "write" | "manage_members" | "manage_keys" | "manage_agent_sessions";
         /**
          * PlaceView
          * @description A waiting request's place (1 is next in some line it stands in) and
@@ -2854,42 +2966,6 @@ export interface components {
             totp_code: string;
         };
         /**
-         * SessionControl
-         * @description The controls a person sends a session out of band. A decision on one
-         *     tool call is a route of its own.
-         * @enum {string}
-         */
-        SessionControl: "pause" | "resume" | "cancel" | "interrupt" | "compact" | "unlock" | "restore";
-        /**
-         * SessionStatus
-         * @enum {string}
-         */
-        SessionStatus: "pending" | "running" | "parked" | "idle";
-        /**
-         * SessionUsageView
-         * @description A page of a session's usage records, oldest first, with the rollup of
-         *     each loop, in the order it first called, and of the whole session. The
-         *     rollups cover every record, whatever the page; `has_more_loops` says the
-         *     session ran more loops than `loops` holds. With `next_cursor`, the next
-         *     page of `items` starts there.
-         */
-        SessionUsageView: {
-            /** Has More Loops */
-            has_more_loops: boolean;
-            /** Items */
-            items: components["schemas"]["UsageRecordView"][];
-            /** Loops */
-            loops: components["schemas"]["LoopUsageView"][];
-            /** Next Cursor */
-            next_cursor: string | null;
-            /**
-             * Session Id
-             * Format: uuid
-             */
-            session_id: string;
-            total: components["schemas"]["UsageRollupView"];
-        };
-        /**
          * SessionView
          * @description Only the hash of a token is ever kept, so a session view carries no secret.
          */
@@ -3012,6 +3088,11 @@ export interface components {
          *     workspace it was taken from.
          */
         SnapshotView: {
+            /**
+             * Agent Workspace Id
+             * Format: uuid
+             */
+            agent_workspace_id: string;
             /** Hash */
             hash: string;
             /**
@@ -3021,11 +3102,6 @@ export interface components {
             id: string;
             /** Size */
             size: number;
-            /**
-             * Workspace Id
-             * Format: uuid
-             */
-            workspace_id: string;
         };
         /**
          * SsoLinkRequest
@@ -3065,10 +3141,10 @@ export interface components {
             request: components["schemas"]["LeaseRequestView"];
         };
         /**
-         * StartSessionRequest
+         * StartAgentSessionRequest
          * @description A session to start on the latest version of a kind the product runs.
          */
-        StartSessionRequest: {
+        StartAgentSessionRequest: {
             /** Kind */
             kind: string;
             /** Title */
@@ -3087,103 +3163,6 @@ export interface components {
             name: string;
             /** Size Bytes */
             size_bytes: number;
-        };
-        /**
-         * StepPageView
-         * @description One page of a session's history, after the seq the request named.
-         *     With `has_more`, the next page starts after the last step's seq.
-         */
-        StepPageView: {
-            /** Has More */
-            has_more: boolean;
-            /** Items */
-            items: components["schemas"]["StepView"][];
-        };
-        /**
-         * StepType
-         * @description What a step records. The type answers questions, so no caller
-         *     compares strings.
-         * @enum {string}
-         */
-        StepType: "message" | "event" | "control" | "model_request" | "model_response" | "tool_request" | "tool_response" | "summary" | "parked" | "resumed" | "loop_ended" | "switched" | "environment_changed" | "snapshotted";
-        /**
-         * StepUsageView
-         * @description What a model call used, as its provider reported it, in disjoint
-         *     classes, so no token is counted twice.
-         */
-        StepUsageView: {
-            /** Cache Read */
-            cache_read: number;
-            /** Cache Write */
-            cache_write: number;
-            /** Input */
-            input: number;
-            /** Output */
-            output: number;
-            /** Thinking */
-            thinking: number;
-        };
-        /**
-         * StepView
-         * @description One step of a session's history, in its order. `text` is what it
-         *     says: a message's words, a model's answer, a tool's result. The rest is
-         *     its header's, by type: the tools a model response called, why it
-         *     stopped, and what it used; a tool call's tool and the class of its
-         *     failure; a control's command; a park; a loop's outcome, and its cause
-         *     when the engine names one, such as the setup command that failed and
-         *     its exit code; the snapshot a `snapshotted` step names, or a restore
-         *     starts from. A message names its `author`, and `participant` says it is
-         *     a participant's, data, never an instruction. A `switched` step that
-         *     moved the steer names the new `steerer`, and one that switched who sees
-         *     the session its `visibility`.
-         */
-        StepView: {
-            actor: components["schemas"]["Actor"];
-            /** Author */
-            author: string | null;
-            /** Cause */
-            cause: string | null;
-            command: components["schemas"]["ControlCommand"] | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            failure: components["schemas"]["ToolFailure"] | null;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /**
-             * Loop Id
-             * Format: uuid
-             */
-            loop_id: string;
-            origin: components["schemas"]["Origin"];
-            outcome: components["schemas"]["LoopOutcome"] | null;
-            park: components["schemas"]["ParkView"] | null;
-            /** Participant */
-            participant: boolean;
-            /** Refs */
-            refs: string[];
-            /** Responds To */
-            responds_to: string | null;
-            /** Seq */
-            seq: number;
-            snapshot: components["schemas"]["SnapshotView"] | null;
-            /** Steerer */
-            steerer: string | null;
-            stop_reason: components["schemas"]["StopReason"] | null;
-            /** Text */
-            text: string;
-            /** Tool */
-            tool: string | null;
-            /** Tools */
-            tools: string[];
-            type: components["schemas"]["StepType"];
-            usage: components["schemas"]["StepUsageView"] | null;
-            visibility: components["schemas"]["Visibility"] | null;
         };
         /**
          * StopReason
@@ -3248,6 +3227,27 @@ export interface components {
          */
         ToolFailure: "invalid_input" | "transient" | "timeout" | "denied" | "interrupted" | "permanent";
         /**
+         * ToolOutputPageView
+         * @description A page of what a session keeps whole outside its window, such as a
+         *     long tool result: its characters from `start`, the whole tool output's
+         *     length, and whether more follow.
+         */
+        ToolOutputPageView: {
+            /** Characters */
+            characters: number;
+            /** Has More */
+            has_more: boolean;
+            /** Start */
+            start: number;
+            /** Text */
+            text: string;
+            /**
+             * Tool Output Id
+             * Format: uuid
+             */
+            tool_output_id: string;
+        };
+        /**
          * TotpConfirmedView
          * @description The second factor is enrolled: from now on the operator plane admits
          *     this identity only on a sign-in that verified a code, so the next
@@ -3297,8 +3297,8 @@ export interface components {
          * @description One model call a provider billed, as the ledger keeps it: ids, tokens
          *     by disjoint class, reference cost in millionths (null when no price
          *     applied), the provider's latency, and the labels of what served it. It
-         *     holds no content, so it reads the same in every storage mode. `step_id`
-         *     is the call's response step; `hold_id` its hold; `tree_id` the
+         *     holds no content, so it reads the same in every storage mode. `agent_step_id`
+         *     is the call's response step; `spend_hold_id` its hold; `tree_id` the
          *     session's tree; `kind_version` the agent kind's version the session
          *     ran. `settled_whole` marks a call whose usage was never reported whole
          *     (a broken stream, a lost run): its cost is its whole hold, and its
@@ -3307,6 +3307,16 @@ export interface components {
         UsageRecordView: {
             /** Agent Kind */
             agent_kind: string;
+            /**
+             * Agent Session Id
+             * Format: uuid
+             */
+            agent_session_id: string;
+            /**
+             * Agent Step Id
+             * Format: uuid
+             */
+            agent_step_id: string;
             /** Cache Read Tokens */
             cache_read_tokens: number;
             /** Cache Write Tokens */
@@ -3318,11 +3328,6 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
-            /**
-             * Hold Id
-             * Format: uuid
-             */
-            hold_id: string;
             /**
              * Id
              * Format: uuid
@@ -3347,18 +3352,13 @@ export interface components {
             provider: string;
             /** Role */
             role: string;
-            /**
-             * Session Id
-             * Format: uuid
-             */
-            session_id: string;
             /** Settled Whole */
             settled_whole: boolean;
             /**
-             * Step Id
+             * Spend Hold Id
              * Format: uuid
              */
-            step_id: string;
+            spend_hold_id: string;
             /** Thinking Tokens */
             thinking_tokens: number;
             /**
@@ -3459,12 +3459,12 @@ export interface components {
          *     each with a `WaiterInterface`.
          * @enum {string}
          */
-        WaiterKind: "orchestration" | "session";
+        WaiterKind: "orchestration" | "agent_session";
         /**
          * WorkKind
          * @enum {string}
          */
-        WorkKind: "NOOP" | "ORCHESTRATION" | "WAKE_PARKED" | "DELETE_ACCOUNT" | "DELETE_ORG" | "WAKE_SESSION" | "WAKE_SESSIONS" | "LOOP" | "LEASE_NOTICE";
+        WorkKind: "NOOP" | "ORCHESTRATION" | "WAKE_PARKED" | "DELETE_ACCOUNT" | "DELETE_ORG" | "WAKE_AGENT_SESSION" | "WAKE_AGENT_SESSIONS" | "LOOP" | "LEASE_NOTICE";
         /**
          * WorkStatus
          * @enum {string}
@@ -3834,6 +3834,45 @@ export interface operations {
             };
         };
     };
+    get_agent_session_usage_v1_admin_orgs__org_id__agent_sessions__agent_session_id__usage_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+                "x-app"?: string | null;
+                "x-app-version"?: string | null;
+            };
+            path: {
+                org_id: string;
+                agent_session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentSessionUsageView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_events_v1_admin_orgs__org_id__events_get: {
         parameters: {
             query?: {
@@ -3937,45 +3976,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserView"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_session_usage_v1_admin_orgs__org_id__sessions__session_id__usage_get: {
-        parameters: {
-            query?: {
-                cursor?: string | null;
-                limit?: number;
-            };
-            header?: {
-                authorization?: string | null;
-                "x-app"?: string | null;
-                "x-app-version"?: string | null;
-            };
-            path: {
-                org_id: string;
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SessionUsageView"];
                 };
             };
             /** @description Validation Error */
@@ -4174,7 +4174,7 @@ export interface operations {
         parameters: {
             query?: {
                 among?: components["schemas"]["Among"];
-                status?: components["schemas"]["SessionStatus"] | null;
+                status?: components["schemas"]["AgentSessionStatus"] | null;
                 after?: string | null;
                 limit?: number;
             };
@@ -4208,7 +4208,7 @@ export interface operations {
             };
         };
     };
-    start_session_v1_agent_sessions_post: {
+    start_agent_session_v1_agent_sessions_post: {
         parameters: {
             query?: never;
             header?: {
@@ -4222,7 +4222,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["StartSessionRequest"];
+                "application/json": components["schemas"]["StartAgentSessionRequest"];
             };
         };
         responses: {
@@ -4246,7 +4246,7 @@ export interface operations {
             };
         };
     };
-    get_session_v1_agent_sessions__session_id__get: {
+    get_agent_session_v1_agent_sessions__agent_session_id__get: {
         parameters: {
             query?: never;
             header?: {
@@ -4255,7 +4255,7 @@ export interface operations {
                 "x-app-version"?: string | null;
             };
             path: {
-                session_id: string;
+                agent_session_id: string;
             };
             cookie?: never;
         };
@@ -4281,46 +4281,7 @@ export interface operations {
             };
         };
     };
-    get_artifact_v1_agent_sessions__session_id__artifacts__artifact_id__get: {
-        parameters: {
-            query?: {
-                start?: number;
-                limit?: number;
-            };
-            header?: {
-                authorization?: string | null;
-                "x-app"?: string | null;
-                "x-app-version"?: string | null;
-            };
-            path: {
-                session_id: string;
-                artifact_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ArtifactPageView"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    decide_call_v1_agent_sessions__session_id__calls__request_seq__decision_post: {
+    decide_call_v1_agent_sessions__agent_session_id__calls__request_seq__decision_post: {
         parameters: {
             query?: never;
             header?: {
@@ -4330,7 +4291,7 @@ export interface operations {
                 "idempotency-key"?: string | null;
             };
             path: {
-                session_id: string;
+                agent_session_id: string;
                 request_seq: number;
             };
             cookie?: never;
@@ -4347,7 +4308,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StepView"];
+                    "application/json": components["schemas"]["AgentStepView"];
                 };
             };
             /** @description Validation Error */
@@ -4361,7 +4322,7 @@ export interface operations {
             };
         };
     };
-    send_control_v1_agent_sessions__session_id__controls_post: {
+    send_control_v1_agent_sessions__agent_session_id__controls_post: {
         parameters: {
             query?: never;
             header?: {
@@ -4371,7 +4332,7 @@ export interface operations {
                 "idempotency-key"?: string | null;
             };
             path: {
-                session_id: string;
+                agent_session_id: string;
             };
             cookie?: never;
         };
@@ -4387,7 +4348,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StepView"];
+                    "application/json": components["schemas"]["AgentStepView"];
                 };
             };
             /** @description Validation Error */
@@ -4401,7 +4362,7 @@ export interface operations {
             };
         };
     };
-    set_deadline_v1_agent_sessions__session_id__deadline_put: {
+    set_deadline_v1_agent_sessions__agent_session_id__deadline_put: {
         parameters: {
             query?: never;
             header?: {
@@ -4410,7 +4371,7 @@ export interface operations {
                 "x-app-version"?: string | null;
             };
             path: {
-                session_id: string;
+                agent_session_id: string;
             };
             cookie?: never;
         };
@@ -4440,7 +4401,7 @@ export interface operations {
             };
         };
     };
-    give_back_v1_agent_sessions__session_id__give_back_post: {
+    give_back_v1_agent_sessions__agent_session_id__give_back_post: {
         parameters: {
             query?: never;
             header?: {
@@ -4450,7 +4411,7 @@ export interface operations {
                 "idempotency-key"?: string | null;
             };
             path: {
-                session_id: string;
+                agent_session_id: string;
             };
             cookie?: never;
         };
@@ -4480,7 +4441,7 @@ export interface operations {
             };
         };
     };
-    complete_job_v1_agent_sessions__session_id__jobs__key__completion_post: {
+    complete_job_v1_agent_sessions__agent_session_id__jobs__key__completion_post: {
         parameters: {
             query?: never;
             header?: {
@@ -4490,7 +4451,7 @@ export interface operations {
                 "idempotency-key"?: string | null;
             };
             path: {
-                session_id: string;
+                agent_session_id: string;
                 key: string;
             };
             cookie?: never;
@@ -4521,7 +4482,7 @@ export interface operations {
             };
         };
     };
-    send_message_v1_agent_sessions__session_id__messages_post: {
+    send_message_v1_agent_sessions__agent_session_id__messages_post: {
         parameters: {
             query?: never;
             header?: {
@@ -4531,7 +4492,7 @@ export interface operations {
                 "idempotency-key"?: string | null;
             };
             path: {
-                session_id: string;
+                agent_session_id: string;
             };
             cookie?: never;
         };
@@ -4547,7 +4508,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StepView"];
+                    "application/json": components["schemas"]["AgentStepView"];
                 };
             };
             /** @description Validation Error */
@@ -4561,7 +4522,7 @@ export interface operations {
             };
         };
     };
-    add_participant_v1_agent_sessions__session_id__participants__user_id__put: {
+    add_participant_v1_agent_sessions__agent_session_id__participants__user_id__put: {
         parameters: {
             query?: never;
             header?: {
@@ -4570,7 +4531,7 @@ export interface operations {
                 "x-app-version"?: string | null;
             };
             path: {
-                session_id: string;
+                agent_session_id: string;
                 user_id: string;
             };
             cookie?: never;
@@ -4597,7 +4558,7 @@ export interface operations {
             };
         };
     };
-    remove_participant_v1_agent_sessions__session_id__participants__user_id__delete: {
+    remove_participant_v1_agent_sessions__agent_session_id__participants__user_id__delete: {
         parameters: {
             query?: never;
             header?: {
@@ -4606,7 +4567,7 @@ export interface operations {
                 "x-app-version"?: string | null;
             };
             path: {
-                session_id: string;
+                agent_session_id: string;
                 user_id: string;
             };
             cookie?: never;
@@ -4633,7 +4594,7 @@ export interface operations {
             };
         };
     };
-    assign_principal_v1_agent_sessions__session_id__principal_put: {
+    assign_principal_v1_agent_sessions__agent_session_id__principal_put: {
         parameters: {
             query?: never;
             header?: {
@@ -4642,7 +4603,7 @@ export interface operations {
                 "x-app-version"?: string | null;
             };
             path: {
-                session_id: string;
+                agent_session_id: string;
             };
             cookie?: never;
         };
@@ -4672,7 +4633,7 @@ export interface operations {
             };
         };
     };
-    get_steps_v1_agent_sessions__session_id__steps_get: {
+    get_agent_steps_v1_agent_sessions__agent_session_id__steps_get: {
         parameters: {
             query?: {
                 after_seq?: number;
@@ -4684,7 +4645,7 @@ export interface operations {
                 "x-app-version"?: string | null;
             };
             path: {
-                session_id: string;
+                agent_session_id: string;
             };
             cookie?: never;
         };
@@ -4696,7 +4657,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StepPageView"];
+                    "application/json": components["schemas"]["AgentStepPageView"];
                 };
             };
             /** @description Validation Error */
@@ -4710,7 +4671,7 @@ export interface operations {
             };
         };
     };
-    take_over_v1_agent_sessions__session_id__take_over_post: {
+    take_over_v1_agent_sessions__agent_session_id__take_over_post: {
         parameters: {
             query?: never;
             header?: {
@@ -4719,7 +4680,7 @@ export interface operations {
                 "x-app-version"?: string | null;
             };
             path: {
-                session_id: string;
+                agent_session_id: string;
             };
             cookie?: never;
         };
@@ -4745,7 +4706,46 @@ export interface operations {
             };
         };
     };
-    switch_visibility_v1_agent_sessions__session_id__visibility_put: {
+    get_tool_output_v1_agent_sessions__agent_session_id__tool_outputs__tool_output_id__get: {
+        parameters: {
+            query?: {
+                start?: number;
+                limit?: number;
+            };
+            header?: {
+                authorization?: string | null;
+                "x-app"?: string | null;
+                "x-app-version"?: string | null;
+            };
+            path: {
+                agent_session_id: string;
+                tool_output_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolOutputPageView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    switch_visibility_v1_agent_sessions__agent_session_id__visibility_put: {
         parameters: {
             query?: never;
             header?: {
@@ -4754,7 +4754,7 @@ export interface operations {
                 "x-app-version"?: string | null;
             };
             path: {
-                session_id: string;
+                agent_session_id: string;
             };
             cookie?: never;
         };

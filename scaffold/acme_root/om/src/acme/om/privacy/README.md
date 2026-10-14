@@ -9,7 +9,7 @@ of](../../../../README.md).
 - **Content and shape**: what a step says is its content: the messages,
   the tool inputs and outputs, the model's thinking, the attachments'
   names. A tool's result kept whole as an
-  [artifact](../windows/README.md) is content too. Everything else is its
+  [tool output](../windows/README.md) is content too. Everything else is its
   shape: its ids, its type, its place in
   the history, who wrote it, and its header. Content is sealed; shape is
   not.
@@ -21,7 +21,7 @@ of](../../../../README.md).
   begins. **Sealed** is the default: content is kept, sealed. **Memory
   only** keeps content in the running process alone; the shape is still
   kept when the policy allows, so the audit survives. A call's cost
-  survives in every mode, in its usage record (`budgets`).
+  survives in every mode, in its usage record (`spend_budgets`).
 - **Privacy record**: one per session: its policy, and when its key was
   revoked and by whom.
 
@@ -30,13 +30,13 @@ of](../../../../README.md).
 - **Choose a policy.** Once, before anything is written to the history.
 - **Seal and open.** Each step that says something is sealed on its way
   into storage and opened on its way out. Nothing else in the engine
-  sees it happen. An artifact's text is sealed the same way, under the
+  sees it happen. A tool output's text is sealed the same way, under the
   same key, before it reaches the object store, and so is what a command
   printed, in its transport's record of how it ended.
 - **Add a version.** What comes after is sealed under it.
 - **Revoke the key.** Every version is destroyed at once. The content
   becomes unreadable and the shape stays: every step keeps its place,
-  its type, and its cost, and reads as absent. An artifact keeps its
+  its type, and its cost, and reads as absent. A tool output keeps its
   record, and its text is noise. A command's record still says how it
   ended, and what it printed is noise. What the session's snapshots
   keep outside the seal, a VM's disks, is destroyed with the key; a
@@ -56,18 +56,18 @@ of](../../../../README.md).
 - **A hash in the shape is keyed by the session**, so once the key is
   revoked a hash confirms nothing about what it stood for.
 - **A memory-only session leaves nothing it said at rest**, sealed or
-  not. Its artifact is sealed like any other and held in the memory of
+  not. Its tool output is sealed like any other and held in the memory of
   the runtime that holds the session, so revoking its key erases it there
   too.
 - **Every record and key belongs to one org.** Another org that names a
   session finds nothing of it.
 
 <!-- agents-only
-The sealing layer is `impl/sealed_steps.py`, the memory-only layer
-`impl/memory_only_steps.py`, and the router `impl/routed_steps.py`;
+The sealing layer is `impl/sealed_agent_steps.py`, the memory-only layer
+`impl/memory_only_agent_steps.py`, and the router `impl/routed_agent_steps.py`;
 `root.private_history` wires all three over the one history. The
-artifacts' seal is `impl/artifacts.py`, which the root wires behind the
-windows' `ArtifactSealInterface`. A command's record takes the same blob
+tool outputs' seal is `impl/tool_outputs.py`, which the root wires behind the
+windows' `ToolOutputSealInterface`. A command's record takes the same blob
 form (`impl/blobs.py`) through `impl/records.py`, which the root wires
 behind the tools' `RecordSealInterface`; each call binds it to its session
 and key as the transport's `RecordSeal`. A data key is in the clear only
@@ -79,7 +79,7 @@ what a session's snapshots keep outside the seal.
 
 ## How another namespace composes it
 
-The root wires the sealing layer under the [steps](../steps/README.md),
+The root wires the sealing layer under the [steps](../agent_steps/README.md),
 so every append and read of the history passes through it by the
 session's policy. A tool that records a hash of its input asks for one
 keyed by the session.

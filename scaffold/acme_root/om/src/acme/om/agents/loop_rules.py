@@ -26,13 +26,16 @@ from acme.integrations.model_providers.calls import StreamPart as ProviderPart
 from acme.integrations.model_providers.types import StopReason
 from acme.om.agent_sessions.rules import held_private
 from acme.om.agent_sessions.types.agent_session import AgentSession
-from acme.om.agents.types.kind import AgentKind
-from acme.om.agents.types.report import Report
-from acme.om.attribution.rules import principal_authored
-from acme.om.attribution.types.principal import Principal
-from acme.om.steps.rules import arrives, completes
-from acme.om.steps.types.content import Children, Content, TextBlock, ToolUseBlock
-from acme.om.steps.types.header import (
+from acme.om.agent_steps.rules import arrives, completes
+from acme.om.agent_steps.types.agent_step import (
+    Actor,
+    AgentStep,
+    AgentStepType,
+    Origin,
+    switches_standing,
+)
+from acme.om.agent_steps.types.content import Children, Content, TextBlock, ToolUseBlock
+from acme.om.agent_steps.types.header import (
     ControlCommand,
     ControlHeader,
     InputHeader,
@@ -49,8 +52,11 @@ from acme.om.steps.types.header import (
     ToolResponseHeader,
     ToolsetSwitch,
 )
-from acme.om.steps.types.step import Actor, Origin, Step, StepType, switches_standing
-from acme.om.steps.types.stream import StreamPart, TextPart, ThinkingPart, ToolInputPart
+from acme.om.agent_steps.types.stream import StreamPart, TextPart, ThinkingPart, ToolInputPart
+from acme.om.agents.types.kind import AgentKind
+from acme.om.agents.types.report import Report
+from acme.om.attribution.rules import principal_authored
+from acme.om.attribution.types.principal import Principal
 from acme.om.tools.native.ask_person import ASK_PERSON
 from acme.om.tools.native.load_toolset import description as load_toolset_description
 from acme.om.tools.native.wait_for_sub_agents import WAIT_FOR_SUB_AGENTS
@@ -169,7 +175,7 @@ class StartedJob:
     grant starts it, on the job from then), and the first completion that
     names it by its key and handle, when one arrived."""
 
-    request: Step
+    request: AgentStep
     park: Park
     completion: JobCompletion | None
 
@@ -179,20 +185,20 @@ class StartedJob:
         return self.park.job
 
 
-def started_jobs(steps: Sequence[Step], loop_id: UUID) -> dict[UUID, StartedJob]:
+def started_jobs(steps: Sequence[AgentStep], loop_id: UUID) -> dict[UUID, StartedJob]:
     """Each job the loop parked on whose call is still open, by its key. A
     completion counts only when it is the event that names the call's
     request, and what it holds names the same key and the handle the park
     keeps: anything else that claims to end the job ends nothing."""
-    requests: dict[UUID, Step] = {}
+    requests: dict[UUID, AgentStep] = {}
     answered: set[UUID] = set()
     parks: dict[UUID, Park] = {}
-    reports: dict[UUID, list[Step]] = {}
+    reports: dict[UUID, list[AgentStep]] = {}
     for step in steps:
         header = step.header
         if isinstance(header, ToolRequestHeader) and step.loop_id == loop_id:
             requests[step.id] = step
-        elif step.type is StepType.TOOL_RESPONSE and step.responds_to is not None:
+        elif step.type is AgentStepType.TOOL_RESPONSE and step.responds_to is not None:
             answered.add(step.responds_to)
         elif isinstance(header, ParkedHeader) and step.loop_id == loop_id:
             if header.park.job is not None:
@@ -219,14 +225,14 @@ def started_jobs(steps: Sequence[Step], loop_id: UUID) -> dict[UUID, StartedJob]
     return found
 
 
-def _completion(step: Step) -> JobCompletion | None:
+def _completion(step: AgentStep) -> JobCompletion | None:
     try:
         return JobCompletion.model_validate_json(step.as_text())
     except ValidationError:
         return None
 
 
-def asked_by(steps: Sequence[Step], request: Step) -> Principal | None:
+def asked_by(steps: Sequence[AgentStep], request: AgentStep) -> Principal | None:
     """Who pays for a job a call starts: the spender of the model request
     whose response asked for the call. None when the history holds no
     such request."""
@@ -251,20 +257,20 @@ class OpenLoop:
     park: Park | None
 
 
-def engine_written(step: Step) -> bool:
+def engine_written(step: AgentStep) -> bool:
     """Whether a run wrote the step as part of its loop: everything but what
     arrives through the inbox, an input, a control, or the standing text a
     maker pins, and the engine's own notices among the inputs. A snapshot's
     step is written whenever its caller takes one, after a loop's end
     included, so it says nothing of which loop is open or what a loop did."""
-    if step.type is StepType.SNAPSHOTTED:
+    if step.type is AgentStepType.SNAPSHOTTED:
         return False
     if step.type.is_input():
         return step.actor is Actor.ENGINE
     return not arrives(step)
 
 
-def open_loop(steps: Sequence[Step]) -> OpenLoop | None:
+def open_loop(steps: Sequence[AgentStep]) -> OpenLoop | None:
     """The loop a run wrote steps of and no `loop_ended` closed, or None.
     Inputs and controls carry ids of their own, so only what a run writes
     says which loop is open."""
@@ -273,21 +279,21 @@ def open_loop(steps: Sequence[Step]) -> OpenLoop | None:
     for step in steps:
         if not engine_written(step):
             continue
-        if step.type is StepType.LOOP_ENDED:
+        if step.type is AgentStepType.LOOP_ENDED:
             loop_id, park = None, None
             continue
         if step.loop_id != loop_id:
             loop_id, park = step.loop_id, None
         if isinstance(step.header, ParkedHeader):
             park = step.header.park
-        elif step.type is StepType.RESUMED:
+        elif step.type is AgentStepType.RESUMED:
             park = None
     if loop_id is None:
         return None
     return OpenLoop(loop_id, start_seq(steps, loop_id), park)
 
 
-def start_seq(steps: Sequence[Step], loop_id: UUID) -> int:
+def start_seq(steps: Sequence[AgentStep], loop_id: UUID) -> int:
     """The seq of a loop's first step: its trigger, whose id is the loop's,
     else the first step that names the loop."""
     for step in steps:
@@ -296,7 +302,7 @@ def start_seq(steps: Sequence[Step], loop_id: UUID) -> int:
     return 0
 
 
-def latest_response(steps: Sequence[Step], loop_id: UUID) -> Step | None:
+def latest_response(steps: Sequence[AgentStep], loop_id: UUID) -> AgentStep | None:
     """The loop's latest complete response of the main model role: neither
     cut short nor abandoned."""
     ex = exchanges(steps)
@@ -304,18 +310,20 @@ def latest_response(steps: Sequence[Step], loop_id: UUID) -> Step | None:
     return max(found, key=lambda step: step.seq, default=None)
 
 
-def open_calls(steps: Sequence[Step], response: Step) -> list[tuple[ToolUseBlock, Step | None]]:
+def open_calls(
+    steps: Sequence[AgentStep], response: AgentStep
+) -> list[tuple[ToolUseBlock, AgentStep | None]]:
     """Each tool use of `response` that no tool response answers yet, in the
     order the model made them, with its request when one was written."""
-    requests: dict[str, Step] = {}
+    requests: dict[str, AgentStep] = {}
     answered: set[UUID] = set()
     for step in steps:
         header = step.header
         if isinstance(header, ToolRequestHeader) and response.id in step.refs:
             requests[header.tool_use_id] = step
-        elif step.type is StepType.TOOL_RESPONSE and step.responds_to is not None:
+        elif step.type is AgentStepType.TOOL_RESPONSE and step.responds_to is not None:
             answered.add(step.responds_to)
-    calls: list[tuple[ToolUseBlock, Step | None]] = []
+    calls: list[tuple[ToolUseBlock, AgentStep | None]] = []
     for use in response.as_tool_uses():
         request = requests.get(use.id)
         if request is None or request.id not in answered:
@@ -323,11 +331,13 @@ def open_calls(steps: Sequence[Step], response: Step) -> list[tuple[ToolUseBlock
     return calls
 
 
-def accepted_outcome(steps: Sequence[Step], response: Step) -> LoopOutcome | None:
+def accepted_outcome(steps: Sequence[AgentStep], response: AgentStep) -> LoopOutcome | None:
     """The outcome a result submitted in `response` was accepted with, as
     its answer in the history records it, or None."""
     asked = {
-        step.id for step in steps if step.type is StepType.TOOL_REQUEST and response.id in step.refs
+        step.id
+        for step in steps
+        if step.type is AgentStepType.TOOL_REQUEST and response.id in step.refs
     }
     for step in steps:
         header = step.header
@@ -341,7 +351,7 @@ def accepted_outcome(steps: Sequence[Step], response: Step) -> LoopOutcome | Non
 
 
 def report_of(
-    steps: Sequence[Step],
+    steps: Sequence[AgentStep],
     loop: OpenLoop,
     *,
     outcome: LoopOutcome | None = None,
@@ -384,7 +394,7 @@ def report_of(
     )
 
 
-def ended_turn(response: Step) -> bool:
+def ended_turn(response: AgentStep) -> bool:
     """Whether the model ended its turn in `response`: it called no tool,
     and its provider did not pause it."""
     header = response.header
@@ -392,7 +402,7 @@ def ended_turn(response: Step) -> bool:
     return not response.as_tool_uses() and not paused
 
 
-def judged(steps: Sequence[Step], response: Step) -> bool:
+def judged(steps: Sequence[AgentStep], response: AgentStep) -> bool:
     """Whether a turn that called no tool was acted on: a step a run wrote
     in its loop follows it, such as a nudge."""
     return any(
@@ -401,7 +411,7 @@ def judged(steps: Sequence[Step], response: Step) -> bool:
     )
 
 
-def nudges_before(steps: Sequence[Step], response: Step) -> int:
+def nudges_before(steps: Sequence[AgentStep], response: AgentStep) -> int:
     """How many turns of the loop in a row, before `response`, neither
     called a tool nor were cut short."""
     count = 0
@@ -416,7 +426,7 @@ def nudges_before(steps: Sequence[Step], response: Step) -> int:
     return count
 
 
-def asked(steps: Sequence[Step], loop: OpenLoop, command: ControlCommand) -> Step | None:
+def asked(steps: Sequence[AgentStep], loop: OpenLoop, command: ControlCommand) -> AgentStep | None:
     """The latest `command` control since the loop began, or None."""
     found = None
     for step in steps:
@@ -430,7 +440,7 @@ def asked(steps: Sequence[Step], loop: OpenLoop, command: ControlCommand) -> Ste
     return found
 
 
-def pause_waits(steps: Sequence[Step], loop: OpenLoop) -> bool:
+def pause_waits(steps: Sequence[AgentStep], loop: OpenLoop) -> bool:
     """Whether a principal's pause waits for the loop's next safe point: a
     pause since the loop began, since its last pause-park, and not undone
     by a resume after it."""
@@ -448,7 +458,7 @@ def pause_waits(steps: Sequence[Step], loop: OpenLoop) -> bool:
     return latest is ControlCommand.PAUSE
 
 
-def question_waits(steps: Sequence[Step], response: Step) -> bool:
+def question_waits(steps: Sequence[AgentStep], response: AgentStep) -> bool:
     """Whether the agent asked its person in `response` and waits for the
     answer: the history answers an `ask_person` call of the response
     without a failure, and no principal's message has landed since the
@@ -458,7 +468,7 @@ def question_waits(steps: Sequence[Step], response: Step) -> bool:
     return not any(principal_authored(step) for step in woken_since(steps, response))
 
 
-def children_wait(steps: Sequence[Step], response: Step) -> bool:
+def children_wait(steps: Sequence[AgentStep], response: AgentStep) -> bool:
     """Whether the agent waits on its sub-agents after `response`: the
     history answers a `wait_for_sub_agents` call of the response without a
     failure, and no waking input has landed since the request the response
@@ -469,7 +479,7 @@ def children_wait(steps: Sequence[Step], response: Step) -> bool:
     return not woken_since(steps, response)
 
 
-def answered_call(steps: Sequence[Step], response: Step, tool: str) -> bool:
+def answered_call(steps: Sequence[AgentStep], response: AgentStep, tool: str) -> bool:
     """Whether the history answers a call of `tool` that `response` made
     without a failure."""
     made = {
@@ -487,7 +497,7 @@ def answered_call(steps: Sequence[Step], response: Step, tool: str) -> bool:
     )
 
 
-def woken_since(steps: Sequence[Step], response: Step) -> list[Step]:
+def woken_since(steps: Sequence[AgentStep], response: AgentStep) -> list[AgentStep]:
     """The waking inputs that landed after the request `response` answers,
     which the model has not read."""
     since = next((step.seq for step in steps if step.id == response.responds_to), response.seq)
@@ -498,7 +508,9 @@ def woken_since(steps: Sequence[Step], response: Step) -> list[Step]:
     ]
 
 
-def stops_call(steps: Sequence[Step], request: Step, interruptible: bool) -> ControlCommand | None:
+def stops_call(
+    steps: Sequence[AgentStep], request: AgentStep, interruptible: bool
+) -> ControlCommand | None:
     """The control that stops a running call: a cancel since its request,
     or, when its tool may be stopped, an interrupt that names this call's
     request. An interrupt binds to the call it names, so it stops no call
@@ -529,7 +541,7 @@ def retry_wait(
     return max(backoff, timedelta(seconds=retry_after))
 
 
-def repeated_failure(steps: Sequence[Step], loop_id: UUID, every: int) -> str | None:
+def repeated_failure(steps: Sequence[AgentStep], loop_id: UUID, every: int) -> str | None:
     """The notice the loop writes when its latest tool answers are the same
     call failing `every` times in a row, or a multiple of it, and no notice
     of the engine's followed the latest of them yet; else None. The same
@@ -544,13 +556,13 @@ def repeated_failure(steps: Sequence[Step], loop_id: UUID, every: int) -> str | 
         call = calls.get(step.responds_to) if step.responds_to is not None else None
         if isinstance(header, ToolRequestHeader):
             calls[step.id] = (header.tool, header.input_hash)
-        elif step.type is StepType.TOOL_RESPONSE and call is not None:
+        elif step.type is AgentStepType.TOOL_RESPONSE and call is not None:
             if step.as_tool_response().is_error:
                 count, last = (count + 1 if call == last else 1), call
             else:
                 count, last = 0, None
             answered_at = step.seq
-        elif step.type is StepType.MESSAGE and step.actor is Actor.ENGINE:
+        elif step.type is AgentStepType.MESSAGE and step.actor is Actor.ENGINE:
             noticed_at = step.seq
     if last is None or count % every or noticed_at > answered_at:
         return None
@@ -558,7 +570,7 @@ def repeated_failure(steps: Sequence[Step], loop_id: UUID, every: int) -> str | 
 
 
 def holds_private(
-    session: AgentSession, kind: AgentKind, registry: ToolRegistry, history: Sequence[Step]
+    session: AgentSession, kind: AgentKind, registry: ToolRegistry, history: Sequence[AgentStep]
 ) -> bool:
     """Whether a session holds private data or credentials, for the rule of
     two: its kind says it holds private data, a tool it may call is given a
@@ -572,7 +584,7 @@ def holds_private(
     )
 
 
-def standing_text(steps: Sequence[Step], start: int) -> str:
+def standing_text(steps: Sequence[AgentStep], start: int) -> str:
     """The standing text a loop renders: the latest its session pinned
     before `start`, the seq of the input the loop began from, and none when
     it pinned none. A switch recorded after that input waits for the next
@@ -617,23 +629,33 @@ def kind_prompts(
     )
 
 
-def stream_part(session_id: UUID, step_id: UUID, n: int, part: ProviderPart) -> StreamPart | None:
+def stream_part(
+    agent_session_id: UUID, agent_step_id: UUID, n: int, part: ProviderPart
+) -> StreamPart | None:
     """A provider's part as the loop emits it, numbered in its stream and
     naming the response it adds up to; None for the last part, the reply
     itself, which is stored and never streamed."""
     match part:
         case TextDelta():
             return TextPart(
-                session_id=session_id, step_id=step_id, n=n, index=part.index, text=part.text
+                agent_session_id=agent_session_id,
+                agent_step_id=agent_step_id,
+                n=n,
+                index=part.index,
+                text=part.text,
             )
         case ThinkingDelta():
             return ThinkingPart(
-                session_id=session_id, step_id=step_id, n=n, index=part.index, text=part.text
+                agent_session_id=agent_session_id,
+                agent_step_id=agent_step_id,
+                n=n,
+                index=part.index,
+                text=part.text,
             )
         case ToolUseDelta():
             return ToolInputPart(
-                session_id=session_id,
-                step_id=step_id,
+                agent_session_id=agent_session_id,
+                agent_step_id=agent_step_id,
                 n=n,
                 index=part.index,
                 tool_use_id=part.id,
@@ -647,16 +669,18 @@ def stream_part(session_id: UUID, step_id: UUID, n: int, part: ProviderPart) -> 
 # What the engine writes.
 
 
-def response_step(step_id: UUID, at: datetime, request: Step, reply: ModelReply) -> Step:
+def response_step(
+    agent_step_id: UUID, at: datetime, request: AgentStep, reply: ModelReply
+) -> AgentStep:
     """A model's reply as its request's response, saved once, whole, when its
     stream ends; a reply cut short is saved truncated, holding what arrived,
     and its tool uses are never run."""
-    return Step(
-        id=step_id,
+    return AgentStep(
+        id=agent_step_id,
         created_at=at,
-        session_id=request.session_id,
+        agent_session_id=request.agent_session_id,
         loop_id=request.loop_id,
-        type=StepType.MODEL_RESPONSE,
+        type=AgentStepType.MODEL_RESPONSE,
         actor=Actor.MODEL,
         origin=Origin.ENGINE,
         responds_to=request.id,
@@ -668,15 +692,15 @@ def response_step(step_id: UUID, at: datetime, request: Step, reply: ModelReply)
     )
 
 
-def abandoned_step(step_id: UUID, at: datetime, request: Step) -> Step:
+def abandoned_step(agent_step_id: UUID, at: datetime, request: AgentStep) -> AgentStep:
     """The close of a request that never got its response: its call failed
     before the provider answered, or a run that made it was lost."""
-    return Step(
-        id=step_id,
+    return AgentStep(
+        id=agent_step_id,
         created_at=at,
-        session_id=request.session_id,
+        agent_session_id=request.agent_session_id,
         loop_id=request.loop_id,
-        type=StepType.MODEL_RESPONSE,
+        type=AgentStepType.MODEL_RESPONSE,
         actor=Actor.ENGINE,
         origin=Origin.ENGINE,
         responds_to=request.id,
@@ -685,18 +709,23 @@ def abandoned_step(step_id: UUID, at: datetime, request: Step) -> Step:
 
 
 def notice_step(
-    step_id: UUID, at: datetime, session_id: UUID, loop_id: UUID, principal: Principal, text: str
-) -> Step:
+    agent_step_id: UUID,
+    at: datetime,
+    agent_session_id: UUID,
+    loop_id: UUID,
+    principal: Principal,
+    text: str,
+) -> AgentStep:
     """The engine's notice to the model, a nudge among them: a message the
     engine writes under the run's epoch, on the authority the session's
     calls run under. It instructs, wakes nothing, and never pays, so the
     next request carries it between two of the model's turns."""
-    return Step(
-        id=step_id,
+    return AgentStep(
+        id=agent_step_id,
         created_at=at,
-        session_id=session_id,
+        agent_session_id=agent_session_id,
         loop_id=loop_id,
-        type=StepType.MESSAGE,
+        type=AgentStepType.MESSAGE,
         actor=Actor.ENGINE,
         origin=Origin.ENGINE,
         header=InputHeader(waking=False, principal=principal),
@@ -709,37 +738,39 @@ def nudge_text(kind: AgentKind) -> str:
 
 
 def ended_step(
-    step_id: UUID,
+    agent_step_id: UUID,
     at: datetime,
-    session_id: UUID,
+    agent_session_id: UUID,
     loop_id: UUID,
     outcome: LoopOutcome,
     *,
     cause: str | None = None,
-) -> Step:
+) -> AgentStep:
     """The step that closes a loop with its outcome, and its cause when the
     engine names one."""
-    return Step(
-        id=step_id,
+    return AgentStep(
+        id=agent_step_id,
         created_at=at,
-        session_id=session_id,
+        agent_session_id=agent_session_id,
         loop_id=loop_id,
-        type=StepType.LOOP_ENDED,
+        type=AgentStepType.LOOP_ENDED,
         actor=Actor.ENGINE,
         origin=Origin.ENGINE,
         header=LoopEndedHeader(outcome=outcome, cause=cause),
     )
 
 
-def changed_step(step_id: UUID, at: datetime, session_id: UUID, loop_id: UUID) -> Step:
+def changed_step(
+    agent_step_id: UUID, at: datetime, agent_session_id: UUID, loop_id: UUID
+) -> AgentStep:
     """The notice that the world under the model changed: a person worked in
     its environment by hand."""
-    return Step(
-        id=step_id,
+    return AgentStep(
+        id=agent_step_id,
         created_at=at,
-        session_id=session_id,
+        agent_session_id=agent_session_id,
         loop_id=loop_id,
-        type=StepType.ENVIRONMENT_CHANGED,
+        type=AgentStepType.ENVIRONMENT_CHANGED,
         actor=Actor.ENGINE,
         origin=Origin.ENGINE,
         header=MarkHeader(),
@@ -747,13 +778,13 @@ def changed_step(step_id: UUID, at: datetime, session_id: UUID, loop_id: UUID) -
     )
 
 
-def pending_restore(steps: Sequence[Step]) -> Step | None:
+def pending_restore(steps: Sequence[AgentStep]) -> AgentStep | None:
     """The restore the workspace's next prepare starts from: the latest
     `restore` control, unless a notice after it says it was done, or lost. A
     later restore takes the place of an earlier one that was never done."""
     done: set[UUID] = set()
     for step in reversed(steps):
-        if step.type is StepType.ENVIRONMENT_CHANGED:
+        if step.type is AgentStepType.ENVIRONMENT_CHANGED:
             done.update(step.refs)
         header = step.header
         if isinstance(header, ControlHeader) and header.command is ControlCommand.RESTORE:
@@ -761,7 +792,7 @@ def pending_restore(steps: Sequence[Step]) -> Step | None:
     return None
 
 
-def kept_snapshot(steps: Sequence[Step]) -> Step | None:
+def kept_snapshot(steps: Sequence[AgentStep]) -> AgentStep | None:
     """The `snapshotted` step a workspace kept by snapshots starts from when
     no restore is pending: the latest, when nothing touched the workspace
     after it. A tool call after it, as a run lost before its end leaves, or a
@@ -769,23 +800,25 @@ def kept_snapshot(steps: Sequence[Step]) -> Step | None:
     that was lost, leaves the workspace newer than any snapshot: None, and it
     is prepared as it stands."""
     for step in reversed(steps):
-        if step.type is StepType.SNAPSHOTTED:
+        if step.type is AgentStepType.SNAPSHOTTED:
             return step
-        if step.type.is_tool_call() or step.type is StepType.ENVIRONMENT_CHANGED:
+        if step.type.is_tool_call() or step.type is AgentStepType.ENVIRONMENT_CHANGED:
             return None
     return None
 
 
-def lost_step(step_id: UUID, at: datetime, session_id: UUID, loop_id: UUID, source: Step) -> Step:
+def lost_step(
+    agent_step_id: UUID, at: datetime, agent_session_id: UUID, loop_id: UUID, source: AgentStep
+) -> AgentStep:
     """The notice that the snapshot `source` names could not be loaded, and
     the workspace went on as it stood: the record that its restore was lost,
     which references it, so it is never tried again."""
-    return Step(
-        id=step_id,
+    return AgentStep(
+        id=agent_step_id,
         created_at=at,
-        session_id=session_id,
+        agent_session_id=agent_session_id,
         loop_id=loop_id,
-        type=StepType.ENVIRONMENT_CHANGED,
+        type=AgentStepType.ENVIRONMENT_CHANGED,
         actor=Actor.ENGINE,
         origin=Origin.ENGINE,
         refs=(source.id,),
@@ -795,19 +828,19 @@ def lost_step(step_id: UUID, at: datetime, session_id: UUID, loop_id: UUID, sour
 
 
 def restored_step(
-    step_id: UUID, at: datetime, session_id: UUID, loop_id: UUID, restore: Step
-) -> Step:
+    agent_step_id: UUID, at: datetime, agent_session_id: UUID, loop_id: UUID, restore: AgentStep
+) -> AgentStep:
     """The notice that the workspace started from the snapshot `restore`
     names: the record that the restore was done, which references it."""
     header = restore.header
     assert isinstance(header, ControlHeader) and header.snapshot is not None
-    forked = header.snapshot.workspace_id != session_id
-    return Step(
-        id=step_id,
+    forked = header.snapshot.agent_workspace_id != agent_session_id
+    return AgentStep(
+        id=agent_step_id,
         created_at=at,
-        session_id=session_id,
+        agent_session_id=agent_session_id,
         loop_id=loop_id,
-        type=StepType.ENVIRONMENT_CHANGED,
+        type=AgentStepType.ENVIRONMENT_CHANGED,
         actor=Actor.ENGINE,
         origin=Origin.ENGINE,
         refs=(restore.id,),
@@ -816,14 +849,14 @@ def restored_step(
     )
 
 
-def unanswered_requests(steps: Sequence[Step], loop_id: UUID) -> list[Step]:
+def unanswered_requests(steps: Sequence[AgentStep], loop_id: UUID) -> list[AgentStep]:
     """The loop's model requests, of any role, that no response answers:
     what a lost run left, one per call it had in flight."""
-    answered = {step.responds_to for step in steps if step.type is StepType.MODEL_RESPONSE}
+    answered = {step.responds_to for step in steps if step.type is AgentStepType.MODEL_RESPONSE}
     return [
         step
         for step in steps
-        if step.type is StepType.MODEL_REQUEST
+        if step.type is AgentStepType.MODEL_REQUEST
         and step.loop_id == loop_id
         and step.id not in answered
     ]

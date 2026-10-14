@@ -12,33 +12,33 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.storage.impl.postgres import AgentSessionStoragePostgresImpl
+from acme.om.agent_steps.storage import AgentStepStorageInterface
+from acme.om.agent_steps.storage.impl.postgres import AgentStepStoragePostgresImpl
 from acme.om.agents.storage import AgentStorageInterface
 from acme.om.agents.storage.impl.postgres import AgentStoragePostgresImpl
 from acme.om.attribution.storage import AttributionStorageInterface
 from acme.om.attribution.storage.impl.postgres import AttributionStoragePostgresImpl
-from acme.om.budgets.storage import BudgetStorageInterface, LedgerStorageInterface
-from acme.om.budgets.storage.impl.postgres import (
-    BudgetStoragePostgresImpl,
-    LedgerStoragePostgresImpl,
-)
 from acme.om.events.storage import EventStorageInterface
 from acme.om.events.storage.impl.postgres import EventStoragePostgresImpl
 from acme.om.idempotency.storage import IdempotencyStorageInterface
 from acme.om.idempotency.storage.impl.postgres import IdempotencyStoragePostgresImpl
+from acme.om.language_models.storage import FillSetStorageInterface
+from acme.om.language_models.storage.impl.postgres import FillSetStoragePostgresImpl
 from acme.om.leases.storage import LeasesStorageInterface
 from acme.om.leases.storage.impl.postgres import LeasesStoragePostgresImpl
 from acme.om.media.storage import MediaStorageInterface
 from acme.om.media.storage.impl.postgres import MediaStoragePostgresImpl
-from acme.om.models.storage import FillSetStorageInterface
-from acme.om.models.storage.impl.postgres import FillSetStoragePostgresImpl
 from acme.om.orchestrations.storage import OrchestrationsStorageInterface
 from acme.om.orchestrations.storage.impl.postgres import OrchestrationsStoragePostgresImpl
 from acme.om.outbox.storage import OutboxStorageInterface
 from acme.om.outbox.storage.impl.postgres import OutboxStoragePostgresImpl
 from acme.om.privacy.storage import PrivacyStorageInterface
 from acme.om.privacy.storage.impl.postgres import PrivacyStoragePostgresImpl
-from acme.om.steps.storage import StepStorageInterface
-from acme.om.steps.storage.impl.postgres import StepStoragePostgresImpl
+from acme.om.spend_budgets.storage import LedgerStorageInterface, SpendBudgetStorageInterface
+from acme.om.spend_budgets.storage.impl.postgres import (
+    LedgerStoragePostgresImpl,
+    SpendBudgetStoragePostgresImpl,
+)
 from acme.om.storage.impl.pg_base import LoginSessions, ScopedConnection, SessionFactory
 from acme.om.storage.roles import DatabaseRole
 from acme.om.storage.root import StorageInterface
@@ -183,12 +183,12 @@ class StoragePostgresImpl(StorageInterface):
         self._outbox = OutboxStoragePostgresImpl(sessions)
         self._orchestrations = OrchestrationsStoragePostgresImpl(sessions)
         self._leases = LeasesStoragePostgresImpl(sessions)
-        self._steps = StepStoragePostgresImpl(sessions)
+        self._steps = AgentStepStoragePostgresImpl(sessions)
         self._agent_sessions = AgentSessionStoragePostgresImpl(sessions)
         self._agents = AgentStoragePostgresImpl(sessions)
         self._attribution = AttributionStoragePostgresImpl(sessions)
         self._privacy = PrivacyStoragePostgresImpl(sessions)
-        self._budgets = BudgetStoragePostgresImpl(sessions)
+        self._budgets = SpendBudgetStoragePostgresImpl(sessions)
         self._ledger = LedgerStoragePostgresImpl(sessions)
         self._fill_sets = FillSetStoragePostgresImpl(sessions)
         self._windows = WindowStoragePostgresImpl(sessions)
@@ -218,7 +218,7 @@ class StoragePostgresImpl(StorageInterface):
     def get_lease_storage(self) -> LeasesStorageInterface:
         return self._leases
 
-    def get_step_storage(self) -> StepStorageInterface:
+    def get_agent_step_storage(self) -> AgentStepStorageInterface:
         return self._steps
 
     def get_agent_session_storage(self) -> AgentSessionStorageInterface:
@@ -233,7 +233,7 @@ class StoragePostgresImpl(StorageInterface):
     def get_privacy_storage(self) -> PrivacyStorageInterface:
         return self._privacy
 
-    def get_budget_storage(self) -> BudgetStorageInterface:
+    def get_spend_budget_storage(self) -> SpendBudgetStorageInterface:
         return self._budgets
 
     def get_ledger_storage(self) -> LedgerStorageInterface:

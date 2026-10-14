@@ -17,9 +17,9 @@ from acme.agentic_check.lenses import LENSES
 RULES = [r.id for r in registry.rules()]
 BAD = {f"{OM}/agents/kinds.py": "MAIN = dict(model='claude-y')\n"}
 DEFAULTED = {
-    f"{OM}/budgets/impl/importer.py": (
-        "from acme.om.budgets.gate import BudgetGateInterface\n\n\n"
-        "class ImporterImpl:\n    def __init__(self, gate: BudgetGateInterface | None = None) -> None:\n"
+    f"{OM}/spend_budgets/impl/importer.py": (
+        "from acme.om.spend_budgets.gate import SpendBudgetGateInterface\n\n\n"
+        "class ImporterImpl:\n    def __init__(self, gate: SpendBudgetGateInterface | None = None) -> None:\n"
         "        self._gate = gate\n"
     )
 }
@@ -84,7 +84,7 @@ def test_list_group_rule_and_paths(tmp_path):
 
 def test_an_exception_with_its_adr_accepts_a_finding(tmp_path):
     entry = (
-        f'\n[[tool.agentic-check.exception]]\nrule = "PRV-06"\npath = "{OM}/budgets/impl/*.py"\n'
+        f'\n[[tool.agentic-check.exception]]\nrule = "PRV-06"\npath = "{OM}/spend_budgets/impl/*.py"\n'
         f'adr = "{ADR}"\nreason = "an old job"\n'
     )
     write_project(tmp_path, DEFAULTED, pyproject=PYPROJECT + entry)
@@ -93,7 +93,7 @@ def test_an_exception_with_its_adr_accepts_a_finding(tmp_path):
     assert report["exceptions_applied"] == [
         {
             "rule": "PRV-06",
-            "path": f"{OM}/budgets/impl/importer.py",
+            "path": f"{OM}/spend_budgets/impl/importer.py",
             "line": 5,
             "adr": ADR,
             "reason": "an old job",

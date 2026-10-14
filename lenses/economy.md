@@ -71,7 +71,7 @@ tool with no contract at all is TOL-01.)
 
 **Principle.** A spawn's objective has a size bound, and it names large
 material by its handle, never pasting it. A child's report has a size
-bound. Above it, the report is stored as an artifact, and the parent's
+bound. Above it, the report is stored as a tool output, and the parent's
 inbox holds its preview and its handle. The report and the status
 changes AGT-03 names cross to the parent, and nothing else of the
 child's does. That a child starts clean, without its parent's
@@ -139,7 +139,7 @@ role.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/models/types/fill.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/language_models/types/fill.py`
 
 **Check.** review
 

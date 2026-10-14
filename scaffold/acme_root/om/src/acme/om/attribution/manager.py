@@ -14,11 +14,11 @@ from collections.abc import Awaitable, Callable, Mapping
 from uuid import UUID
 
 from acme.om.attribution.types.authority import (
+    AgentSessionAuthority,
     AuthorityMode,
     CallAuthority,
     CallReach,
     RequestAttribution,
-    SessionAuthority,
 )
 from acme.om.attribution.types.principal import Principal
 from acme.om.context import RequestContext, TenantContext
@@ -34,8 +34,8 @@ tenant any more."""
 class AttributionManagerInterface(ABC):
     @abstractmethod
     async def open_authority(
-        self, ctx: TenantContext, session_id: UUID, mode: AuthorityMode
-    ) -> SessionAuthority:
+        self, ctx: TenantContext, agent_session_id: UUID, mode: AuthorityMode
+    ) -> AgentSessionAuthority:
         """The session's authority, made once, right after the session. The
         caller names the mode, its kind's, and nothing else: a root runs
         under the person who made it; a session made from another runs
@@ -47,20 +47,22 @@ class AttributionManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def get_authority(self, ctx: TenantContext, session_id: UUID) -> SessionAuthority:
+    async def get_authority(
+        self, ctx: TenantContext, agent_session_id: UUID
+    ) -> AgentSessionAuthority:
         """A session's authority; `NotFound` for one that holds none, and
         for another tenant's."""
         ...
 
     @abstractmethod
     async def assign_principal(
-        self, ctx: TenantContext, session_id: UUID, steerer: UUID | None = None
-    ) -> SessionAuthority:
+        self, ctx: TenantContext, agent_session_id: UUID, steerer: UUID | None = None
+    ) -> AgentSessionAuthority:
         """The session's principal, its steerer, moves: only their messages
         instruct it, and its tool calls run under them from here. With no
         `steerer`, or the caller named, the caller takes it: its steerer
         already, or for a steerer who lapsed, one who holds
-        `manage_sessions`, who joins it as they take it; anyone else is
+        `manage_agent_sessions`, who joins it as they take it; anyone else is
         `NotAuthorized`. With another named, its steerer hands it to them:
         anyone else is `NotAuthorized`, and one who takes no part in the
         session is `ValidationFailed`; one who left the org since lapses as
@@ -75,7 +77,7 @@ class AttributionManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def steers(self, ctx: TenantContext, session_id: UUID) -> bool:
+    async def steers(self, ctx: TenantContext, agent_session_id: UUID) -> bool:
         """Whether the caller steers the session: True for its principal, a
         person through any key, or before its authority is opened its
         creator; False for one who takes part in it and does not, its
@@ -86,7 +88,11 @@ class AttributionManagerInterface(ABC):
 
     @abstractmethod
     async def attribute_request(
-        self, ctx: TenantContext, session_id: UUID, after_seq: int, delivered: Mapping[UUID, int]
+        self,
+        ctx: TenantContext,
+        agent_session_id: UUID,
+        after_seq: int,
+        delivered: Mapping[UUID, int],
     ) -> RequestAttribution:
         """What the session's next model request records, read from exactly
         the inputs it delivers: `after_seq` is the seq of the latest model
@@ -105,14 +111,14 @@ class AttributionManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def is_marked(self, ctx: TenantContext, session_id: UUID) -> bool:
+    async def is_marked(self, ctx: TenantContext, agent_session_id: UUID) -> bool:
         """Whether the session carries the untrusted mark: set by the first
         data in its history or passed from the session it came from, and
         never cleared."""
         ...
 
     @abstractmethod
-    async def call_principal(self, ctx: TenantContext, session_id: UUID) -> Principal:
+    async def call_principal(self, ctx: TenantContext, agent_session_id: UUID) -> Principal:
         """Whose authority the session's next tool call runs under: a steady
         session's fixed principal, or the speaker a delegated session's
         latest model request recorded. A child's is the principal it
@@ -121,7 +127,7 @@ class AttributionManagerInterface(ABC):
 
     @abstractmethod
     async def authorize_call(
-        self, ctx: TenantContext, session_id: UUID, reach: CallReach
+        self, ctx: TenantContext, agent_session_id: UUID, reach: CallReach
     ) -> CallAuthority:
         """Asked for every tool call, before it runs, and before the next
         model request: a delegated call runs under the speaker the request
@@ -135,7 +141,7 @@ class AttributionManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def purge_authority(self, org_id: UUID, session_id: UUID) -> bool:
+    async def purge_authority(self, org_id: UUID, agent_session_id: UUID) -> bool:
         """Platform-internal: the authority of a session the sweep has
         claimed for its purge goes before its row, under the purge login, in
         the tenant named; for no principal. False when none was left."""

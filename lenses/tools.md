@@ -295,7 +295,7 @@ advice; a failing test returned as a tool failure; an engine retry of an
 **Severity.** medium
 
 **Shape.** `scaffold/acme_root/om/src/acme/om/tools/rules.py` and
-`scaffold/acme_root/om/src/acme/om/steps/types/header.py`
+`scaffold/acme_root/om/src/acme/om/agent_steps/types/header.py`
 
 **Check.** review
 
@@ -427,7 +427,8 @@ environment with no
 
 **Severity.** high
 
-**Shape.** `scaffold/acme_root/infra/src/acme/infra/workspaces/__init__.py` and
+**Shape.**
+`scaffold/acme_root/infra/src/acme/infra/agent_workspaces/__init__.py` and
 `scaffold/acme_root/om/src/acme/om/tools/manager.py`
 
 **Check.** review
@@ -470,7 +471,8 @@ a revocation of its session's key leaves.
 
 **Severity.** high
 
-**Shape.** `scaffold/acme_root/infra/src/acme/infra/workspaces/container.py`
+**Shape.**
+`scaffold/acme_root/infra/src/acme/infra/agent_workspaces/container.py`
 and `scaffold/acme_root/om/src/acme/om/tools/impl/snapshots.py`
 
 **Check.** review
@@ -506,6 +508,6 @@ found again.
 **Severity.** high
 
 **Shape.** `scaffold/acme_root/om/src/acme/om/tools/impl/bases.py` and
-`scaffold/acme_root/infra/src/acme/infra/workspaces/container.py`
+`scaffold/acme_root/infra/src/acme/infra/agent_workspaces/container.py`
 
 **Check.** review

@@ -27,6 +27,7 @@ from acme.services.api.gateway.idempotency import OperatorIdem
 from acme.services.api.gateway.resolve import AdminService
 from acme.services.api.types.admin import (
     AddMemberRequest,
+    AgentSessionUsageView,
     ConfirmTotpRequest,
     CreateOrgRequest,
     IssuedOperatorTokenView,
@@ -37,7 +38,6 @@ from acme.services.api.types.admin import (
     OperatorView,
     OperatorWorkItemView,
     PlatformSizeView,
-    SessionUsageView,
     SetTenantCapRequest,
     TenantCapView,
     TotpConfirmedView,
@@ -192,21 +192,23 @@ async def requeue_work(
     return await service.requeue_work(admin, org_id, item_id)
 
 
-@router.get("/orgs/{org_id}/sessions/{session_id}/usage", response_model=SessionUsageView)
-async def get_session_usage(
+@router.get(
+    "/orgs/{org_id}/agent-sessions/{agent_session_id}/usage", response_model=AgentSessionUsageView
+)
+async def get_agent_session_usage(
     admin: OperatorCtx,
     service: AdminService,
     org_id: UUID,
-    session_id: UUID,
+    agent_session_id: UUID,
     cursor: str | None = None,
     limit: int = LIMIT_DEFAULT,
-) -> SessionUsageView:
+) -> AgentSessionUsageView:
     """What one session's model calls used and cost, in every storage mode
     (ADR 1014). Requires the read permission.
 
-    The answer is a `SessionUsageView`: `session_id`; `items`, a page of the
+    The answer is a `AgentSessionUsageView`: `agent_session_id`; `items`, a page of the
     session's usage records, oldest first, each with `id`, `created_at`,
-    `hold_id`, `session_id`, `tree_id`, `loop_id`, `step_id` (the call's
+    `spend_hold_id`, `agent_session_id`, `tree_id`, `loop_id`, `agent_step_id` (the call's
     response step), `agent_kind`, `kind_version`, `role`, `provider`, `model`, `input_tokens`,
     `cache_read_tokens`, `cache_write_tokens`, `output_tokens`,
     `thinking_tokens`, `cost_micros` (reference cost in millionths, null when
@@ -223,7 +225,7 @@ async def get_session_usage(
     A record holds ids, counts, money, a duration, and labels, and no
     content. `404 not_found` for an unknown org, and for a session the org
     holds no record of, which is how another tenant's session reads."""
-    return await service.get_session_usage(admin, org_id, session_id, cursor, limit)
+    return await service.get_agent_session_usage(admin, org_id, agent_session_id, cursor, limit)
 
 
 # A cap is set whole by a PUT, so a retry after a lost answer sets the same

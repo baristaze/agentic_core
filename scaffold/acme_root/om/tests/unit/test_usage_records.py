@@ -14,18 +14,18 @@ from acme.integrations.model_providers.calls import ModelCall
 from acme.integrations.model_providers.scripted import ScriptedFailure
 from acme.integrations.model_providers.types import ErrorKind, ProviderName, Usage
 from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
+from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
+from acme.om.agent_steps.types.header import LoopOutcome, ModelRequestHeader
 from acme.om.agents.types.request import Start
 from acme.om.base import new_id
-from acme.om.budgets.rules import usage_spend
-from acme.om.budgets.storage.tables.usage_records import UsageRecords
-from acme.om.budgets.types.hold import Settlement
-from acme.om.budgets.types.usage import UsageRecord
 from acme.om.context import TenantContext
 from acme.om.exceptions import Unavailable
-from acme.om.models.types.fill import MAIN, SUMMARIZER
-from acme.om.privacy.types.session_privacy import StorageMode, StoragePolicy
-from acme.om.steps.types.header import LoopOutcome, ModelRequestHeader
-from acme.om.steps.types.step import Step, StepType
+from acme.om.language_models.types.fill import MAIN, SUMMARIZER
+from acme.om.privacy.types.agent_session_privacy import StorageMode, StoragePolicy
+from acme.om.spend_budgets.rules import usage_spend
+from acme.om.spend_budgets.storage.tables.usage_records import UsageRecords
+from acme.om.spend_budgets.types.spend_hold import SpendSettlement
+from acme.om.spend_budgets.types.usage import UsageRecord
 
 FIRST = Usage(input=1_200, cache_read=800, cache_write=300, output=45, thinking=20)
 SECOND = Usage(input=1_400, cache_read=1_100, cache_write=0, output=60, thinking=0)
@@ -51,7 +51,7 @@ def timed(loop: Loop, monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 async def started(loop: Loop, title: str = "a question") -> UUID:
-    session = await loop.managers.agents.start_session(
+    session = await loop.managers.agents.start_agent_session(
         loop.owner, Start(id=new_id(), kind=ASSISTANT.name, title=title)
     )
     return session.id
@@ -111,17 +111,21 @@ async def test_every_storage_mode_keeps_one_usage_record_per_model_call(
             await loop.managers.privacy.set_policy(loop.owner, session, policy)
         await one_loop(loop, session, question="What is the total?", q="the total", answer="12.")
         records = await records_of(loop, loop.owner, session)
-        responses = [s for s in await loop.history(session) if s.type is StepType.MODEL_RESPONSE]
-        assert [r.step_id for r in records] == [s.id for s in responses], mode
+        responses = [
+            s for s in await loop.history(session) if s.type is AgentStepType.MODEL_RESPONSE
+        ]
+        assert [r.agent_step_id for r in records] == [s.id for s in responses], mode
         assert len({r.loop_id for r in records}) == 1 and records[0].loop_id == responses[0].loop_id
-        assert len({r.hold_id for r in records}) == 2, f"{mode}: one record per hold"
-        row = await loop.managers.agent_sessions.get_session(loop.owner, session)
+        assert len({r.spend_hold_id for r in records}) == 2, f"{mode}: one record per hold"
+        row = await loop.managers.agent_sessions.get_agent_session(loop.owner, session)
         assert {(r.tree_id, r.kind_version) for r in records} == {(row.root_id, row.kind_version)}
-        at_rest = await loop.storage.get_step_storage().read_steps(org, session, 0, 100)
+        at_rest = await loop.storage.get_agent_step_storage().read_agent_steps(org, session, 0, 100)
         assert bool(at_rest) is (mode != "memory_only without keep_shape"), mode
         found[mode] = [figures(r) for r in records]
 
-    fill = (await loop.managers.models.get_fill_set(loop.owner, sessions[0])).fill_for(MAIN)
+    fill = (await loop.managers.language_models.get_fill_set(loop.owner, sessions[0])).fill_for(
+        MAIN
+    )
     assert fill is not None
     price = loop.managers.pricing.price_of(fill.provider.value, fill.model)
     assert price is not None, "the assistant's model has a price"
@@ -150,11 +154,11 @@ COLUMNS = {
     "id": Uuid,
     "org_id": Uuid,
     "created_at": DateTime,
-    "hold_id": Uuid,
-    "session_id": Uuid,
+    "spend_hold_id": Uuid,
+    "agent_session_id": Uuid,
     "tree_id": Uuid,
     "loop_id": Uuid,
-    "step_id": Uuid,
+    "agent_step_id": Uuid,
     "agent_kind": Text,
     "kind_version": Integer,
     "role": Text,
@@ -203,7 +207,7 @@ async def test_a_usage_record_holds_no_content(
         answer=markers["reply"],
     )
     history = await loop.history(session)
-    output = next(s for s in history if s.type is StepType.TOOL_RESPONSE).as_tool_response()
+    output = next(s for s in history if s.type is AgentStepType.TOOL_RESPONSE).as_tool_response()
     assert markers["tool input"] in str(output.parts), "the tool's output carries its input"
     records = await records_of(loop, loop.owner, session)
     assert len(records) == 2
@@ -225,11 +229,11 @@ async def test_a_sessions_purge_keeps_its_usage_records(tmp_path: Path) -> None:
     await one_loop(loop, session, question="What is the total?", q="the total", answer="12.")
     kept = await records_of(loop, loop.owner, session)
     assert len(kept) == 2
-    await loop.managers.agent_sessions.delete_session(loop.owner, session)
+    await loop.managers.agent_sessions.delete_agent_session(loop.owner, session)
     assert await loop.managers.agent_sessions.purge_across_tenants() == 1
     org = loop.owner.org_id
-    assert await loop.storage.get_step_storage().read_steps(org, session, 0, 10) == []
-    assert await loop.storage.get_agent_session_storage().read_session(org, session) is None
+    assert await loop.storage.get_agent_step_storage().read_agent_steps(org, session, 0, 10) == []
+    assert await loop.storage.get_agent_session_storage().read_agent_session(org, session) is None
     assert await records_of(loop, loop.owner, session) == kept, "the records stay whole"
 
 
@@ -253,31 +257,31 @@ async def test_a_deleted_tenants_purge_keeps_its_usage_records(
     managers = loop.managers
     monkeypatch.setattr(managers.tenancy, "tenant_expired", expired)
     for purge in (
-        managers.steps.purge_tenant,
+        managers.agent_steps.purge_tenant,
         managers.agent_sessions.purge_tenant,
         managers.privacy.purge_tenant,
-        managers.budgets.purge_tenant,
+        managers.spend_budgets.purge_tenant,
     ):
         while await purge(loop.owner):
             pass
-    assert await loop.storage.get_step_storage().read_steps(org, session, 0, 10) == []
-    assert await loop.storage.get_agent_session_storage().read_session(org, session) is None
+    assert await loop.storage.get_agent_step_storage().read_agent_steps(org, session, 0, 10) == []
+    assert await loop.storage.get_agent_session_storage().read_agent_session(org, session) is None
     assert await records_of(loop, loop.owner, session) == kept, "the records stay whole"
 
 
 PARTIAL = Usage(input=1_200, cache_read=800, output=3)
 
 
-def is_request(step: Step) -> bool:
+def is_request(step: AgentStep) -> bool:
     return isinstance(step.header, ModelRequestHeader)
 
 
-async def settlement_of(loop: Loop, request: Step) -> Settlement:
+async def spend_settlement_of(loop: Loop, request: AgentStep) -> SpendSettlement:
     """How the ledger closed a model request's hold."""
     header = request.header
-    assert isinstance(header, ModelRequestHeader) and header.hold_id is not None
-    found = await loop.storage.get_ledger_storage().read_settlement(
-        loop.owner.org_id, header.hold_id
+    assert isinstance(header, ModelRequestHeader) and header.spend_hold_id is not None
+    found = await loop.storage.get_ledger_storage().read_spend_settlement(
+        loop.owner.org_id, header.spend_hold_id
     )
     assert found is not None
     return found
@@ -308,11 +312,11 @@ async def test_a_call_settled_whole_leaves_a_marked_record_at_its_hold(
     assert run.outcome is LoopOutcome.SUCCEEDED
     history = await loop.history(session)
     ledger = loop.storage.get_ledger_storage()
-    first, second = [await settlement_of(loop, s) for s in history if is_request(s)]
+    first, second = [await spend_settlement_of(loop, s) for s in history if is_request(s)]
     assert (first.bill.kind, second.bill.kind) == ("unknown", "billed")
     broken, whole = await records_of(loop, loop.owner, session)
-    responses = [s.id for s in history if s.type is StepType.MODEL_RESPONSE]
-    assert [broken.step_id, whole.step_id] == responses
+    responses = [s.id for s in history if s.type is AgentStepType.MODEL_RESPONSE]
+    assert [broken.agent_step_id, whole.agent_step_id] == responses
     assert (broken.settled_whole, whole.settled_whole) == (True, False)
     assert (broken.input_tokens, broken.cache_read_tokens, broken.output_tokens) == (1_200, 800, 3)
     assert (broken.cost_micros, whole.cost_micros) == (
@@ -349,8 +353,8 @@ async def test_a_record_that_fails_to_land_never_fails_its_call(
 
     assert run.outcome is LoopOutcome.SUCCEEDED
     history = await loop.history(session)
-    responses = [s for s in history if s.type is StepType.MODEL_RESPONSE]
+    responses = [s for s in history if s.type is AgentStepType.MODEL_RESPONSE]
     assert len(responses) == 2 and responses[-1].as_text() == "12.", "both replies are kept"
-    settled = [await settlement_of(loop, s) for s in history if is_request(s)]
+    settled = [await spend_settlement_of(loop, s) for s in history if is_request(s)]
     assert [s.bill.kind for s in settled] == ["billed", "billed"]
     assert await records_of(loop, loop.owner, session) == []

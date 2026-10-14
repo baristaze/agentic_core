@@ -9,13 +9,13 @@ from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
-from acme.om.agent_sessions.types.agent_session import AgentSession, Among, SessionStatus
+from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus, Among
 from acme.om.outbox.types.row import OutboxRow
 
 
 class AgentSessionStorageInterface(ABC):
     @abstractmethod
-    async def create_session(
+    async def create_agent_session(
         self, org_id: UUID, session: AgentSession, outbox_rows: tuple[OutboxRow, ...]
     ) -> bool:
         """The create, with the rows that announce it, in one commit; False,
@@ -23,7 +23,9 @@ class AgentSessionStorageInterface(ABC):
         ...
 
     @abstractmethod
-    async def read_session(self, org_id: UUID, session_id: UUID) -> AgentSession | None: ...
+    async def read_agent_session(
+        self, org_id: UUID, agent_session_id: UUID
+    ) -> AgentSession | None: ...
 
     @abstractmethod
     async def read_children(
@@ -34,10 +36,10 @@ class AgentSessionStorageInterface(ABC):
         ...
 
     @abstractmethod
-    async def read_sessions(
+    async def read_agent_sessions(
         self,
         org_id: UUID,
-        status: SessionStatus | None,
+        status: AgentSessionStatus | None,
         after: UUID | None,
         limit: int,
         *,
@@ -52,7 +54,7 @@ class AgentSessionStorageInterface(ABC):
         ...
 
     @abstractmethod
-    async def write_session(
+    async def write_agent_session(
         self,
         org_id: UUID,
         session: AgentSession,
@@ -76,27 +78,27 @@ class AgentSessionStorageInterface(ABC):
         ...
 
     @abstractmethod
-    async def tree_holds_others(self, org_id: UUID, root_id: UUID, session_id: UUID) -> bool:
-        """Whether the tree `root_id` holds a session besides `session_id`,
+    async def tree_holds_others(self, org_id: UUID, root_id: UUID, agent_session_id: UUID) -> bool:
+        """Whether the tree `root_id` holds a session besides `agent_session_id`,
         marked deleted or not."""
         ...
 
     @abstractmethod
-    async def purge_session(self, org_id: UUID, session_id: UUID) -> bool:
+    async def purge_agent_session(self, org_id: UUID, agent_session_id: UUID) -> bool:
         """Deletes the session's row when it is claimed for its purge, under
         the purge login; False, with nothing deleted, for a session that is
         not claimed, another tenant's, or gone."""
         ...
 
     @abstractmethod
-    async def read_tenant_sessions(self, org_id: UUID, limit: int) -> list[UUID]:
+    async def read_tenant_agent_sessions(self, org_id: UUID, limit: int) -> list[UUID]:
         """The ids of at most `limit` sessions of the tenant, marked deleted
         or not, in no order: one batch of a deleted tenant's purge."""
         ...
 
     @abstractmethod
-    async def purge_tenant(self, org_id: UUID, session_ids: Sequence[UUID]) -> int:
-        """Deletes the rows of exactly `session_ids` that the tenant holds,
+    async def purge_tenant(self, org_id: UUID, agent_session_ids: Sequence[UUID]) -> int:
+        """Deletes the rows of exactly `agent_session_ids` that the tenant holds,
         under the purge login, so a session read since stays; an id of
         another tenant's, or one gone, deletes nothing. Returns how many
         went."""

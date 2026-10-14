@@ -6,27 +6,29 @@ its outbox rows in one commit."""
 from abc import ABC, abstractmethod
 from uuid import UUID
 
-from acme.om.attribution.types.authority import SessionAuthority
+from acme.om.attribution.types.authority import AgentSessionAuthority
 from acme.om.outbox.types.row import OutboxRow
 
 
 class AttributionStorageInterface(ABC):
     @abstractmethod
     async def create_authority(
-        self, org_id: UUID, authority: SessionAuthority, outbox_rows: tuple[OutboxRow, ...]
+        self, org_id: UUID, authority: AgentSessionAuthority, outbox_rows: tuple[OutboxRow, ...]
     ) -> bool:
         """The create, with the rows that announce it, in one commit; False,
         with nothing landed, when the id is written already."""
         ...
 
     @abstractmethod
-    async def read_authority(self, org_id: UUID, session_id: UUID) -> SessionAuthority | None: ...
+    async def read_authority(
+        self, org_id: UUID, agent_session_id: UUID
+    ) -> AgentSessionAuthority | None: ...
 
     @abstractmethod
     async def write_authority(
         self,
         org_id: UUID,
-        authority: SessionAuthority,
+        authority: AgentSessionAuthority,
         expected_version: int,
         outbox_rows: tuple[OutboxRow, ...],
     ) -> None:
@@ -36,7 +38,7 @@ class AttributionStorageInterface(ABC):
         ...
 
     @abstractmethod
-    async def purge_authority(self, org_id: UUID, session_id: UUID) -> bool:
+    async def purge_authority(self, org_id: UUID, agent_session_id: UUID) -> bool:
         """Deletes a purged session's authority, under the purge login; False,
         with nothing deleted, for another tenant's or one gone already."""
         ...

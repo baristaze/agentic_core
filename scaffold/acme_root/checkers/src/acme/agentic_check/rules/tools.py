@@ -109,7 +109,7 @@ def no_secret_value_in_a_step(project: Project) -> Iterator[Violation]:
                 and (full := project.full_name(file, k.value)) in project.classes
             ):
                 carriers.add(full)
-    steps = project.sub("om.steps")
+    steps = project.sub("om.agent_steps")
     carriers |= {n for n, (f, _) in project.classes.items() if is_under(f.module, steps)}
     for name in sorted(carriers):
         for file, node, kind in secret_fields(project, name):

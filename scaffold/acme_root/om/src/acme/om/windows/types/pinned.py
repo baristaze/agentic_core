@@ -13,7 +13,7 @@ class PinnedItem(Platform):
     """One principal message in the zone: quoted whole, or, beyond the
     zone's bound, an excerpt that cites the message by its step."""
 
-    step_id: UUID
+    agent_step_id: UUID
     seq: int = Field(ge=1)
     text: str
     whole: bool

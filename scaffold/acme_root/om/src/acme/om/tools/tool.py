@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
 
+from acme.infra.agent_workspaces import AgentWorkspace
 from acme.infra.transports import (
     CommandResult,
     CommandSpec,
@@ -29,11 +30,10 @@ from acme.infra.transports import (
     SecretUse,
     TransportInterface,
 )
-from acme.infra.workspaces import Workspace
+from acme.om.agent_steps.types.header import ToolFailure
 from acme.om.base import Platform
 from acme.om.context import TenantContext
 from acme.om.exceptions import ToolFailed
-from acme.om.steps.types.header import ToolFailure
 from acme.om.tools.rules import command_text
 from acme.om.tools.types.call import JobHandle
 from acme.om.tools.types.policy import Target
@@ -53,7 +53,7 @@ class TakenSnapshot:
     own snapshot too. What one that does not keep it holds outside the
     archive, such as a disk, goes once the child's copy is kept."""
 
-    workspace_id: UUID
+    agent_workspace_id: UUID
     archive: bytes = field(repr=False)
     kept: bool = False
 
@@ -65,16 +65,16 @@ TakeSnapshot = Callable[[], Awaitable[TakenSnapshot]]
 class ToolRuntime:
     """One call's way into its workspace. A preflight's is read-only. Its
     command goes with the seal its record keeps the output under: its
-    session's. `session_id` is the session the call was made in, read from
+    session's. `agent_session_id` is the session the call was made in, read from
     its request: a tool that reads the session's own records reads this
     one, never one its input names."""
 
     def __init__(
         self,
         transport: TransportInterface,
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         *,
-        session_id: UUID,
+        agent_session_id: UUID,
         seal: RecordSeal,
         key: UUID,
         epoch: int,
@@ -89,7 +89,7 @@ class ToolRuntime:
     ) -> None:
         self._answer_chars = answer_chars  # the bound of what the model reads of an answer
         self._snapshot = snapshot
-        self.session_id = session_id
+        self.agent_session_id = agent_session_id
         self._transport = transport
         self._workspace = workspace
         self._seal = seal

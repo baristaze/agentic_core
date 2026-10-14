@@ -28,7 +28,7 @@ A session is the unit people share, export, and delete.
 **Content is sealed per session, and its erasure is the revocation of the
 session's key.** Every step's content is sealed at rest under its
 session's key, by envelope: a data key per version, kept in
-`core.session_keys` wrapped by the tenant's key service, never in the
+`core.agent_session_keys` wrapped by the tenant's key service, never in the
 clear. A layer under step storage seals on the way in and opens on the
 way out. Revoking the key empties the wrapped copy of every version in
 one commit, and keeps each row, so the record says which versions

@@ -1,7 +1,7 @@
 """`read_attachment`: a bounded read of one of the session's attachments,
 by a range of lines or of pages, beside the window's rendering of the file
 whole. The attachment is found in the history of the session the call was
-made in (`ToolRuntime.session_id`), never one the input names, so an id
+made in (`ToolRuntime.agent_session_id`), never one the input names, so an id
 another session holds answers as one that never existed. Its text comes
 from the adopter's reader (`tools.attachments`), and a range wider than the
 bound is refused, so one read never floods the window. A line or page longer
@@ -16,12 +16,12 @@ from uuid import UUID
 from pydantic import Field, model_validator
 from pydantic_core import to_json
 
+from acme.om.agent_steps import AgentStepsManagerInterface
+from acme.om.agent_steps.types.content import Attachment
+from acme.om.agent_steps.types.header import ToolFailure
 from acme.om.base import Platform
 from acme.om.context import TenantContext
 from acme.om.exceptions import ToolFailed
-from acme.om.steps import StepsManagerInterface
-from acme.om.steps.types.content import Attachment
-from acme.om.steps.types.header import ToolFailure
 from acme.om.tools.attachments import AttachmentReaderInterface
 from acme.om.tools.tool import ToolInterface, ToolRuntime
 from acme.om.tools.types.policy import Target
@@ -94,7 +94,7 @@ class AttachmentRange(Platform):
 class ReadAttachmentToolImpl(ToolInterface):
     def __init__(
         self,
-        steps: StepsManagerInterface,
+        steps: AgentStepsManagerInterface,
         reader: AttachmentReaderInterface,
         options: ReadAttachmentOptions | None = None,
     ) -> None:
@@ -137,8 +137,8 @@ class ReadAttachmentToolImpl(ToolInterface):
     ) -> Platform:
         assert isinstance(call_input, ReadAttachmentInput)
         await self.preflight(ctx, call_input, runtime)
-        attachment = await self._find(ctx, runtime.session_id, call_input.attachment_id)
-        text = await self._reader.read_text(ctx, runtime.session_id, attachment)
+        attachment = await self._find(ctx, runtime.agent_session_id, call_input.attachment_id)
+        text = await self._reader.read_text(ctx, runtime.agent_session_id, attachment)
         if text is None:
             raise ToolFailed(
                 ToolFailure.PERMANENT,
@@ -199,13 +199,17 @@ class ReadAttachmentToolImpl(ToolInterface):
     def _bound(self, unit: Unit) -> int:
         return self._options.max_pages if unit == "pages" else self._options.max_lines
 
-    async def _find(self, ctx: TenantContext, session_id: UUID, attachment_id: UUID) -> Attachment:
+    async def _find(
+        self, ctx: TenantContext, agent_session_id: UUID, attachment_id: UUID
+    ) -> Attachment:
         """The placeholder of `attachment_id` among the steps of the call's
         own session. None found is the same answer whether the id is another
         session's, another tenant's, or nobody's."""
         after = 0
         while True:
-            page = await self._steps.get_steps(ctx, session_id, after, self._options.page)
+            page = await self._steps.get_agent_steps(
+                ctx, agent_session_id, after, self._options.page
+            )
             for step in page.items:
                 for attachment in step.children.attachments:
                     if attachment.id == attachment_id:

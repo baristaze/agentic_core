@@ -22,13 +22,13 @@ before the first step: the env file and the token's refresh are there.
 
 ## Input
 
-`--env local|staging|production --org <org_id> --session <session_id> --loop <loop_id> [--cursor <cursor>]`
+`--env local|staging|production --org <org_id> --session <agent_session_id> --loop <loop_id> [--cursor <cursor>]`
 
 The first four are required; ask for any that is missing. A loop is the
 steps from one waking input to its outcome, and its id is that input's
-step id. `ops-session-spend` lists a session's loops and runs this
+step id. `ops-agent-session-spend` lists a session's loops and runs this
 skill over each of them. `--cursor` is the cursor of the page the
-loop's first turn is on, which `ops-session-spend` names for a loop it
+loop's first turn is on, which `ops-agent-session-spend` names for a loop it
 did not read turn by turn: the first read then starts at that page, so
 the pages before it are not read again.
 
@@ -41,7 +41,7 @@ The supporter's read of the operator plane, and nothing else: the env
 file's operator token, whose permission is `read`. No cloud profile is
 needed or used. Every read is a plain read of one of two routes at
 `ACME_API_URL`: `/v1/admin/me`, and the usage route,
-`/v1/admin/orgs/<org_id>/sessions/<session_id>/usage`.
+`/v1/admin/orgs/<org_id>/agent-sessions/<agent_session_id>/usage`.
 
 Before step 2 sources the env file, run `uv run acme-ops size --env
 <env>`, which refuses a file that holds the provisioner's token: then
@@ -86,7 +86,7 @@ that follows a summarizer turn was sent after the window was compacted.
 
    ```bash
    set -a; . ~/.config/acme/ops/<env>.env; set +a
-   curl -s -H "Authorization: Bearer $ACME_OPERATOR_TOKEN" "$ACME_API_URL/v1/admin/orgs/<org_id>/sessions/<session_id>/usage?limit=200" \
+   curl -s -H "Authorization: Bearer $ACME_OPERATOR_TOKEN" "$ACME_API_URL/v1/admin/orgs/<org_id>/agent-sessions/<agent_session_id>/usage?limit=200" \
      | jq -c '{error: .error.code, next_cursor, has_more_loops, total_calls: .total.calls, rollup: ([.loops[]? | select(.loop_id == "<loop_id>") | .rollup][0]), turns: [.items[]? | select(.loop_id == "<loop_id>") | [.created_at, .agent_kind, .kind_version, .role, .model, .input_tokens, .cache_read_tokens, .cache_write_tokens, .output_tokens, .thinking_tokens, .cost_micros, .latency_ms, .settled_whole]]}'
    ```
 
@@ -100,7 +100,7 @@ that follows a summarizer turn was sent after the window was compacted.
 
    ```bash
    set -a; . ~/.config/acme/ops/<env>.env; set +a
-   curl -s -H "Authorization: Bearer $ACME_OPERATOR_TOKEN" "$ACME_API_URL/v1/admin/orgs/<org_id>/sessions/<session_id>/usage?limit=200&cursor=<next_cursor>" \
+   curl -s -H "Authorization: Bearer $ACME_OPERATOR_TOKEN" "$ACME_API_URL/v1/admin/orgs/<org_id>/agent-sessions/<agent_session_id>/usage?limit=200&cursor=<next_cursor>" \
      | jq -c '{error: .error.code, next_cursor, total_calls: .total.calls, turns: [.items[]? | select(.loop_id == "<loop_id>") | [.created_at, .agent_kind, .kind_version, .role, .model, .input_tokens, .cache_read_tokens, .cache_write_tokens, .output_tokens, .thinking_tokens, .cost_micros, .latency_ms, .settled_whole]]}'
    ```
 
@@ -116,14 +116,14 @@ that follows a summarizer turn was sent after the window was compacted.
    reads. A null `rollup` ends the read at the first page: no later
    page is searched for the loop. With `has_more_loops` false, the
    session holds no record of this loop: the report says so, and names
-   `ops-session-spend` for the session's loops. With `has_more_loops`
+   `ops-agent-session-spend` for the session's loops. With `has_more_loops`
    true, the loop is past the thousand loops the route rolls up, so a
    thousand records or more come before its first, past the 5 pages
    this skill reads: the report says its turns and its rollup were not
    read, and why. An empty answer, or one `jq` cannot parse, ends the
    run as in step 2.
 
-   When `ops-session-spend` runs this skill, it has made these reads
+   When `ops-agent-session-spend` runs this skill, it has made these reads
    once for the whole session: steps 1 to 3 are not run again, and
    step 4 starts from the turns and the rollup it hands over.
 4. Reconcile, only when every record of the loop was read: the read
@@ -197,7 +197,7 @@ that follows a summarizer turn was sent after the window was compacted.
    - A mechanical task's turns on the `main` role: a model role of its
      own, which a cheaper model can fill.
    - An unpriced turn: the price table,
-     `om/src/acme/om/budgets/impl/pricing.py`, has no row for its
+     `om/src/acme/om/spend_budgets/impl/pricing.py`, has no row for its
      model.
    - A loop that does not reconcile: the figures, for a person to
      check against the records.
@@ -221,7 +221,7 @@ that follows a summarizer turn was sent after the window was compacted.
 ## Output
 
 ```markdown
-# Loop spend: <env>, org <org_id>, session <session_id>, loop <loop_id>
+# Loop spend: <env>, org <org_id>, session <agent_session_id>, loop <loop_id>
 
 **Credential.** the `read` operator token, admitted as `read`
 **Reconciled.** <yes: <n> turns, $<cost> | no: the turns read <figures> against the rollup <figures> | not checked: <cut at 5 pages, <k> of <n> calls read | live, the session wrote records while it was read | no rollup>>

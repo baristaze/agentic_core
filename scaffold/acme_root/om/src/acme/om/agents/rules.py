@@ -9,12 +9,12 @@ from uuid import UUID
 
 from acme.om.agent_sessions.limits import DEADLINE_UNLOCK
 from acme.om.agent_sessions.types.agent_session import AgentSession
+from acme.om.agent_steps.types.agent_step import AgentStep
+from acme.om.agent_steps.types.header import LoopOutcome, Park, ParkReason
 from acme.om.agents.types.kind import AgentKind, DoneRule
 from acme.om.agents.types.report import Report
 from acme.om.agents.types.result import Claim, Result, Turn
 from acme.om.agents.types.tree import AgentTree
-from acme.om.steps.types.header import LoopOutcome, Park, ParkReason
-from acme.om.steps.types.step import Step
 
 OUTCOMES: dict[Claim, LoopOutcome] = {
     Claim.SUCCEEDED: LoopOutcome.SUCCEEDED,
@@ -27,7 +27,7 @@ CHILDREN_PARK = Park(reason=ParkReason.CHILDREN, unlock="report")
 that wakes the parent clears it."""
 
 
-def after_turn(kind: AgentKind, response: Step, nudges: int) -> Turn:
+def after_turn(kind: AgentKind, response: AgentStep, nudges: int) -> Turn:
     """What a model response means under its kind's done rule. `nudges` is
     how many turns in a row before this one neither continued nor
     submitted. For an assistant, a turn with no tool call is the answer.

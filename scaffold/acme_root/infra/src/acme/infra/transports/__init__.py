@@ -38,10 +38,10 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
+from acme.infra.agent_workspaces import AgentWorkspace, IsolationMode
 from acme.infra.base import InfraModel
 from acme.infra.exceptions import InfraException, InfraValidationFailed
 from acme.infra.transports.redaction import forms
-from acme.infra.workspaces import IsolationMode, Workspace
 
 __all__ = [
     "CapabilityMissing",
@@ -50,7 +50,7 @@ __all__ = [
     "CredentialBrokerInterface",
     "FileEntry",
     "OutputSink",
-    "PathOutsideWorkspace",
+    "PathOutsideAgentWorkspace",
     "RecordSeal",
     "SecretUse",
     "SecretVia",
@@ -80,8 +80,8 @@ class StaleCommand(InfraException):
     code = "stale_command"
 
 
-class PathOutsideWorkspace(InfraValidationFailed):
-    code = "path_outside_workspace"
+class PathOutsideAgentWorkspace(InfraValidationFailed):
+    code = "path_outside_agent_workspace"
 
 
 class SecretVia(StrEnum):
@@ -174,7 +174,7 @@ def relative_path(path: str) -> PurePosixPath:
     """A path inside a workspace, refused when it is absolute or climbs out."""
     relative = PurePosixPath(path)
     if relative.is_absolute() or ".." in relative.parts:
-        raise PathOutsideWorkspace(f"{path!r} is not a path inside the workspace")
+        raise PathOutsideAgentWorkspace(f"{path!r} is not a path inside the workspace")
     return relative
 
 
@@ -185,7 +185,7 @@ def file_offset(offset: int) -> int:
     return offset
 
 
-def require_mode(workspace: Workspace, mode: IsolationMode, transport: str) -> None:
+def require_mode(workspace: AgentWorkspace, mode: IsolationMode, transport: str) -> None:
     """Refuses, loudly, a workspace the transport does not serve: the absent
     workspace of a session that has none, or one of another mode."""
     if workspace.spec.mode is IsolationMode.NONE:
@@ -204,7 +204,7 @@ class TransportInterface(ABC):
     @abstractmethod
     async def run(
         self,
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         command: CommandSpec,
         on_output: OutputSink | None = None,
         *,
@@ -222,7 +222,7 @@ class TransportInterface(ABC):
 
     @abstractmethod
     async def outcome(
-        self, workspace: Workspace, key: UUID, epoch: int, *, seal: RecordSeal
+        self, workspace: AgentWorkspace, key: UUID, epoch: int, *, seal: RecordSeal
     ) -> CommandResult | None:
         """How the command under `key` ended, as recorded, its output opened
         by `seal`: empty when the record kept none, or the key it was sealed
@@ -233,7 +233,7 @@ class TransportInterface(ABC):
         ...
 
     @abstractmethod
-    async def purge_records(self, workspace_id: UUID) -> None:
+    async def purge_records(self, agent_workspace_id: UUID) -> None:
         """Removes what the transport keeps of the workspace beside it: how
         each of its commands ended, and the epoch it fences at. A workspace
         with none does nothing."""
@@ -241,7 +241,7 @@ class TransportInterface(ABC):
 
     @abstractmethod
     async def read_file(
-        self, workspace: Workspace, path: str, max_bytes: int, offset: int = 0
+        self, workspace: AgentWorkspace, path: str, max_bytes: int, offset: int = 0
     ) -> bytes:
         """At most `max_bytes` of the file from `offset`, with no byte before
         it read, so a caller that follows a growing file reads only what is
@@ -250,12 +250,14 @@ class TransportInterface(ABC):
         ...
 
     @abstractmethod
-    async def write_file(self, workspace: Workspace, path: str, data: bytes, epoch: int) -> None:
+    async def write_file(
+        self, workspace: AgentWorkspace, path: str, data: bytes, epoch: int
+    ) -> None:
         """Writes the file whole, fenced like a command."""
         ...
 
     @abstractmethod
-    async def list_files(self, workspace: Workspace, path: str, limit: int) -> list[FileEntry]:
+    async def list_files(self, workspace: AgentWorkspace, path: str, limit: int) -> list[FileEntry]:
         """The entries of a directory, by path, at most `limit` of them."""
         ...
 
@@ -275,18 +277,18 @@ class CredentialBrokerInterface(ABC):
     reaches and never holds the secret of."""
 
     @abstractmethod
-    async def attach(self, workspace: Workspace, key: UUID, use: SecretUse) -> None:
+    async def attach(self, workspace: AgentWorkspace, key: UUID, use: SecretUse) -> None:
         """Attaches the secret for the command under `key`; refuses loudly
         when it cannot."""
         ...
 
     @abstractmethod
-    async def detach(self, workspace: Workspace, key: UUID) -> None:
+    async def detach(self, workspace: AgentWorkspace, key: UUID) -> None:
         """Takes back everything attached for the command under `key`."""
         ...
 
     @abstractmethod
-    async def detach_all(self, workspace: Workspace) -> None:
+    async def detach_all(self, workspace: AgentWorkspace) -> None:
         """Takes back everything attached in the workspace, whatever command
         it was attached for, one whose run was lost before it took it back
         included: what a workspace holds when it is snapshotted is never a

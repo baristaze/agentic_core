@@ -8,6 +8,14 @@ from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 from uuid import UUID
 
+from acme.infra.agent_workspaces import AgentWorkspace, IsolationMode
+from acme.infra.agent_workspaces.account import (
+    SHARED_MODE,
+    UMASK,
+    end_group_as,
+    switch_to,
+    temporary,
+)
 from acme.infra.base import utcnow
 from acme.infra.exceptions import InfraNotFound
 from acme.infra.secrets import SecretsInterface
@@ -17,7 +25,7 @@ from acme.infra.transports import (
     CredentialBrokerInterface,
     FileEntry,
     OutputSink,
-    PathOutsideWorkspace,
+    PathOutsideAgentWorkspace,
     RecordSeal,
     TransportInterface,
     file_offset,
@@ -27,14 +35,6 @@ from acme.infra.transports import (
 from acme.infra.transports.injection import BASE_LANG, injected
 from acme.infra.transports.processes import drive, end_group, end_tree, spawn
 from acme.infra.transports.records import RecordBook, opened_result, sealed_record
-from acme.infra.workspaces import IsolationMode, Workspace
-from acme.infra.workspaces.account import (
-    SHARED_MODE,
-    UMASK,
-    end_group_as,
-    switch_to,
-    temporary,
-)
 
 DEFAULT_PATH = "/usr/local/bin:/usr/bin:/bin"
 """The search path of a command's environment, which holds nothing else of
@@ -64,7 +64,7 @@ class TransportLocalImpl(TransportInterface):
     workspace, links resolved, or it is refused.
 
     Given an account, it is the transport of the account provider
-    (`acme.infra.workspaces.account`): each command runs as the account,
+    (`acme.infra.agent_workspaces.account`): each command runs as the account,
     with its temporary directory beside the workspace, what a command left
     is ended as the account, and every path is followed without a link at
     any step, since the account plants what it likes there and this process
@@ -86,7 +86,7 @@ class TransportLocalImpl(TransportInterface):
 
     async def run(
         self,
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         command: CommandSpec,
         on_output: OutputSink | None = None,
         *,
@@ -139,19 +139,19 @@ class TransportLocalImpl(TransportInterface):
         return result
 
     async def outcome(
-        self, workspace: Workspace, key: UUID, epoch: int, *, seal: RecordSeal
+        self, workspace: AgentWorkspace, key: UUID, epoch: int, *, seal: RecordSeal
     ) -> CommandResult | None:
         self._root(workspace)
         await asyncio.to_thread(self._book.admit, workspace.id, epoch)
         record = await asyncio.to_thread(self._book.read, workspace.id, key)
         return None if record is None else await opened_result(record, seal)
 
-    async def purge_records(self, workspace_id: UUID) -> None:
-        await asyncio.to_thread(self._book.purge, workspace_id)
+    async def purge_records(self, agent_workspace_id: UUID) -> None:
+        await asyncio.to_thread(self._book.purge, agent_workspace_id)
 
     async def _spawned(
         self,
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         argv: Sequence[str],
         root: Path,
         cwd: Path,
@@ -196,7 +196,7 @@ class TransportLocalImpl(TransportInterface):
         return frozenset({os.getuid(), switch.uid})
 
     async def read_file(
-        self, workspace: Workspace, path: str, max_bytes: int, offset: int = 0
+        self, workspace: AgentWorkspace, path: str, max_bytes: int, offset: int = 0
     ) -> bytes:
         root = self._root(workspace)
         start = file_offset(offset)
@@ -204,7 +204,9 @@ class TransportLocalImpl(TransportInterface):
         with _beneath(path, "file"):
             return await asyncio.to_thread(_read, root, path, max_bytes, start, owners)
 
-    async def write_file(self, workspace: Workspace, path: str, data: bytes, epoch: int) -> None:
+    async def write_file(
+        self, workspace: AgentWorkspace, path: str, data: bytes, epoch: int
+    ) -> None:
         root = self._root(workspace)
         await asyncio.to_thread(self._book.admit, workspace.id, epoch)
         if self._account is not None:
@@ -219,7 +221,7 @@ class TransportLocalImpl(TransportInterface):
 
         await asyncio.to_thread(write)
 
-    async def list_files(self, workspace: Workspace, path: str, limit: int) -> list[FileEntry]:
+    async def list_files(self, workspace: AgentWorkspace, path: str, limit: int) -> list[FileEntry]:
         root = self._root(workspace)
         if self._account is not None:
             with _beneath(path, "directory"):
@@ -250,7 +252,7 @@ class TransportLocalImpl(TransportInterface):
     async def close(self) -> None:
         return None
 
-    def _root(self, workspace: Workspace) -> Path:
+    def _root(self, workspace: AgentWorkspace) -> Path:
         mode = IsolationMode.HOST if self._account is None else IsolationMode.ACCOUNT
         require_mode(workspace, mode, "local")
         return Path(workspace.location).resolve()
@@ -261,7 +263,7 @@ def _inside(root: Path, path: str) -> Path:
     lands outside."""
     target = (root / relative_path(path)).resolve()
     if not target.is_relative_to(root):
-        raise PathOutsideWorkspace(f"{path!r} leads outside the workspace")
+        raise PathOutsideAgentWorkspace(f"{path!r} leads outside the workspace")
     return target
 
 
@@ -300,7 +302,9 @@ def _beneath(path: str, noun: str) -> Iterator[None]:
     except OSError as error:
         if error.errno != errno.ELOOP:
             raise
-        raise PathOutsideWorkspace(f"{path!r} leads through a link, never followed here") from error
+        raise PathOutsideAgentWorkspace(
+            f"{path!r} leads through a link, never followed here"
+        ) from error
 
 
 def _walked(root: Path, parts: Sequence[str], *, make: bool = False) -> int:
@@ -352,7 +356,7 @@ def _file(root: Path, path: str, flags: int, owners: Collection[int] | None) -> 
     linked = info.st_uid == os.getuid() and info.st_nlink > 1
     if owners is not None and (info.st_uid not in owners or linked):
         os.close(fd)
-        raise PathOutsideWorkspace(f"{path!r} is not a file of the workspace")
+        raise PathOutsideAgentWorkspace(f"{path!r} is not a file of the workspace")
     return fd
 
 

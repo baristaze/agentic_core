@@ -8,11 +8,11 @@ from uuid import UUID
 
 from pydantic import Field
 
+from acme.om.agent_steps.types.agent_step import AgentStep
+from acme.om.agent_steps.types.content import MAX_NAME
+from acme.om.agent_steps.types.header import ToolFailure
 from acme.om.attribution.types.authority import CallAuthority
 from acme.om.base import Platform
-from acme.om.steps.types.content import MAX_NAME
-from acme.om.steps.types.header import ToolFailure
-from acme.om.steps.types.step import Step
 from acme.om.tools.types.policy import Decision
 
 
@@ -40,7 +40,7 @@ class Gate(Platform):
 
     outcome: GateOutcome
     decision: Decision | None = None
-    response: Step | None = None
+    response: AgentStep | None = None
     authority: CallAuthority | None = None
 
 
@@ -73,7 +73,7 @@ class JobNotStarted(Platform):
     answers its call. Nothing ran, so its hold is released; a start that
     failed any other way may have started the work."""
 
-    response: Step
+    response: AgentStep
 
 
 MAX_REPORT = 1_000_000

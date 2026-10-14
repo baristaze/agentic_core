@@ -9,10 +9,10 @@ from uuid import UUID
 from pydantic import Field
 
 from acme.integrations.model_providers.calls import ModelCall
+from acme.om.agent_steps.types.content import Attachment
 from acme.om.attribution.types.authority import RequestAttribution
 from acme.om.base import Platform
-from acme.om.models.types.fill import ModelRole
-from acme.om.steps.types.content import Attachment
+from acme.om.language_models.types.fill import ModelRole
 
 
 class ContextWindow(Platform):

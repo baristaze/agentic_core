@@ -4,6 +4,8 @@ from datetime import timedelta
 from pathlib import Path
 from uuid import UUID
 
+from acme.infra.agent_workspaces import AgentWorkspace, IsolationMode
+from acme.infra.agent_workspaces.container import MOUNT
 from acme.infra.base import utcnow
 from acme.infra.docker import docker, docker_environment
 from acme.infra.exceptions import BackendFailed, InfraNotFound
@@ -23,8 +25,6 @@ from acme.infra.transports import (
 from acme.infra.transports.injection import BASE_LANG, injected
 from acme.infra.transports.processes import drive, end_tree, spawn
 from acme.infra.transports.records import RecordBook, opened_result, sealed_record
-from acme.infra.workspaces import IsolationMode, Workspace
-from acme.infra.workspaces.container import MOUNT
 
 LAUNCHER = 'echo $$ > "$1"; shift; exec "$@"'
 """Writes the command's own pid where the end of its tree finds it, then
@@ -107,7 +107,7 @@ class TransportContainerImpl(TransportInterface):
 
     async def run(
         self,
-        workspace: Workspace,
+        workspace: AgentWorkspace,
         command: CommandSpec,
         on_output: OutputSink | None = None,
         *,
@@ -160,18 +160,18 @@ class TransportContainerImpl(TransportInterface):
         return result
 
     async def outcome(
-        self, workspace: Workspace, key: UUID, epoch: int, *, seal: RecordSeal
+        self, workspace: AgentWorkspace, key: UUID, epoch: int, *, seal: RecordSeal
     ) -> CommandResult | None:
         self._container(workspace)
         await asyncio.to_thread(self._book.admit, workspace.id, epoch)
         record = await asyncio.to_thread(self._book.read, workspace.id, key)
         return None if record is None else await opened_result(record, seal)
 
-    async def purge_records(self, workspace_id: UUID) -> None:
-        await asyncio.to_thread(self._book.purge, workspace_id)
+    async def purge_records(self, agent_workspace_id: UUID) -> None:
+        await asyncio.to_thread(self._book.purge, agent_workspace_id)
 
     async def read_file(
-        self, workspace: Workspace, path: str, max_bytes: int, offset: int = 0
+        self, workspace: AgentWorkspace, path: str, max_bytes: int, offset: int = 0
     ) -> bytes:
         name = self._container(workspace)
         target = _inside(path)
@@ -192,7 +192,9 @@ class TransportContainerImpl(TransportInterface):
             raise InfraNotFound(f"no file {path!r} in the workspace: {reply.reason()}")
         return reply.stdout
 
-    async def write_file(self, workspace: Workspace, path: str, data: bytes, epoch: int) -> None:
+    async def write_file(
+        self, workspace: AgentWorkspace, path: str, data: bytes, epoch: int
+    ) -> None:
         name = self._container(workspace)
         await asyncio.to_thread(self._book.admit, workspace.id, epoch)
         target = _inside(path)
@@ -211,7 +213,7 @@ class TransportContainerImpl(TransportInterface):
         if not reply.ok:
             raise BackendFailed("docker", "exec write", reply.reason())
 
-    async def list_files(self, workspace: Workspace, path: str, limit: int) -> list[FileEntry]:
+    async def list_files(self, workspace: AgentWorkspace, path: str, limit: int) -> list[FileEntry]:
         name = self._container(workspace)
         folder = _inside(path)
         reply = await docker(
@@ -255,7 +257,7 @@ class TransportContainerImpl(TransportInterface):
     async def close(self) -> None:
         return None
 
-    def _container(self, workspace: Workspace) -> str:
+    def _container(self, workspace: AgentWorkspace) -> str:
         require_mode(workspace, IsolationMode.CONTAINER, "container")
         return workspace.location
 

@@ -78,7 +78,7 @@ follows by hand.
 - [integrations/](integrations/README.md): the identity provider, its twin, and the webhook check.
 - [services/api/](services/api/README.md): the API, its gateway, and the realtime socket.
 - [workers/maintenance/](workers/maintenance/README.md): the work queue's worker and the sweep.
-- [workers/session_runner/](workers/session_runner/README.md): the worker that runs the loops of agent sessions.
+- [workers/agent_session_runner/](workers/agent_session_runner/README.md): the worker that runs the loops of agent sessions.
 - `apps/`: the [portal](apps/portal/README.md), the [CLI](apps/cli/README.md), and the
   [company site](apps/site/README.md).
 - `clients/`: [typescript/](clients/typescript/README.md), the one client every browser

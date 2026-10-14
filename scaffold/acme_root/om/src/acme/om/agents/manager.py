@@ -18,18 +18,18 @@ from datetime import datetime
 from uuid import UUID
 
 from acme.om.agent_sessions.types.agent_session import AgentSession
+from acme.om.agent_steps.types.agent_step import AgentStep
 from acme.om.agents.types.report import Report
 from acme.om.agents.types.request import Handoff, Spawn, Start, SwitchStanding
 from acme.om.agents.types.result import Result, Verdict
 from acme.om.agents.types.tree import AgentTree
 from acme.om.context import TenantContext
-from acme.om.steps.types.step import Step
 from acme.om.tools.tool import TakeSnapshot
 
 
 class AgentsManagerInterface(ABC):
     @abstractmethod
-    async def start_session(self, ctx: TenantContext, start: Start) -> AgentSession:
+    async def start_agent_session(self, ctx: TenantContext, start: Start) -> AgentSession:
         """A root session on the latest version of its kind, run under the
         person who starts it, with its tree: the kind's bounds and one
         deadline. An unknown kind is `UnknownAgentKind`, and a person who
@@ -41,8 +41,8 @@ class AgentsManagerInterface(ABC):
 
     @abstractmethod
     async def switch_standing(
-        self, ctx: TenantContext, session_id: UUID, switch: SwitchStanding
-    ) -> Step:
+        self, ctx: TenantContext, agent_session_id: UUID, switch: SwitchStanding
+    ) -> AgentStep:
         """A recorded switch of a session's standing text, through the
         inbox: its requests render the new text from the first loop that
         begins from an input after it, and a loop that began before keeps
@@ -52,7 +52,7 @@ class AgentsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def require_instructor(self, ctx: TenantContext, session_id: UUID) -> None:
+    async def require_instructor(self, ctx: TenantContext, agent_session_id: UUID) -> None:
         """The history's check of an instruction, a principal's message or a
         parent's to its child: `NotAuthorized` when `ctx` lacks a permission
         a call the session's registry offers needs
@@ -84,7 +84,7 @@ class AgentsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def tree_of(self, ctx: TenantContext, session_id: UUID) -> AgentTree:
+    async def tree_of(self, ctx: TenantContext, agent_session_id: UUID) -> AgentTree:
         """The tree a session draws on: its root's record, whose id keys the
         budget every call of the tree is gated against, and whose deadline
         is the session's."""
@@ -92,7 +92,7 @@ class AgentsManagerInterface(ABC):
 
     @abstractmethod
     async def set_deadline(
-        self, ctx: TenantContext, session_id: UUID, deadline: datetime | None
+        self, ctx: TenantContext, agent_session_id: UUID, deadline: datetime | None
     ) -> AgentTree:
         """Moves the deadline of the tree a session draws on, for every
         session of the tree at once, as a person does to unlock a loop the
@@ -102,9 +102,9 @@ class AgentsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def cancel_children(self, ctx: TenantContext, session_id: UUID) -> tuple[UUID, ...]:
+    async def cancel_children(self, ctx: TenantContext, agent_session_id: UUID) -> tuple[UUID, ...]:
         """The cascade of a cancel: a `cancel` control to every session below
-        `session_id` that is not idle, children and theirs, a session that
+        `agent_session_id` that is not idle, children and theirs, a session that
         waits to begin its next loop among them. Each goes through the inbox,
         so a parked child the cancel clears is asked to run and end its
         loop. Answers the sessions it reached."""
@@ -112,13 +112,13 @@ class AgentsManagerInterface(ABC):
 
     @abstractmethod
     async def report_to_parent(
-        self, ctx: TenantContext, session_id: UUID, report: Report
-    ) -> Step | None:
+        self, ctx: TenantContext, agent_session_id: UUID, report: Report
+    ) -> AgentStep | None:
         """A child's report, written into its parent's inbox as an agent's
         message: data that names the child and says how its loop stands and
         what it said last, carrying the child's mark and whether it holds
         private data, and above the size bound a tool result has, its head,
-        its tail, and the handle of the artifact that keeps it whole. It
+        its tail, and the handle of the tool output that keeps it whole. It
         wakes the parent through the inbox, so the projection that turns the
         parent pending asks for its run, except the note of a cancel that
         came down from the parent (`rules.report_wakes`); one that wakes a
@@ -133,11 +133,11 @@ class AgentsManagerInterface(ABC):
 
     @abstractmethod
     async def hand_off(
-        self, ctx: TenantContext, session_id: UUID, handoff: Handoff
+        self, ctx: TenantContext, agent_session_id: UUID, handoff: Handoff
     ) -> AgentSession:
-        """Work handed from `session_id`'s kind to another: a root session of
+        """Work handed from `agent_session_id`'s kind to another: a root session of
         its own tree that names where it came from, runs under the principal
-        `session_id`'s calls run under, and carries its mark. Its objective
+        `agent_session_id`'s calls run under, and carries its mark. Its objective
         arrives as data and wakes nothing; it starts when its principal
         speaks, and the agent that handed it over has no way to steer it.
         Its standing text, when `handoff` sends one, arrives before its
@@ -145,7 +145,9 @@ class AgentsManagerInterface(ABC):
         ...
 
     @abstractmethod
-    async def judge_result(self, ctx: TenantContext, session_id: UUID, result: Result) -> Verdict:
+    async def judge_result(
+        self, ctx: TenantContext, agent_session_id: UUID, result: Result
+    ) -> Verdict:
         """The result gate. A claim that cites no evidence is refused before
         any gate looks; the rest is the injected gate's to accept or
         refuse."""

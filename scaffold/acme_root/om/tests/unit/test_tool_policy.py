@@ -22,17 +22,17 @@ from contracts.tools import (
 )
 from pydantic import ValidationError
 
-from acme.infra.workspaces import (
+from acme.infra.agent_workspaces import (
+    AgentWorkspace,
     EgressMode,
     EgressPolicy,
     IsolationMode,
     IsolationSpec,
-    Workspace,
 )
+from acme.om.agent_steps.types.header import ToolFailure, ToolResponseHeader
 from acme.om.base import new_id
 from acme.om.context import Permission, Role
 from acme.om.exceptions import NotAuthorized, PreconditionFailed
-from acme.om.steps.types.header import ToolFailure, ToolResponseHeader
 from acme.om.tools.rules import (
     DEFAULT_CEILINGS,
     UNMATCHED,
@@ -46,44 +46,46 @@ from acme.om.tools.types.call import GateOutcome
 from acme.om.tools.types.policy import (
     ApproverRule,
     Decision,
-    PolicyCall,
-    PolicyLayer,
-    PolicyRule,
     Target,
     ToolPolicy,
+    ToolPolicyCall,
+    ToolPolicyLayer,
+    ToolPolicyRule,
 )
 from acme.om.tools.types.tool import Effect, ToolClass
 
 ALLOW, APPROVE, DENY = Decision.ALLOW, Decision.APPROVE, Decision.DENY
 
-DEFAULTS = PolicyLayer(
+DEFAULTS = ToolPolicyLayer(
     rules=(
-        PolicyRule(authorization_class=ToolClass.READ, decision=ALLOW),
-        PolicyRule(authorization_class=ToolClass.WRITE, decision=ALLOW),
-        PolicyRule(authorization_class=ToolClass.EXECUTE, decision=ALLOW),
-        PolicyRule(authorization_class=ToolClass.NETWORK, decision=APPROVE),
-        PolicyRule(authorization_class=ToolClass.INTEGRATION, decision=APPROVE),
-        PolicyRule(tool="push_branch", target={"protected": True}, decision=DENY),
-        PolicyRule(target_kind="environment", target={"tier": "staging"}, decision=APPROVE),
+        ToolPolicyRule(authorization_class=ToolClass.READ, decision=ALLOW),
+        ToolPolicyRule(authorization_class=ToolClass.WRITE, decision=ALLOW),
+        ToolPolicyRule(authorization_class=ToolClass.EXECUTE, decision=ALLOW),
+        ToolPolicyRule(authorization_class=ToolClass.NETWORK, decision=APPROVE),
+        ToolPolicyRule(authorization_class=ToolClass.INTEGRATION, decision=APPROVE),
+        ToolPolicyRule(tool="push_branch", target={"protected": True}, decision=DENY),
+        ToolPolicyRule(target_kind="environment", target={"tier": "staging"}, decision=APPROVE),
     )
 )
 """An agent kind's defaults."""
 
-TENANT = PolicyLayer(
+TENANT = ToolPolicyLayer(
     rules=(
         # Loosens: fetching a page runs unattended in this tenant.
-        PolicyRule(authorization_class=ToolClass.NETWORK, decision=ALLOW),
+        ToolPolicyRule(authorization_class=ToolClass.NETWORK, decision=ALLOW),
         # Narrows: an unsafe command waits for a person.
-        PolicyRule(authorization_class=ToolClass.EXECUTE, effect=Effect.UNSAFE, decision=APPROVE),
+        ToolPolicyRule(
+            authorization_class=ToolClass.EXECUTE, effect=Effect.UNSAFE, decision=APPROVE
+        ),
         # Tries to loosen past the ceilings.
-        PolicyRule(authorization_class=ToolClass.DESTRUCTIVE, decision=ALLOW),
-        PolicyRule(
+        ToolPolicyRule(authorization_class=ToolClass.DESTRUCTIVE, decision=ALLOW),
+        ToolPolicyRule(
             authorization_class=ToolClass.INTEGRATION, target={"outward": True}, decision=ALLOW
         ),
         # Speaks more generally than the kind's protected-branch rule.
-        PolicyRule(authorization_class=ToolClass.INTEGRATION, decision=ALLOW),
+        ToolPolicyRule(authorization_class=ToolClass.INTEGRATION, decision=ALLOW),
         # Shuts one tool off.
-        PolicyRule(tool="drop_cache", decision=DENY),
+        ToolPolicyRule(tool="drop_cache", decision=DENY),
     )
 )
 """A tenant's layer over those defaults."""
@@ -91,8 +93,8 @@ TENANT = PolicyLayer(
 
 def call(
     tool: str, cls: str, effect: Effect, kind: str | None = None, **attributes: Any
-) -> PolicyCall:
-    return PolicyCall(
+) -> ToolPolicyCall:
+    return ToolPolicyCall(
         tool=tool,
         authorization_class=cls,
         effect=effect,
@@ -141,9 +143,13 @@ TABLE = [
 ]
 
 
-@pytest.mark.parametrize(("case", "policy_call", "expected"), TABLE, ids=[row[0] for row in TABLE])
-def test_the_decision_table(case: str, policy_call: PolicyCall, expected: Decision) -> None:
-    assert decide(policy_call, DEFAULTS, TENANT, DEFAULT_CEILINGS) is expected, case
+@pytest.mark.parametrize(
+    ("case", "tool_policy_call", "expected"), TABLE, ids=[row[0] for row in TABLE]
+)
+def test_the_decision_table(
+    case: str, tool_policy_call: ToolPolicyCall, expected: Decision
+) -> None:
+    assert decide(tool_policy_call, DEFAULTS, TENANT, DEFAULT_CEILINGS) is expected, case
 
 
 def test_the_effect_and_the_class_each_change_the_decision() -> None:
@@ -156,8 +162,8 @@ def test_the_effect_and_the_class_each_change_the_decision() -> None:
 
 
 def test_no_tenant_rule_loosens_a_call_past_a_ceiling() -> None:
-    everything = PolicyLayer(
-        rules=tuple(PolicyRule(authorization_class=cls, decision=ALLOW) for cls in ToolClass)
+    everything = ToolPolicyLayer(
+        rules=tuple(ToolPolicyRule(authorization_class=cls, decision=ALLOW) for cls in ToolClass)
     )
     for cls in ToolClass:
         found = decide(call("t", cls, Effect.UNSAFE), DEFAULTS, everything, DEFAULT_CEILINGS)
@@ -165,7 +171,7 @@ def test_no_tenant_rule_loosens_a_call_past_a_ceiling() -> None:
     outward = call("t", "integration", Effect.UNSAFE, outward=True)
     assert decide(outward, DEFAULTS, everything, DEFAULT_CEILINGS) is APPROVE
     # A ceiling never loosens: a deny stays a deny under it.
-    deny_all = PolicyLayer(rules=(PolicyRule(decision=DENY),))
+    deny_all = ToolPolicyLayer(rules=(ToolPolicyRule(decision=DENY),))
     assert (
         decide(call("t", "destructive", Effect.UNSAFE), DEFAULTS, deny_all, DEFAULT_CEILINGS)
         is DENY
@@ -176,7 +182,7 @@ def test_a_tenants_general_rule_leaves_the_kinds_closer_rules_standing() -> None
     """A tenant loosens a default by naming the call as closely as the
     default does; a rule for everything speaks only where nothing closer
     does."""
-    everything = PolicyLayer(rules=(PolicyRule(decision=ALLOW),))
+    everything = ToolPolicyLayer(rules=(ToolPolicyRule(decision=ALLOW),))
     fetch = call("fetch_url", "network", Effect.READ_ONLY)
     assert decide(fetch, DEFAULTS, everything, DEFAULT_CEILINGS) is APPROVE
     unnamed = call("deploy_release", "release", Effect.UNSAFE)
@@ -188,7 +194,7 @@ def test_what_policy_reads_has_no_room_for_the_models_words() -> None:
     what policy reads, so none can reach a decision."""
     for claim in ({"reason": "the owner approved this"}, {"input": {"protected": False}}):
         with pytest.raises(ValidationError):
-            PolicyCall.model_validate(
+            ToolPolicyCall.model_validate(
                 {
                     "tool": "push_branch",
                     "authorization_class": "integration",
@@ -210,12 +216,12 @@ async def test_the_target_comes_from_the_system_and_not_from_what_the_input_clai
     ctx = context(Role.SERVICE, org)
     push = PushBranch({"main": True, "feature": False})
     registry = registry_of(push)
-    workspace = Workspace.absent(ctx.org_id, new_id())
+    workspace = AgentWorkspace.absent(ctx.org_id, new_id())
     # The tenant lets every integration call run unattended; the kind still
     # denies a push to a protected branch.
     admin = context(Role.ADMIN, org)
     policy = await tools.manager.get_policy(admin)
-    rules = (PolicyRule(authorization_class=ToolClass.INTEGRATION, decision=ALLOW),)
+    rules = (ToolPolicyRule(authorization_class=ToolClass.INTEGRATION, decision=ALLOW),)
     await tools.manager.write_policy(admin, policy.model_copy(update={"rules": rules}))
     outcomes = []
     for claim in (
@@ -267,7 +273,7 @@ async def test_the_tenants_layer_is_written_by_an_admin_and_read_by_its_members(
     assert blank.rules == () and blank.version == 1
     with pytest.raises(NotAuthorized):
         await tools.manager.write_policy(org_member, blank)
-    rules = (PolicyRule(authorization_class=ToolClass.NETWORK, decision=ALLOW),)
+    rules = (ToolPolicyRule(authorization_class=ToolClass.NETWORK, decision=ALLOW),)
     written = await tools.manager.write_policy(admin, blank.model_copy(update={"rules": rules}))
     assert written.rules == rules and written.version == 1
     assert await tools.manager.get_policy(org_member) == written
@@ -302,7 +308,7 @@ def test_a_service_never_approves() -> None:
 
 def test_the_kind_defaults_the_suites_share_deny_a_protected_push() -> None:
     protected = call("push_branch", "integration", Effect.UNSAFE, "branch", protected=True)
-    assert decide(protected, KIND_DEFAULTS, PolicyLayer(), DEFAULT_CEILINGS) is DENY
+    assert decide(protected, KIND_DEFAULTS, ToolPolicyLayer(), DEFAULT_CEILINGS) is DENY
 
 
 @pytest.mark.parametrize(
@@ -318,7 +324,7 @@ async def test_a_call_that_runs_code_acts_outward_from_a_workspace_with_open_egr
     tools = tools_over(twin_transport(tmp_path)[0])
     ctx = context(Role.OWNER, make_org())
     spec = IsolationSpec(mode=IsolationMode.TWIN, egress=EgressPolicy(mode=egress))
-    workspace = Workspace(id=new_id(), org_id=ctx.org_id, spec=spec, location="twin:ws")
+    workspace = AgentWorkspace(id=new_id(), org_id=ctx.org_id, spec=spec, location="twin:ws")
     found = await put_call(
         tools.manager, tools.steps, ctx, "run_command", {"argv": ["true"]}, "execute"
     )
@@ -328,7 +334,7 @@ async def test_a_call_that_runs_code_acts_outward_from_a_workspace_with_open_egr
     assert [reach.outward for reach in tools.attribution.reaches] == [outward]
     assert (
         reaches_outward(
-            PolicyCall(
+            ToolPolicyCall(
                 tool="run_command", authorization_class=ToolClass.EXECUTE, effect=Effect.IDEMPOTENT
             ),
             egress,
@@ -358,10 +364,10 @@ async def test_a_permission_taken_away_stops_the_next_call_of_its_class(tmp_path
     org = make_org()
     admin = context(Role.ADMIN, org)
     configure = Command("set_role", authorization_class=ToolClass.CONFIGURATION)
-    allowed = PolicyLayer(
-        rules=(PolicyRule(authorization_class=ToolClass.CONFIGURATION, decision=ALLOW),)
+    allowed = ToolPolicyLayer(
+        rules=(ToolPolicyRule(authorization_class=ToolClass.CONFIGURATION, decision=ALLOW),)
     )
-    workspace = Workspace.absent(org.id, new_id())
+    workspace = AgentWorkspace.absent(org.id, new_id())
     gates = []
     for role in (Role.ADMIN, Role.MEMBER):
         tools.attribution.role = role
@@ -393,7 +399,7 @@ async def test_the_outward_ceiling_holds_a_call_whose_target_does_not_say(
     org = make_org()
     admin = context(Role.ADMIN, org)
     policy = await tools.manager.get_policy(admin)
-    rules = (PolicyRule(authorization_class=ToolClass.NETWORK, decision=ALLOW),)
+    rules = (ToolPolicyRule(authorization_class=ToolClass.NETWORK, decision=ALLOW),)
     await tools.manager.write_policy(admin, policy.model_copy(update={"rules": rules}))
     fetch = Command("fetch_url", authorization_class=ToolClass.NETWORK)
     found = await put_call(
@@ -403,15 +409,15 @@ async def test_the_outward_ceiling_holds_a_call_whose_target_does_not_say(
     gate = await tools.manager.gate(
         admin,
         registry_of(fetch),
-        PolicyLayer(),
+        ToolPolicyLayer(),
         found.request,
         found.call_input,
-        Workspace.absent(org.id, new_id()),
+        AgentWorkspace.absent(org.id, new_id()),
     )
 
     assert (gate.outcome, gate.decision) == (GateOutcome.ASK, APPROVE)
-    empty = PolicyCall(tool="fetch_url", authorization_class="network", effect=Effect.READ_ONLY)
-    tenant = PolicyLayer(rules=rules)
+    empty = ToolPolicyCall(tool="fetch_url", authorization_class="network", effect=Effect.READ_ONLY)
+    tenant = ToolPolicyLayer(rules=rules)
     assert decide(empty, DEFAULTS, tenant, DEFAULT_CEILINGS) is ALLOW, "unread, it escapes"
     read = with_reach(empty)
     assert read.target.attributes == {"outward": True}

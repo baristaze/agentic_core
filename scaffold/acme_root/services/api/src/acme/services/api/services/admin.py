@@ -8,6 +8,7 @@ from acme.om.context import OperatorContext
 from acme.om.idempotency.types.attempt import Attempt
 from acme.services.api.types.admin import (
     AddMemberRequest,
+    AgentSessionUsageView,
     ConfirmTotpRequest,
     CreateOrgRequest,
     IssuedOperatorTokenView,
@@ -18,7 +19,6 @@ from acme.services.api.types.admin import (
     OperatorView,
     OperatorWorkItemView,
     PlatformSizeView,
-    SessionUsageView,
     SetTenantCapRequest,
     TenantCapView,
     TotpConfirmedView,
@@ -95,14 +95,14 @@ class AdminServiceInterface(ABC):
     ) -> OperatorWorkItemView: ...
 
     @abstractmethod
-    async def get_session_usage(
+    async def get_agent_session_usage(
         self,
         admin: OperatorContext,
         org_id: UUID,
-        session_id: UUID,
+        agent_session_id: UUID,
         cursor: str | None,
         limit: int,
-    ) -> SessionUsageView:
+    ) -> AgentSessionUsageView:
         """A page of one session's usage records and its rollups; `cursor` is
         the previous page's `next_cursor`."""
         ...

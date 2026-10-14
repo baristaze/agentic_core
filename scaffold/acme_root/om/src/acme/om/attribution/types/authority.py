@@ -27,7 +27,7 @@ class Visibility(StrEnum):
     is no axis between the two."""
 
     ORG_WIDE = "org_wide"  # every member of its org, who may join it
-    PRIVATE = "private"  # its creator, the participants it has, and `manage_sessions`
+    PRIVATE = "private"  # its creator, the participants it has, and `manage_agent_sessions`
 
 
 class Trust(StrEnum):
@@ -38,7 +38,7 @@ class Trust(StrEnum):
     DATA = "data"
 
 
-class SessionAuthority(Identifiable, Trackable):
+class AgentSessionAuthority(Identifiable, Trackable):
     """A session's authority, one record keyed by the session's id. Made
     once, right after the session, and never by a caller's say: a root runs
     under the person who made it; a session made from another runs under

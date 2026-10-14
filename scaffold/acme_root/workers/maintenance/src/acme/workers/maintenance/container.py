@@ -13,17 +13,17 @@ from acme.integrations.impl.configured import IntegrationsConfiguredImpl, Integr
 from acme.integrations.model_providers.registry import absent_model_providers
 from acme.integrations.root import IntegrationsInterface
 from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
+from acme.om.agent_steps.impl.manager import AgentStepsOptions
 from acme.om.agents.impl.manager import AgentsOptions
 from acme.om.attribution.impl.manager import AttributionOptions
-from acme.om.budgets.impl.manager import BudgetsOptions
 from acme.om.events.impl.manager import EventsOptions
 from acme.om.idempotency.impl.manager import IdempotencyOptions
+from acme.om.language_models.impl.manager import LanguageModelsOptions
 from acme.om.leases.impl.manager import LeasesOptions
 from acme.om.media.impl.manager import MediaOptions
-from acme.om.models.impl.manager import ModelsOptions
 from acme.om.orchestrations.impl.manager import OrchestrationsOptions
 from acme.om.root import Managers, build_managers
-from acme.om.steps.impl.manager import StepsOptions
+from acme.om.spend_budgets.impl.manager import SpendBudgetsOptions
 from acme.om.storage.impl.postgres import StoragePostgresImpl
 from acme.om.storage.root import StorageInterface
 from acme.om.tenancy.impl.manager import TenancyOptions
@@ -91,7 +91,7 @@ def worker_managers(
         ),
         orchestrations_options=OrchestrationsOptions(purge_batch=batch),
         leases_options=LeasesOptions(purge_batch=batch),
-        steps_options=StepsOptions(purge_batch=batch),
+        steps_options=AgentStepsOptions(purge_batch=batch),
         agent_sessions_options=AgentSessionsOptions(
             purge_batch=batch,
             retention=timedelta(days=settings.agent_session_retention_days),
@@ -99,8 +99,8 @@ def worker_managers(
         ),
         agents_options=AgentsOptions(purge_batch=batch),
         attribution_options=AttributionOptions(purge_batch=batch),
-        budgets_options=BudgetsOptions(purge_batch=batch),
-        models_options=ModelsOptions(purge_batch=batch),
+        budgets_options=SpendBudgetsOptions(purge_batch=batch),
+        language_models_options=LanguageModelsOptions(purge_batch=batch),
         tools_options=ToolsOptions(purge_batch=batch),
     )
 

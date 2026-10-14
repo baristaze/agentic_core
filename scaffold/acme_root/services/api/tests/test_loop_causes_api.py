@@ -16,15 +16,15 @@ import httpx
 import pytest
 from api_support import build_container, seed_request
 
-from acme.infra.transports import CommandSpec
-from acme.infra.transports.twin import TransportTwinImpl, TwinReply
-from acme.infra.workspaces import (
+from acme.infra.agent_workspaces import (
+    AgentWorkspaceBase,
     EgressMode,
     EgressPolicy,
     IsolationMode,
     IsolationSpec,
-    WorkspaceBase,
 )
+from acme.infra.transports import CommandSpec
+from acme.infra.transports.twin import TransportTwinImpl, TwinReply
 from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.context import TenantContext
@@ -43,7 +43,7 @@ BUILDER = AgentKind(
     isolation=IsolationSpec(
         mode=IsolationMode.TWIN,
         egress=EgressPolicy(mode=EgressMode.NONE),
-        base=WorkspaceBase(
+        base=AgentWorkspaceBase(
             image="python:3.14-slim",
             setup=(SETUP,),
             egress=EgressPolicy(mode=EgressMode.OPEN),
@@ -89,14 +89,14 @@ async def spoken_to(client: httpx.AsyncClient, owner: dict[str, str]) -> str:
         json={"kind": "builder", "title": "the build"},
     )
     assert started.status_code == 201, started.text
-    session_id = started.json()["id"]
+    agent_session_id = started.json()["id"]
     said = await client.post(
-        f"/v1/agent-sessions/{session_id}/messages",
+        f"/v1/agent-sessions/{agent_session_id}/messages",
         headers={**owner, "Idempotency-Key": str(uuid4())},
         json={"text": "Run the tests."},
     )
     assert said.status_code == 201, said.text
-    return session_id
+    return agent_session_id
 
 
 async def owner_context(container: AppContainer, owner: dict[str, str]) -> TenantContext:
@@ -105,9 +105,9 @@ async def owner_context(container: AppContainer, owner: dict[str, str]) -> Tenan
 
 
 async def last_step(
-    client: httpx.AsyncClient, owner: dict[str, str], session_id: str
+    client: httpx.AsyncClient, owner: dict[str, str], agent_session_id: str
 ) -> dict[str, Any]:
-    read = await client.get(f"/v1/agent-sessions/{session_id}/steps", headers=owner)
+    read = await client.get(f"/v1/agent-sessions/{agent_session_id}/steps", headers=owner)
     assert read.status_code == 200, read.text
     assert WROTE not in read.text, "what a command wrote never reaches a reader"
     return read.json()["items"][-1]
@@ -117,10 +117,10 @@ async def test_a_failed_setup_ends_the_loop_with_its_command_and_exit_code(
     client: httpx.AsyncClient, owner: dict[str, str], container: AppContainer
 ) -> None:
     setup_on(container, exit_code=2)
-    session_id = await spoken_to(client, owner)
+    agent_session_id = await spoken_to(client, owner)
 
-    await container.managers.loop.run(await owner_context(container, owner), UUID(session_id))
-    ended = await last_step(client, owner, session_id)
+    await container.managers.loop.run(await owner_context(container, owner), UUID(agent_session_id))
+    ended = await last_step(client, owner, agent_session_id)
 
     assert (ended["type"], ended["outcome"]) == ("loop_ended", "errored")
     assert ended["cause"] == f"the base's setup command 1, {SETUP!r}, exited 2"

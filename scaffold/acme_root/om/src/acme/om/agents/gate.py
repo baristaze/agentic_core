@@ -14,7 +14,7 @@ from acme.om.context import TenantContext
 
 class ResultGateInterface(ABC):
     @abstractmethod
-    async def check(self, ctx: TenantContext, session_id: UUID, result: Result) -> Verdict:
+    async def check(self, ctx: TenantContext, agent_session_id: UUID, result: Result) -> Verdict:
         """Accepts a result, with the outcome it claims, or refuses it with
         the reason the model reads. Only a gate that judged the evidence
         answers `verified`."""

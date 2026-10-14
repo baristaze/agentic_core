@@ -35,23 +35,29 @@ TABLE_ROLES: dict[str, DatabaseRole] = {
     "platform_sizes": DatabaseRole.ADMIN,
     "agent_sessions": DatabaseRole.CORE,
     "agent_trees": DatabaseRole.CORE,
-    "session_authorities": DatabaseRole.CORE,
-    "steps": DatabaseRole.ACTIVITY,
-    "step_cursors": DatabaseRole.ACTIVITY,
-    "session_privacy": DatabaseRole.CORE,
-    "session_keys": DatabaseRole.CORE,
-    "budgets": DatabaseRole.CORE,
-    "budget_tallies": DatabaseRole.ACTIVITY,
-    "budget_holds": DatabaseRole.ACTIVITY,
-    "budget_settlements": DatabaseRole.ACTIVITY,
+    "agent_session_authorities": DatabaseRole.CORE,
+    "agent_steps": DatabaseRole.ACTIVITY,
+    "agent_step_cursors": DatabaseRole.ACTIVITY,
+    "agent_session_privacy": DatabaseRole.CORE,
+    "agent_session_keys": DatabaseRole.CORE,
+    "spend_budgets": DatabaseRole.CORE,
+    "spend_budget_tallies": DatabaseRole.ACTIVITY,
+    "spend_budget_holds": DatabaseRole.ACTIVITY,
+    "spend_budget_settlements": DatabaseRole.ACTIVITY,
     "usage_records": DatabaseRole.ACTIVITY,
     "fill_sets": DatabaseRole.CORE,
-    "artifacts": DatabaseRole.ACTIVITY,
+    "tool_outputs": DatabaseRole.ACTIVITY,
     "tool_policies": DatabaseRole.CORE,
 }
 
 APPEND_ONLY_TABLES: frozenset[str] = frozenset(
-    {"steps", "budget_holds", "budget_settlements", "usage_records", "artifacts"}
+    {
+        "agent_steps",
+        "spend_budget_holds",
+        "spend_budget_settlements",
+        "usage_records",
+        "tool_outputs",
+    }
 )
 """Tables whose rows are written once: the serving logins hold SELECT and
 INSERT on them and never UPDATE or DELETE. The migration that creates one
@@ -62,15 +68,15 @@ takes them back again after each grant it makes (ADR 1002, ADR 1006, ADR
 PURGED_TABLES: frozenset[str] = frozenset(
     {
         "agent_sessions",
-        "steps",
-        "step_cursors",
-        "artifacts",
-        "session_authorities",
+        "agent_steps",
+        "agent_step_cursors",
+        "tool_outputs",
+        "agent_session_authorities",
         "agent_trees",
     }
 )
 """The tables the purge login reaches: a session, its history and its
-artifacts, its authority, and its tree, which go together when the session
+tool_outputs, its authority, and its tree, which go together when the session
 is purged. It holds SELECT and DELETE on them and nothing
 else, granted by the migrations that admit it and again by the login
 command, and the tenant fence admits it within the tenant its transaction

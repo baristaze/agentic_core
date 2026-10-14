@@ -15,9 +15,10 @@ from uuid import UUID
 
 from pydantic import Field
 
+from acme.infra.agent_workspaces import SnapshotRefused
 from acme.infra.exceptions import InfraException
-from acme.infra.workspaces import SnapshotRefused
 from acme.om.agent_sessions import AgentSessionsManagerInterface
+from acme.om.agent_steps.types.header import ToolFailure
 from acme.om.agents.manager import AgentsManagerInterface
 from acme.om.agents.types.request import MAX_OBJECTIVE, MAX_TITLE, Spawn
 from acme.om.attribution.types.principal import MAX_KIND
@@ -30,7 +31,6 @@ from acme.om.exceptions import (
     UnknownAgentKind,
     ValidationFailed,
 )
-from acme.om.steps.types.header import ToolFailure
 from acme.om.tools.tool import ToolInterface, ToolRuntime
 from acme.om.tools.types.policy import Target
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolMode, ToolSpec
@@ -61,7 +61,7 @@ class Spawned(Platform):
     """The sub-agent the call started, the same one however often the call
     is asked."""
 
-    session_id: UUID
+    agent_session_id: UUID
     title: str
     kind: str
 
@@ -115,7 +115,7 @@ class SpawnSubAgentToolImpl(ToolInterface):
         assert isinstance(call_input, SpawnSubAgentInput)
         kind = call_input.kind
         if kind is None:
-            kind = (await self._sessions.get_session(ctx, runtime.session_id)).kind
+            kind = (await self._sessions.get_agent_session(ctx, runtime.agent_session_id)).kind
         asked = Spawn(
             id=runtime.key,
             kind=kind,
@@ -125,7 +125,7 @@ class SpawnSubAgentToolImpl(ToolInterface):
         # A fork starts from the workspace as this call's run holds it now.
         fork = runtime.snapshot if call_input.fork else None
         try:
-            child = await self._agents().spawn(ctx, runtime.session_id, asked, fork)
+            child = await self._agents().spawn(ctx, runtime.agent_session_id, asked, fork)
         except NotAuthorized as refused:
             raise ToolFailed(ToolFailure.DENIED, refused.message) from refused
         except (TreeBoundReached, UnknownAgentKind, ValidationFailed) as refused:
@@ -136,4 +136,4 @@ class SpawnSubAgentToolImpl(ToolInterface):
             if refused.code != SnapshotRefused.code:
                 raise
             raise ToolFailed(ToolFailure.PERMANENT, refused.message) from refused
-        return Spawned(session_id=child.id, title=child.title, kind=child.kind)
+        return Spawned(agent_session_id=child.id, title=child.title, kind=child.kind)

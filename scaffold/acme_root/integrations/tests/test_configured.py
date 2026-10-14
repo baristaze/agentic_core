@@ -158,12 +158,12 @@ CALL = ModelCall(
 
 @pytest.mark.parametrize("environment", ["dev", "staging", "production"])
 def test_the_scripted_model_provider_is_refused_in_a_deployed_environment(environment: str) -> None:
-    with pytest.raises(UnsafeIntegration, match="ACME_MODEL_PROVIDERS=scripted"):
-        IntegrationsConfiguredImpl(settings(model_providers="scripted"), environment, True)
+    with pytest.raises(UnsafeIntegration, match="ACME_LLM_PROVIDERS=scripted"):
+        IntegrationsConfiguredImpl(settings(llm_providers="scripted"), environment, True)
 
 
 def test_the_scripted_model_provider_runs_locally() -> None:
-    root = IntegrationsConfiguredImpl(settings(model_providers="scripted"), "local", False)
+    root = IntegrationsConfiguredImpl(settings(llm_providers="scripted"), "local", False)
     for provider in ProviderName:
         twin = root.get_model_providers().get(provider)
         assert isinstance(twin, ModelProviderScriptedImpl) and twin.provider is provider
@@ -171,7 +171,7 @@ def test_the_scripted_model_provider_runs_locally() -> None:
 
 async def test_live_model_providers_are_the_adapters_and_say_so_without_their_keys() -> None:
     root = IntegrationsConfiguredImpl(
-        settings(model_providers="live", anthropic_api_key="sk-ant-secret", openai_api_key="off"),
+        settings(llm_providers="live", anthropic_api_key="sk-ant-secret", openai_api_key="off"),
         "staging",
         True,
     )

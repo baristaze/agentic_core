@@ -25,7 +25,7 @@ carries a signature that only the model that thought it can read.
 boundary speaks in (provider, effort, stop reason, error kind and its
 answer, usage), the call, and the reply are defined in
 `integrations/model_providers/`. A step's content takes its blocks from
-there, and the `steps` and `models` namespaces name them again under
+there, and the `agent_steps` and `language_models` namespaces name them again under
 their own modules, so a caller reads them where the spec places them.
 The frozen mapping field a tool's input holds lives in infra's base,
 which both packages read, and the object model's base names it again.

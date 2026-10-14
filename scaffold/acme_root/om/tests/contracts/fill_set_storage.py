@@ -10,8 +10,8 @@ import pytest
 from acme.integrations.model_providers.types import Effort, ProviderName
 from acme.om.base import new_id, utcnow
 from acme.om.exceptions import PreconditionFailed
-from acme.om.models.storage import FillSetStorageInterface
-from acme.om.models.types.fill import (
+from acme.om.language_models.storage import FillSetStorageInterface
+from acme.om.language_models.types.fill import (
     MAIN,
     SUMMARIZER,
     Eligibility,
@@ -57,12 +57,12 @@ LUNA = Fill(
 )
 
 
-def make_fill_set(session_id: UUID, version: int = 1, main: Fill = SONNET) -> FillSet:
+def make_fill_set(agent_session_id: UUID, version: int = 1, main: Fill = SONNET) -> FillSet:
     switch = version > 1
     return FillSet(
         id=new_id(),
         created_at=utcnow(),
-        session_id=session_id,
+        agent_session_id=agent_session_id,
         version=version,
         roles=(
             RoleFill(role=MAIN, fill=main, fallbacks=(SOL,)),

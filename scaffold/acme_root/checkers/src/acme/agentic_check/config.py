@@ -10,7 +10,7 @@ its package:
     # exclude = ["**/migrations/**"]
 
     [tool.agentic-check.options.MOD-01]   # a rule fed the project's own names
-    sites = ["om/src/acme/om/models/impl/resolver.py"]
+    sites = ["om/src/acme/om/language_models/impl/resolver.py"]
 
     [[tool.agentic-check.disable]]
     rule = "PRV-06"

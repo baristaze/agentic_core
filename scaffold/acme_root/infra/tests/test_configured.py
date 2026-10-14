@@ -53,9 +53,9 @@ def local_settings(tmp_path: Path, **overrides: object) -> InfraSettings:
         ("buckets_backend", "local"),
         ("queues_backend", "memory"),
         ("keys_backend", "memory"),
-        ("workspace_backend", "host"),
-        ("workspace_backend", "account"),
-        ("machines_backend", "lima"),
+        ("agent_workspace_backend", "host"),
+        ("agent_workspace_backend", "account"),
+        ("vms_backend", "lima"),
         ("flags_backend", "memory"),
     ],
 )
@@ -89,7 +89,7 @@ async def test_local_environment_builds_local_impls(tmp_path: Path) -> None:
         "queues=memory",
         f"secrets=local({tmp_path / 'secrets.env'})",
         "keys=memory(random root)",
-        "machines=none",
+        "vms=none",
         "workspaces=none",
         "transport=none",
         "broker=none",
@@ -109,7 +109,7 @@ def test_cloud_backends_are_constructed_without_connecting(tmp_path: Path) -> No
         "queues=sqs(us-east-1)",
         "secrets=aws(us-east-1)",
         "keys=kms(us-east-1)",
-        "machines=none",
+        "vms=none",
         "workspaces=none",
         "transport=none",
         "broker=none",
@@ -270,7 +270,7 @@ def test_a_workspace_backend_builds_its_provider_and_its_transport_together(
     choice, and building them reaches nothing."""
     root = tmp_path / "workspaces"
     infra = InfraConfiguredImpl(
-        local_settings(tmp_path, workspace_backend=backend, workspaces_root=root)
+        local_settings(tmp_path, agent_workspace_backend=backend, agent_workspaces_root=root)
     )
     runtime = [line for line in infra.describe() if line.startswith(("workspaces=", "transport="))]
     assert runtime == [line.format(root=root) for line in lines]

@@ -10,9 +10,13 @@ from acme.om.exceptions import KeyRevoked, NotFound, TenantMismatch, UniqueKeyTa
 from acme.om.outbox.storage.tables.outbox_rows import OutboxRows
 from acme.om.outbox.types.row import OutboxRow
 from acme.om.privacy.storage import PrivacyStorageInterface
-from acme.om.privacy.storage.tables.session_keys import SessionKeys
-from acme.om.privacy.storage.tables.session_privacy import SessionPrivacyRows
-from acme.om.privacy.types.session_privacy import KeyRing, SessionKey, SessionPrivacy
+from acme.om.privacy.storage.tables.agent_session_keys import AgentSessionKeys
+from acme.om.privacy.storage.tables.agent_session_privacy import AgentSessionPrivacyRows
+from acme.om.privacy.types.agent_session_privacy import (
+    AgentSessionKey,
+    AgentSessionPrivacy,
+    KeyRing,
+)
 from acme.om.storage.impl.pg_base import PgStorageBase, delete_batch, deleted, violated_constraint
 from acme.om.storage.utils.translation import to_model, to_row, to_values
 
@@ -24,20 +28,23 @@ def rowcount(result: Result[Any]) -> int:
 
 class PrivacyStoragePostgresImpl(PgStorageBase, PrivacyStorageInterface):
     async def create_privacy(
-        self, org_id: UUID, record: SessionPrivacy, outbox_rows: tuple[OutboxRow, ...] = ()
-    ) -> SessionPrivacy:
+        self, org_id: UUID, record: AgentSessionPrivacy, outbox_rows: tuple[OutboxRow, ...] = ()
+    ) -> AgentSessionPrivacy:
         """The insert meets the session's unique key when the tenant holds a
         record of it, and lands nothing; another tenant's id is the primary
         key's, and refused."""
         insert = (
-            pg_insert(SessionPrivacyRows)
-            .values(org_id=org_id, **to_values(record, SessionPrivacyRows))
+            pg_insert(AgentSessionPrivacyRows)
+            .values(org_id=org_id, **to_values(record, AgentSessionPrivacyRows))
             .on_conflict_do_nothing(
-                index_elements=[SessionPrivacyRows.org_id, SessionPrivacyRows.session_id]
+                index_elements=[
+                    AgentSessionPrivacyRows.org_id,
+                    AgentSessionPrivacyRows.agent_session_id,
+                ]
             )
-            .returning(SessionPrivacyRows.id)
+            .returning(AgentSessionPrivacyRows.id)
         )
-        async with self._session_for(SessionPrivacyRows, org_id=org_id) as session:
+        async with self._session_for(AgentSessionPrivacyRows, org_id=org_id) as session:
             try:
                 landed = (await session.execute(insert)).scalar_one_or_none() is not None
                 if landed:
@@ -46,134 +53,150 @@ class PrivacyStoragePostgresImpl(PgStorageBase, PrivacyStorageInterface):
                     await session.commit()
                     return record
                 stored = (
-                    await session.execute(self._record(org_id, record.session_id))
+                    await session.execute(self._record(org_id, record.agent_session_id))
                 ).scalar_one()
                 await session.commit()
-                return to_model(stored, SessionPrivacy)
+                return to_model(stored, AgentSessionPrivacy)
             except IntegrityError as error:
                 await session.rollback()
                 raise TenantMismatch(f"session privacy {record.id} is not in {org_id}") from error
 
     @staticmethod
-    def _record(org_id: UUID, session_id: UUID) -> Select[tuple[SessionPrivacyRows]]:
-        return select(SessionPrivacyRows).where(
-            SessionPrivacyRows.org_id == org_id, SessionPrivacyRows.session_id == session_id
+    def _record(org_id: UUID, agent_session_id: UUID) -> Select[tuple[AgentSessionPrivacyRows]]:
+        return select(AgentSessionPrivacyRows).where(
+            AgentSessionPrivacyRows.org_id == org_id,
+            AgentSessionPrivacyRows.agent_session_id == agent_session_id,
         )
 
-    async def read_privacy(self, org_id: UUID, session_id: UUID) -> SessionPrivacy | None:
-        stmt = self._record(org_id, session_id)
+    async def read_privacy(
+        self, org_id: UUID, agent_session_id: UUID
+    ) -> AgentSessionPrivacy | None:
+        stmt = self._record(org_id, agent_session_id)
         async with self._session_for(stmt, org_id=org_id) as session:
             row = (await session.execute(stmt)).scalar_one_or_none()
-            return None if row is None else to_model(row, SessionPrivacy)
+            return None if row is None else to_model(row, AgentSessionPrivacy)
 
-    async def add_key(self, org_id: UUID, key: SessionKey) -> SessionKey:
+    async def add_key(self, org_id: UUID, key: AgentSessionKey) -> AgentSessionKey:
         """The record's row lock first, as the revocation takes it, so a
         version and a revocation of one session queue on it, and a version
         never lands after the key is revoked."""
         lock = (
-            select(SessionPrivacyRows.revoked_at)
+            select(AgentSessionPrivacyRows.revoked_at)
             .where(
-                SessionPrivacyRows.org_id == org_id,
-                SessionPrivacyRows.session_id == key.session_id,
+                AgentSessionPrivacyRows.org_id == org_id,
+                AgentSessionPrivacyRows.agent_session_id == key.agent_session_id,
             )
             .with_for_update()
         )
         insert = (
-            pg_insert(SessionKeys)
-            .values(org_id=org_id, **to_values(key, SessionKeys))
+            pg_insert(AgentSessionKeys)
+            .values(org_id=org_id, **to_values(key, AgentSessionKeys))
             .on_conflict_do_nothing(
-                index_elements=[SessionKeys.org_id, SessionKeys.session_id, SessionKeys.version]
+                index_elements=[
+                    AgentSessionKeys.org_id,
+                    AgentSessionKeys.agent_session_id,
+                    AgentSessionKeys.version,
+                ]
             )
-            .returning(SessionKeys)
+            .returning(AgentSessionKeys)
         )
-        async with self._session_for(SessionKeys, org_id=org_id) as session:
+        async with self._session_for(AgentSessionKeys, org_id=org_id) as session:
             found = (await session.execute(lock)).one_or_none()
             if found is None:
-                raise NotFound(f"no privacy record for session {key.session_id}")
+                raise NotFound(f"no privacy record for session {key.agent_session_id}")
             if found.revoked_at is not None:
-                raise KeyRevoked(f"the key of session {key.session_id} is revoked")
+                raise KeyRevoked(f"the key of session {key.agent_session_id} is revoked")
             try:
                 row = (await session.execute(insert)).scalar_one_or_none()
                 if row is None:
                     row = (
                         await session.execute(
-                            select(SessionKeys).where(
-                                SessionKeys.org_id == org_id,
-                                SessionKeys.session_id == key.session_id,
-                                SessionKeys.version == key.version,
+                            select(AgentSessionKeys).where(
+                                AgentSessionKeys.org_id == org_id,
+                                AgentSessionKeys.agent_session_id == key.agent_session_id,
+                                AgentSessionKeys.version == key.version,
                             )
                         )
                     ).scalar_one()
-                stored = to_model(row, SessionKey)
+                stored = to_model(row, AgentSessionKey)
                 await session.commit()
             except IntegrityError as error:
                 await session.rollback()
                 if (
                     violated_constraint(error)
-                    == cast(Table, SessionKeys.__table__).primary_key.name
+                    == cast(Table, AgentSessionKeys.__table__).primary_key.name
                 ):
                     raise TenantMismatch(f"session key {key.id} is not in {org_id}") from error
                 raise UniqueKeyTaken(f"session key {key.id} is taken") from error
             return stored
 
-    async def read_keys(self, org_id: UUID, session_id: UUID) -> KeyRing:
-        revoked = select(SessionPrivacyRows.revoked_at).where(
-            SessionPrivacyRows.org_id == org_id, SessionPrivacyRows.session_id == session_id
+    async def read_keys(self, org_id: UUID, agent_session_id: UUID) -> KeyRing:
+        revoked = select(AgentSessionPrivacyRows.revoked_at).where(
+            AgentSessionPrivacyRows.org_id == org_id,
+            AgentSessionPrivacyRows.agent_session_id == agent_session_id,
         )
         keys = (
-            select(SessionKeys)
-            .where(SessionKeys.org_id == org_id, SessionKeys.session_id == session_id)
-            .order_by(SessionKeys.version)
+            select(AgentSessionKeys)
+            .where(
+                AgentSessionKeys.org_id == org_id,
+                AgentSessionKeys.agent_session_id == agent_session_id,
+            )
+            .order_by(AgentSessionKeys.version)
         )
-        async with self._session_for(SessionKeys, org_id=org_id) as session:
+        async with self._session_for(AgentSessionKeys, org_id=org_id) as session:
             revoked_at = (await session.execute(revoked)).scalar_one_or_none()
             rows = (await session.execute(keys)).scalars().all()
             return KeyRing(
                 revoked=revoked_at is not None,
-                keys=tuple(to_model(row, SessionKey) for row in rows),
+                keys=tuple(to_model(row, AgentSessionKey) for row in rows),
             )
 
     async def revoke(
-        self, org_id: UUID, record: SessionPrivacy, outbox_rows: tuple[OutboxRow, ...] = ()
-    ) -> SessionPrivacy:
+        self, org_id: UUID, record: AgentSessionPrivacy, outbox_rows: tuple[OutboxRow, ...] = ()
+    ) -> AgentSessionPrivacy:
         at = record.revoked_at
         if at is None:
             raise ValueError("a revocation names when it happened")
         written = (
-            pg_insert(SessionPrivacyRows)
-            .values(org_id=org_id, **to_values(record, SessionPrivacyRows))
+            pg_insert(AgentSessionPrivacyRows)
+            .values(org_id=org_id, **to_values(record, AgentSessionPrivacyRows))
             .on_conflict_do_nothing(
-                index_elements=[SessionPrivacyRows.org_id, SessionPrivacyRows.session_id]
+                index_elements=[
+                    AgentSessionPrivacyRows.org_id,
+                    AgentSessionPrivacyRows.agent_session_id,
+                ]
             )
-            .returning(SessionPrivacyRows.id)
+            .returning(AgentSessionPrivacyRows.id)
         )
         mark = (
-            update(SessionPrivacyRows)
+            update(AgentSessionPrivacyRows)
             .where(
-                SessionPrivacyRows.org_id == org_id,
-                SessionPrivacyRows.session_id == record.session_id,
-                SessionPrivacyRows.revoked_at.is_(None),
+                AgentSessionPrivacyRows.org_id == org_id,
+                AgentSessionPrivacyRows.agent_session_id == record.agent_session_id,
+                AgentSessionPrivacyRows.revoked_at.is_(None),
             )
             .values(revoked_at=at, revoked_by=record.revoked_by)
         )
         destroy = (
-            update(SessionKeys)
+            update(AgentSessionKeys)
             .where(
-                SessionKeys.org_id == org_id,
-                SessionKeys.session_id == record.session_id,
-                SessionKeys.destroyed_at.is_(None),
+                AgentSessionKeys.org_id == org_id,
+                AgentSessionKeys.agent_session_id == record.agent_session_id,
+                AgentSessionKeys.destroyed_at.is_(None),
             )
             .values(wrapped=None, wrapping=None, wrapped_at=None, destroyed_at=at)
         )
-        async with self._session_for(SessionPrivacyRows, org_id=org_id) as session:
+        async with self._session_for(AgentSessionPrivacyRows, org_id=org_id) as session:
             try:
                 landed = (await session.execute(written)).scalar_one_or_none() is not None
             except IntegrityError as error:
                 await session.rollback()
                 raise TenantMismatch(f"session privacy {record.id} is not in {org_id}") from error
             marked = rowcount(await session.execute(mark)) == 1
-            row = (await session.execute(self._record(org_id, record.session_id))).scalar_one()
-            stored = to_model(row, SessionPrivacy)
+            row = (
+                await session.execute(self._record(org_id, record.agent_session_id))
+            ).scalar_one()
+            stored = to_model(row, AgentSessionPrivacy)
             await session.execute(destroy)
             if landed or marked:
                 for outbox_row in outbox_rows:
@@ -181,14 +204,14 @@ class PrivacyStoragePostgresImpl(PgStorageBase, PrivacyStorageInterface):
             await session.commit()
             return stored
 
-    async def rewrap_key(self, org_id: UUID, key: SessionKey, expected: bytes) -> bool:
+    async def rewrap_key(self, org_id: UUID, key: AgentSessionKey, expected: bytes) -> bool:
         stmt = (
-            update(SessionKeys)
+            update(AgentSessionKeys)
             .where(
-                SessionKeys.org_id == org_id,
-                SessionKeys.id == key.id,
-                SessionKeys.wrapped == expected,
-                SessionKeys.destroyed_at.is_(None),
+                AgentSessionKeys.org_id == org_id,
+                AgentSessionKeys.id == key.id,
+                AgentSessionKeys.wrapped == expected,
+                AgentSessionKeys.destroyed_at.is_(None),
             )
             .values(wrapped=key.wrapped, wrapping=key.wrapping, wrapped_at=key.wrapped_at)
         )
@@ -199,25 +222,27 @@ class PrivacyStoragePostgresImpl(PgStorageBase, PrivacyStorageInterface):
 
     async def read_keys_wrapped_before(
         self, org_id: UUID, before: datetime, limit: int
-    ) -> list[SessionKey]:
+    ) -> list[AgentSessionKey]:
         stmt = (
-            select(SessionKeys)
+            select(AgentSessionKeys)
             .where(
-                SessionKeys.org_id == org_id,
-                SessionKeys.destroyed_at.is_(None),
-                SessionKeys.wrapped_at < before,
+                AgentSessionKeys.org_id == org_id,
+                AgentSessionKeys.destroyed_at.is_(None),
+                AgentSessionKeys.wrapped_at < before,
             )
-            .order_by(SessionKeys.wrapped_at, SessionKeys.id)
+            .order_by(AgentSessionKeys.wrapped_at, AgentSessionKeys.id)
             .limit(limit)
         )
         async with self._session_for(stmt, org_id=org_id) as session:
-            return [to_model(row, SessionKey) for row in (await session.execute(stmt)).scalars()]
+            return [
+                to_model(row, AgentSessionKey) for row in (await session.execute(stmt)).scalars()
+            ]
 
     async def purge_tenant(self, org_id: UUID, limit: int) -> int:
         """The versions first, so a record never goes while a version of its
         key is left."""
         gone = 0
-        for table in (SessionKeys, SessionPrivacyRows):
+        for table in (AgentSessionKeys, AgentSessionPrivacyRows):
             if gone >= limit:
                 break
             stmt = delete_batch(table, table.org_id == org_id, limit=limit - gone)

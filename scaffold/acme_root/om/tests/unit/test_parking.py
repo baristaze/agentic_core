@@ -9,42 +9,46 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.agent_session_storage import make_session
-from contracts.budget_storage import make_budget
+from contracts.agent_session_storage import make_agent_session
+from contracts.agent_step_storage import make_message, make_request
 from contracts.doubles import context
-from contracts.step_storage import make_message, make_request
+from contracts.spend_budget_storage import make_spend_budget
 from contracts.tools import stand_ins
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.om.agent_sessions.limits import step_guard_park
-from acme.om.agent_sessions.types.agent_session import AgentSession, SessionStatus
-from acme.om.base import new_id, utcnow
-from acme.om.budgets.rules import HOLD_RETRY, budget_park, window_bounds
-from acme.om.budgets.types.amount import Amount, AmountUnit, Spend
-from acme.om.budgets.types.breach import Breach, BreachAction, Refusal
-from acme.om.budgets.types.budget import BudgetScope, BudgetScopeKind, WindowKind
-from acme.om.budgets.types.hold import Billed, Hold, HoldRequest
-from acme.om.context import Role, TenantContext
-from acme.om.exceptions import StaleWriter
-from acme.om.root import Managers, build_managers
-from acme.om.steps.types.header import (
+from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus
+from acme.om.agent_steps.types.agent_step import Actor, AgentStepType
+from acme.om.agent_steps.types.header import (
     ControlCommand,
     ControlHeader,
     Park,
     ParkedHeader,
     ParkReason,
 )
-from acme.om.steps.types.step import Actor, StepType
+from acme.om.base import new_id, utcnow
+from acme.om.context import Role, TenantContext
+from acme.om.exceptions import StaleWriter
+from acme.om.root import Managers, build_managers
+from acme.om.spend_budgets.rules import HOLD_RETRY, spend_budget_park, window_bounds
+from acme.om.spend_budgets.types.amount import Amount, AmountUnit, Spend
+from acme.om.spend_budgets.types.spend_breach import Refusal, SpendBreach, SpendBreachAction
+from acme.om.spend_budgets.types.spend_budget import (
+    SpendBudgetScope,
+    SpendBudgetScopeKind,
+    WindowKind,
+)
+from acme.om.spend_budgets.types.spend_hold import Billed, SpendHold, SpendHoldRequest
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
 from acme.om.work.types.work_item import (
-    WakeSessionPayload,
-    WakeSessionsPayload,
+    WakeAgentSessionPayload,
+    WakeAgentSessionsPayload,
     WorkItem,
     WorkKind,
 )
 
-# What `make_session` names, so the agents manager classes every tool it
+# What `make_agent_session` names, so the agents manager classes every tool it
 # offers.
 TOOLS = stand_ins("read_log", "run_tests")
 
@@ -75,11 +79,11 @@ def engine(tmp_path: Path) -> Engine:
 async def running(engine: Engine, ctx: TenantContext) -> tuple[AgentSession, int, UUID]:
     """A session whose loop a run holds: a message woke it, a run took its
     epoch and asked the model."""
-    sessions, steps = engine.managers.agent_sessions, engine.managers.steps
-    session = await sessions.create_session(ctx, make_session())
+    sessions, steps = engine.managers.agent_sessions, engine.managers.agent_steps
+    session = await sessions.create_agent_session(ctx, make_agent_session())
     (message,) = await steps.append_inputs(ctx, session.id, [make_message(session.id)])
     epoch = await steps.begin_run(ctx, session.id)
-    await steps.append_steps(
+    await steps.append_agent_steps(
         ctx, session.id, epoch, [make_request(session.id, message.id, (message.id,))]
     )
     return await sessions.project_status(ctx, session.id), epoch, message.id
@@ -92,13 +96,13 @@ async def test_a_park_records_its_reason_unlock_and_retry_time(engine: Engine) -
         reason=ParkReason.PROVIDER, unlock="anthropic", retry_at=utcnow() + timedelta(minutes=5)
     )
     parked = await engine.managers.agent_sessions.park(ctx, session.id, epoch, loop, park)
-    assert (parked.status, parked.park) == (SessionStatus.PARKED, park)
-    page = await engine.managers.steps.get_steps(ctx, session.id, 0, 10)
+    assert (parked.status, parked.park) == (AgentSessionStatus.PARKED, park)
+    page = await engine.managers.agent_steps.get_agent_steps(ctx, session.id, 0, 10)
     step = page.items[-1]
-    assert step.type is StepType.PARKED and step.loop_id == loop and step.actor is Actor.ENGINE
+    assert step.type is AgentStepType.PARKED and step.loop_id == loop and step.actor is Actor.ENGINE
     assert isinstance(step.header, ParkedHeader) and step.header.park == park
     # A park writes no outcome: the loop is suspended, not ended.
-    assert all(s.type is not StepType.LOOP_ENDED for s in page.items)
+    assert all(s.type is not AgentStepType.LOOP_ENDED for s in page.items)
 
 
 async def test_a_park_with_a_retry_time_waits_in_the_queue_until_it(engine: Engine) -> None:
@@ -107,13 +111,13 @@ async def test_a_park_with_a_retry_time_waits_in_the_queue_until_it(engine: Engi
     later = utcnow() + timedelta(hours=1)
     park = Park(reason=ParkReason.PROVIDER, unlock="anthropic", retry_at=later)
     await engine.managers.agent_sessions.park(ctx, session.id, epoch, loop, park)
-    (wake,) = engine.queued(WorkKind.WAKE_SESSION)
+    (wake,) = engine.queued(WorkKind.WAKE_AGENT_SESSION)
     assert (wake.target_id, wake.available_at, wake.created_by) == (
         session.id,
         later,
         session.created_by,
     )
-    assert WakeSessionPayload.model_validate(dict(wake.payload)).park == park
+    assert WakeAgentSessionPayload.model_validate(dict(wake.payload)).park == park
 
 
 async def test_a_park_resumes_by_itself_once_its_retry_time_comes(engine: Engine) -> None:
@@ -121,24 +125,26 @@ async def test_a_park_resumes_by_itself_once_its_retry_time_comes(engine: Engine
     session, epoch, loop = await running(engine, ctx)
     # A refusal whose window resets now: the retry time has come.
     reset = utcnow() - timedelta(seconds=1)
-    park = budget_park(refusal_resetting_at(reset), utcnow())
+    park = spend_budget_park(refusal_resetting_at(reset), utcnow())
     await engine.managers.agent_sessions.park(ctx, session.id, epoch, loop, park)
-    (item,) = engine.queued(WorkKind.WAKE_SESSION)
+    (item,) = engine.queued(WorkKind.WAKE_AGENT_SESSION)
     assert item.available_at <= utcnow(), "its time has come"
-    payload = WakeSessionPayload.model_validate(dict(item.payload))
-    woken = await engine.managers.agent_sessions.wake_session(ctx, item.target_id, payload.park)
-    assert (woken.status, woken.park) == (SessionStatus.PENDING, None)
-    unlock = (await engine.managers.steps.get_steps(ctx, session.id, 0, 10)).items[-1]
+    payload = WakeAgentSessionPayload.model_validate(dict(item.payload))
+    woken = await engine.managers.agent_sessions.wake_agent_session(
+        ctx, item.target_id, payload.park
+    )
+    assert (woken.status, woken.park) == (AgentSessionStatus.PENDING, None)
+    unlock = (await engine.managers.agent_steps.get_agent_steps(ctx, session.id, 0, 10)).items[-1]
     assert (
         isinstance(unlock.header, ControlHeader) and unlock.header.command is ControlCommand.UNLOCK
     )
     assert unlock.actor is Actor.ENGINE
     # A new run takes it up; its gates run again before its next call.
-    epoch = await engine.managers.steps.begin_run(ctx, session.id)
+    epoch = await engine.managers.agent_steps.begin_run(ctx, session.id)
     resumed = await engine.managers.agent_sessions.resume(ctx, session.id, epoch, loop)
-    assert resumed.status is SessionStatus.RUNNING
+    assert resumed.status is AgentSessionStatus.RUNNING
     # The wake ran once; a second run of it finds the session moved on.
-    again = await engine.managers.agent_sessions.wake_session(ctx, session.id, payload.park)
+    again = await engine.managers.agent_sessions.wake_agent_session(ctx, session.id, payload.park)
     assert again == resumed
 
 
@@ -149,35 +155,38 @@ async def test_a_park_only_a_person_clears_asks_for_no_wake(engine: Engine) -> N
         ctx, session.id, epoch, loop, step_guard_park()
     )
     assert parked.park is not None and parked.park.retry_at is None
-    assert engine.queued(WorkKind.WAKE_SESSION) == []
+    assert engine.queued(WorkKind.WAKE_AGENT_SESSION) == []
     # Nothing but its park's own wake unlocks it.
-    budget_wake = Park(reason=ParkReason.BUDGET, unlock="b", retry_at=utcnow())
-    assert await engine.managers.agent_sessions.wake_session(ctx, session.id, budget_wake) == parked
+    budget_wake = Park(reason=ParkReason.SPEND_BUDGET, unlock="b", retry_at=utcnow())
+    assert (
+        await engine.managers.agent_sessions.wake_agent_session(ctx, session.id, budget_wake)
+        == parked
+    )
 
 
 async def test_a_stale_run_parks_nothing(engine: Engine) -> None:
     ctx = context(Role.MEMBER)
     session, lost, loop = await running(engine, ctx)
-    await engine.managers.steps.begin_run(ctx, session.id)
+    await engine.managers.agent_steps.begin_run(ctx, session.id)
     with pytest.raises(StaleWriter):
         await engine.managers.agent_sessions.park(ctx, session.id, lost, loop, step_guard_park())
     assert (
-        await engine.managers.agent_sessions.get_session(ctx, session.id)
-    ).status is SessionStatus.RUNNING
+        await engine.managers.agent_sessions.get_agent_session(ctx, session.id)
+    ).status is AgentSessionStatus.RUNNING
 
 
 def refusal_resetting_at(reset: datetime) -> Refusal:
     return Refusal(
         breaches=(
-            Breach(
-                budget_id=new_id(),
+            SpendBreach(
+                spend_budget_id=new_id(),
                 scope=None,
                 unit=AmountUnit.COST,
                 amount=1,
                 committed=1,
                 held=0,
                 exposure=1,
-                action=BreachAction.RAISE,
+                action=SpendBreachAction.RAISE,
                 needed=2,
                 resets_at=reset,
             ),
@@ -192,11 +201,11 @@ async def test_a_call_no_window_holds_parks_for_a_raise_which_wakes_it(engine: E
     anything else."""
     admin = context(Role.ADMIN)
     managers = engine.managers
-    tenant = BudgetScope(kind=BudgetScopeKind.TENANT, key=str(admin.org_id))
-    line = await managers.budgets.create_budget(
-        admin, make_budget(tenant.kind, tenant.key, cost_micros=500)
+    tenant = SpendBudgetScope(kind=SpendBudgetScopeKind.TENANT, key=str(admin.org_id))
+    line = await managers.spend_budgets.create_spend_budget(
+        admin, make_spend_budget(tenant.kind, tenant.key, cost_micros=500)
     )
-    asked = HoldRequest(
+    asked = SpendHoldRequest(
         spender_id=admin.user_id,
         scopes=(tenant,),
         exposure=Spend(cost_micros=800, tokens=10),
@@ -205,31 +214,33 @@ async def test_a_call_no_window_holds_parks_for_a_raise_which_wakes_it(engine: E
     on_budget: list[UUID] = []
     for _ in range(2):
         session, epoch, loop = await running(engine, admin)
-        refusal = await managers.budget_gate.authorize(admin, asked)
+        refusal = await managers.spend_budget_gate.authorize(admin, asked)
         assert isinstance(refusal, Refusal)
         parked = await managers.agent_sessions.park(
-            admin, session.id, epoch, loop, budget_park(refusal, utcnow())
+            admin, session.id, epoch, loop, spend_budget_park(refusal, utcnow())
         )
         assert parked.park is not None
-        assert (parked.park.reason, parked.park.unlock) == (ParkReason.BUDGET, str(line.id))
+        assert (parked.park.reason, parked.park.unlock) == (ParkReason.SPEND_BUDGET, str(line.id))
         assert parked.park.retry_at is None, "a fresh window refuses it too"
         on_budget.append(session.id)
-    assert engine.queued(WorkKind.WAKE_SESSION) == []
+    assert engine.queued(WorkKind.WAKE_AGENT_SESSION) == []
     waiting, epoch, loop = await running(engine, admin)
     await managers.agent_sessions.park(admin, waiting.id, epoch, loop, step_guard_park())
 
-    await managers.budgets.change_amount(admin, line.id, Amount(cost_micros=5_000), line.version)
-    (item,) = engine.queued(WorkKind.WAKE_SESSIONS)
-    assert (item.target_id, dict(item.payload)) == (admin.org_id, {"reason": "budget"})
-    assert await managers.agent_sessions.wake_parked(admin, ParkReason.BUDGET) == 2
-    for session_id in on_budget:
+    await managers.spend_budgets.change_amount(
+        admin, line.id, Amount(cost_micros=5_000), line.version
+    )
+    (item,) = engine.queued(WorkKind.WAKE_AGENT_SESSIONS)
+    assert (item.target_id, dict(item.payload)) == (admin.org_id, {"reason": "spend_budget"})
+    assert await managers.agent_sessions.wake_parked(admin, ParkReason.SPEND_BUDGET) == 2
+    for agent_session_id in on_budget:
         assert (
-            await managers.agent_sessions.get_session(admin, session_id)
-        ).status is SessionStatus.PENDING
-    still = await managers.agent_sessions.get_session(admin, waiting.id)
-    assert still.status is SessionStatus.PARKED
+            await managers.agent_sessions.get_agent_session(admin, agent_session_id)
+        ).status is AgentSessionStatus.PENDING
+    still = await managers.agent_sessions.get_agent_session(admin, waiting.id)
+    assert still.status is AgentSessionStatus.PARKED
     # The woken run asks the gate again, and now it fits.
-    assert not isinstance(await managers.budget_gate.authorize(admin, asked), Refusal)
+    assert not isinstance(await managers.spend_budget_gate.authorize(admin, asked), Refusal)
 
 
 async def test_a_runs_budget_caps_the_run_alone_and_its_close_lets_the_session_go_on(
@@ -242,53 +253,53 @@ async def test_a_runs_budget_caps_the_run_alone_and_its_close_lets_the_session_g
     the call, a session parked on another budget stays parked, and the closed
     budget counts nothing after its close."""
     admin = context(Role.ADMIN)
-    managers, gate = engine.managers, engine.managers.budget_gate
+    managers, gate = engine.managers, engine.managers.spend_budget_gate
     session, epoch, loop = await running(engine, admin)
-    tree = BudgetScope(kind=BudgetScopeKind.TREE, key=str(session.root_id))
+    tree = SpendBudgetScope(kind=SpendBudgetScopeKind.TREE, key=str(session.root_id))
 
-    def call(cost: int) -> HoldRequest:
+    def call(cost: int) -> SpendHoldRequest:
         exposure = Spend(cost_micros=cost, tokens=10)
-        return HoldRequest(
+        return SpendHoldRequest(
             spender_id=admin.user_id,
-            session_id=session.id,
+            agent_session_id=session.id,
             scopes=(tree,),
             exposure=exposure,
             purpose="main",
         )
 
-    async def spent(cost: int) -> Hold:
+    async def spent(cost: int) -> SpendHold:
         hold = await gate.authorize(admin, call(cost))
-        assert isinstance(hold, Hold)
+        assert isinstance(hold, SpendHold)
         await gate.settle(admin, hold.id, Billed(usage=Spend(cost_micros=cost, tokens=10)))
         return hold
 
     await spent(5_000)  # before the run
-    run = await managers.budgets.create_budget(
-        admin, make_budget(tree.kind, tree.key, window=WindowKind.LIFE, cost_micros=1_000)
+    run = await managers.spend_budgets.create_spend_budget(
+        admin, make_spend_budget(tree.kind, tree.key, window=WindowKind.LIFE, cost_micros=1_000)
     )
-    assert [line.budget_id for line in (await spent(600)).lines] == [run.id]
+    assert [line.spend_budget_id for line in (await spent(600)).lines] == [run.id]
     refusal = await gate.authorize(admin, call(500))
     assert isinstance(refusal, Refusal)
-    assert [(b.budget_id, b.committed) for b in refusal.breaches] == [(run.id, 600)]
+    assert [(b.spend_budget_id, b.committed) for b in refusal.breaches] == [(run.id, 600)]
     parked = await managers.agent_sessions.park(
-        admin, session.id, epoch, loop, budget_park(refusal, utcnow())
+        admin, session.id, epoch, loop, spend_budget_park(refusal, utcnow())
     )
     assert parked.park is not None
     assert (parked.park.unlock, parked.park.retry_at) == (str(run.id), None)
     elsewhere, other_epoch, other_loop = await running(engine, admin)
-    other_park = Park(reason=ParkReason.BUDGET, unlock=str(new_id()))
+    other_park = Park(reason=ParkReason.SPEND_BUDGET, unlock=str(new_id()))
     await managers.agent_sessions.park(admin, elsewhere.id, other_epoch, other_loop, other_park)
 
-    await managers.budgets.close_budget(admin, run.id)
-    (item,) = engine.queued(WorkKind.WAKE_SESSIONS)
-    wake = WakeSessionsPayload.model_validate(dict(item.payload))
+    await managers.spend_budgets.close_spend_budget(admin, run.id)
+    (item,) = engine.queued(WorkKind.WAKE_AGENT_SESSIONS)
+    wake = WakeAgentSessionsPayload.model_validate(dict(item.payload))
     assert await managers.agent_sessions.wake_parked(admin, wake.reason, wake.unlock) == 1
-    woken = await managers.agent_sessions.get_session(admin, session.id)
-    assert woken.status is SessionStatus.PENDING
-    still = await managers.agent_sessions.get_session(admin, elsewhere.id)
-    assert still.status is SessionStatus.PARKED
+    woken = await managers.agent_sessions.get_agent_session(admin, session.id)
+    assert woken.status is AgentSessionStatus.PENDING
+    still = await managers.agent_sessions.get_agent_session(admin, elsewhere.id)
+    assert still.status is AgentSessionStatus.PARKED
     assert (await spent(500)).lines == (), "a closed budget binds no call"
-    tally = await managers.budgets.get_spend(admin, run.id)
+    tally = await managers.spend_budgets.get_spend(admin, run.id)
     assert (tally.spent_cost_micros, tally.held_cost_micros) == (600, 0)
 
 
@@ -301,34 +312,35 @@ async def test_a_call_open_holds_refuse_wakes_soon_and_fits_once_they_settle(
     and the woken loop's gate holds its call."""
     admin = context(Role.ADMIN)
     managers = engine.managers
-    tenant = BudgetScope(kind=BudgetScopeKind.TENANT, key=str(admin.org_id))
-    line = await managers.budgets.create_budget(
-        admin, make_budget(tenant.kind, tenant.key, window=WindowKind.MONTH, cost_micros=1_000)
+    tenant = SpendBudgetScope(kind=SpendBudgetScopeKind.TENANT, key=str(admin.org_id))
+    line = await managers.spend_budgets.create_spend_budget(
+        admin,
+        make_spend_budget(tenant.kind, tenant.key, window=WindowKind.MONTH, cost_micros=1_000),
     )
 
-    def asked(cost: int) -> HoldRequest:
+    def asked(cost: int) -> SpendHoldRequest:
         exposure = Spend(cost_micros=cost, tokens=10)
-        return HoldRequest(
+        return SpendHoldRequest(
             spender_id=admin.user_id, scopes=(tenant,), exposure=exposure, purpose="main"
         )
 
-    other = await managers.budget_gate.authorize(admin, asked(600))
-    assert isinstance(other, Hold)
+    other = await managers.spend_budget_gate.authorize(admin, asked(600))
+    assert isinstance(other, SpendHold)
     session, epoch, loop = await running(engine, admin)
-    refusal = await managers.budget_gate.authorize(admin, asked(500))
+    refusal = await managers.spend_budget_gate.authorize(admin, asked(500))
     assert isinstance(refusal, Refusal)
     now = utcnow()
-    park = budget_park(refusal, now)
+    park = spend_budget_park(refusal, now)
     _, month_end = window_bounds(line.window, now)
     assert park.retry_at == now + HOLD_RETRY
     assert month_end is not None and now + HOLD_RETRY < month_end
     await managers.agent_sessions.park(admin, session.id, epoch, loop, park)
-    (wake,) = engine.queued(WorkKind.WAKE_SESSION)
+    (wake,) = engine.queued(WorkKind.WAKE_AGENT_SESSION)
     assert wake.available_at == park.retry_at
 
-    await managers.budget_gate.settle(
+    await managers.spend_budget_gate.settle(
         admin, other.id, Billed(usage=Spend(cost_micros=100, tokens=10))
     )
-    woken = await managers.agent_sessions.wake_session(admin, session.id, park)
-    assert woken.status is SessionStatus.PENDING
-    assert isinstance(await managers.budget_gate.authorize(admin, asked(500)), Hold)
+    woken = await managers.agent_sessions.wake_agent_session(admin, session.id, park)
+    assert woken.status is AgentSessionStatus.PENDING
+    assert isinstance(await managers.spend_budget_gate.authorize(admin, asked(500)), SpendHold)

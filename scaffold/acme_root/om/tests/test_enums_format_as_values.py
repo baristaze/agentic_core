@@ -7,12 +7,12 @@ import enum
 
 import pytest
 
+from acme.infra.agent_workspaces import EgressMode, IsolationMode
 from acme.infra.buckets import Buckets
 from acme.infra.cache import CacheScope
 from acme.infra.queues import Queues
 from acme.infra.topics import Topics
 from acme.infra.transports import SecretVia
-from acme.infra.workspaces import EgressMode, IsolationMode
 from acme.integrations.model_providers.types import (
     Effort,
     ErrorAnswer,
@@ -21,16 +21,13 @@ from acme.integrations.model_providers.types import (
     StopReason,
 )
 from acme.om.agent_sessions.limits import Limit, LimitKind
-from acme.om.agent_sessions.types.agent_session import SessionStatus
+from acme.om.agent_sessions.types.agent_session import AgentSessionStatus
+from acme.om.agent_steps.types.agent_step import Actor, AgentStepFamily, AgentStepType, Origin
+from acme.om.agent_steps.types.header import ControlCommand, LoopOutcome, ParkReason, ToolFailure
 from acme.om.agents.types.kind import DoneRule
 from acme.om.agents.types.result import Claim, Turn
 from acme.om.attribution.types.authority import AuthorityMode, Trust
 from acme.om.attribution.types.principal import PrincipalKind
-from acme.om.budgets.types.amount import AmountUnit
-from acme.om.budgets.types.breach import BreachAction
-from acme.om.budgets.types.budget import BudgetScopeKind, WindowKind
-from acme.om.budgets.types.exposure import CacheWrite, PromptCount
-from acme.om.budgets.types.hold import NotBilledProof
 from acme.om.context import (
     AppType,
     CredentialKind,
@@ -39,11 +36,14 @@ from acme.om.context import (
     Permission,
     Role,
 )
+from acme.om.language_models.types.fill import OutputShape, SwitchReason
 from acme.om.media.types.file import FilePurpose, FileStatus
-from acme.om.models.types.fill import OutputShape, SwitchReason
 from acme.om.orchestrations.types.orchestration import OrchestrationKind, OrchestrationStatus
-from acme.om.steps.types.header import ControlCommand, LoopOutcome, ParkReason, ToolFailure
-from acme.om.steps.types.step import Actor, Origin, StepFamily, StepType
+from acme.om.spend_budgets.types.amount import AmountUnit
+from acme.om.spend_budgets.types.exposure import CacheWrite, PromptCount
+from acme.om.spend_budgets.types.spend_breach import SpendBreachAction
+from acme.om.spend_budgets.types.spend_budget import SpendBudgetScopeKind, WindowKind
+from acme.om.spend_budgets.types.spend_hold import NotBilledProof
 from acme.om.storage.roles import DatabaseRole
 from acme.om.storage.scopes import ScopeKind
 from acme.om.tools.types.call import GateOutcome, Verdict
@@ -70,9 +70,9 @@ ENUMS = [
     OrchestrationStatus,
     WorkKind,
     WorkStatus,
-    SessionStatus,
-    StepType,
-    StepFamily,
+    AgentSessionStatus,
+    AgentStepType,
+    AgentStepFamily,
     Actor,
     Origin,
     ControlCommand,
@@ -84,10 +84,10 @@ ENUMS = [
     DoneRule,
     Turn,
     Claim,
-    BudgetScopeKind,
+    SpendBudgetScopeKind,
     WindowKind,
     AmountUnit,
-    BreachAction,
+    SpendBreachAction,
     PromptCount,
     CacheWrite,
     NotBilledProof,

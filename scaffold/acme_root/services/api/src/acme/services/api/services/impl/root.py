@@ -91,7 +91,7 @@ def build_services(
     return ServicesImpl(
         tenancy=TenancyServiceImpl(managers.tenancy),
         admin=AdminServiceImpl(
-            managers.tenancy_operator, managers.work_operator, managers.budgets_operator
+            managers.tenancy_operator, managers.work_operator, managers.spend_budgets_operator
         ),
         events=EventsServiceImpl(managers.events),
         media=MediaServiceImpl(managers.media),
@@ -104,7 +104,7 @@ def build_services(
         agent_sessions=AgentSessionsServiceImpl(
             managers.agent_sessions,
             managers.agents,
-            managers.steps,
+            managers.agent_steps,
             managers.tools,
             managers.attribution,
             managers.loop,
