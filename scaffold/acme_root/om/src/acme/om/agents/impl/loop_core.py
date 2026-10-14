@@ -343,14 +343,20 @@ class LoopCore(ABC):
         """A workspace kept by snapshots is snapshotted whole at the end of
         each run that held it, live, before its loop parks or ends: no run
         that follows starts before the step names it. One that is refused,
-        such as for a secret's value in it, or that fails keeps nothing, and
-        the run keeps its instance (`_release`)."""
+        such as for a secret's value in it, a secret an attached tool may
+        have injected included, or that fails keeps nothing, and the run
+        keeps its instance (`_release`)."""
         workspace = run.workspace
         if workspace is None or workspace.spec.durability is not Durability.SNAPSHOT:
             return
         try:
             await self._tools.snapshot_agent_workspace(
-                run.ctx, run.agent_session_id, workspace, epoch=run.epoch, loop_id=run.loop_id
+                run.ctx,
+                run.agent_session_id,
+                workspace,
+                epoch=run.epoch,
+                loop_id=run.loop_id,
+                tools=run.attached.tools,
             )
         except StaleWriter:
             raise

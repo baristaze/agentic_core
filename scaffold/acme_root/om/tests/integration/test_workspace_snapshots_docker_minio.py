@@ -216,7 +216,7 @@ def on_docker(
 async def snapshot_of(loop: Loop, agent_session_id: UUID, workspace: AgentWorkspace) -> AgentStep:
     epoch = await loop.managers.agent_steps.begin_run(loop.owner, agent_session_id)
     return await loop.managers.tools.snapshot_agent_workspace(
-        loop.owner, agent_session_id, workspace, epoch=epoch, loop_id=new_id()
+        loop.owner, agent_session_id, workspace, epoch=epoch, loop_id=new_id(), tools=()
     )
 
 
@@ -436,7 +436,7 @@ async def test_a_kept_workspace_holds_what_a_loop_wrote_outside_its_volume_acros
         epoch = await loop.managers.agent_steps.begin_run(ctx, agent_session_id)
         with pytest.raises(SnapshotRefused, match="no instance"):
             await tools.snapshot_agent_workspace(
-                ctx, agent_session_id, released, epoch=epoch, loop_id=new_id()
+                ctx, agent_session_id, released, epoch=epoch, loop_id=new_id(), tools=()
             )
         after = await infra.buckets.list(ctx.org_id, BUCKET, session_prefix(agent_session_id), 100)
         assert after == stored, "nothing stored"

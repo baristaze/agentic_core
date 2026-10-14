@@ -417,6 +417,7 @@ def loop_over(
             language_models_layer=language_models_layer,
             tools_options=None if ceilings is None else ToolsOptions(ceilings=ceilings),
             agent_sessions_options=sessions,
+            loop_hooks=hooks,
         ),
     )
     clock = Clock()

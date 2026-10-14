@@ -33,7 +33,11 @@ Makefile.
 **A layer above extends a run through the loop's hooks, never by editing
 the loop.** Once a run, before anything renders, the loop asks its hooks
 for the toolsets a session holds beyond its kind, and folds them into the
-kind, so held ones join the registry and deferred ones the load. Once the
+kind, so held ones join the registry and deferred ones the load. What
+they attach holds every guard a kind's own tools hold: who may instruct
+the session classes their tools, a message the session writes into
+another carries their secrets for the rule of two, and its workspace's
+snapshot is scanned for the secrets they may have injected. Once the
 workspace is prepared, before the first model call, it asks them for the
 steps to append, under the run's epoch, and tells them whether the loop
 is new: whether it has made no model call yet, so a loop whose first run

@@ -147,7 +147,7 @@ async def test_a_vm_snapshot_is_kept_on_minio_by_name_and_restores_its_whole_dis
         )
         epoch = await tools.steps.begin_run(ctx, agent_session_id)
         step = await tools.manager.snapshot_agent_workspace(
-            ctx, agent_session_id, workspace, epoch=epoch, loop_id=new_id()
+            ctx, agent_session_id, workspace, epoch=epoch, loop_id=new_id(), tools=()
         )
         assert isinstance(step.header, SnapshotHeader)
         snapshot = step.header.snapshot
@@ -169,7 +169,7 @@ async def test_a_vm_snapshot_is_kept_on_minio_by_name_and_restores_its_whole_dis
         await run(transport, restored, "echo tok-vm-0123456789abcdef | sudo tee /etc/leak")
         with pytest.raises(SnapshotRefused, match="SERVICE_TOKEN"):
             await tools.manager.snapshot_agent_workspace(
-                ctx, agent_session_id, restored, epoch=epoch, loop_id=new_id()
+                ctx, agent_session_id, restored, epoch=epoch, loop_id=new_id(), tools=()
             )
         kept = await minio.list(ctx.org_id, Buckets.SNAPSHOTS, session_prefix(agent_session_id), 10)
         assert kept == [key], "nothing more stored"

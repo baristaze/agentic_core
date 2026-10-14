@@ -4,14 +4,13 @@ object. `acme.om.root` calls it once from `build_managers`, and its
 `Managers` holds these fields beside its own. What an adopter sets on the
 engine's managers is one options object, `AgentRootOptions`."""
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from dataclasses import dataclass
 from uuid import UUID
 
 from acme.infra.base import QuietNull
 from acme.infra.cache import CacheScope
 from acme.infra.root import InfraInterface
-from acme.infra.transports import SecretVia
 from acme.integrations.model_providers.registry import absent_model_providers
 from acme.integrations.root import IntegrationsInterface
 from acme.om.agent_sessions import AgentSessionsManagerInterface
@@ -84,6 +83,7 @@ from acme.om.tools.impl.bases import AgentWorkspaceBases
 from acme.om.tools.impl.manager import ToolsManagerImpl, ToolsOptions
 from acme.om.tools.impl.snapshots import SnapshotStore
 from acme.om.tools.native import native_tools
+from acme.om.tools.rules import injected_secrets
 from acme.om.tools.seal import RecordSealInterface, SnapshotSealInterface
 from acme.om.tools.tool import ToolInterface
 from acme.om.windows import WindowsManagerInterface
@@ -392,9 +392,10 @@ def build_agent_managers(
     # which answers whose authority each call runs under and the rule of
     # two. What a call keeps of its session's content goes under the
     # session's key: its input's hash, its command's record, and a snapshot
-    # of its workspace, which holds no secret a tool of the catalog may be
-    # given. A workspace base is the tenant's: built once, its claim on the
-    # cache every worker shares, and scanned as a snapshot is.
+    # of its workspace, which holds no secret a tool of the catalog, or one
+    # the session's hooks attach, may be given. A workspace base is the
+    # tenant's: built once, its claim on the cache every worker shares, and
+    # scanned as a snapshot is.
     tools_settings = options.tools_options or ToolsOptions()
     snapshots = SnapshotStore(
         infra.get_buckets(),
@@ -402,7 +403,7 @@ def build_agent_managers(
         or SnapshotSealKeysImpl(agent_session_keys, storage.get_privacy_storage()),
         privacy.keyed_hash,
         infra.get_secrets(),
-        injected_secrets(catalog),
+        injected_secrets(tool.spec for tool in catalog),
         tools_settings.purge_batch,
     )
     tools = ToolsManagerImpl(
@@ -432,6 +433,10 @@ def build_agent_managers(
         ),
     )
     # A child's report reaches its parent through windows, which bounds it.
+    # The toolsets a layer's hooks attach to a session are the loop's, and
+    # the agents' too: who may instruct the session classes their tools, and
+    # what a session carries to another counts their secrets.
+    hooks = options.loop_hooks or LoopHooksNullImpl()
     agents = AgentsManagerImpl(
         storage.get_agent_storage(),
         agent_sessions,
@@ -447,6 +452,7 @@ def build_agent_managers(
         tool_classes={tool.spec.name: tool.spec.authorization_class for tool in catalog},
         secret_tools=frozenset(tool.spec.name for tool in catalog if tool.spec.secrets),
         tools=tools,
+        hooks=hooks,
     )
     managers = AgentManagers(
         agent_steps=steps,
@@ -485,15 +491,7 @@ def build_agent_managers(
             options.loop_options or LoopOptions(),
             leases=leases,
             domain_classes=options.domain_classes,
-            hooks=options.loop_hooks or LoopHooksNullImpl(),
+            hooks=hooks,
         ),
     )
     return managers
-
-
-def injected_secrets(catalog: Iterable[ToolInterface]) -> frozenset[str]:
-    """The secrets a tool of the catalog may have injected into a command, by
-    name: what a workspace's snapshot is scanned for."""
-    return frozenset(
-        use.name for tool in catalog for use in tool.spec.secrets if use.via is SecretVia.INJECTED
-    )

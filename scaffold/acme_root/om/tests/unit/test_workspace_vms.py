@@ -92,7 +92,7 @@ class Vms:
     async def snapshot(self, workspace: AgentWorkspace) -> AgentWorkspaceSnapshot:
         epoch = await self.tools.steps.begin_run(self.ctx, workspace.id)
         step = await self.tools.manager.snapshot_agent_workspace(
-            self.ctx, workspace.id, workspace, epoch=epoch, loop_id=new_id()
+            self.ctx, workspace.id, workspace, epoch=epoch, loop_id=new_id(), tools=()
         )
         return named(step)
 
@@ -208,7 +208,7 @@ async def test_a_revoked_key_destroys_the_disks_kept_for_its_snapshots_and_no_ot
     epoch = await managers.agent_steps.begin_run(ctx, parent)
     for _ in range(2):
         await managers.tools.snapshot_agent_workspace(
-            ctx, parent, workspace, epoch=epoch, loop_id=new_id()
+            ctx, parent, workspace, epoch=epoch, loop_id=new_id(), tools=()
         )
     taken = TakenSnapshot(agent_workspace_id=parent, archive=await infra.vms.snapshot(workspace))
     copy = await managers.tools.fork_snapshot(ctx, child, new_id(), taken)

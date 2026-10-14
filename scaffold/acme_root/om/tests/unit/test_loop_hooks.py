@@ -2,7 +2,10 @@
 with no edit to the loop: the toolsets it attaches to a session, held and
 deferred, and what it does before a run's first call, a renewal it runs
 between loops and a step that tells the model what changed under it. The
-layer here is such a layer's hooks, as it would write them."""
+layer here is such a layer's hooks, as it would write them. What it
+attaches holds every guard a kind's own tools hold: who may instruct the
+session, the rule of two a child's report carries, and the secrets a
+snapshot is scanned for."""
 
 import asyncio
 from collections.abc import Sequence
@@ -10,9 +13,37 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.loops import ASSISTANT, Lookup, control, loop_over, reply, said, text_of, use
+from contracts.doubles import context
+from contracts.factories import make_org
+from contracts.loops import (
+    ASSISTANT,
+    DELIVERY,
+    LEAD,
+    WORKER,
+    Asked,
+    Found,
+    Lookup,
+    call,
+    control,
+    loop_over,
+    reply,
+    said,
+    text_of,
+    use,
+)
 
-from acme.infra.agent_workspaces import AgentWorkspace, IsolationRefused
+from acme.infra.agent_workspaces import (
+    AgentWorkspace,
+    Durability,
+    EgressMode,
+    EgressPolicy,
+    IsolationMode,
+    IsolationRefused,
+    IsolationSpec,
+)
+from acme.infra.agent_workspaces.twin import AgentWorkspaceTwinImpl
+from acme.infra.impl.local import InfraLocalImpl
+from acme.infra.transports import SecretUse, SecretVia
 from acme.integrations.model_providers.calls import ModelCall
 from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
@@ -30,10 +61,15 @@ from acme.om.agents.hooks import (
     LoopStart,
     with_attached_toolsets,
 )
+from acme.om.agents.types.request import Spawn
 from acme.om.agents.types.run import RunEnd
-from acme.om.base import new_id, utcnow
-from acme.om.context import TenantContext
-from acme.om.exceptions import UnresolvedRole
+from acme.om.base import Platform, new_id, utcnow
+from acme.om.context import Role, TenantContext
+from acme.om.exceptions import NotAuthorized, UnresolvedRole
+from acme.om.tools.rules import DEFAULT_CEILINGS
+from acme.om.tools.tool import ToolRuntime
+from acme.om.tools.types.policy import ToolPolicyLayer
+from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolSpec
 from acme.om.tools.types.toolset import LOAD_TOOLSET, Toolset
 
 LEDGER = Toolset(name="ledger", version=1, summary="The tenant's ledger.", tools=("ledger_read",))
@@ -41,6 +77,48 @@ ARCHIVE = Toolset(
     name="archive", version=1, summary="The tenant's archive.", tools=("archive_search",)
 )
 CHANGED = "the files under the workspace were rebuilt since your last loop"
+SETTINGS = Toolset(
+    name="settings", version=1, summary="The tenant's settings.", tools=("settings_write",)
+)
+VAULT = Toolset(name="vault", version=1, summary="The tenant's vault.", tools=("vault_sync",))
+TOKEN, VALUE = "VAULT_TOKEN", "tok-0123456789abcdef"
+KEEPER = ASSISTANT.model_copy(
+    update={
+        "name": "keeper",
+        "isolation": IsolationSpec(
+            mode=IsolationMode.TWIN,
+            egress=EgressPolicy(mode=EgressMode.NONE),
+            durability=Durability.SNAPSHOT,
+        ),
+    }
+)
+
+
+class VaultSync(Lookup):
+    """A tool a layer attaches, given `TOKEN` injected into its command. On
+    the twin it leaves the secret's value in the workspace's files, as a
+    command that echoes its variables would. No tool of the catalog is
+    given `TOKEN`."""
+
+    def __init__(self, twin: AgentWorkspaceTwinImpl | None = None) -> None:
+        super().__init__(
+            "vault_sync", effect=Effect.IDEMPOTENT, authorization_class=ToolClass.WRITE
+        )
+        injected = SecretUse(name=TOKEN, via=SecretVia.INJECTED, env=TOKEN)
+        self._given = super().spec.model_copy(update={"secrets": (injected,)})
+        self._twin = twin
+
+    @property
+    def spec(self) -> ToolSpec:
+        return self._given
+
+    async def run(
+        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
+    ) -> Platform:
+        assert isinstance(call_input, Asked)
+        if self._twin is not None:
+            self._twin.files[runtime.agent_session_id] = f"token={VALUE}".encode()
+        return Found(text="synced")
 
 
 class Layer(LoopHooksInterface):
@@ -91,6 +169,17 @@ class Layer(LoopHooksInterface):
         return (changed,)
 
 
+class ChildLayer(Layer):
+    """A layer that attaches its toolsets to a child alone."""
+
+    async def attached_toolsets(
+        self, ctx: TenantContext, agent_session: AgentSession
+    ) -> AttachedToolsets:
+        if agent_session.parent_id is None:
+            return NO_ATTACHED_TOOLSETS
+        return await super().attached_toolsets(ctx, agent_session)
+
+
 def offered(call: ModelCall) -> list[str]:
     return sorted(tool.name for tool in call.tools)
 
@@ -121,6 +210,7 @@ async def test_a_session_calls_its_attached_toolsets_held_from_the_start_and_loa
         reply(use("archive_search")),
         reply(said("Both say 12.")),
     )
+    asked = len(layer.asked)
 
     ran = await loop.loops.run(loop.owner, agent_session_id)
 
@@ -135,7 +225,7 @@ async def test_a_session_calls_its_attached_toolsets_held_from_the_start_and_loa
     assert '{"text":"ledger_read found the total"}' in answers(steps)
     assert '{"text":"archive_search found the total"}' in answers(steps)
     assert [s.type for s in steps].count(AgentStepType.SWITCHED) == 1, "the load is recorded"
-    assert layer.asked == [agent_session_id], "asked once a run"
+    assert layer.asked[asked:] == [agent_session_id], "asked once a run"
 
 
 async def test_a_step_the_hooks_append_reaches_the_model_before_the_runs_first_call(
@@ -237,3 +327,90 @@ def test_attached_toolsets_fold_into_the_kind_and_give_each_tool_once() -> None:
     assert attached.names == ("ledger_read", "archive_search", LOAD_TOOLSET)
     with pytest.raises(ValueError, match="given once"):
         AttachedToolsets(held=(LEDGER,), deferred=(), tools=())
+
+
+@pytest.mark.parametrize("refused", [True, False])
+async def test_a_message_needs_every_permission_an_attached_tool_needs(
+    tmp_path: Path, refused: bool
+) -> None:
+    """Who may instruct a session classes the tools its attached toolsets
+    give, a deferred one's included, as it classes its kind's: a member may
+    not make a call that changes the tenant's configuration, so its message
+    is refused, and nothing is appended."""
+    write = Lookup("settings_write", authorization_class=ToolClass.CONFIGURATION)
+    attached = AttachedToolsets(held=(), deferred=(SETTINGS,), tools=(write,))
+    member = context(Role.MEMBER, make_org())
+    loop = loop_over(
+        tmp_path, owner=member, hooks=Layer(attached if refused else NO_ATTACHED_TOOLSETS)
+    )
+    agent_session_id = await loop.start()
+
+    if refused:
+        with pytest.raises(NotAuthorized, match="manage_members"):
+            await loop.say(agent_session_id, "Change the settings.")
+    else:
+        await loop.say(agent_session_id, "Change the settings.")
+
+    assert len(await loop.history(agent_session_id)) == (0 if refused else 1)
+
+
+async def test_a_child_private_through_an_attached_secret_tool_marks_its_parent(
+    tmp_path: Path,
+) -> None:
+    """A child whose kind holds no private data, but whose attached tool is
+    given a secret, holds credentials: its report carries them to its
+    parent, and the parent's outward call, marked by that report, waits for
+    a person."""
+    public = LEAD.model_copy(
+        update={"name": "public_lead", "private_data": False, "tools": (*LEAD.tools, "send")}
+    )
+    worker = WORKER.model_copy(update={"private_data": False})
+    lifted = ToolPolicyLayer(
+        rules=tuple(r for r in DEFAULT_CEILINGS.rules if r.authorization_class is not None)
+    )
+    layer = ChildLayer(AttachedToolsets(held=(VAULT,), deferred=(), tools=(VaultSync(),)))
+    loop = loop_over(tmp_path, kinds=(public, worker), ceilings=lifted, hooks=layer)
+    parent_id = await loop.start(public.name)
+    await loop.say(parent_id, "Find who owes what, and send it.")
+    loop.anthropic.add(reply(said("A sub-agent will find it.")))
+    await loop.loops.run(loop.owner, parent_id)
+    spawn = Spawn(id=new_id(), kind=worker.name, title="who owes", objective="Find who owes.")
+    child_id = (await loop.managers.agents.spawn(loop.owner, parent_id, spawn)).id
+    (objective,) = await loop.history(child_id)
+    submit = call("submit", claim="succeeded", evidence=[str(objective.id)])
+    loop.anthropic.add(reply(said("Customer 42 owes 9,000."), submit))
+    await loop.loops.run(loop.owner, child_id)
+    parent = await loop.managers.agent_sessions.get_agent_session(loop.owner, parent_id)
+    assert parent.holds_private, "the report carries what the child holds"
+    loop.anthropic.add(reply(use("send", use_id="use_send")), reply(said("Sent.")))
+
+    run = await loop.loops.run(loop.owner, parent_id)
+
+    assert run.end is RunEnd.PARKED and run.park is not None
+    assert (run.park.reason, run.park.unlock) == (ParkReason.PERSON, "approval")
+    assert loop.tools["send"].ran_as == [], "it holds its child's credentials"
+
+
+async def test_a_workspace_that_holds_an_attached_tools_secret_keeps_no_snapshot(
+    tmp_path: Path,
+) -> None:
+    """A snapshot is scanned for the secrets the session's attached tools
+    may have injected, beside the catalog's: one that holds such a value is
+    refused, nothing names it, and the run keeps its instance."""
+    infra = InfraLocalImpl(tmp_path)
+    twin = infra.get_agent_workspaces()
+    assert isinstance(twin, AgentWorkspaceTwinImpl)
+    layer = Layer(AttachedToolsets(held=(VAULT,), deferred=(), tools=(VaultSync(twin),)))
+    loop = loop_over(tmp_path, kinds=(ASSISTANT, DELIVERY, KEEPER), infra=infra, hooks=layer)
+    await infra.get_secrets().put(loop.owner.org_id, TOKEN, VALUE)
+    agent_session_id = await loop.start(KEEPER.name)
+    await loop.say(agent_session_id, "Sync the vault.")
+    loop.anthropic.add(reply(use("vault_sync")), reply(said("Synced.")))
+
+    ran = await loop.loops.run(loop.owner, agent_session_id)
+
+    assert ran.outcome is LoopOutcome.SUCCEEDED
+    assert twin.files[agent_session_id] == f"token={VALUE}".encode()
+    types = [step.type for step in await loop.history(agent_session_id)]
+    assert AgentStepType.SNAPSHOTTED not in types, "refused for the attached tool's secret"
+    assert agent_session_id in twin.live, "the run keeps its instance"

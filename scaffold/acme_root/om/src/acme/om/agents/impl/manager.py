@@ -18,6 +18,7 @@ from acme.om.agent_steps.types.header import (
     InputHeader,
 )
 from acme.om.agents.gate import ResultGateInterface
+from acme.om.agents.hooks import NO_ATTACHED_TOOLSETS, AttachedToolsets, LoopHooksInterface
 from acme.om.agents.manager import AgentsManagerInterface
 from acme.om.agents.rules import (
     CHILDREN_PARK,
@@ -84,8 +85,10 @@ class AgentsManagerImpl(AgentsManagerInterface):
         tool_classes: Mapping[str, str],
         secret_tools: frozenset[str],
         tools: ToolsManagerInterface,
+        hooks: LoopHooksInterface,
     ) -> None:
         self._tools = tools
+        self._hooks = hooks
         self._budgets = budgets
         self._windows = windows
         self._tool_classes = tool_classes
@@ -104,7 +107,10 @@ class AgentsManagerImpl(AgentsManagerInterface):
     async def start_agent_session(self, ctx: TenantContext, start: Start) -> AgentSession:
         ctx.require(Permission.WRITE)
         kind = self._kinds.latest(start.kind)
-        self._may_instruct(ctx, kind.tools)
+        # What the hooks attach is asked of a session that stands, so it is
+        # classed at each instruction (`require_instructor`), the first one
+        # that wakes the session included.
+        self._may_instruct(ctx, kind.tools, NO_ATTACHED_TOOLSETS)
         # The tree first: a session never stands without the tree it draws on.
         await self._create_tree(
             ctx, tree_for(kind, start.id, start.deadline, self._clock(), ctx.user_id)
@@ -129,7 +135,8 @@ class AgentsManagerImpl(AgentsManagerInterface):
         ctx.require(Permission.WRITE)
         session = await self._find(ctx, agent_session_id)
         if session is not None:
-            self._may_instruct(ctx, session.tools)
+            attached = await self._hooks.attached_toolsets(ctx, session)
+            self._may_instruct(ctx, session.tools, attached)
 
     async def spawn(
         self, ctx: TenantContext, parent_id: UUID, spawn: Spawn, fork: TakeSnapshot | None = None
@@ -141,7 +148,8 @@ class AgentsManagerImpl(AgentsManagerInterface):
             raise ValidationFailed(f"agent session {spawn.id} is not a child of {parent_id}")
         taken: TakenSnapshot | None = None
         if child is not None:
-            self._may_instruct(ctx, child.tools)
+            attached = await self._hooks.attached_toolsets(ctx, child)
+            self._may_instruct(ctx, child.tools, attached)
         else:
             kind = self._kinds.latest(spawn.kind)
             if kind.result_tool is not None and kind.result_tool not in parent.tools:
@@ -154,7 +162,8 @@ class AgentsManagerImpl(AgentsManagerInterface):
                 raise ValidationFailed(f"agent kind {kind.name} has no workspace to fork into")
             # Its objective instructs it: whoever spawns it may make every
             # call it will offer, asked before anything is made.
-            self._may_instruct(ctx, [tool for tool in kind.tools if tool in parent.tools])
+            cut = [tool for tool in kind.tools if tool in parent.tools]
+            self._may_instruct(ctx, cut, NO_ATTACHED_TOOLSETS)
             tree = await self._tree(ctx, parent.root_id)
             refusal = tree_refusal(tree, parent.depth + 1)
             if refusal is not None:
@@ -171,6 +180,10 @@ class AgentsManagerImpl(AgentsManagerInterface):
             # from the parent.
             made = self._session(ctx, kind, spawn.id, spawn.title, (), parent_id)
             child = await self._sessions.create_agent_session(ctx, made)
+            # What the hooks attach is asked of the child once it stands,
+            # before its objective instructs it: one refused wakes nothing,
+            # and a spawn asked again is refused again above.
+            self._may_instruct(ctx, (), await self._hooks.attached_toolsets(ctx, child))
         share = self._kinds.get(child.kind, child.kind_version).share
         if share is not None:
             # Its share is its own budget, written before the objective wakes
@@ -303,7 +316,7 @@ class AgentsManagerImpl(AgentsManagerInterface):
             text=report_text(child, report),
             waking=report_wakes(report),
             untrusted=child.untrusted,
-            holds_private=child.holds_private,
+            holds_private=await self._holds_private(ctx, child),
         )
         try:
             # A report over the bound seals its whole under the parent's key.
@@ -358,6 +371,7 @@ class AgentsManagerImpl(AgentsManagerInterface):
             text=handoff.objective,
             waking=False,
             untrusted=session.untrusted,
+            holds_private=await self._holds_private(ctx, source),
         )
         standing = self._standing(ctx, session, handoff.standing)
         await self._steps.append_inputs(ctx, session.id, [*standing, objective])
@@ -382,17 +396,35 @@ class AgentsManagerImpl(AgentsManagerInterface):
             return 0
         return await self._storage.purge_tenant(ctx.org_id, self._options.purge_batch)
 
-    def _may_instruct(self, ctx: TenantContext, tools: Iterable[str]) -> None:
+    def _may_instruct(
+        self, ctx: TenantContext, tools: Iterable[str], attached: AttachedToolsets
+    ) -> None:
         """The classes a registry offers are what its sender must be able to
-        make. A name the catalog cannot class offers a call no one can
-        check, so it is refused, never skipped."""
-        names = tuple(tools)
-        unknown = sorted(name for name in names if name not in self._tool_classes)
+        make: its tools', as the catalog classes them, and those of the tools
+        its `attached` toolsets give, deferred ones included, as their own
+        specs do. A name nothing can class offers a call no one can check,
+        so it is refused, never skipped."""
+        classes = {
+            **self._tool_classes,
+            **{tool.spec.name: tool.spec.authorization_class for tool in attached.tools},
+        }
+        names = (*tools, *attached.names)
+        unknown = sorted(name for name in names if name not in classes)
         if unknown:
             raise NotAuthorized(f"no tool of the catalog classes {', '.join(unknown)}")
-        refusal = instruct_refusal(ctx, [self._tool_classes[name] for name in names])
+        refusal = instruct_refusal(ctx, [classes[name] for name in names])
         if refusal is not None:
             raise NotAuthorized(refusal)
+
+    async def _holds_private(self, ctx: TenantContext, session: AgentSession) -> bool:
+        """Whether `session` holds private data or credentials, as a message
+        it writes into another session carries it: its own mark, or a tool
+        the toolsets its hooks attach is given a secret, which its mark,
+        set when it was made, never counts."""
+        if session.holds_private:
+            return True
+        attached = await self._hooks.attached_toolsets(ctx, session)
+        return any(tool.spec.secrets for tool in attached.tools)
 
     def _session(
         self,
@@ -458,8 +490,9 @@ class AgentsManagerImpl(AgentsManagerInterface):
     ) -> AgentStep:
         """A message an agent writes into `session`: on the authority
         `principal`, naming the agent that wrote it, and carrying the mark of
-        the session it came from, `untrusted`, and, for a report, whether
-        that session holds private data, `holds_private`."""
+        the session it came from, `untrusted`, and, for a report or a
+        hand-over's objective, whether that session holds private data or
+        credentials, `holds_private`."""
         return AgentStep(
             id=agent_step_id,
             created_at=self._clock(),

@@ -1,13 +1,16 @@
 """The loop's hooks: where a layer above the engine extends a run without
 editing the loop. A root wires one impl; the null one extends nothing.
 
-Two seams, each asked once a run. Before anything renders, the toolsets a
-session holds beyond its kind's: a tenant's own connector, say, which
-rides on the session and never on the kind, the product's one version
-shared by every tenant. The loop folds them into the session's kind, so
-held ones join its registry and deferred ones its `load_toolset` line,
-and a load of one is recorded as any load is. Then, once the workspace is
-prepared and before the first model call, the steps a layer appends: what
+Two seams. Before anything renders, once a run, the toolsets a session
+holds beyond its kind's: a tenant's own connector, say, which rides on the
+session and never on the kind, the product's one version shared by every
+tenant. The loop folds them into the session's kind, so held ones join its
+registry and deferred ones its `load_toolset` line, and a load of one is
+recorded as any load is. Every guard that reads a session's tools reads
+them too: who may instruct the session, what a message it writes into
+another carries for the rule of two, and the secrets its workspace's
+snapshot is scanned for. Then, once the workspace is prepared and before
+the run's first model call, the steps a layer appends: what
 changed under the model since its last loop, say. They are written under
 the run's epoch, so a run that lost its claim writes none."""
 
@@ -92,11 +95,12 @@ class LoopHooksInterface(ABC):
     async def attached_toolsets(
         self, ctx: TenantContext, agent_session: AgentSession
     ) -> AttachedToolsets:
-        """What `agent_session` holds beyond its kind: the same answer every
-        time it is asked for the same session, so its tool definitions keep
-        their bytes and a cached prefix holds. None of its toolsets shares a
-        name with one its kind names, and none of its tools a name with a
-        tool of the catalog."""
+        """What `agent_session`, a stored session, holds beyond its kind:
+        the same answer every time it is asked for the same session, by the
+        loop or by a guard, so its tool definitions keep their bytes and a
+        cached prefix holds. None of its toolsets shares a name with one its
+        kind names, and none of its tools a name with a tool of the
+        catalog."""
         ...
 
     @abstractmethod
