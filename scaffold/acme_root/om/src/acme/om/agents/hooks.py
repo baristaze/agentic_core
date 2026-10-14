@@ -31,9 +31,9 @@ class AttachedToolsets:
     name they hold. `held` joins the registry from the start; `deferred`
     waits for a load. Each tool is named by exactly one of them."""
 
-    held: tuple[Toolset, ...] = ()
-    deferred: tuple[Toolset, ...] = ()
-    tools: tuple[ToolInterface, ...] = ()
+    held: tuple[Toolset, ...]
+    deferred: tuple[Toolset, ...]
+    tools: tuple[ToolInterface, ...]
 
     def __post_init__(self) -> None:
         named = [tool for toolset in (*self.held, *self.deferred) for tool in toolset.tools]
@@ -49,7 +49,7 @@ class AttachedToolsets:
         return (*(tool.spec.name for tool in self.tools), *load)
 
 
-NO_ATTACHED_TOOLSETS = AttachedToolsets()
+NO_ATTACHED_TOOLSETS = AttachedToolsets(held=(), deferred=(), tools=())
 
 
 def with_attached_toolsets(kind: AgentKind, attached: AttachedToolsets) -> AgentKind:

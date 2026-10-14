@@ -207,4 +207,4 @@ def test_attached_toolsets_fold_into_the_kind_and_give_each_tool_once() -> None:
     assert with_attached_toolsets(folded, NO_ATTACHED_TOOLSETS) is folded
     assert attached.names == ("ledger_read", "archive_search", LOAD_TOOLSET)
     with pytest.raises(ValueError, match="given once"):
-        AttachedToolsets(held=(LEDGER,), tools=())
+        AttachedToolsets(held=(LEDGER,), deferred=(), tools=())
