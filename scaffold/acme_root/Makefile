@@ -9,7 +9,7 @@ SHELL := /bin/bash
 #
 # Both files are defaults. A variable exported in the shell wins over them,
 # as it does for the settings, for compose, and for scripts/dev.sh, so the
-# five shared ACME_DATABASE_* URLs and the four ACME_DATABASE_URL_<ROLE>
+# shared ACME_DATABASE_* URLs and the four ACME_DATABASE_URL_<ROLE>
 # exported at another database take migrate, migrate-check, seed, and
 # test-integration there. Make lets an included
 # file beat the environment, so each name the files set and the shell
@@ -59,7 +59,7 @@ ARCH_CHECK ?= uvx --python "$(shell cat .python-version)" --from "git+https://gi
 # until npm installs it; a pnpm already on PATH runs the version named.
 PNPM_SPEC := $(or $(shell sed -n 's/^ *"packageManager": *"\(pnpm@[^"+]*\).*/\1/p' package.json 2>/dev/null),pnpm)
 
-.PHONY: help setup pnpm up down stop start reset urls infra-up buckets devx-up stack-up infra-down infra-reset collector-scrape migrate seed migrate-check release-before benchmark-boot check lint format-check typecheck arch-check agentic-check test-unit test-integration test-telemetry test-live traffic openapi
+.PHONY: help setup pnpm up down stop start reset urls infra-up buckets devx-up stack-up infra-down infra-reset collector-scrape migrate seed migrate-check release-before benchmark-boot check lint format-check typecheck arch-check test-unit test-integration test-telemetry traffic openapi
 
 # This Makefile alone, never $(MAKEFILE_LIST): the includes above put
 # .env.example and .env in that list, and grep prefixes every match with the
@@ -144,7 +144,7 @@ infra-up: .env ## Start Postgres (one instance per database role), the cache, th
 # One bucket per member of acme.infra.buckets.Buckets, named <prefix>-<bucket>
 # as the S3 impl names them; the cloud's are Terraform's. MinIO ships `mc`.
 buckets: ## Create the object store's buckets in MinIO, if they are missing
-	$(COMPOSE) exec -T minio sh -c 'mc alias set local http://127.0.0.1:9000 acme acme-minio-local >/dev/null && mc mb --ignore-existing local/acme-local-user-file-uploads local/acme-local-exports local/acme-local-tool-outputs local/acme-local-snapshots'
+	$(COMPOSE) exec -T minio sh -c 'mc alias set local http://127.0.0.1:9000 acme acme-minio-local >/dev/null && mc mb --ignore-existing local/acme-local-user-file-uploads local/acme-local-exports $(BUCKETS)'
 
 devx-up: .env ## The local stack plus developer dashboards (pgweb, Valkey Admin, ElasticMQ UI, Prometheus and its collector, Grafana, Jaeger, GlitchTip)
 	$(COMPOSE) --profile devx up -d --wait
@@ -173,7 +173,7 @@ collector-scrape: ## Point the devx collector at SCRAPE_PORT on the host and rec
 # The local targets (migrate, migrate-check, seed, test-integration) refuse a
 # database whose host is not local, so a stray .env never points them at a
 # shared one; the cloud runs `acme-api migrate` without --local. The master
-# makes the four logins first, and every migration runs as the migration
+# makes the logins first, and every migration runs as the migration
 # login; both steps are safe to repeat.
 migrate: ## Make the database logins, then apply every role's migration chain to the local database
 	uv run --package acme-om python -m acme.om.storage.migrate ensure-logins --local
@@ -236,7 +236,7 @@ release-before: ## Run the release before's integration suite on this branch's s
 benchmark-boot: ## Time the imports and the construction of every root
 	uv run --package acme-api python scripts/benchmark_boot.py
 
-check: pnpm lint format-check typecheck arch-check agentic-check test-unit ## The fast local gate
+check: pnpm lint format-check typecheck arch-check test-unit ## The fast local gate
 	@if [ -d apps ]; then pnpm run lint && pnpm run typecheck && pnpm run test; fi
 
 lint: ## Ruff lint
@@ -251,22 +251,11 @@ typecheck: ## Pyright over every distribution and the scripts
 arch-check: ## The guideline's static checks, configured in pyproject.toml
 	$(ARCH_CHECK)
 
-# The engine's checker is the workspace member checkers/, so it runs in-tree,
-# at the engine release of this project's base, and nothing is fetched.
-agentic-check: ## The engine's static checks, configured in pyproject.toml
-	uv run --package acme-checkers agentic-check
-
 test-unit: ## Unit tests over the memory impls
 	uv run pytest -q -m "not integration and not e2e and not telemetry and not live"
 
 test-integration: ## Integration tests over the compose stack
 	uv run pytest -q -m "integration and not live"
-
-# A session's loop on a live model provider, once, by hand: it spends, within
-# a budget the case sets, so no gate runs it. Needs a migrated stack and
-# ANTHROPIC_API_KEY (or ACME_ANTHROPIC_API_KEY) in the shell.
-test-live: ## One loop end to end on a live model provider; spends, so run by hand
-	uv run pytest -q -s -m live
 
 # The round trip: a real API process on a free port, the devx collector aimed
 # at that port while it runs, the exporter and the DSN set, one session of
@@ -294,3 +283,19 @@ openapi: pnpm ## Emit the API document and regenerate the TypeScript and the Pyt
 		--use-standard-collections --use-union-operator --use-annotated \
 		--enum-field-as-literal none --use-schema-description --disable-timestamp \
 		--formatters ruff-format --formatters ruff-check
+
+# The engine's targets. Its checker is the workspace member checkers/, so it
+# runs in-tree, at the engine release of this project's base, nothing is
+# fetched, and the fast gate runs it. Its buckets join the object store's.
+.PHONY: agentic-check test-live
+check: agentic-check
+BUCKETS += local/acme-local-tool-outputs local/acme-local-snapshots
+
+agentic-check: ## The engine's static checks, configured in pyproject.toml
+	uv run --package acme-checkers agentic-check
+
+# A session's loop on a live model provider, once, by hand: it spends, within
+# a budget the case sets, so no gate runs it. Needs a migrated stack and
+# ANTHROPIC_API_KEY (or ACME_ANTHROPIC_API_KEY) in the shell.
+test-live: ## One loop end to end on a live model provider; spends, so run by hand
+	uv run pytest -q -s -m live
