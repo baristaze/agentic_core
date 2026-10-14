@@ -232,6 +232,13 @@ providers, the workspace provider and the transport, the outage signal,
 the clock, and the stream sink. A laptop, a container, a VM in a
 customer's cloud, and a unit test are all valid hosts.
 
+An adopter extends a run without editing the loop, through the loop's
+hooks, which its root wires beside the rest. Once a run, before anything
+renders, the hooks name the toolsets a session holds beyond its kind,
+which the loop folds into the kind. Once the workspace is prepared, they
+name the steps to append before the first model call. With none wired,
+the null extends nothing ([Null Objects](#null-objects)).
+
 Its operations take the guideline's context first. A tenant operation
 takes `TenantContext`; a consumer that reads less declares a scope
 ([Stages][g-stages], [Scopes][g-scopes]). The engine never mints a
