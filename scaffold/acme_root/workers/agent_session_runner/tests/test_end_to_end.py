@@ -32,7 +32,7 @@ import httpx
 import pytest
 from api_support import seed_request, sign_in_as
 from httpx import ASGITransport
-from runner_support import KINDS, TOOLS, answers, runs
+from runner_support import KINDS, TOOLS, answers, calls, runs
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -51,6 +51,8 @@ from acme.om.spend_budgets.types.spend_budget import SpendBudget, SpendBudgetSco
 from acme.om.storage.migrate import VERSION_TABLE
 from acme.om.storage.roles import DatabaseRole
 from acme.om.storage.settings import MigrationSettings
+from acme.om.tools.native.write_agent_plan import WRITE_AGENT_PLAN
+from acme.om.windows.rules import READ_TOOL_OUTPUT
 from acme.services.api.app import create_app
 from acme.services.api.container import AppContainer, postgres_storage
 from acme.services.api.settings import ApiSettings
@@ -242,11 +244,11 @@ def created(headers: dict[str, str]) -> dict[str, str]:
     return {**headers, "Idempotency-Key": str(new_id())}
 
 
-async def started(stack: Stack, person: Person) -> str:
+async def started(stack: Stack, person: Person, kind: str = "assistant") -> str:
     answered = await stack.client.post(
         "/v1/agent-sessions",
         headers=created(person.headers),
-        json={"kind": "assistant", "title": "the dropped object"},
+        json={"kind": kind, "title": "the dropped object"},
     )
     assert answered.status_code == 201, answered.text
     return answered.json()["id"]
@@ -343,6 +345,59 @@ async def test_a_message_through_the_api_is_run_by_the_runner_model_tool_model_t
     assert steps[3]["tool"] == "run_command" and steps[4]["failure"] is None
     assert "the order drops at 0.4 s" in steps[4]["text"]
     assert steps[-2]["text"] == "The order drops before its payment."
+
+
+KEPT_CHARACTERS = 30_000
+"""A command's output past the window's result bound (24 000 characters), so
+its result is kept whole outside its step as a tool output."""
+
+
+async def test_a_session_writes_its_plan_and_reads_a_kept_result_back_by_its_handle(
+    stack: Stack,
+) -> None:
+    """The model calls the engine's own tools by the names it is told: a
+    command's long result is kept whole as a tool output, the agent writes
+    its plan with write_agent_plan, and a later run reads the kept result
+    with read_tool_output, by its step's handle. Each call that reads runs
+    unattended; the command runs before any data it read marks the
+    session."""
+    person = await owner_of(stack)
+    first = stack.runner(
+        "runner-one",
+        [
+            runs("python3", "-c", f"print('x' * {KEPT_CHARACTERS})"),
+            calls(WRITE_AGENT_PLAN, plan="Read the kept log back by its handle, then answer."),
+            answers("The log is kept whole."),
+        ],
+    )
+    agent_session_id = await started(stack, person, "planning_assistant")
+    await say(stack, person, agent_session_id, "Print the whole log.")
+    session = await settled(stack, person, agent_session_id)
+    assert session["status"] == "idle", session["park"]
+    planned = await history(stack, person, agent_session_id)
+    requests = of_type(planned, "tool_request")
+    responses = of_type(planned, "tool_response")
+    assert [step["tool"] for step in requests] == ["run_command", WRITE_AGENT_PLAN]
+    assert [step["failure"] for step in responses] == [None, None]
+    assert "Read the kept log back by its handle, then answer." in responses[1]["text"]
+    windows = stack.container.storage.get_window_storage()
+    (kept,) = await windows.read_tool_outputs(person.ctx.org_id, UUID(agent_session_id), 10)
+    assert kept.characters > KEPT_CHARACTERS, "the command's result is kept whole outside its step"
+    first.stop()
+
+    # A step's handle reads its tool output's whole text, as the stub of an
+    # elided result names it.
+    handle = responses[0]["id"]
+    stack.runner("runner-two", [calls(READ_TOOL_OUTPUT, handle=handle), answers("Read.")])
+    await say(stack, person, agent_session_id, "Read the log back.")
+    session = await settled(stack, person, agent_session_id)
+    assert session["status"] == "idle", session["park"]
+    read = (await history(stack, person, agent_session_id))[len(planned) :]
+    (request,) = of_type(read, "tool_request")
+    (response,) = of_type(read, "tool_response")
+    assert request["tool"] == READ_TOOL_OUTPUT and response["failure"] is None, response["text"]
+    assert f'"characters":{kept.characters}' in response["text"].replace(" ", "")
+    assert "x" * 1_000 in response["text"]
 
 
 async def test_a_runner_killed_mid_tool_call_is_followed_by_a_new_epoch_that_settles_the_call(

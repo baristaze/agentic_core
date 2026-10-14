@@ -17,9 +17,11 @@ from acme.om.agents.types.kind import NO_AGENT_WORKSPACE, AgentKind, DoneRule, T
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.base import Platform
 from acme.om.context import TenantContext
+from acme.om.tools.native.write_agent_plan import WRITE_AGENT_PLAN
 from acme.om.tools.tool import ToolInterface, ToolRuntime
 from acme.om.tools.types.policy import Decision, Target, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolSpec
+from acme.om.windows.rules import READ_TOOL_OUTPUT
 
 HOST = IsolationSpec(mode=IsolationMode.HOST, egress=EgressPolicy(mode=EgressMode.OPEN))
 """A directory on this host, which confines files only: local and test."""
@@ -97,7 +99,32 @@ def assistant(isolation: IsolationSpec = HOST) -> AgentKind:
     )
 
 
-KINDS = (assistant(),)
+def planning_assistant() -> AgentKind:
+    """The assistant that also keeps a plan and reads a result kept whole
+    outside its step back by its handle."""
+    return AgentKind(
+        name="planning_assistant",
+        version=1,
+        tools=("run_command", WRITE_AGENT_PLAN, READ_TOOL_OUTPUT),
+        done_rule=DoneRule.ANSWER,
+        authority=AuthorityMode.DELEGATED,
+        tree=TreeLimits(height=1, count=0),
+        prompts=(
+            "You answer a person's question. Write your plan first, run a command in "
+            "the workspace when the answer needs one, and read a kept result back by "
+            "its handle.",
+        ),
+        policy=ToolPolicyLayer(
+            rules=(
+                ToolPolicyRule(authorization_class=ToolClass.EXECUTE, decision=Decision.ALLOW),
+                ToolPolicyRule(authorization_class=ToolClass.READ, decision=Decision.ALLOW),
+            )
+        ),
+        isolation=HOST,
+    )
+
+
+KINDS = (assistant(), planning_assistant())
 TOOLS: tuple[ToolInterface, ...] = (RunCommand(),)
 ABSENT = (assistant(NO_AGENT_WORKSPACE),)
 """The kind with no workspace, for a suite whose tool touches none."""
@@ -108,6 +135,17 @@ def runs(*argv: str) -> ModelReply:
     use = ToolUseBlock(id=f"use_{uuid4().hex[:12]}", name="run_command", input={"argv": argv})
     return ModelReply(
         blocks=(TextBlock(text="Let me look."), use),
+        stop_reason=StopReason.TOOL_USE,
+        usage=Usage(input=120, output=30),
+        model=SONNET,
+    )
+
+
+def calls(name: str, **arguments: object) -> ModelReply:
+    """A turn that asks for one call of the tool `name`."""
+    use = ToolUseBlock(id=f"use_{uuid4().hex[:12]}", name=name, input=arguments)
+    return ModelReply(
+        blocks=(TextBlock(text="On it."), use),
         stop_reason=StopReason.TOOL_USE,
         usage=Usage(input=120, output=30),
         model=SONNET,
