@@ -6,7 +6,8 @@ from uuid import UUID
 
 from acme.om.context import OperatorContext
 from acme.om.idempotency.types.attempt import Attempt
-from acme.services.api.types.admin import (
+from acme.services.api.types.change_events import OperatorChangeEventView
+from acme.services.api.types.tenancy import (
     AddMemberRequest,
     ConfirmTotpRequest,
     CreateOrgRequest,
@@ -16,14 +17,14 @@ from acme.services.api.types.admin import (
     OperatorTokenPageView,
     OperatorTokenView,
     OperatorView,
-    OperatorWorkItemView,
-    PlatformSizeView,
-    SetTenantCapRequest,
-    TenantCapView,
+    OrgPageView,
+    OrgView,
+    SystemSizeView,
     TotpConfirmedView,
+    UserPageView,
+    UserView,
 )
-from acme.services.api.types.events import OperatorEventView
-from acme.services.api.types.tenancy import OrgPageView, OrgView, UserPageView, UserView
+from acme.services.api.types.work import OperatorWorkItemView, SetTenantCapRequest, TenantCapView
 
 
 class AdminServiceInterface(ABC):
@@ -60,7 +61,7 @@ class AdminServiceInterface(ABC):
     async def revoke_token(self, admin: OperatorContext, token_id: UUID) -> OperatorTokenView: ...
 
     @abstractmethod
-    async def size(self, admin: OperatorContext) -> PlatformSizeView: ...
+    async def size(self, admin: OperatorContext) -> SystemSizeView: ...
 
     @abstractmethod
     async def create_org(
@@ -81,9 +82,9 @@ class AdminServiceInterface(ABC):
     ) -> UserView: ...
 
     @abstractmethod
-    async def get_events(
+    async def get_change_events(
         self, admin: OperatorContext, org_id: UUID, after_seq: int, limit: int
-    ) -> list[OperatorEventView]: ...
+    ) -> list[OperatorChangeEventView]: ...
 
     @abstractmethod
     async def delete_org(self, admin: OperatorContext, org_id: UUID) -> OrgView: ...

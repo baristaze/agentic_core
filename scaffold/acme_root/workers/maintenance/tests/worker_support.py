@@ -12,7 +12,7 @@ from acme.infra.cache import CacheScope
 from acme.infra.impl.local import InfraLocalImpl
 from acme.integrations.identity import IdentityProviderInterface
 from acme.integrations.identity.absent import IdentityProviderAbsentImpl
-from acme.om.base import Platform, new_id, utcnow
+from acme.om.base import OmBase, new_id, utcnow
 from acme.om.context import AppContext, AppType, RequestContext, TenantContext
 from acme.om.media.types.file import File, FilePurpose
 from acme.om.orchestrations.types.orchestration import Orchestration, OrchestrationKind
@@ -21,7 +21,7 @@ from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.tenancy import TenancyManagerInterface
 from acme.om.tenancy.impl.manager import TenancyOptions
 from acme.om.work.types.handler import WorkHandlerInterface
-from acme.om.work.types.work_item import WorkItem, WorkKind
+from acme.om.work.types.work_item import KindName, WorkItem, WorkKind
 from acme.workers.maintenance.container import WorkerContainer
 from acme.workers.maintenance.handler import NoopHandlerImpl
 from acme.workers.maintenance.loop import LoopOptions
@@ -128,8 +128,8 @@ async def start_noop(container: WorkerContainer, ctx: TenantContext, steps: int)
 def make_item(
     ctx: TenantContext,
     *,
-    kind: WorkKind = WorkKind.NOOP,
-    payload: Platform | None = None,
+    kind: KindName = WorkKind.NOOP,
+    payload: OmBase | None = None,
     target_id: UUID | None = None,
     traceparent: str | None = None,
 ) -> WorkItem:
