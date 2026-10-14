@@ -1,46 +1,27 @@
+"""The tool calls a response asked for, and the jobs they start: each
+call's request persisted before it is decided, each one gated and run,
+or settled by its effect after a lost run, and answered before the next
+model call. A job parks the loop until its completion, its grant, or
+its deadline."""
+
 import asyncio
 import contextlib
 import itertools
 import logging
-import random
-from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta
+from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from typing import Any
 from uuid import UUID
 
-from pydantic import Field, ValidationError
+from pydantic import ValidationError
 
-from acme.infra.agent_workspaces import (
-    AgentWorkspace,
-    AgentWorkspaceLost,
-    Durability,
-    IsolationRefused,
-)
-from acme.infra.base import SYSTEM_SCOPE
-from acme.infra.exceptions import InfraException
-from acme.infra.outages import Outage, OutageSignalInterface
 from acme.infra.transports import OutputSink
-from acme.integrations.model_providers import ModelProviderInterface
-from acme.integrations.model_providers.calls import Finished, ModelCall, ModelReply
-from acme.integrations.model_providers.failures import ModelCallFailed
-from acme.integrations.model_providers.types import ErrorAnswer, ErrorKind, StopReason
-from acme.om.agent_sessions import AgentSessionsManagerInterface
-from acme.om.agent_sessions.limits import Limit, Trip, tally_loop, tripped
-from acme.om.agent_sessions.rules import QUESTION, unlock_step
-from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus
-from acme.om.agent_steps import AgentStepsManagerInterface
-from acme.om.agent_steps.rules import completion_step, control_step, origin_of
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
-from acme.om.agent_steps.types.content import Content, TextBlock, ToolUseBlock
+from acme.om.agent_steps.types.content import ToolUseBlock
 from acme.om.agent_steps.types.header import (
     AcceptedResult,
     ControlCommand,
-    InputHeader,
     JobPark,
-    LoopOutcome,
-    ModelRequestHeader,
-    ModelResponseHeader,
     Park,
     ParkReason,
     SwitchedHeader,
@@ -48,67 +29,34 @@ from acme.om.agent_steps.types.header import (
     ToolRequestHeader,
     ToolResponseHeader,
 )
-from acme.om.agent_steps.types.stream import StreamPart, ToolOutputPart
-from acme.om.agents import AgentsManagerInterface
+from acme.om.agent_steps.types.stream import ToolOutputPart
 from acme.om.agents import line_rules as lines
 from acme.om.agents import loop_rules as rules
-from acme.om.agents.hooks import (
-    NO_ATTACHED_TOOLSETS,
-    AttachedToolsets,
-    LoopHooksInterface,
-    LoopStart,
-    with_attached_toolsets,
+from acme.om.agents.impl.loop_core import (
+    LoopCore,
+    RunState,
+    Settled,
 )
-from acme.om.agents.loop import LoopManagerInterface
-from acme.om.agents.rules import CHILDREN_PARK, after_turn, ends_parents_wait, notes_parent
-from acme.om.agents.sink import StreamSinkInterface
-from acme.om.agents.types.kind import AgentKind, AgentKindCatalog
-from acme.om.agents.types.line import InLine
-from acme.om.agents.types.result import Result, Turn
-from acme.om.agents.types.run import LoopRun, RunEnd
-from acme.om.attribution import AttributionManagerInterface
-from acme.om.attribution.rules import PRINCIPAL_PARK, in_person
-from acme.om.attribution.types.authority import CallReach
-from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
-from acme.om.base import Platform, new_id, thaw_mapping, utcnow
-from acme.om.context import Permission, TenantContext
+from acme.om.agents.types.result import Result
+from acme.om.agents.types.run import LoopRun
+from acme.om.attribution.rules import PRINCIPAL_PARK
+from acme.om.attribution.types.principal import AgentRef
+from acme.om.base import new_id, thaw_mapping
+from acme.om.context import TenantContext
 from acme.om.exceptions import (
-    CompactionFailed,
-    Conflict,
-    ContextOverflow,
     GateParked,
-    LeaseEnded,
-    NoCredential,
-    NoSpender,
     NotAuthorized,
-    NotFound,
-    PlatformException,
     PrincipalLapsed,
     SpendBudgetRefused,
     SpenderUnknown,
     StaleWriter,
     ToolFailed,
-    Unavailable,
-    UnpricedModel,
-    UnresolvedRole,
-    ValidationFailed,
 )
-from acme.om.language_models.credentials import CallClient, CallCredentialsInterface
-from acme.om.language_models.manager import LanguageModelsManagerInterface
-from acme.om.language_models.types.fill import MAIN, SUMMARIZER, Eligibility, Fill
-from acme.om.leases import LeasesManagerInterface
-from acme.om.leases.types.lease import LeaseStatus
-from acme.om.leases.types.request import RequestStatus, Standing, WaiterKind
-from acme.om.spend_budgets.rules import elapsed_ms, spend_budget_park
-from acme.om.spend_budgets.types.usage import CallLabels, CallSite
-from acme.om.tools import ToolsManagerInterface
-from acme.om.tools.native.load_toolset import callable_tools, load, loads
-from acme.om.tools.native.write_agent_plan import current_agent_plan
-from acme.om.tools.registry import ToolRegistry
+from acme.om.leases.types.request import RequestStatus, WaiterKind
+from acme.om.spend_budgets.rules import spend_budget_park
+from acme.om.tools.native.load_toolset import load, loads
 from acme.om.tools.rules import (
-    ISOLATION_REFUSED,
     job_deadline,
-    named_snapshot,
     response,
     response_id,
     tool_request,
@@ -117,848 +65,28 @@ from acme.om.tools.tool import ToolInterface
 from acme.om.tools.types.call import (
     MAX_REPORT,
     GateOutcome,
-    JobCompletion,
     JobHandle,
     JobNotStarted,
 )
-from acme.om.tools.types.policy import ToolPolicyLayer
 from acme.om.tools.types.tool import ToolMode
 from acme.om.tools.types.toolset import LOAD_TOOLSET
-from acme.om.windows import WindowsManagerInterface
-from acme.om.windows.gate import CallGateInterface
-from acme.om.windows.rules import request_step
-from acme.om.windows.types.window import RenderedRequest
 
 log = logging.getLogger(__name__)
 
-Sleep = Callable[[float], Awaitable[None]]
-"""How the loop waits, injected beside its clock, so a test never sleeps."""
 
-HANDOVER_UNLOCK = "give_back"
-AGENT_WORKSPACE_UNLOCK = "agent_workspace"
-LOST_SNAPSHOT = "the snapshot the workspace starts from is gone, or no longer matches what was kept"
-LOST_SOURCE = "what the workspace is rebuilt from is gone, or cannot be brought in"
-"""The causes a park on a lost workspace names, the engine's own words: the
-provider's message may hold what a command wrote, and reaches the log
-alone."""
-PERMISSION = "permission"
-"""What a provider park's unlock names for a credential error that is no
-refusal of the key: a permission, a region, or a model the key cannot
-reach."""
 NOT_OFFERED = "unknown"
 """The class a call's request records when the registry held no tool of its
 name as the model made it. A tool a load in the same turn adds is never
 that call's, whatever the registry holds by the time it settles."""
 
 
-class LoopOptions(Platform):
-    # The name of the platform's own key, as the outage signal keeps it,
-    # which a root gives the call credentials it wires.
-    credential: str = Field(default="platform", min_length=1)
-    retries: int = Field(default=2, ge=0)  # in-process retries of an error worth retrying
-    # The first backoff, doubled after each, half of it fixed and half drawn
-    # at random, so sessions that failed together do not ask again together.
-    retry_base: timedelta = timedelta(seconds=1)
-    # A wait longer than this is not spent in process: the loop falls back,
-    # or parks on the provider.
-    retry_cap: timedelta = timedelta(seconds=30)
-    # The least time an outage is marked for when the loop parks on it.
-    outage_wait: timedelta = timedelta(seconds=30)
-    # How long a park on a key or an account a provider refused waits before
-    # it tries again by itself: a person fixes it at the provider, or in the
-    # platform's own settings, and nothing tells the engine.
-    fix_wait: timedelta = timedelta(minutes=5)
-    # How often a running tool's controls are read: a cancel or an interrupt
-    # stops it within this.
-    control_poll: timedelta = timedelta(milliseconds=500)
-    page: int = Field(default=200, gt=0)  # steps one read of the history asks for
-    stopped_chars: int = Field(default=2_000, gt=0)  # the most a stopped call's answer holds
-    # The same call failing this many times in a row, and each multiple of
-    # it, earns the model a notice to change its approach.
-    repeats_noticed: int = Field(default=3, ge=1)
-    # How long a loop no host can give its workspace waits, parked on the
-    # resource, before it asks again.
-    agent_workspace_wait: timedelta = timedelta(minutes=1)
-
-
-@dataclass
-class _Run:
-    """One run of one loop: what it read when it began, and what it learns
-    as it goes."""
-
-    ctx: TenantContext
-    session: AgentSession
-    kind: AgentKind
-    registry: ToolRegistry
-    epoch: int
-    loop_id: UUID
-    start_seq: int
-    started_at: datetime
-    resumed: bool  # it resumed a park the loop wrote: the calls it held back never ran
-    deadline: datetime | None = None
-    # The policy layers of the kinds above the session in its tree, nearest
-    # first: each of its calls is decided under them as under its own kind's.
-    above: tuple[ToolPolicyLayer, ...] = ()
-    workspace: AgentWorkspace | None = None
-    kept: bool = False  # a snapshot holds its workspace whole, taken at its end
-    made: set[UUID] = field(default_factory=lambda: set[UUID]())  # tool requests it wrote
-    failures: int = 0  # provider errors in a row
-    tried: list[Fill] = field(default_factory=lambda: [])
-    refused: RenderedRequest | None = None  # a request the provider refused as too long
-    sink_failed: bool = False  # the stream sink refused a part; it is logged once
-    # The jobs the loop parked on whose calls were open when the run began,
-    # by key: whatever the run has not answered goes with its loop's end.
-    jobs: dict[UUID, rules.StartedJob] = field(default_factory=lambda: {})
-    # What the session holds beyond its kind, folded into `kind` already.
-    attached: AttachedToolsets = NO_ATTACHED_TOOLSETS
-
-    @property
-    def agent_session_id(self) -> UUID:
-        return self.session.id
-
-
-@dataclass
-class _Settled:
-    """How one tool call stood once the loop dealt with it."""
-
-    asked: bool = False  # it waits for a person's decision
-    cancelled: bool = False  # a cancel stopped it
-    park: Park | None = None  # the loop cannot go on with it
-
-
-@dataclass
-class _Heard:
-    """What a loop's asks in line came to once the run read them."""
-
-    waiting: list[Standing]  # the asks that still wait, each with its place
-    told: bool = False  # it wrote a notice the next request reads
-
-
-class LoopManagerImpl(LoopManagerInterface):
-    def __init__(
-        self,
-        steps: AgentStepsManagerInterface,
-        sessions: AgentSessionsManagerInterface,
-        agents: AgentsManagerInterface,
-        kinds: AgentKindCatalog,
-        attribution: AttributionManagerInterface,
-        models: LanguageModelsManagerInterface,
-        windows: WindowsManagerInterface,
-        tools: ToolsManagerInterface,
-        gate: CallGateInterface,
-        credentials: CallCredentialsInterface,
-        outages: OutageSignalInterface,
-        sink: StreamSinkInterface,
-        catalog: Sequence[ToolInterface],
-        options: LoopOptions,
-        clock: Callable[[], datetime] = utcnow,
-        sleep: Sleep = asyncio.sleep,
-        *,
-        leases: LeasesManagerInterface,
-        domain_classes: Sequence[str] = (),
-        hooks: LoopHooksInterface,
-        jitter: Callable[[], float] = random.random,
-    ) -> None:
-        """`credentials` answers the client each call runs on and the
-        credential it carries: the platform's key, or a tenant's. `leases`
-        answers where each request a tool asked in line stands. `hooks` is
-        where a layer above extends each run: a session's attached toolsets,
-        and the steps it appends before the run's first call."""
-        self._hooks = hooks
-        self._jitter = jitter
-        self._leases = leases
-        self._steps = steps
-        self._sessions = sessions
-        self._agents = agents
-        self._kinds = kinds
-        self._attribution = attribution
-        self._language_models = models
-        self._windows = windows
-        self._tools = tools
-        self._gate = gate
-        self._credentials = credentials
-        self._outages = outages
-        self._sink = sink
-        self._catalog = tuple(catalog)
-        self._domain_classes = tuple(domain_classes)
-        self._options = options
-        self._clock = clock
-        self._sleep = sleep
-
-    # A run.
-
-    async def run(self, ctx: TenantContext, agent_session_id: UUID) -> LoopRun:
-        ctx.require(Permission.WRITE)
-        # The epoch first, before the history is read: from here on a run
-        # that held an earlier one writes nothing.
-        epoch = await self._steps.begin_run(ctx, agent_session_id)
-        try:
-            return await self._run(ctx, agent_session_id, epoch)
-        except StaleWriter:
-            log.info("loop run of session %s at epoch %d lost its claim", agent_session_id, epoch)
-            return LoopRun(agent_session_id=agent_session_id, epoch=epoch, end=RunEnd.STALE)
-
-    async def _run(self, ctx: TenantContext, agent_session_id: UUID, epoch: int) -> LoopRun:
-        session = await self._sessions.project_status(ctx, agent_session_id)
-        idle = LoopRun(agent_session_id=agent_session_id, epoch=epoch, end=RunEnd.IDLE)
-        if session.status in (AgentSessionStatus.IDLE, AgentSessionStatus.PARKED):
-            return idle
-        history = await self._history(ctx, agent_session_id)
-        loop = rules.open_loop(history)
-        resumed = False
-        if loop is None:
-            if session.pending_input is None:
-                return idle
-            loop_id = session.pending_input
-            start = rules.start_seq(history, loop_id)
-        else:
-            loop_id, start = loop.loop_id, loop.start_seq
-            if loop.park is not None:
-                # Its unlock happened: a new run takes it up, and its gates
-                # run again before its next call. A park the loop wrote
-                # itself came at a safe point, so the calls it held back
-                # never ran. A hand-over was written from outside, while a
-                # call may have been running, and a park on the workspace
-                # may come before its run settled a lost run's calls: those
-                # are settled by effect.
-                session = await self._sessions.resume(ctx, agent_session_id, epoch, loop_id)
-                resumed = loop.park.reason is not ParkReason.HANDOVER and not loop.park.unsettled
-        # The session's attached toolsets, once a run and the same each time,
-        # folded into its kind before anything renders.
-        attached = await self._hooks.attached_toolsets(ctx, session)
-        kind = with_attached_toolsets(self._kinds.get(session.kind, session.kind_version), attached)
-        registry = self._registry(session, kind, history, attached)
-        tree = await self._agents.tree_of(ctx, agent_session_id)
-        above = await self._policies_above(ctx, session)
-        run = _Run(
-            ctx=ctx,
-            session=session,
-            kind=kind,
-            registry=registry,
-            epoch=epoch,
-            loop_id=loop_id,
-            start_seq=start,
-            started_at=self._clock(),
-            resumed=resumed,
-            deadline=tree.deadline,
-            above=above or (),
-            jobs={} if loop is None else rules.started_jobs(history, loop_id),
-            attached=attached,
-        )
-        if above is None:
-            # Its calls are decided under every kind above it, and one of
-            # them went with its session's purge: no call is made under less.
-            log.warning("session %s has a session above it past its purge", agent_session_id)
-            return await self._end(run, LoopOutcome.ERRORED)
-        try:
-            await self._language_models.resolve_fill_set(
-                ctx, agent_session_id, kind.roles, Eligibility(), kind.asks
-            )
-        except (UnresolvedRole, UnpricedModel) as refused:
-            log.warning("session %s resolves no fill: %s", agent_session_id, refused.message)
-            return await self._end(run, LoopOutcome.ERRORED)
-        # A restore a principal or a fork asked for wins. A workspace kept by
-        # snapshots otherwise starts from its latest, unless something touched
-        # it since: then it stands newer than any snapshot.
-        start = rules.pending_restore(history)
-        if start is None and kind.isolation.durability is Durability.SNAPSHOT:
-            start = rules.kept_snapshot(history)
-        # A person let a loop go on that parked on its lost workspace.
-        unlocked = loop is not None and loop.park is not None and lost_agent_workspace(loop.park)
-        try:
-            stopped = await self._prepare(run, start, unlocked=unlocked)
-            if stopped is not None:
-                return stopped
-            stopped = await self._start(run, new_loop=loop is None)
-            if stopped is not None:
-                return stopped
-            return await self._drive(run, history)
-        except StaleWriter:
-            # The claim is another run's, or a person's who took the
-            # environment over: what it holds is theirs to release.
-            run.workspace = None
-            raise
-        finally:
-            await self._release(run)
-
-    async def _prepare(
-        self, run: _Run, start: AgentStep | None, *, unlocked: bool
-    ) -> LoopRun | None:
-        """The run's workspace, before the first model call: a workspace
-        weaker than the spec is never made, and nothing is spent on a loop
-        that cannot run. It starts from the snapshot `start` names, when
-        there is one. None once it is prepared; else how the run stopped.
-
-        A restore that cannot load parks the loop for a person. Once the
-        person lets it go on (`unlocked`) and it still cannot load, the loop
-        goes on from the workspace as it stands, and a notice that
-        references `start` records the restore lost, so it is never tried
-        again and the model reads why."""
-        restore = None if start is None else named_snapshot(start)
-        try:
-            run.workspace = await self._tools.prepare_agent_workspace(
-                run.ctx, run.agent_session_id, run.kind.isolation, restore=restore
-            )
-        except InfraException as refused:
-            if start is not None and unlocked and refused.code == AgentWorkspaceLost.code:
-                log.warning(
-                    "session %s goes on without its snapshot: %s", run.agent_session_id, refused
-                )
-                lost = rules.lost_step(
-                    new_id(), self._clock(), run.agent_session_id, run.loop_id, start
-                )
-                await self._steps.append_agent_steps(
-                    run.ctx, run.agent_session_id, run.epoch, [lost]
-                )
-                return await self._prepare(run, None, unlocked=unlocked)
-            return await self._unprepared(run, refused, restoring=start is not None)
-        if start is not None and start.type is AgentStepType.CONTROL:
-            # The record that the restore was done, and the model's notice: it
-            # is delivered with the next model request. A run lost before it
-            # is written restores again, to the same snapshot.
-            done = rules.restored_step(
-                new_id(), self._clock(), run.agent_session_id, run.loop_id, start
-            )
-            await self._steps.append_agent_steps(run.ctx, run.agent_session_id, run.epoch, [done])
-        return None
-
-    async def _start(self, run: _Run, *, new_loop: bool) -> LoopRun | None:
-        """The steps the hooks append before the run's first model call, under
-        its epoch. None once they are written; else how the run stopped: a
-        fill the hooks refuse ends the loop, as the resolve before does."""
-        assert run.workspace is not None
-        start = LoopStart(
-            agent_session=run.session,
-            kind=run.kind,
-            epoch=run.epoch,
-            loop_id=run.loop_id,
-            new_loop=new_loop,
-            workspace=run.workspace,
-        )
-        try:
-            steps = await self._hooks.before_first_call(run.ctx, start)
-        except (UnresolvedRole, UnpricedModel) as refused:
-            log.warning("session %s resolves no fill: %s", run.agent_session_id, refused.message)
-            return await self._end(run, LoopOutcome.ERRORED)
-        if steps:
-            await self._steps.append_agent_steps(
-                run.ctx, run.agent_session_id, run.epoch, list(steps)
-            )
-        return None
-
-    async def _unprepared(self, run: _Run, refused: InfraException, *, restoring: bool) -> LoopRun:
-        """How a run stops when its workspace cannot be prepared: its end or
-        its park names the refusal's cause, so a person reads why without the
-        log. `restoring` when the workspace was to start from a snapshot."""
-        cause = refused.cause if isinstance(refused, IsolationRefused) else None
-        if isinstance(refused, IsolationRefused) and refused.clears:
-            # No host can give it the workspace yet: no weaker one, and
-            # no call spent. It waits on the resource and asks again.
-            log.warning("session %s waits for a workspace: %s", run.agent_session_id, refused)
-            retry_at = self._clock() + self._options.agent_workspace_wait
-            park = Park(
-                reason=ParkReason.RESOURCE,
-                unlock=AGENT_WORKSPACE_UNLOCK,
-                retry_at=retry_at,
-                unsettled=not run.resumed,
-                cause=cause,
-            )
-            return await self._park(run, park)
-        if refused.code == ISOLATION_REFUSED:
-            # A provider that cannot meet the spec refuses it whole: no
-            # weaker workspace, and no call spent on a loop that cannot run.
-            log.warning("session %s has no workspace: %s", run.agent_session_id, refused)
-            return await self._end(run, LoopOutcome.ERRORED, cause=cause)
-        if refused.code != AgentWorkspaceLost.code:
-            raise refused
-        # What the workspace is rebuilt from is gone: nothing restarts
-        # from scratch in its stead, and a person says what comes next.
-        # The loop parks with everything it reached kept.
-        log.error("session %s lost its workspace: %s", run.agent_session_id, refused)
-        park = Park(
-            reason=ParkReason.PERSON,
-            unlock=AGENT_WORKSPACE_UNLOCK,
-            unsettled=not run.resumed,
-            cause=LOST_SNAPSHOT if restoring else LOST_SOURCE,
-        )
-        return await self._park(run, park)
-
-    async def _drive(self, run: _Run, history: Sequence[AgentStep]) -> LoopRun:
-        # What a lost run left in flight: a model request with no response is
-        # closed, and its hold settled at the whole of it, since the call was
-        # sent and is usually billed. Its tool calls are settled below, each
-        # by its effect.
-        for request in rules.unanswered_requests(history, run.loop_id):
-            await self._close_lost(run, request)
-        if not run.resumed:
-            # A call a lost run may have started is settled by its effect
-            # before anything else, a park included: once a run parks with a
-            # call open, the call is one it held back and never ran.
-            stopped = await self._recover_calls(run)
-            if stopped is not None:
-                return stopped
-        while True:
-            # The run read its history whole once; each turn reads only what
-            # was added since, so a long session costs a turn no more.
-            history = await self._history(run.ctx, run.agent_session_id, history)
-            loop = rules.OpenLoop(run.loop_id, run.start_seq, None)
-            if rules.asked(history, loop, ControlCommand.CANCEL) is not None:
-                return await self._cancelled(run)
-            if rules.pause_waits(history, loop):
-                return await self._park(run, Park(reason=ParkReason.PAUSE, unlock="resume"))
-            response = rules.latest_response(history, run.loop_id)
-            heard: _Heard | None = None
-            if response is not None:
-                calls = rules.open_calls(history, response)
-                if calls:
-                    stopped = await self._tool_turn(run, history, response, calls)
-                    if stopped is not None:
-                        return stopped
-                    continue
-                accepted = rules.accepted_outcome(history, response)
-                if accepted is not None:
-                    # The result gate accepted a result this turn submitted,
-                    # and every call of the turn is answered.
-                    return await self._end(run, accepted)
-                if rules.question_waits(history, response):
-                    # The agent asked its person, and every call of the turn
-                    # is answered: no model call until a principal's message
-                    # answers it, after a lost run as well.
-                    return await self._park(run, QUESTION)
-                if rules.children_wait(history, response) and not await self._past_deadline(run):
-                    # The agent waits on its sub-agents, and nothing has come
-                    # since the request it answered: no model call until a
-                    # child's report wakes it, after a lost run as well. Past
-                    # the tree's deadline no report can come, since every
-                    # child parks on it too: the loop parks on it below.
-                    return await self._wait_on_children(run, history, response)
-                if rules.ended_turn(response):
-                    # The model's turn ended: what its asks in line came to
-                    # is told first. While one still waits, the loop waits in
-                    # line, with no model call until a grant or an end,
-                    # unless something came that the model has not read: then
-                    # it reads it, and the turn is not judged. Past the
-                    # tree's deadline it waits in no line: it parks on the
-                    # deadline below, and leaves every line there.
-                    heard = await self._hear(run, history)
-                    if heard.told:
-                        history = await self._history(run.ctx, run.agent_session_id, history)
-                    if (
-                        heard.waiting
-                        and not lines.unheard(history, response)
-                        and not await self._past_deadline(run)
-                    ):
-                        return await self._wait_in_line(run, history, heard.waiting)
-                if (
-                    not response.as_tool_uses()
-                    and not rules.judged(history, response)
-                    and not (heard is not None and heard.waiting)
-                ):
-                    stopped = await self._judge(run, history, response)
-                    if stopped is not None:
-                        return stopped
-                    continue
-            trip = self._tripped(run, history)
-            if trip is not None and trip.limit is Limit.DEADLINE:
-                # A person may have moved the deadline since this run read it,
-                # and the move unlocks only a park it finds: the run reads it
-                # again before it parks on it.
-                run.deadline = (await self._agents.tree_of(run.ctx, run.agent_session_id)).deadline
-                trip = self._tripped(run, history)
-            if trip is not None:
-                if trip.outcome is not None:
-                    return await self._end(run, trip.outcome)
-                if trip.park is not None:
-                    if trip.limit is Limit.DEADLINE:
-                        # Out of time, the session waits on no resource and
-                        # holds none: it leaves every line, so no grant holds
-                        # one for a session that cannot use it, and gives
-                        # back each lease its asks hold.
-                        await self._leases.leave(
-                            run.ctx, WaiterKind.AGENT_SESSION, run.agent_session_id
-                        )
-                        await self._give_back(run, history)
-                    return await self._park(run, trip.park)
-                await self._keep(run)
-                return self._result(run, RunEnd.YIELDED)
-            repeated = rules.repeated_failure(history, run.loop_id, self._options.repeats_noticed)
-            if repeated is not None:
-                # Written before the next request, which reads it.
-                await self._notice(run, repeated)
-                history = await self._history(run.ctx, run.agent_session_id, history)
-            if heard is None and (await self._hear(run, history)).told:
-                # A grant, a request's end, or a lease's end that came while
-                # the session ran, or since an earlier loop of it, is told
-                # before the next request, which reads it.
-                history = await self._history(run.ctx, run.agent_session_id, history)
-            stopped = await self._model_turn(run, history)
-            if stopped is not None:
-                return stopped
-
-    def _tripped(self, run: _Run, history: Sequence[AgentStep]) -> Trip | None:
-        return tripped(
-            run.kind.limits,
-            tally_loop(history, run.loop_id),
-            now=self._clock(),
-            run_started_at=run.started_at,
-            deadline=run.deadline,
-        )
-
-    # A turn of the model.
-
-    async def _model_turn(self, run: _Run, history: Sequence[AgentStep]) -> LoopRun | None:
-        ctx = run.ctx
-        fill_set = await self._language_models.get_fill_set(ctx, run.agent_session_id)
-        fill = fill_set.fill_for(MAIN)
-        if fill is None:
-            return await self._end(run, LoopOutcome.ERRORED)
-        try:
-            # The key the call goes out on, the tenant's own when it pays its
-            # provider: read per call, so a rotated key is never used.
-            used = await self._credentials.client_for(ctx, fill.provider)
-        except PlatformException as refused:
-            return await self._refused(run, refused)
-        # A provider marked failing for this credential parks the loop at
-        # once, before anything is rendered, held, or spent, until the mark's
-        # retry time by the loop's own clock.
-        outage = await self._outages.current(
-            self._holder(ctx, used.credential), fill.provider.value, used.credential
-        )
-        if outage is not None and outage.retry_at > self._clock():
-            return await self._park(run, provider_park(fill, outage.retry_at))
-        # The tools this request offers: the history's loads included, so a
-        # load settled since the last request adds its tools here, and never
-        # to a call of the turn that made it.
-        run.registry = self._registry(run.session, run.kind, history, run.attached)
-        prompts = rules.kind_prompts(
-            run.kind, run.registry, loads(history), rules.standing_text(history, run.start_seq)
-        )
-        # The agent's current plan, read off the whole history, so a summary
-        # that folded the call that wrote it still leaves it in view.
-        kept = current_agent_plan(history)
-        plan = None if kept is None else kept.text
-        try:
-            if run.refused is not None:
-                rendered = await self._windows.render_after_overflow(
-                    ctx,
-                    run.agent_session_id,
-                    run.epoch,
-                    run.loop_id,
-                    prompts,
-                    run.refused,
-                    plan=plan,
-                    history=history,
-                )
-            else:
-                rendered = await self._windows.render_request(
-                    ctx,
-                    run.agent_session_id,
-                    run.epoch,
-                    run.loop_id,
-                    prompts,
-                    MAIN,
-                    plan=plan,
-                    history=history,
-                )
-        except ModelCallFailed as failed:
-            # The compaction's call to the summarizer failed: its own
-            # provider's error, on the key that call went out on, which no
-            # switch of the main role mends.
-            summarizer = fill_set.fill_for(SUMMARIZER) or fill
-            return await self._failed(run, summarizer, None, failed, failed.credential)
-        except PlatformException as refused:
-            return await self._refused(run, refused)
-        try:
-            replied = await self._call(run, fill, rendered, used)
-        except ModelCallFailed as failed:
-            return await self._failed(run, fill, rendered, failed, used.credential)
-        except PlatformException as refused:
-            return await self._refused(run, refused)
-        run.failures, run.refused = 0, None
-        run.tried.clear()
-        # The provider answered on this key: a mark on the pair is over, so no
-        # other session parks on it.
-        await self._outages.clear(
-            self._holder(ctx, used.credential), fill.provider.value, used.credential
-        )
-        header = replied.header
-        if (
-            isinstance(header, ModelResponseHeader)
-            and header.stop_reason is StopReason.OUTPUT_LIMIT
-        ):
-            # Cut by its output bound: kept truncated and never acted on,
-            # and the model is told so, so the next request is not this one
-            # again.
-            await self._notice(run, rules.CUT)
-        return None
-
-    async def _refused(self, run: _Run, refused: PlatformException) -> LoopRun:
-        """What stops a model turn before its call is made: the gate's refusal
-        parks on the budget, a gate that parks the call parks where it says,
-        nobody to pay parks for a person, and a window that cannot be read
-        ends the loop. Anything else is not the loop's to answer."""
-        match refused:
-            case SpendBudgetRefused():
-                return await self._park(run, spend_budget_park(refused.refusal, self._clock()))
-            case GateParked():
-                return await self._park(run, refused.park)
-            case NoSpender() | SpenderUnknown():
-                log.info("session %s: %s", run.agent_session_id, refused.message)
-                park = Park(reason=ParkReason.PERSON, unlock=rules.SPENDER_UNLOCK)
-                return await self._park(run, park)
-            case NoCredential():
-                # The tenant's key for the provider is missing or refused:
-                # nothing runs on another, and a key saved unlocks it.
-                log.info("session %s: %s", run.agent_session_id, refused.message)
-                provider, _, cause = refused.unlock.partition(":")
-                park = Park(
-                    reason=ParkReason.PROVIDER,
-                    unlock=refused.unlock,
-                    cause=rules.fix_cause(provider, cause, tenants=True),
-                )
-                return await self._park(run, park)
-            case CompactionFailed() | ContextOverflow() | Unavailable():
-                log.warning("session %s: %s", run.agent_session_id, refused.message)
-                return await self._end(run, LoopOutcome.ERRORED)
-            case _:
-                raise refused
-
-    async def _call(
-        self, run: _Run, fill: Fill, rendered: RenderedRequest, used: CallClient
-    ) -> AgentStep:
-        """One model call: who spoke and who pays, the gate's hold, the request
-        persisted, the stream emitted as it arrives, and the response
-        persisted before anything acts on it. The call goes out on `used`,
-        and the gate holds it knowing which key that is."""
-        ctx, agent_session_id = run.ctx, run.agent_session_id
-        said = rendered.attribution
-        hold = await self._gate.authorize(
-            ctx,
-            agent_session_id,
-            said.spender,
-            MAIN,
-            fill,
-            rendered.call,
-            credential=used.credential,
-        )
-        request = request_step(
-            rendered,
-            said,
-            agent_session_id,
-            run.loop_id,
-            new_id(),
-            self._clock(),
-            spend_hold_id=hold,
-        )
-        try:
-            (request,) = await self._steps.append_agent_steps(
-                ctx, agent_session_id, run.epoch, [request]
-            )
-        except BaseException:
-            # Never sent: nothing was billed.
-            await self._gate.settle(ctx, hold, None, billed=False, site=None)
-            raise
-        response_id = new_id()
-        self._tell(run, self._sink.opened, response_id)
-        started = self._clock()
-
-        def site() -> CallSite:
-            elapsed = elapsed_ms(started, self._clock())
-            return CallSite(loop_id=run.loop_id, agent_step_id=response_id, latency_ms=elapsed)
-
-        try:
-            try:
-                reply = await self._stream(run, used.client, rendered.call, response_id)
-            except ModelCallFailed as failed:
-                # Nothing streamed back: the call was refused before it was
-                # processed, and the hold is released. A stream that broke is
-                # usually billed, so it counts whole, and what arrived is kept.
-                if failed.partial is None:
-                    await self._gate.settle(ctx, hold, None, billed=False, site=None)
-                    closing = rules.abandoned_step(response_id, self._clock(), request)
-                else:
-                    await self._gate.settle(
-                        ctx, hold, None, billed=True, site=site(), partial=failed.partial.usage
-                    )
-                    closing = rules.response_step(
-                        response_id, self._clock(), request, failed.partial
-                    )
-                await self._steps.append_agent_steps(ctx, agent_session_id, run.epoch, [closing])
-                raise
-            except BaseException:
-                with contextlib.suppress(Exception):
-                    await self._gate.settle(ctx, hold, None, billed=True, site=site())
-                raise
-            await self._gate.settle(ctx, hold, reply.usage, billed=True, site=site())
-            stored = rules.response_step(response_id, self._clock(), request, reply)
-            (stored,) = await self._steps.append_agent_steps(
-                ctx, agent_session_id, run.epoch, [stored]
-            )
-            return stored
-        finally:
-            # Over, whichever way: its step is stored, or its call failed.
-            self._tell(run, self._sink.completed, response_id)
-
-    async def _stream(
-        self, run: _Run, client: ModelProviderInterface, call: ModelCall, response_id: UUID
-    ) -> ModelReply:
-        """The provider's stream, each part emitted as it arrives, never
-        waited on; the reply is the one its last part carries."""
-        numbers = itertools.count()
-        async for part in client.stream(call):
-            if isinstance(part, Finished):
-                return part.reply
-            emitted = rules.stream_part(run.agent_session_id, response_id, next(numbers), part)
-            if emitted is not None:
-                self._emit(run, emitted)
-        raise ModelCallFailed(ErrorKind.TRANSIENT, "the stream ended with no reply")
-
-    def _emit(self, run: _Run, part: StreamPart) -> None:
-        """Hands a part to the sink. A sink that fails costs the live view,
-        never the call it watches: the step still holds everything."""
-        try:
-            self._sink.emit(part)
-        except Exception:
-            self._sink_failed(run)
-
-    def _tell(
-        self, run: _Run, tell: Callable[[TenantContext, UUID, UUID], None], agent_step_id: UUID
-    ) -> None:
-        """Tells the sink a stream opened or completed, as `_emit` hands it a
-        part: a sink that fails costs the live view alone."""
-        try:
-            tell(run.ctx, run.agent_session_id, agent_step_id)
-        except Exception:
-            self._sink_failed(run)
-
-    def _sink_failed(self, run: _Run) -> None:
-        if not run.sink_failed:
-            run.sink_failed = True
-            log.warning("session %s: the stream sink failed", run.agent_session_id, exc_info=True)
-
-    def _holder(self, ctx: TenantContext, credential: str) -> UUID:
-        """The org that holds the credential, as the outage signal keys it:
-        the system scope for the platform's own key, the tenant for its own."""
-        return SYSTEM_SCOPE if credential == self._options.credential else ctx.org_id
-
-    async def _failed(
-        self,
-        run: _Run,
-        fill: Fill,
-        rendered: RenderedRequest | None,
-        failed: ModelCallFailed,
-        credential: str | None,
-    ) -> LoopRun | None:
-        """A provider error, handled by its kind. `rendered` is the main
-        request that failed, or None when the compaction's call did, which
-        neither falls back nor compacts again; `credential` names the key the
-        call went out on, so an outage or a refusal is that key's alone, and
-        None, when no call says, marks neither. None goes on to the next
-        model turn."""
-        answer = failed.kind.answer
-        now = self._clock()
-        main = rendered is not None
-        if answer is ErrorAnswer.RETRY:
-            wait = rules.retry_wait(
-                failed.retry_after, run.failures, self._options.retry_base, self._jitter()
-            )
-            run.failures += 1
-            if run.failures <= self._options.retries and wait <= self._options.retry_cap:
-                await self._sleep(wait.total_seconds())
-                return None
-            # The retries are spent: the provider is failing for this
-            # credential. The mark tells every session that would call it, in
-            # every process on the shared cache, and each parks at once until
-            # the retry time; this one falls back to its next declared
-            # fallback when it has one, and parks too when not.
-            retry_at = now + max(wait, self._options.outage_wait)
-            if credential is not None:
-                outage = Outage(
-                    org_id=self._holder(run.ctx, credential),
-                    provider=fill.provider.value,
-                    credential=credential,
-                    retry_at=retry_at,
-                )
-                await self._outages.mark(outage)
-            if main and await self._fall_back(run, fill):
-                return None
-            return await self._park(run, provider_park(fill, retry_at))
-        if answer is ErrorAnswer.COMPACT:
-            if rendered is None or rendered.overflow_retry:
-                return await self._end(run, LoopOutcome.ERRORED)
-            run.refused = rendered
-            return None
-        if answer is ErrorAnswer.RESOLVE:
-            if main and await self._fall_back(run, fill):
-                return None
-            return await self._end(run, LoopOutcome.ERRORED)
-        if answer is ErrorAnswer.PARK:
-            cause = failed.kind.value
-            if failed.key_refused and credential is not None:
-                # The provider did not take the key itself: every session
-                # that needs it waits for a new one, and no other moves.
-                await self._credentials.refused(run.ctx, fill.provider, credential)
-            elif failed.kind is ErrorKind.CREDENTIAL:
-                # A permission the key lacks, a region it refuses, a model it
-                # cannot reach: this call's alone, so this session alone waits.
-                cause = PERMISSION
-            # Whoever holds the key fixes it at the provider, or saves a new
-            # one, and nothing tells the engine: the park tries again by
-            # itself, so a fix wakes it, and says who must act.
-            tenants = credential is not None and credential != self._options.credential
-            park = Park(
-                reason=ParkReason.PROVIDER,
-                unlock=f"{fill.provider.value}:{cause}",
-                retry_at=now + self._options.fix_wait,
-                cause=rules.fix_cause(fill.provider.value, cause, tenants),
-            )
-            return await self._park(run, park)
-        log.warning("session %s: %s", run.agent_session_id, failed)
-        return await self._end(run, LoopOutcome.ERRORED)
-
-    async def _fall_back(self, run: _Run, fill: Fill) -> bool:
-        """A switch of the main role to its next declared fallback the session
-        admits and no call of this run has tried; False when none is left."""
-        switched = await self._language_models.fall_back(
-            run.ctx, run.agent_session_id, run.epoch, run.loop_id, MAIN, (*run.tried, fill)
-        )
-        if switched is None:
-            return False
-        run.tried.append(fill)
-        run.failures = 0
-        return True
-
-    async def _judge(
-        self, run: _Run, history: Sequence[AgentStep], response: AgentStep
-    ) -> LoopRun | None:
-        """A turn that called no tool, under the kind's done rule: an answer
-        ends the loop, and a delivery turn earns a nudge, recorded as a step
-        so the next request never holds two of the model's turns in a row,
-        until the nudges run out."""
-        header = response.header
-        if isinstance(header, ModelResponseHeader) and header.stop_reason is StopReason.PAUSE:
-            await self._notice(run, rules.PAUSED)
-            return None
-        turn = after_turn(run.kind, response, rules.nudges_before(history, response))
-        if turn is Turn.ANSWERED:
-            return await self._end(run, LoopOutcome.SUCCEEDED)
-        if turn is Turn.EXHAUSTED:
-            return await self._end(run, LoopOutcome.INCONCLUSIVE)
-        await self._notice(run, rules.nudge_text(run.kind))
-        return None
-
-    async def _notice(self, run: _Run, text: str) -> None:
-        principal = await self._attribution.call_principal(run.ctx, run.agent_session_id)
-        step = rules.notice_step(
-            new_id(), self._clock(), run.agent_session_id, run.loop_id, principal, text
-        )
-        await self._steps.append_agent_steps(run.ctx, run.agent_session_id, run.epoch, [step])
-
-    # The tool calls a response asked for.
+class LoopToolTurn(LoopCore):
+    """The calls a response asked for: each request persisted first, then
+    gated, run, recovered, or started as a job, and answered."""
 
     async def _tool_turn(
         self,
-        run: _Run,
+        run: RunState,
         history: Sequence[AgentStep],
         response: AgentStep,
         calls: Sequence[tuple[ToolUseBlock, AgentStep | None]],
@@ -984,49 +112,11 @@ class LoopManagerImpl(LoopManagerInterface):
             )
         return None
 
-    def _never_ran(self, run: _Run, request: AgentStep) -> bool:
-        """Whether no run may have started a call: this run wrote it, or a
-        park the loop wrote held it back. A run settles a lost run's calls
-        before it parks, or marks the park unsettled, so a call still open
-        at a settled park is one it never started."""
-        return request.id in run.made or run.resumed
-
-    async def _recover_calls(self, run: _Run) -> LoopRun | None:
-        """The calls a lost run left open, each settled by its effect before
-        the loop does anything else: none of them is ever run as new. A call
-        that would wait for a person, or whose principal lapsed, is answered
-        as stopped with its outcome unknown, rather than parked open. A
-        cancel that waits answers them all so. The first call that parks the
-        loop as it is settled, on the job it started or on the budget that
-        refused one, parks it there once every other call is settled, so
-        nothing asks or starts it a second time. A job's call after it is
-        left open for the run that resumes, whose start of it attaches to
-        the work under its key."""
-        history = await self._history(run.ctx, run.agent_session_id)
-        response = rules.latest_response(history, run.loop_id)
-        if response is None:
-            return None
-        lost = [(use, request) for use, request in rules.open_calls(history, response) if request]
-        if not lost:
-            return None
-        loop = rules.OpenLoop(run.loop_id, run.start_seq, None)
-        if rules.asked(history, loop, ControlCommand.CANCEL) is not None:
-            return await self._cancelled(run)
-        park: Park | None = None
-        for use, request in lost:
-            tool = self._offered(run, request)
-            if park is not None and tool is not None and tool.spec.mode is ToolMode.JOB:
-                continue
-            settled = await self._settle_call(run, history, use, request, fresh=False)
-            if settled.cancelled:
-                return await self._cancelled(run, park)
-            park = park or settled.park
-        if park is not None:
-            return await self._park(run, park)
-        return None
-
     async def _requests(
-        self, run: _Run, response: AgentStep, calls: Sequence[tuple[ToolUseBlock, AgentStep | None]]
+        self,
+        run: RunState,
+        response: AgentStep,
+        calls: Sequence[tuple[ToolUseBlock, AgentStep | None]],
     ) -> list[tuple[ToolUseBlock, AgentStep]]:
         """The request of every call, writing those not yet written, in one
         append, before any is decided; the run keeps the ids it wrote."""
@@ -1065,13 +155,13 @@ class LoopManagerImpl(LoopManagerInterface):
 
     async def _settle_call(
         self,
-        run: _Run,
+        run: RunState,
         history: Sequence[AgentStep],
         use: ToolUseBlock,
         request: AgentStep,
         *,
         fresh: bool,
-    ) -> _Settled:
+    ) -> Settled:
         ctx = run.ctx
         assert run.workspace is not None
         tool = self._offered(run, request)
@@ -1086,7 +176,7 @@ class LoopManagerImpl(LoopManagerInterface):
             await self._answer(
                 run, request, self._stopped(request, text, ToolFailure.INVALID_INPUT)
             )
-            return _Settled()
+            return Settled()
         if tool is not None and tool.spec.mode is ToolMode.JOB:
             started = rules.started_jobs(history, run.loop_id).get(request.id)
             if started is not None:
@@ -1111,17 +201,17 @@ class LoopManagerImpl(LoopManagerInterface):
         except PrincipalLapsed:
             if not fresh:
                 await self._answer(run, request, self._lost(request))
-                return _Settled()
-            return _Settled(park=PRINCIPAL_PARK)
+                return Settled()
+            return Settled(park=PRINCIPAL_PARK)
         if gate.outcome is GateOutcome.REFUSE and gate.response is not None:
             await self._answer(run, request, gate.response)
-            return _Settled()
+            return Settled()
         if gate.outcome is GateOutcome.ASK or gate.authority is None:
             if not fresh:
                 # It may have run once; it never waits open for a second.
                 await self._answer(run, request, self._lost(request))
-                return _Settled()
-            return _Settled(asked=True)
+                return Settled()
+            return Settled(asked=True)
         if use.name == run.kind.result_tool:
             return await self._submit(run, request, use)
         if use.name == LOAD_TOOLSET:
@@ -1160,16 +250,16 @@ class LoopManagerImpl(LoopManagerInterface):
                 text = f"stopped by a principal's {ran.value} before it answered"
                 stopped = self._stopped(request, text, ToolFailure.INTERRUPTED)
                 await self._answer(run, request, stopped)
-                return _Settled(cancelled=ran is ControlCommand.CANCEL)
+                return Settled(cancelled=ran is ControlCommand.CANCEL)
             await self._answer(run, request, ran)
-            return _Settled()
+            return Settled()
         finally:
             # Over, whichever way: its step is stored, or the call failed.
             self._tell(run, self._sink.completed, agent_step_id)
 
     async def _execute(
         self,
-        run: _Run,
+        run: RunState,
         call_ctx: TenantContext,
         tool: ToolInterface,
         request: AgentStep,
@@ -1215,17 +305,15 @@ class LoopManagerImpl(LoopManagerInterface):
             if not task.done():
                 task.cancel()
 
-    # A job.
-
     async def _start_job(
         self,
-        run: _Run,
+        run: RunState,
         call_ctx: TenantContext,
         tool: ToolInterface,
         request: AgentStep,
         call_input: Mapping[str, Any],
         history: Sequence[AgentStep],
-    ) -> _Settled:
+    ) -> Settled:
         """Starts a job its gate let run, by a deadline of its own never later
         than the tree's, and parks the loop on it. A job that spends passes
         the budget gate first, paid for by whoever its call was asked for: a
@@ -1240,24 +328,24 @@ class LoopManagerImpl(LoopManagerInterface):
         if deadline <= now:
             text = "the task's deadline has passed, so the job was not started"
             await self._answer(run, request, self._stopped(request, text, ToolFailure.TIMEOUT))
-            return _Settled()
+            return Settled()
         hold: UUID | None = None
         rate = tool.spec.rate_micros_per_hour
         if rate is not None:
             spender = rules.asked_by(history, request)
             if spender is None:
-                return _Settled(park=Park(reason=ParkReason.PERSON, unlock=rules.SPENDER_UNLOCK))
+                return Settled(park=Park(reason=ParkReason.PERSON, unlock=rules.SPENDER_UNLOCK))
             try:
                 hold = await self._gate.authorize_job(
                     run.ctx, run.agent_session_id, spender, tool.spec.name, rate, deadline
                 )
             except SpendBudgetRefused as refused:
-                return _Settled(park=spend_budget_park(refused.refusal, self._clock()))
+                return Settled(park=spend_budget_park(refused.refusal, self._clock()))
             except GateParked as parked:
-                return _Settled(park=parked.park)
+                return Settled(park=parked.park)
             except SpenderUnknown as unknown:
                 log.info("session %s: %s", run.agent_session_id, unknown.message)
-                return _Settled(park=Park(reason=ParkReason.PERSON, unlock=rules.SPENDER_UNLOCK))
+                return Settled(park=Park(reason=ParkReason.PERSON, unlock=rules.SPENDER_UNLOCK))
         try:
             started = await self._tools.start_job(
                 call_ctx,
@@ -1278,14 +366,14 @@ class LoopManagerImpl(LoopManagerInterface):
                 # Refused before any work began: nothing ran.
                 await self._gate.settle_job(run.ctx, hold, None, started=False)
             await self._answer(run, request, started.response)
-            return _Settled()
+            return Settled()
         if isinstance(started, AgentStep):
             if hold is not None:
                 # Its tool ran and failed, whatever the class: the work may
                 # have started, so its hold counts whole.
                 await self._gate.settle_job(run.ctx, hold, None, started=True)
             await self._answer(run, request, started)
-            return _Settled()
+            return Settled()
         job = JobPark(
             key=started.key,
             handle=started.handle,
@@ -1299,28 +387,28 @@ class LoopManagerImpl(LoopManagerInterface):
             # Its tool asked in line: the grant starts the work.
             waiting = rules.StartedJob(request, park, None)
             return await self._wait_for_start(run, waiting, started.request_id)
-        return _Settled(park=park)
+        return Settled(park=park)
 
-    async def _settle_job(self, run: _Run, started: rules.StartedJob) -> _Settled:
+    async def _settle_job(self, run: RunState, started: rules.StartedJob) -> Settled:
         """A started job's call, when the loop takes it up again: answered
         from its completion once one arrived; cancelled and answered as out of
         time once its deadline passed; otherwise the loop parks on it again,
         since a woken loop trusts nothing that woke it."""
         if started.completion is not None:
             await self._close_job(run, started, None)
-            return _Settled()
+            return Settled()
         if started.park.line is not None:
             return await self._wait_for_start(run, started, started.park.line.request_id)
         retry_at = started.park.retry_at
         assert retry_at is not None  # a job park tries again at its deadline
         if self._clock() >= retry_at:
             await self._close_job(run, started, (rules.JOB_DEADLINE, ToolFailure.TIMEOUT))
-            return _Settled()
-        return _Settled(park=started.park)
+            return Settled()
+        return Settled(park=started.park)
 
     async def _wait_for_start(
-        self, run: _Run, started: rules.StartedJob, request_id: UUID
-    ) -> _Settled:
+        self, run: RunState, started: rules.StartedJob, request_id: UUID
+    ) -> Settled:
         """A job whose tool asked in line: the grant starts it, in its own
         commit. Granted, the loop's park moves to the job's. Still waiting,
         the loop parks in line, naming the job, its place, and its estimate,
@@ -1337,8 +425,8 @@ class LoopManagerImpl(LoopManagerInterface):
             if self._clock() >= deadline:
                 stopped = (rules.JOB_UNSTARTED, ToolFailure.TIMEOUT)
                 await self._close_job(run, started, stopped, ran=False)
-                return _Settled()
-            return _Settled(park=lines.job_line_park(standing, job, deadline))
+                return Settled()
+            return Settled(park=lines.job_line_park(standing, job, deadline))
         if job.spend_hold_id is not None:
             await self._gate.settle_job(run.ctx, job.spend_hold_id, None, started=False)
         if standing is None:
@@ -1347,18 +435,11 @@ class LoopManagerImpl(LoopManagerInterface):
             text, failure = lines.unstarted(standing.request)
         await self._answer(run, started.request, self._stopped(started.request, text, failure))
         run.jobs.pop(job.key, None)
-        return _Settled()
-
-    async def _standing(self, run: _Run, request_id: UUID) -> Standing | None:
-        """Where a request stands, or None once it is past its retention."""
-        try:
-            return await self._leases.get_request(run.ctx, request_id)
-        except NotFound:
-            return None
+        return Settled()
 
     async def _close_job(
         self,
-        run: _Run,
+        run: RunState,
         started: rules.StartedJob,
         stopped: tuple[str, ToolFailure] | None,
         *,
@@ -1388,7 +469,7 @@ class LoopManagerImpl(LoopManagerInterface):
         await self._answer(run, request, answer)
         run.jobs.pop(job.key, None)
 
-    async def _cancel_job(self, run: _Run, started: rules.StartedJob) -> None:
+    async def _cancel_job(self, run: RunState, started: rules.StartedJob) -> None:
         """Ends the work. A job whose tool asked in line names its request,
         in line or granted, so the tool's cancel ends its ask, or its lease.
         A tool that fails to end it is logged and the loop goes on: the work
@@ -1410,7 +491,7 @@ class LoopManagerImpl(LoopManagerInterface):
         except Exception:
             log.exception("session %s: job %s was not cancelled", run.agent_session_id, handle.key)
 
-    async def _stop_jobs(self, run: _Run, jobs: Sequence[rules.StartedJob], why: str) -> None:
+    async def _stop_jobs(self, run: RunState, jobs: Sequence[rules.StartedJob], why: str) -> None:
         """Every job the loop still waits on, as the loop stops: one that
         completed is answered from its completion; any other is cancelled
         and answered with `why`, so no job outlives its loop. With a job in
@@ -1426,7 +507,7 @@ class LoopManagerImpl(LoopManagerInterface):
                 ran = standing is not None and standing.lease is not None
             await self._close_job(run, started, stopped, ran=ran)
 
-    async def _submit(self, run: _Run, request: AgentStep, use: ToolUseBlock) -> _Settled:
+    async def _submit(self, run: RunState, request: AgentStep, use: ToolUseBlock) -> Settled:
         """A result submitted through the kind's result tool: refused without
         evidence, else judged by the result gate. An accepted one ends the
         loop with the outcome it claims once every call is answered; a
@@ -1442,12 +523,12 @@ class LoopManagerImpl(LoopManagerInterface):
             await self._answer(
                 run, request, self._stopped(request, detail, ToolFailure.INVALID_INPUT)
             )
-            return _Settled()
+            return Settled()
         verdict = await self._agents.judge_result(run.ctx, run.agent_session_id, result)
         if not verdict.accepted or verdict.outcome is None:
             reason = verdict.reason or "the result gate refused the result"
             await self._answer(run, request, self._stopped(request, reason, ToolFailure.DENIED))
-            return _Settled()
+            return Settled()
         checked = "verified" if verdict.verified else "unverified"
         text = f"The result is accepted, {checked}: the loop ends {verdict.outcome.value}."
         answer = response(new_id(), self._clock(), request, text, limit=self._options.stopped_chars)
@@ -1459,11 +540,11 @@ class LoopManagerImpl(LoopManagerInterface):
         # The verdict is a step: the loop ends on it once every call of the
         # turn is answered, after a park or a lost run as well.
         await self._answer(run, request, answer.model_copy(update={"header": verdicted}))
-        return _Settled()
+        return Settled()
 
     async def _load(
-        self, run: _Run, history: Sequence[AgentStep], request: AgentStep, use: ToolUseBlock
-    ) -> _Settled:
+        self, run: RunState, history: Sequence[AgentStep], request: AgentStep, use: ToolUseBlock
+    ) -> Settled:
         """A load of a toolset the kind defers: its answer, and the `switched`
         step that names the tools it adds, in one append, so no tool joins
         a request without its record. The run's registry takes them as it
@@ -1484,13 +565,13 @@ class LoopManagerImpl(LoopManagerInterface):
             await self._answer(
                 run, request, self._stopped(request, refused.message, refused.failure)
             )
-            return _Settled()
+            return Settled()
         answer = response(
             new_id(), self._clock(), request, loaded.text, limit=self._options.stopped_chars
         )
         if loaded.switch is None:
             await self._answer(run, request, answer)
-            return _Settled()
+            return Settled()
         switched = AgentStep(
             id=new_id(),
             created_at=self._clock(),
@@ -1503,53 +584,9 @@ class LoopManagerImpl(LoopManagerInterface):
             header=SwitchedHeader(toolset=loaded.switch),
         )
         await self._answer(run, request, answer, switched)
-        return _Settled()
+        return Settled()
 
-    def _registry(
-        self,
-        session: AgentSession,
-        kind: AgentKind,
-        history: Sequence[AgentStep],
-        attached: AttachedToolsets,
-    ) -> ToolRegistry:
-        """The run's registry: the tools of the catalog, and those attached
-        to the session, that it may call and that wait for no load, and those
-        the history's loads added."""
-        holds = (*session.tools, *attached.names)
-        names = callable_tools(holds, kind.waiting, loads(history))
-        return ToolRegistry(
-            (tool for tool in (*self._catalog, *attached.tools) if tool.spec.name in names),
-            self._domain_classes,
-        )
-
-    async def _answer(
-        self, run: _Run, request: AgentStep, answer: AgentStep, *after: AgentStep
-    ) -> tuple[AgentStep, ...]:
-        """A call's response under the id this run gives it, kept whole as a
-        tool output when it is too large for a step, and persisted before the
-        next model call, with the steps `after` it in the same append. A
-        run that lost its claim is refused here, whatever it answered."""
-        own = answer.model_copy(update={"id": response_id(request, run.epoch)})
-        bounded = await self._windows.bound_tool_response(run.ctx, run.agent_session_id, own)
-        return await self._steps.append_agent_steps(
-            run.ctx, run.agent_session_id, run.epoch, [bounded, *after]
-        )
-
-    def _lost(self, request: AgentStep) -> AgentStep:
-        text = "a run that made this call was lost before it answered; whether it ran is unknown"
-        return self._stopped(request, text, ToolFailure.INTERRUPTED)
-
-    def _stopped(self, request: AgentStep, text: str, failure: ToolFailure) -> AgentStep:
-        return response(
-            new_id(),
-            self._clock(),
-            request,
-            text,
-            failure,
-            limit=self._options.stopped_chars,
-        )
-
-    def _output(self, run: _Run, request: AgentStep) -> OutputSink:
+    def _output(self, run: RunState, request: AgentStep) -> OutputSink:
         """Where a running call's output streams: numbered parts of the
         response the call adds up to, emitted and never waited on."""
         agent_step_id = response_id(request, run.epoch)
@@ -1569,14 +606,14 @@ class LoopManagerImpl(LoopManagerInterface):
 
         return on_output
 
-    def _class_of(self, run: _Run, name: str) -> str:
+    def _class_of(self, run: RunState, name: str) -> str:
         """A call's class, as its tool declares it. A name the registry does
         not hold records `NOT_OFFERED`, and is refused before any class is
         read."""
         tool = run.registry.get(name)
         return tool.spec.authorization_class if tool is not None else NOT_OFFERED
 
-    def _offered(self, run: _Run, request: AgentStep) -> ToolInterface | None:
+    def _offered(self, run: RunState, request: AgentStep) -> ToolInterface | None:
         """The tool a call names, when its request was offered one: a call
         recorded `NOT_OFFERED` has none, whatever the registry holds now."""
         header = request.header
@@ -1584,462 +621,6 @@ class LoopManagerImpl(LoopManagerInterface):
         if header.authorization_class == NOT_OFFERED:
             return None
         return run.registry.get(header.tool)
-
-    # How a run stops.
-
-    async def _cancelled(self, run: _Run, park: Park | None = None) -> LoopRun:
-        """A principal's cancel: every call still open is answered as stopped,
-        so the history holds no open call, and the loop ends `cancelled`,
-        and so do its children's. Every job the loop started is cancelled
-        with it, one whose `park` this run has not yet written as well."""
-        history = await self._history(run.ctx, run.agent_session_id)
-        jobs = rules.started_jobs(history, run.loop_id)
-        if park is not None and park.job is not None and park.job.key not in jobs:
-            request = next(step for step in history if step.id == park.job.key)
-            jobs[park.job.key] = rules.StartedJob(request, park, None)
-        why = f"stopped by a principal's {ControlCommand.CANCEL.value}; the job was cancelled"
-        await self._stop_jobs(run, list(jobs.values()), why)
-        response = rules.latest_response(history, run.loop_id)
-        if response is not None:
-            calls = [
-                (use, request)
-                for use, request in rules.open_calls(history, response)
-                if request is None or request.id not in jobs
-            ]
-            if calls:
-                requests = await self._requests(run, response, calls)
-                answers = [
-                    self._cancelled_call(run, request).model_copy(
-                        update={"id": response_id(request, run.epoch)}
-                    )
-                    for _, request in requests
-                ]
-                await self._steps.append_agent_steps(
-                    run.ctx, run.agent_session_id, run.epoch, answers
-                )
-        return await self._end(run, LoopOutcome.CANCELLED)
-
-    def _cancelled_call(self, run: _Run, request: AgentStep) -> AgentStep:
-        """A cancel's answer to a call still open: stopped before it ran, or,
-        for one a lost run may have started, stopped with its outcome
-        unknown, so the model verifies before it calls again."""
-        if self._never_ran(run, request):
-            text = f"stopped by a principal's {ControlCommand.CANCEL.value} before it ran"
-            return self._stopped(request, text, ToolFailure.INTERRUPTED)
-        return self._lost(request)
-
-    async def _end(self, run: _Run, outcome: LoopOutcome, *, cause: str | None = None) -> LoopRun:
-        if run.jobs:
-            why = f"the loop ended {outcome.value}; the job was cancelled"
-            await self._stop_jobs(run, list(run.jobs.values()), why)
-        await self._keep(run)
-        if run.session.parent_id is not None:
-            # Before the loop is closed: a run lost in between leaves it open,
-            # and the run that ends it again repeats the report, written once.
-            await self._report(run, outcome=outcome)
-        # A loop that ends waits on nothing: its session leaves every line
-        # before the loop is closed, and a run that ends it again leaves
-        # again, finding nothing.
-        await self._leases.leave(run.ctx, WaiterKind.AGENT_SESSION, run.agent_session_id)
-        step = rules.ended_step(
-            new_id(), self._clock(), run.agent_session_id, run.loop_id, outcome, cause=cause
-        )
-        await self._steps.append_agent_steps(run.ctx, run.agent_session_id, run.epoch, [step])
-        await self._sessions.project_status(run.ctx, run.agent_session_id)
-        if outcome is LoopOutcome.CANCELLED:
-            await self._agents.cancel_children(run.ctx, run.agent_session_id)
-        return self._result(run, RunEnd.ENDED, outcome=outcome)
-
-    async def _park(self, run: _Run, park: Park) -> LoopRun:
-        await self._keep(run)
-        await self._sessions.park(run.ctx, run.agent_session_id, run.epoch, run.loop_id, park)
-        if park.line is not None and park.job is not None:
-            # A job's call in line: a grant, or the request's end, that came
-            # after the run read the request and before the park found no
-            # park to clear, so the run reads it again and clears its own.
-            standing = await self._standing(run, park.line.request_id)
-            if standing is None or standing.request.status is not RequestStatus.WAITING:
-                await self._sessions.wake_agent_session(run.ctx, run.agent_session_id, park)
-        parent_id = run.session.parent_id
-        if parent_id is not None and notes_parent(park):
-            await self._report(run, park=park)
-        elif parent_id is not None and ends_parents_wait(park):
-            # A parent that waits on its children leaves that wait, and parks
-            # on the deadline itself.
-            await self._sessions.wake_agent_session(run.ctx, parent_id, CHILDREN_PARK)
-        return self._result(run, RunEnd.PARKED, park=park)
-
-    async def _wait_on_children(
-        self, run: _Run, history: Sequence[AgentStep], response: AgentStep
-    ) -> LoopRun:
-        """Parks on the children. A report that landed after the history was
-        read and before the park found no park to clear, so the run reads
-        what came since and clears the park itself; one that lands after
-        the park clears it as it lands. The tree's deadline, passed in
-        between, is read the same way: a child that parked on it found no
-        park to clear."""
-        parked = await self._park(run, CHILDREN_PARK)
-        history = await self._history(run.ctx, run.agent_session_id, history)
-        passed = run.deadline is not None and self._clock() >= run.deadline
-        if passed or not rules.children_wait(history, response):
-            await self._sessions.wake_agent_session(run.ctx, run.agent_session_id, CHILDREN_PARK)
-        return parked
-
-    # The line.
-
-    async def _hear(self, run: _Run, history: Sequence[AgentStep]) -> _Heard:
-        """Reads where each ask of the session stands, and tells the model, as
-        the engine's notice, each answer it has not been told: a grant while
-        its lease lives, an end without a lease, the lease's end. A session
-        that asked nothing in line reads nothing."""
-        standings = await self._standings(run, history)
-        told = {step.id for step in history}
-        owed = [
-            notice for ask, standing in standings for notice in lines.untold(standing, ask, told)
-        ]
-        if owed:
-            principal = await self._attribution.call_principal(run.ctx, run.agent_session_id)
-            now = self._clock()
-            notices = [
-                rules.notice_step(
-                    agent_step_id, now, run.agent_session_id, run.loop_id, principal, text
-                )
-                for agent_step_id, text in owed
-            ]
-            await self._steps.append_agent_steps(run.ctx, run.agent_session_id, run.epoch, notices)
-        waiting = [
-            standing
-            for _, standing in standings
-            if standing.request.status is RequestStatus.WAITING
-        ]
-        return _Heard(waiting=waiting, told=bool(owed))
-
-    async def _standings(
-        self, run: _Run, history: Sequence[AgentStep]
-    ) -> list[tuple[lines.Ask, Standing]]:
-        """Where each ask of the session stands, across its loops, but one
-        whose final answer the model was told already: nothing more comes of
-        it, so the reads stop growing once each end is told."""
-        tools = [
-            tool.spec.name
-            for tool in run.registry.tools()
-            if issubclass(tool.spec.output_model, InLine)
-        ]
-        if not tools:
-            return []
-        told = {step.id for step in history}
-        standings: list[tuple[lines.Ask, Standing]] = []
-        for ask in lines.asks(history, tools):
-            if lines.done(ask, told):
-                continue
-            try:
-                standing = await self._leases.get_request(run.ctx, ask.request_id)
-            except NotFound:
-                continue  # past its retention: nothing more comes of it
-            standings.append((ask, standing))
-        return standings
-
-    async def _wait_in_line(
-        self, run: _Run, history: Sequence[AgentStep], waiting: Sequence[Standing]
-    ) -> LoopRun:
-        """Parks in line. An answer that landed after the asks were read and
-        before the park found no park to clear, so the run reads the asks
-        again once it has parked and clears the park itself; one that lands
-        after the park clears it as it lands."""
-        park = lines.line_park(waiting)
-        parked = await self._park(run, park)
-        history = await self._history(run.ctx, run.agent_session_id, history)
-        told = {step.id for step in history}
-        for ask, standing in await self._standings(run, history):
-            if lines.untold(standing, ask, told):
-                await self._sessions.wake_agent_session(run.ctx, run.agent_session_id, park)
-                break
-        return parked
-
-    async def _give_back(self, run: _Run, history: Sequence[AgentStep]) -> None:
-        """Releases each live lease the session's asks hold, as its holder: the
-        principal the session's calls run under, asked of attribution as a
-        call's is. Each lease's end, and each request's end without a lease,
-        is told before the park, once. A principal that no longer holds the
-        session's calls, or is not a lease's holder, releases nothing: that
-        lease runs to its term."""
-        held = [
-            standing.lease
-            for _, standing in await self._standings(run, history)
-            if standing.lease is not None and standing.lease.status is LeaseStatus.ACTIVE
-        ]
-        if held:
-            reach = CallReach(outward=False, holds_private=False)
-            try:
-                authority = await self._attribution.authorize_call(
-                    run.ctx, run.agent_session_id, reach
-                )
-            except (NotAuthorized, PrincipalLapsed) as refused:
-                log.warning(
-                    "session %s keeps its leases to their term: %s", run.agent_session_id, refused
-                )
-            else:
-                for lease in held:
-                    try:
-                        await self._leases.release(authority.context, lease.id)
-                    except (NotAuthorized, LeaseEnded) as refused:
-                        log.warning("lease %s runs to its term: %s", lease.id, refused)
-        await self._hear(run, history)
-
-    async def _past_deadline(self, run: _Run) -> bool:
-        """Whether the tree's deadline has passed. A person may have moved it
-        since this run read it, so a passed one is read again."""
-        if run.deadline is None or self._clock() < run.deadline:
-            return False
-        run.deadline = (await self._agents.tree_of(run.ctx, run.agent_session_id)).deadline
-        return run.deadline is not None and self._clock() >= run.deadline
-
-    async def _policies_above(
-        self, ctx: TenantContext, session: AgentSession
-    ) -> tuple[ToolPolicyLayer, ...] | None:
-        """The policy layers of the kinds above `session` in its tree, each
-        at the version its session pinned, an ancestor marked deleted among
-        them. None when a session above it is past its purge: its kind is
-        gone with its row, and no layer stands in for it."""
-        if session.parent_id is None:
-            return ()
-        above = await self._sessions.get_ancestors(ctx, session.id)
-        if len(above) < session.depth - 1:
-            return None
-        return tuple(self._kinds.get(agent.kind, agent.version).policy for agent in above)
-
-    async def _report(
-        self, run: _Run, *, outcome: LoopOutcome | None = None, park: Park | None = None
-    ) -> None:
-        """A child tells its parent how its loop stands, read from the loop's
-        own steps: from its first, never the session's whole history."""
-        steps = await self._history(run.ctx, run.agent_session_id, since=run.start_seq - 1)
-        loop = rules.OpenLoop(run.loop_id, run.start_seq, None)
-        report = rules.report_of(steps, loop, outcome=outcome, park=park)
-        await self._agents.report_to_parent(run.ctx, run.agent_session_id, report)
-
-    def _result(
-        self,
-        run: _Run,
-        end: RunEnd,
-        *,
-        outcome: LoopOutcome | None = None,
-        park: Park | None = None,
-    ) -> LoopRun:
-        return LoopRun(
-            agent_session_id=run.agent_session_id,
-            epoch=run.epoch,
-            loop_id=run.loop_id,
-            end=end,
-            outcome=outcome,
-            park=park,
-        )
-
-    async def _close_lost(self, run: _Run, request: AgentStep) -> None:
-        """A request a lost run left unanswered: its hold settled whole, its
-        usage record named from the request and the session, since this
-        run's gate never held it, and the request closed as abandoned."""
-        header = request.header
-        closing = rules.abandoned_step(new_id(), self._clock(), request)
-        if isinstance(header, ModelRequestHeader) and header.spend_hold_id is not None:
-            provider, _, model = header.fill.partition("/")
-            session = run.session
-            labels = CallLabels(
-                agent_session_id=run.agent_session_id,
-                tree_id=session.root_id,
-                agent_kind=session.kind,
-                kind_version=session.kind_version,
-                role=header.role,
-                provider=provider,
-                model=model,
-            )
-            site = CallSite(
-                loop_id=run.loop_id, agent_step_id=closing.id, latency_ms=0, labels=labels
-            )
-            with contextlib.suppress(NotFound):
-                await self._gate.settle(run.ctx, header.spend_hold_id, None, billed=True, site=site)
-        await self._steps.append_agent_steps(run.ctx, run.agent_session_id, run.epoch, [closing])
-
-    async def _keep(self, run: _Run) -> None:
-        """A workspace kept by snapshots is snapshotted whole at the end of
-        each run that held it, live, before its loop parks or ends: no run
-        that follows starts before the step names it. One that is refused,
-        such as for a secret's value in it, or that fails keeps nothing, and
-        the run keeps its instance (`_release`)."""
-        workspace = run.workspace
-        if workspace is None or workspace.spec.durability is not Durability.SNAPSHOT:
-            return
-        try:
-            await self._tools.snapshot_agent_workspace(
-                run.ctx, run.agent_session_id, workspace, epoch=run.epoch, loop_id=run.loop_id
-            )
-        except StaleWriter:
-            raise
-        except Exception:
-            log.exception("session %s: the workspace was not snapshotted", run.agent_session_id)
-            return
-        run.kept = True
-
-    async def _release(self, run: _Run) -> None:
-        """The workspace's instance goes between runs; its files stay. A loop
-        that parks holds no runtime, but for a workspace kept by snapshots
-        that no snapshot holds whole: its instance stays, so nothing in it is
-        lost, and the next run prepares it as it stands."""
-        if run.workspace is None:
-            return
-        if run.workspace.spec.durability is Durability.SNAPSHOT and not run.kept:
-            log.warning(
-                "session %s keeps its workspace live: no snapshot holds it", run.agent_session_id
-            )
-            return
-        try:
-            await self._tools.release_agent_workspace(run.ctx, run.workspace)
-        except Exception:
-            log.exception("session %s: the workspace was not released", run.agent_session_id)
-
-    # Taking over.
-
-    async def take_over(self, ctx: TenantContext, agent_session_id: UUID) -> AgentSession:
-        _by_hand(ctx)
-        session = await self._sessions.project_status(ctx, agent_session_id)
-        if _held_by_another(session.park, ctx):
-            raise Conflict(f"agent session {agent_session_id} is held by another person")
-        # Only one who takes part takes the environment, its steerer or a
-        # participant, so the summary they give back is theirs to write.
-        await self._attribution.steers(ctx, agent_session_id)
-        epoch = await self._steps.begin_run(ctx, agent_session_id)
-        history = await self._history(ctx, agent_session_id)
-        loop = rules.open_loop(history)
-        loop_id = new_id() if loop is None else loop.loop_id
-        park = Park(reason=ParkReason.HANDOVER, unlock=HANDOVER_UNLOCK, holder=ctx.user_id)
-        return await self._sessions.park(ctx, agent_session_id, epoch, loop_id, park)
-
-    async def give_back(
-        self, ctx: TenantContext, agent_session_id: UUID, summary: str
-    ) -> AgentSession:
-        _by_hand(ctx)
-        session = await self._sessions.project_status(ctx, agent_session_id)
-        if session.park is None or session.park.reason is not ParkReason.HANDOVER:
-            raise ValidationFailed(f"agent session {agent_session_id} is not handed over")
-        if _held_by_another(session.park, ctx):
-            raise NotAuthorized(f"agent session {agent_session_id} is held by another person")
-        epoch = await self._steps.begin_run(ctx, agent_session_id)
-        loop = rules.open_loop(await self._history(ctx, agent_session_id))
-        if loop is None:
-            raise ValidationFailed(f"agent session {agent_session_id} holds no loop to give back")
-        now = self._clock()
-        changed = rules.changed_step(new_id(), now, agent_session_id, loop.loop_id)
-        await self._steps.append_agent_steps(ctx, agent_session_id, epoch, [changed])
-        message_id = new_id()
-        message = AgentStep(
-            id=message_id,
-            created_at=now,
-            agent_session_id=agent_session_id,
-            loop_id=message_id,
-            type=AgentStepType.MESSAGE,
-            actor=Actor.PERSON,
-            origin=origin_of(ctx.app.type),
-            header=InputHeader(
-                waking=True, principal=Principal(kind=PrincipalKind.PERSON, id=ctx.user_id)
-            ),
-            content=Content(blocks=(TextBlock(text=summary),)),
-        )
-        # The holder's own unlock, in their name: the one a held hand-over
-        # takes (`agent_sessions.rules.clears`).
-        unlock = control_step(new_id(), now, agent_session_id, ctx, ControlCommand.UNLOCK)
-        await self._steps.append_inputs(ctx, agent_session_id, [message, unlock])
-        return await self._sessions.project_status(ctx, agent_session_id)
-
-    # A job's completion.
-
-    async def complete_job(
-        self, ctx: TenantContext, agent_session_id: UUID, completion: JobCompletion
-    ) -> AgentSession:
-        ctx.require(Permission.WRITE)
-        # Another tenant's session, or a deleted one, is not found here.
-        await self._sessions.project_status(ctx, agent_session_id)
-        history = await self._history(ctx, agent_session_id)
-        loop = rules.open_loop(history)
-        started = None if loop is None else rules.started_jobs(history, loop.loop_id)
-        waiting = None if started is None else started.get(completion.key)
-        if (
-            loop is None
-            or waiting is None
-            or waiting.job.handle != completion.handle
-            or waiting.completion is not None
-        ):
-            raise NotFound(f"no job {completion.key} waits in agent session {agent_session_id}")
-        now = self._clock()
-        event = completion_step(
-            new_id(), now, ctx, agent_session_id, completion.key, completion.model_dump_json()
-        )
-        inputs = [event]
-        park = loop.park
-        if park is not None and park.job is not None and park.job.key == completion.key:
-            # The loop still waits on this job: its park is cleared. A loop
-            # that parked since for another reason reads the completion when
-            # that park clears.
-            inputs.append(unlock_step(new_id(), agent_session_id, now))
-        await self._steps.append_inputs(ctx, agent_session_id, inputs)
-        return await self._sessions.project_status(ctx, agent_session_id)
-
-    # The history.
-
-    async def _history(
-        self,
-        ctx: TenantContext,
-        agent_session_id: UUID,
-        read: Sequence[AgentStep] = (),
-        *,
-        since: int = 0,
-    ) -> list[AgentStep]:
-        """The session's whole history, in `seq` order: `read`, what was read
-        of it already, and every step after it; with nothing read, every
-        step after `since`."""
-        steps = list(read)
-        while True:
-            after = steps[-1].seq if steps else since
-            page = await self._steps.get_agent_steps(
-                ctx, agent_session_id, after, self._options.page
-            )
-            steps.extend(page.items)
-            if not page.has_more or not page.items:
-                return steps
-
-    async def _since(self, run: _Run, seq: int) -> list[AgentStep]:
-        page = await self._steps.get_agent_steps(
-            run.ctx, run.agent_session_id, seq, self._options.page
-        )
-        return list(page.items)
-
-
-def _by_hand(ctx: TenantContext) -> None:
-    """A person who may write, acting themselves: the environment is taken
-    and given back by hand, never by a program on an API key."""
-    ctx.require(Permission.WRITE)
-    if not in_person(ctx):
-        raise NotAuthorized("the environment is taken over and given back by a person, in person")
-
-
-def _held_by_another(park: Park | None, ctx: TenantContext) -> bool:
-    """Whether a hand-over names a holder other than the caller."""
-    return (
-        park is not None
-        and park.reason is ParkReason.HANDOVER
-        and park.holder is not None
-        and park.holder != ctx.user_id
-    )
-
-
-def lost_agent_workspace(park: Park) -> bool:
-    """Whether a park waits for a person on a workspace that was lost."""
-    return park.reason is ParkReason.PERSON and park.unlock == AGENT_WORKSPACE_UNLOCK
-
-
-def provider_park(fill: Fill, retry_at: datetime) -> Park:
-    """The park of a provider that is failing: it names the provider and
-    tries again by itself at the retry time."""
-    return Park(reason=ParkReason.PROVIDER, unlock=fill.provider.value, retry_at=retry_at)
 
 
 def _use_id(request: AgentStep) -> str:

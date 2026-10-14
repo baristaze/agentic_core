@@ -268,7 +268,7 @@ recovery is STP-11, and a spending job that skips the gate is BND-02.)
 **Severity.** medium
 
 **Shape.** `scaffold/acme_root/om/src/acme/om/tools/tool.py` and
-`scaffold/acme_root/om/src/acme/om/agents/impl/loop.py`
+`scaffold/acme_root/om/src/acme/om/agents/impl/loop_tool_turn.py`
 
 **Check.** review
 
