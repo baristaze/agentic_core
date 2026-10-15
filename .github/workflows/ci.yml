@@ -130,7 +130,9 @@ jobs:
         run: |
           git rev-parse -q --verify HEAD > /dev/null || { git add -A && git commit -qm "the copy"; }
           base="$(git rev-parse HEAD)"
-          down="$(basename "$(ls om/migrations/versions/queue/*.py | sort | tail -1)" | cut -d_ -f1)"
+          # The head by the chain's parents: a stamp orders nothing, and the
+          # engine's folded revision sorts below the base's it follows.
+          down="$(uv run --package agentic-om python -c 'from agentic.om.storage.migrate import head; from agentic.om.storage.roles import DatabaseRole; print(head(DatabaseRole.QUEUE))')"
           printf 'revision = "209912310000"\ndown_revision = "%s"\nbranch_labels = None\ndepends_on = None\n\n\ndef upgrade() -> None:\n    pass\n\n\ndef downgrade() -> None:\n    pass\n' "$down" \
             > om/migrations/versions/queue/209912310000_nothing.py
           git add om/migrations && git commit -qm "a revision that changes nothing"
