@@ -15,6 +15,7 @@ from acme.integrations.model_providers.registry import absent_model_providers
 from acme.integrations.root import IntegrationsInterface
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.impl.manager import AgentSessionsManagerImpl, AgentSessionsOptions
+from acme.om.agent_sessions.kinds import AGENT_SESSION_WAITER
 from acme.om.agent_steps import AgentStepsManagerInterface
 from acme.om.agent_steps.impl.manager import AgentStepsManagerImpl, AgentStepsOptions
 from acme.om.agent_steps.storage import AgentStepStorageInterface
@@ -37,8 +38,8 @@ from acme.om.attribution.impl.manager import (
     members_context,
 )
 from acme.om.base import utcnow
+from acme.om.change_events import ChangeEventsManagerInterface
 from acme.om.context import TenantContext
-from acme.om.events import EventsManagerInterface
 from acme.om.exceptions import NotFound, UnsafeConfiguration
 from acme.om.language_models.impl.credentials import CallCredentialsPlatformImpl
 from acme.om.language_models.impl.manager import LanguageModelsManagerImpl, LanguageModelsOptions
@@ -49,7 +50,6 @@ from acme.om.language_models.manager import LanguageModelsManagerInterface
 from acme.om.language_models.prices import ModelPricesInterface
 from acme.om.leases import LeasesManagerInterface
 from acme.om.leases.hooks import WaiterInterface
-from acme.om.leases.types.request import WaiterKind
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.privacy import PrivacyManagerInterface
 from acme.om.privacy.impl.keys import AgentSessionKeysImpl
@@ -247,11 +247,11 @@ def private_history(
 
 def agent_session_waiters(
     managers: Callable[[], AgentManagers],
-) -> dict[WaiterKind, WaiterInterface]:
+) -> dict[str, WaiterInterface]:
     """The waiter a session waits in a line of the leases as. Its sessions
     manager is built after the leases manager, so that edge is bound at
     call time, through `managers`."""
-    return {WaiterKind.AGENT_SESSION: AgentSessionWaiterImpl(lambda: managers().agent_sessions)}
+    return {AGENT_SESSION_WAITER: AgentSessionWaiterImpl(lambda: managers().agent_sessions)}
 
 
 def build_agent_managers(
@@ -260,12 +260,12 @@ def build_agent_managers(
     integrations: IntegrationsInterface | None,
     *,
     tenancy: TenancyManagerInterface,
-    events: EventsManagerInterface,
+    change_events: ChangeEventsManagerInterface,
     outbox: OutboxRelayInterface,
     leases: LeasesManagerInterface,
     options: AgentRootOptions,
 ) -> AgentManagers:
-    """The engine's managers over the guideline's `tenancy`, `events`,
+    """The engine's managers over the guideline's `tenancy`, `change_events`,
     `outbox`, and `leases`, as `options` sets them. `integrations` None is a
     process with no model provider: every call is refused as unavailable."""
     # The history first: a session's status is read off its steps. What a
@@ -387,7 +387,7 @@ def build_agent_managers(
     )
     ToolRegistry(catalog, options.domain_classes)  # refuses two tools of one name at boot
     # Where the engine touches the world: the session's history for a
-    # person's decisions, the events for the audit of each secret a call
+    # person's decisions, the change events for the audit of each secret a call
     # uses, the workspace and the transport infra chose, and attribution,
     # which answers whose authority each call runs under and the rule of
     # two. What a call keeps of its session's content goes under the
@@ -410,7 +410,7 @@ def build_agent_managers(
         storage.get_tool_storage(),
         steps,
         tenancy,
-        events,
+        change_events,
         outbox,
         infra.get_agent_workspaces(),
         infra.get_transport(),

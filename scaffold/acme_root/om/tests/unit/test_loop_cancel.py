@@ -8,16 +8,17 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.loops import ASSISTANT, BUILDER, DELIVERY, Loop, call, loop_over, reply
 from unit.test_loop_jobs import cancel, parked_on_a_job
 from unit.test_loop_lines import held_resource, parked_in_line
 
+from acme.om.agent_sessions.kinds import AGENT_SESSION_WAITER
 from acme.om.agent_sessions.types.agent_session import AgentSessionStatus
 from acme.om.agent_steps.types.agent_step import AgentStepType
 from acme.om.agent_steps.types.header import LoopOutcome, ParkReason
-from acme.om.leases.types.request import WaiterKind
 from acme.om.tools.types.policy import Decision, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import ToolClass
+
+from contracts.loops import ASSISTANT, BUILDER, DELIVERY, Loop, call, loop_over, reply
 
 APPROVES_FIRST = BUILDER.model_copy(
     update={
@@ -57,7 +58,7 @@ async def in_line(tmp_path: Path) -> tuple[Loop, UUID]:
     """A loop waiting in line for a resource another holds."""
     loop, _, _ = await held_resource(tmp_path)
     agent_session_id, _, park = await parked_in_line(loop)
-    assert park.reason is ParkReason.RESOURCE, park
+    assert park.reason is ParkReason.LEASABLE_RESOURCE, park
     return loop, agent_session_id
 
 
@@ -84,5 +85,5 @@ async def test_a_cancel_ends_a_parked_loop_stops_its_jobs_and_leaves_its_lines(
     for job in loop.jobs.values():
         stopped = {handle.key for handle in job.cancelled}
         assert set(job.started) <= stopped, "every job it started is stopped"
-    left = await loop.managers.leases.leave(loop.owner, WaiterKind.AGENT_SESSION, agent_session_id)
+    left = await loop.managers.leases.leave(loop.owner, AGENT_SESSION_WAITER, agent_session_id)
     assert left == 0, "it waits in no line"

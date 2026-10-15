@@ -14,6 +14,7 @@ from acme.infra.agent_workspaces import (
 )
 from acme.infra.exceptions import InfraException
 from acme.integrations.model_providers.types import StopReason
+from acme.om.agent_sessions.kinds import AGENT_SESSION_WAITER
 from acme.om.agent_sessions.limits import Limit, Trip, tally_loop, tripped
 from acme.om.agent_sessions.rules import QUESTION
 from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus
@@ -49,7 +50,6 @@ from acme.om.exceptions import (
     UnresolvedRole,
 )
 from acme.om.language_models.types.fill import Eligibility
-from acme.om.leases.types.request import WaiterKind
 from acme.om.tools.rules import (
     ISOLATION_REFUSED,
     named_snapshot,
@@ -249,7 +249,7 @@ class LoopManagerImpl(
             log.warning("session %s waits for a workspace: %s", run.agent_session_id, refused)
             retry_at = self._clock() + self._options.agent_workspace_wait
             park = Park(
-                reason=ParkReason.RESOURCE,
+                reason=ParkReason.LEASABLE_RESOURCE,
                 unlock=AGENT_WORKSPACE_UNLOCK,
                 retry_at=retry_at,
                 unsettled=not run.resumed,
@@ -367,7 +367,7 @@ class LoopManagerImpl(
                         # one for a session that cannot use it, and gives
                         # back each lease its asks hold.
                         await self._leases.leave(
-                            run.ctx, WaiterKind.AGENT_SESSION, run.agent_session_id
+                            run.ctx, AGENT_SESSION_WAITER, run.agent_session_id
                         )
                         await self._give_back(run, history)
                     return await self._park(run, trip.park)

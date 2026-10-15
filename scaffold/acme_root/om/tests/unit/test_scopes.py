@@ -12,8 +12,8 @@ import pytest
 
 import acme.om
 from acme.om.storage.logins import RUNTIME_LOGIN, SYSTEM_LOGIN
-from acme.om.storage.migrate import MIGRATIONS_DIR, dropped_tables, role_metadata
-from acme.om.storage.roles import TABLE_ROLES, DatabaseRole, role_for
+from acme.om.storage.migrate import MIGRATIONS_DIR, role_metadata
+from acme.om.storage.roles import DROPPED_TABLE_ROLES, TABLE_ROLES, DatabaseRole, role_for
 from acme.om.storage.scopes import (
     POLICY_NAME,
     SYSTEM_POLICY_NAME,
@@ -105,16 +105,9 @@ def test_a_tenant_scope_carries_org_id_and_its_declared_person_column() -> None:
 
 
 def chain(role: DatabaseRole) -> str:
-    """The role's up files in order, each table named as the chain leaves
-    it: a rename keeps the table, its fence, and its policy, so what an
-    earlier file says of the table holds under its new name."""
-    sql = "\n".join(
+    return "\n".join(
         path.read_text() for path in sorted((MIGRATIONS_DIR / "sql" / role.value).glob("*.up.sql"))
     )
-    schema = role.value
-    for old, new in re.findall(rf"ALTER TABLE {schema}\.(\w+)\s+RENAME TO (\w+)", sql):
-        sql = re.sub(rf"\b{schema}\.{old}\b", f"{schema}.{new}", sql)
-    return sql
 
 
 def policy_in(sql: str, qualified: str, name: str = POLICY_NAME) -> str | None:
@@ -179,7 +172,7 @@ def test_the_system_scope_clause_is_spelled_in_every_policy(role: DatabaseRole) 
     policies = {
         table
         for table in re.findall(rf"CREATE POLICY {POLICY_NAME} ON \w+\.(\w+)", sql)
-        if table not in dropped_tables(role)
+        if table not in DROPPED_TABLE_ROLES
     }
     assert len(policies) == len(fenced), (
         f"{role.value}: {len(policies)} policies for {len(fenced)} tables"

@@ -46,6 +46,3 @@ reaches, so a close reaches only the parks it can clear.
   budget a person must raise, the close of the other leaves it parked
   until the raise, whose wake reaches every budget park.
 - A closed budget stays a row of its tenant until the tenant's purge.
-- The release before reads a closed budget as open, and refuses a wake
-  that names a budget. Rolled back, it binds the closed budgets again
-  until the roll forward.

@@ -7,16 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from contracts.agent_step_storage import (
-    make_event,
-    make_message,
-    make_parked,
-    make_request,
-    make_response,
-    make_tool_request,
-    make_tool_response,
-)
-from contracts.doubles import context
 from pydantic import ValidationError
 
 from acme.infra.impl.local import InfraLocalImpl
@@ -44,6 +34,17 @@ from acme.om.context import Role
 from acme.om.exceptions import NotAuthorized, StaleWriter, ValidationFailed
 from acme.om.root import build_managers
 from acme.om.storage.impl.memory import StorageMemoryImpl
+
+from contracts.agent_step_storage import (
+    make_event_step,
+    make_message,
+    make_parked,
+    make_request,
+    make_response,
+    make_tool_request,
+    make_tool_response,
+)
+from contracts.doubles import context
 
 SESSION = new_id()
 
@@ -208,7 +209,7 @@ def test_a_malformed_step_is_refused_when_it_is_built(what: str, shape: dict[str
 
 
 def test_an_input_built_with_no_word_on_waking_takes_its_types_default() -> None:
-    message, event = make_message(SESSION), make_event(SESSION)
+    message, event = make_message(SESSION), make_event_step(SESSION)
     assert isinstance(message.header, InputHeader) and message.header.waking is True
     assert isinstance(event.header, InputHeader) and event.header.waking is False
     principal = event.header.principal

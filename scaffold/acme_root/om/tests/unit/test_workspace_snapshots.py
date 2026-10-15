@@ -15,22 +15,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.doubles import context
-from contracts.factories import make_org
-from contracts.loops import (
-    ASSISTANT,
-    DELIVERY,
-    Asked,
-    Found,
-    Lookup,
-    Loop,
-    call,
-    loop_over,
-    reply,
-    said,
-)
-from contracts.sub_agents import SPAWNING, answers, failure_of, text_of
-from contracts.tools import Command, Tools, tools_over, twin_transport
 
 from acme.infra.agent_workspaces import (
     AgentWorkspace,
@@ -69,7 +53,7 @@ from acme.om.agents.impl.loop import LOST_SNAPSHOT
 from acme.om.agents.loop_rules import FORKED, LOST, REWOUND, pending_restore
 from acme.om.agents.types.request import Spawn
 from acme.om.agents.types.run import RunEnd
-from acme.om.base import Platform, new_id, utcnow
+from acme.om.base import OmBase, new_id, utcnow
 from acme.om.context import Role, TenantContext
 from acme.om.exceptions import NotFound
 from acme.om.privacy.types.agent_session_privacy import StorageMode, StoragePolicy
@@ -79,6 +63,23 @@ from acme.om.tools.native.spawn_sub_agent import SPAWN_SUB_AGENT
 from acme.om.tools.native.wait_for_sub_agents import WAIT_FOR_SUB_AGENTS
 from acme.om.tools.tool import TakenSnapshot, ToolRuntime
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput
+
+from contracts.doubles import context
+from contracts.factories import make_org
+from contracts.loops import (
+    ASSISTANT,
+    DELIVERY,
+    Asked,
+    Found,
+    Lookup,
+    Loop,
+    call,
+    loop_over,
+    reply,
+    said,
+)
+from contracts.sub_agents import SPAWNING, answers, failure_of, text_of
+from contracts.tools import Command, Tools, tools_over, twin_transport
 
 KEPT = IsolationSpec(
     mode=IsolationMode.TWIN,
@@ -304,9 +305,7 @@ class Scribble(Lookup):
         super().__init__("scribble", effect=Effect.IDEMPOTENT, authorization_class=ToolClass.WRITE)
         self._twin = twin
 
-    async def run(
-        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
-    ) -> Platform:
+    async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
         assert isinstance(call_input, Asked)
         self._twin.files[runtime.agent_session_id] = call_input.q.encode()
         return Found(text="written")

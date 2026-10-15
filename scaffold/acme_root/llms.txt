@@ -1,38 +1,29 @@
 # Acme
 
-> The domain-agnostic core of a multi-tenant system, in the shape of the Software Design and Architecture Guidelines: one object model at the center, one infrastructure toolkit, an API process and a maintenance worker around them, and a portal, a command line, and a TypeScript and a Python client at the edge. A product renames it and builds its domain on top.
+> The domain-agnostic core of a multi-tenant system, in the shape of the Software Design and Architecture Guidelines: one object model at the center, one infrastructure toolkit beside it, the processes around them, and the apps and clients at the edge. A product renames it and builds its domain on top.
 
 This file is the knowledge map. Each section lists the documents one
 audience is served; a document not listed under an audience is not
 served to it. Exposure is by listing, never by folder.
 
-## Platform developers
+## System developers
 
-- [README](README.md): what Acme is, the quick start with the local URLs and sign-ins, set up and check, deploy and operate, and the layout
+- [README](README.md): what Acme is, the quick start, set up and check, deploy and operate, and the layout
 - [Architecture](specs/architecture.md): the guideline's pin, the substitutions, and the deviations, each linking its decision record under docs/adr/
+- [Decisions](docs/adr/README.md): how a decision is recorded and numbered, and how a copy extends one the scaffold gave
 - [What Acme is made of](om/README.md): the nouns and how they relate, for a reader with no code
-- [Tenancy](om/src/acme/om/tenancy/README.md): orgs, identities, users, memberships, invitations, sessions, API keys, socket tickets, the operator plane, and deletion
-- [Events](om/src/acme/om/events/README.md): the org's stream, its gapless sequence above a floor, and audit entries
+- [Tenancy](om/src/acme/om/tenancy/README.md): orgs, identities, users, memberships, invitations, auth sessions, API keys, socket tickets, the operator plane, and deletion
+- [Change events](om/src/acme/om/change_events/README.md): the org's stream, its gapless sequence above a floor, and audit entries
 - [Outbox rows](om/src/acme/om/outbox/README.md): the note written beside every change, and its relay
 - [Idempotency records](om/src/acme/om/idempotency/README.md): the outcome of a request that may arrive twice
 - [Work items](om/src/acme/om/work/README.md): background jobs, the claim, the lease, and the dead letter
 - [Orchestrations](om/src/acme/om/orchestrations/README.md): long-running records, a step at a time, that park or fail
-- [Leases](om/src/acme/om/leases/README.md): a resource one holder uses at a time, its lease under a fencing token, and the line in front of it
+- [Leases](om/src/acme/om/leases/README.md): a leasable resource one holder uses at a time, its lease under a fencing token, and the wait line in front of it
 - [Files](om/src/acme/om/media/README.md): files as references, the bounded upload straight to the store, and the sweep
-- [Agent sessions](om/src/acme/om/agent_sessions/README.md): sessions as a series of loops over one history, and the status read off their steps
-- [Steps](om/src/acme/om/agent_steps/README.md): the history, written once and numbered with no gaps, and the epoch that refuses a stale run
-- [Agents](om/src/acme/om/agents/README.md): agent kinds, sub-agents in a tree that shares one budget and one deadline, hand-offs, the result gate, and the loop every agent runs: each step persisted before it is acted on, recovery by effect under a new epoch, provider errors by kind and the outage signal, streams, steering, and taking over
-- [Attribution](om/src/acme/om/attribution/README.md): who acted, on whose authority, and who pays; the untrusted mark and the rule of two
-- [Privacy](om/src/acme/om/privacy/README.md): content sealed per session under a versioned key, the storage policies, and the revocation that erases content and keeps shape
-- [Budgets](om/src/acme/om/spend_budgets/README.md): what may be spent, the one gate every model call passes first, holds at the worst case, and their settlement
-- [Models](om/src/acme/om/language_models/README.md): model roles, fills, fill sets and their switches, the resolver, and prices
-- [Windows](om/src/acme/om/windows/README.md): what a model reads: the request rendered from the history, the window sized for its model, the pinned zone, compaction into summaries, and tool outputs
-- [Tools](om/src/acme/om/tools/README.md): the tool contract, the registry, policy by class and target, approvals bound to one call, failures, recovery by effect, jobs
-- [Infrastructure](infra/README.md): cache, buckets, topics, queues, secrets, keys, flags, outages, observability, workspaces and the transport; what each promises and which twin runs where
-- [Integrations](integrations/README.md): the identity provider, its twin, the absent provider, and the webhook check; the model providers, their adapters, and the scripted twin
-- [The API process](services/api/README.md): the routes by area, the gateway's guarantees, the subcommands
+- [Infrastructure](infra/README.md): the capabilities the system asks for, what each promises, and which twin runs where
+- [Integrations](integrations/README.md): the outside providers, their twins, the absent provider, and the webhook check
+- [The API process](services/api/README.md): where each namespace's routes are, the gateway's guarantees, the subcommands
 - [The maintenance worker](workers/maintenance/README.md): the work queue's loop, the provider deliveries, and the sweep
-- [The session runner](workers/agent_session_runner/README.md): the worker that claims a session's loop and runs it under a lease, and takes a lost runner's loop over under a new epoch
 - [Deployment](deployment/README.md): what runs where, locally and in the cloud, and the branch convention
 - [The local stack](deployment/local/README.md): every URL and port, one service at a time
 - [Terraform](deployment/terraform/modules/README.md): the roots, the modules, the state, and the credentials
@@ -46,9 +37,20 @@ served to it. Exposure is by listing, never by folder.
 - [The command line](apps/cli/README.md): the terminal client and its exit codes
 - [The TypeScript client](clients/typescript/README.md): the one client every browser app imports
 - [The Python client](clients/python/README.md): the one client every Python caller goes through
+<!-- A copy adds its entries below this line. -->
+- [Agent sessions](om/src/acme/om/agent_sessions/README.md): sessions as a series of loops over one history, and the status read off their steps
+- [Steps](om/src/acme/om/agent_steps/README.md): the history, written once and numbered with no gaps, and the epoch that refuses a stale run
+- [Agents](om/src/acme/om/agents/README.md): agent kinds, sub-agents in a tree that shares one budget and one deadline, hand-offs, the result gate, and the loop every agent runs: each step persisted before it is acted on, recovery by effect under a new epoch, provider errors by kind and the outage signal, streams, steering, and taking over
+- [Attribution](om/src/acme/om/attribution/README.md): who acted, on whose authority, and who pays; the untrusted mark and the rule of two
+- [Privacy](om/src/acme/om/privacy/README.md): content sealed per session under a versioned key, the storage policies, and the revocation that erases content and keeps shape
+- [Budgets](om/src/acme/om/spend_budgets/README.md): what may be spent, the one gate every model call passes first, holds at the worst case, and their settlement
+- [Models](om/src/acme/om/language_models/README.md): model roles, fills, fill sets and their switches, the resolver, and prices
+- [Windows](om/src/acme/om/windows/README.md): what a model reads: the request rendered from the history, the window sized for its model, the pinned zone, compaction into summaries, and tool outputs
+- [Tools](om/src/acme/om/tools/README.md): the tool contract, the registry, policy by class and target, approvals bound to one call, failures, recovery by effect, jobs
+- [The session runner](workers/agent_session_runner/README.md): the worker that claims a session's loop and runs it under a lease, and takes a lost runner's loop over under a new epoch
 - [The engine's checker](checkers/README.md): agentic-check, the engine's lenses a parser decides, its configuration, and its exceptions
 
-## Platform operators
+## System operators
 
 - [Operations](ops/README.md): roles, profiles, credentials, signals, the ops binary, the skills, the audits, what an operator never does
 - [Audit tools](ops/audit/README.md): what the audit skills run
@@ -64,11 +66,13 @@ served to it. Exposure is by listing, never by folder.
 - [WorkOS runbook](docs/runbooks/providers/workos.md): the identity provider for a newcomer: its environments, the application and its key, the redirects, the webhook, the bootstrap, and rotation
 - [LaunchDarkly runbook](docs/runbooks/providers/launchdarkly.md): the flag provider: how a rule reaches an org or a person, the SDK key, the switch from none, and what breaks
 - [Deployment](deployment/README.md): what runs where, locally and in the cloud, and the branch convention
+<!-- A copy adds its entries below this line. -->
 
 ## Tenant users and admins
 
 - [What Acme is made of](om/README.md): the nouns and how they relate, for a reader with no code
 - [Tenancy](om/src/acme/om/tenancy/README.md): orgs, people, roles, invitations, single sign-on, credentials, deleting a team org you own, and deleting your account
 - [Files](om/src/acme/om/media/README.md): the files an org keeps, their bounds, and the storage used
-- [Events](om/src/acme/om/events/README.md): the org's diary
+- [Change events](om/src/acme/om/change_events/README.md): the org's diary
 - [The command line](apps/cli/README.md): the terminal client and its exit codes
+<!-- A copy adds its entries below this line. -->

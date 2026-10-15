@@ -26,6 +26,7 @@ from acme.om.root import Managers
 from acme.om.tenancy import TenancyManagerInterface
 from acme.om.tenancy.rules import permissions_of
 from acme.om.tenancy.types.org import Org
+
 from contracts.agent_step_storage import make_request
 from contracts.factories import make_org, make_user
 
@@ -56,7 +57,7 @@ def context(role: Role, org: Org | None = None) -> TenantContext:
         org_id=(org or make_org()).id,
         role=role,
         permissions=permissions_of(role),
-        credential_kind=CredentialKind.SESSION_TOKEN,
+        credential_kind=CredentialKind.AUTH_SESSION_TOKEN,
     )
 
 

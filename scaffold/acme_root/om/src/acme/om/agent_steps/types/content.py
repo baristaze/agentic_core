@@ -36,7 +36,7 @@ from acme.integrations.model_providers.content import ToolUseBlock as ToolUseBlo
 from acme.integrations.model_providers.content import in_turn_order as in_turn_order
 from acme.integrations.model_providers.content import storable as storable
 from acme.integrations.model_providers.content import storable_value as storable_value
-from acme.om.base import Platform
+from acme.om.base import OmBase
 
 
 class ContentState(StrEnum):
@@ -48,7 +48,7 @@ class ContentState(StrEnum):
     ABSENT = "absent"  # nothing holds them: a hole in a known place
 
 
-class Sealed(Platform):
+class Sealed(OmBase):
     """A step's blocks and children, sealed at rest under one version of its
     session's key and bound to the step. Only storage holds a step in this
     state; a read opens it."""
@@ -57,7 +57,7 @@ class Sealed(Platform):
     ciphertext: str = Field(min_length=1, repr=False)  # URL-safe base64
 
 
-class Content(Platform):
+class Content(OmBase):
     """A step's main content: its blocks, in order. Plain in memory; sealed
     at rest. A step whose session's key is revoked, or whose session keeps
     its content in memory only and has none here, reads as absent: its
@@ -85,7 +85,7 @@ class Content(Platform):
         return self.state is ContentState.ABSENT
 
 
-class Attachment(Platform):
+class Attachment(OmBase):
     """An attachment's placeholder: what the step holds of a file, never its
     bytes. `hash` is keyed by the session, so it confirms nothing once the
     session's key is gone."""
@@ -97,7 +97,7 @@ class Attachment(Platform):
     hash: Stored = Field(min_length=1, max_length=MAX_NAME)
 
 
-class Children(Platform):
+class Children(OmBase):
     """What belongs to a step without being its main content: the model's
     thinking, and the placeholders of the attachments its blocks name."""
 

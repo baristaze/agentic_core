@@ -9,12 +9,10 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.doubles import context
-from contracts.factories import make_org
-from contracts.spend_budget_storage import make_spend_budget
 from pydantic import ValidationError
 
 from acme.infra.impl.local import InfraLocalImpl
+from acme.om.agent_sessions.kinds import AgentSessionWorkKind
 from acme.om.agent_steps.types.header import ParkReason
 from acme.om.base import new_id, utcnow
 from acme.om.context import Role, TenantContext
@@ -71,7 +69,11 @@ from acme.om.spend_budgets.types.spend_hold import (
 )
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
-from acme.om.work.types.work_item import WorkItem, WorkKind
+from acme.om.work.types.work_item import WorkItem
+
+from contracts.doubles import context
+from contracts.factories import make_org
+from contracts.spend_budget_storage import make_spend_budget
 
 # Windows.
 
@@ -709,7 +711,7 @@ async def test_a_raise_asks_to_wake_the_sessions_parked_on_a_budget(tmp_path: Pa
     assert (raised.tokens, raised.version) == (900, 3)
     (wake,) = queued(storage)
     assert (wake.kind, wake.target_id, dict(wake.payload)) == (
-        WorkKind.WAKE_AGENT_SESSIONS,
+        AgentSessionWorkKind.WAKE_AGENT_SESSIONS,
         ctx.org_id,
         {"reason": "spend_budget"},
     )
@@ -738,7 +740,7 @@ async def test_a_close_is_final_and_wakes_the_sessions_parked_on_it(tmp_path: Pa
     assert closed.closed_at is not None and closed.version == 2
     (wake,) = queued(storage)
     assert (wake.kind, wake.target_id, dict(wake.payload)) == (
-        WorkKind.WAKE_AGENT_SESSIONS,
+        AgentSessionWorkKind.WAKE_AGENT_SESSIONS,
         org.id,
         {"reason": "spend_budget", "unlock": str(budget.id)},
     )

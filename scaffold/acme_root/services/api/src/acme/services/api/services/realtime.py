@@ -11,7 +11,8 @@ from collections.abc import Callable
 from acme.infra.topics import Topics
 from acme.om.context import ActorScope, TenantContext
 from acme.om.tenancy.types.socket_ticket import SocketPrincipal
-from acme.services.api.realtime.envelopes import EventEnvelope, IssuedTicketView
+from acme.services.api.realtime.envelopes import ChangeEventEnvelope
+from acme.services.api.types.change_events import IssuedTicketView
 
 CREDENTIAL_REVOKED = "credential_revoked"
 """The close reason when the session or the api key behind the socket was revoked."""
@@ -58,7 +59,7 @@ class RealtimeServiceInterface(ABC):
 
     @abstractmethod
     def subscribe(
-        self, ctx: ActorScope, topic: Topics, deliver: Callable[[EventEnvelope], None]
+        self, ctx: ActorScope, topic: Topics, deliver: Callable[[ChangeEventEnvelope], None]
     ) -> Callable[[], None]:
         """Hands `deliver` every push on `topic` for the caller's tenant, projected
         onto its view; returns the unsubscribe callable. Raises ValidationFailed

@@ -10,7 +10,7 @@ from uuid import UUID
 
 from pydantic import Field
 
-from acme.om.base import Platform
+from acme.om.base import OmBase
 from acme.om.spend_budgets.types.amount import AmountUnit
 from acme.om.spend_budgets.types.spend_budget import SpendBudgetScope
 
@@ -20,7 +20,7 @@ class SpendBreachAction(StrEnum):
     PRICE = "price"  # give the model a price: the call's cost is unknown and the line bounds cost
 
 
-class SpendBreach(Platform):
+class SpendBreach(OmBase):
     """One unit of one line the call does not fit under. A line with no
     budget is the request's own amount."""
 
@@ -36,5 +36,5 @@ class SpendBreach(Platform):
     resets_at: datetime | None  # None for a window that never resets, and the request's own
 
 
-class Refusal(Platform):
+class Refusal(OmBase):
     breaches: tuple[SpendBreach, ...] = Field(min_length=1)

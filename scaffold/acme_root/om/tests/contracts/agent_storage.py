@@ -12,7 +12,11 @@ from acme.om.agents.storage import AgentStorageInterface
 from acme.om.agents.types.tree import AgentTree
 from acme.om.base import new_id, utcnow
 from acme.om.exceptions import PreconditionFailed
+
 from contracts.racing import race
+
+INTERFACE = AgentStorageInterface
+"""The storage interface whose cross-tenant cases this suite holds."""
 
 CROSS_TENANT_CASES: frozenset[str] = frozenset(
     {"create_tree", "purge_tenant", "purge_tree", "read_tree", "take_slot", "write_tree"}

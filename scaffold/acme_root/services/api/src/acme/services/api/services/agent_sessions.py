@@ -8,9 +8,10 @@ from abc import ABC, abstractmethod
 from uuid import UUID
 
 from acme.om.agent_sessions.types.agent_session import AgentSessionStatus, Among
-from acme.om.context import TenantContext
+from acme.om.context import OperatorContext, TenantContext
 from acme.services.api.types.agent_sessions import (
     AgentSessionPageView,
+    AgentSessionUsageView,
     AgentSessionView,
     AgentStepPageView,
     AgentStepView,
@@ -43,7 +44,7 @@ class AgentSessionsServiceInterface(ABC):
     ) -> AgentSessionView: ...
 
     @abstractmethod
-    async def list_sessions(
+    async def list_agent_sessions(
         self,
         ctx: TenantContext,
         among: Among,
@@ -163,4 +164,17 @@ class AgentSessionsServiceInterface(ABC):
     ) -> ToolOutputPageView:
         """A page of a tool output the session keeps, from the character at
         `start`, read as its steps are."""
+        ...
+
+    @abstractmethod
+    async def get_agent_session_usage(
+        self,
+        admin: OperatorContext,
+        org_id: UUID,
+        agent_session_id: UUID,
+        cursor: str | None,
+        limit: int,
+    ) -> AgentSessionUsageView:
+        """On the operator plane: a page of one session's usage records and
+        its rollups; `cursor` is the previous page's `next_cursor`."""
         ...

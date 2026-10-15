@@ -6,14 +6,14 @@ version."""
 import json
 from pathlib import Path
 
-from contracts.loops import ASSISTANT, DELIVERY, HELPER, call, loop_over, reply, said
-
 from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
 from acme.om.agent_steps.types.content import TextBlock
 from acme.om.agent_steps.types.header import LoopOutcome, ToolResponseHeader
 from acme.om.agents.types.run import RunEnd
 from acme.om.tools.native.write_agent_plan import AgentPlan, current_agent_plan
 from acme.om.windows.rules import data_block
+
+from contracts.loops import ASSISTANT, DELIVERY, HELPER, call, loop_over, reply, said
 
 FIRST = "1. Read the weekly report.\n2. Fix its total."
 SECOND = "1. Read the weekly report: done.\n2. Fix its total."

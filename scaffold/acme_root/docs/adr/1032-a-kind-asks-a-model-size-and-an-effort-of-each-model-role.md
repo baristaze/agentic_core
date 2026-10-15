@@ -31,8 +31,7 @@ still resolves every role by its name.
 its model takes, `efforts`. It runs at an ask's effort only when it
 names it; otherwise at its own. The rule holds for each fallback too, so
 a fallback carries the effort it may run at. A fill that names no
-efforts never moves, so a fill declared before this change keeps its
-effort under any ask. What a fill allows sits on the fill, not on its
+efforts never moves: it keeps its effort under any ask. What a fill allows sits on the fill, not on its
 eligibility: eligibility is what a session requires of every fill, and
 a session requires no effort.
 
@@ -54,7 +53,7 @@ their own and their fallbacks take the ask's.
 - A session's fills are still resolved once, so an ask changes nothing
   mid-session. A kind version that asks differently reaches only new
   sessions.
-- A fill set written before this change reads with no ask, and its
-  fills with no efforts.
+- A stored fill set that holds no ask reads with none, and its fills
+  with no efforts.
 - A product that maps sizes to its own models names, for each fill, the
   efforts its model takes. Until it does, an ask's effort moves nothing.

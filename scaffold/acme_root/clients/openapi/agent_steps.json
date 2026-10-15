@@ -1,0 +1,116 @@
+{
+  "components": {
+    "schemas": {
+      "Actor": {
+        "description": "Who produced a step.",
+        "enum": [
+          "person",
+          "program",
+          "agent",
+          "model",
+          "engine",
+          "external"
+        ],
+        "title": "Actor",
+        "type": "string"
+      },
+      "AgentStepType": {
+        "description": "What a step records. The type answers questions, so no caller\ncompares strings.",
+        "enum": [
+          "message",
+          "event",
+          "control",
+          "model_request",
+          "model_response",
+          "tool_request",
+          "tool_response",
+          "summary",
+          "parked",
+          "resumed",
+          "loop_ended",
+          "switched",
+          "environment_changed",
+          "snapshotted"
+        ],
+        "title": "AgentStepType",
+        "type": "string"
+      },
+      "ControlCommand": {
+        "description": "What a `control` step records: a command that travels out of band.",
+        "enum": [
+          "pause",
+          "resume",
+          "cancel",
+          "interrupt",
+          "compact",
+          "approve",
+          "deny",
+          "unlock",
+          "restore"
+        ],
+        "title": "ControlCommand",
+        "type": "string"
+      },
+      "LoopOutcome": {
+        "description": "The five ways a loop ends. A park is none of them.",
+        "enum": [
+          "succeeded",
+          "failed",
+          "inconclusive",
+          "cancelled",
+          "errored"
+        ],
+        "title": "LoopOutcome",
+        "type": "string"
+      },
+      "Origin": {
+        "description": "Where a step came in.",
+        "enum": [
+          "portal",
+          "cli",
+          "api",
+          "integration",
+          "automation",
+          "parent",
+          "engine"
+        ],
+        "title": "Origin",
+        "type": "string"
+      },
+      "ParkReason": {
+        "description": "Why a loop waits, and so what clears it.",
+        "enum": [
+          "person",
+          "provider",
+          "spend_budget",
+          "leasable_resource",
+          "job",
+          "children",
+          "handover",
+          "pause"
+        ],
+        "title": "ParkReason",
+        "type": "string"
+      },
+      "ToolFailure": {
+        "description": "The class of a tool failure, decided where the failure happens. The\nmodel reads it with advice on what to do next.",
+        "enum": [
+          "invalid_input",
+          "transient",
+          "timeout",
+          "denied",
+          "interrupted",
+          "permanent"
+        ],
+        "title": "ToolFailure",
+        "type": "string"
+      }
+    }
+  },
+  "info": {
+    "title": "Acme API: agent_steps",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {}
+}

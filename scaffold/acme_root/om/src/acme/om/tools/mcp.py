@@ -39,7 +39,7 @@ from acme.integrations.mcp import (
     McpToolRefused,
 )
 from acme.om.agent_steps.types.header import ToolFailure
-from acme.om.base import Platform
+from acme.om.base import OmBase
 from acme.om.context import TenantContext
 from acme.om.exceptions import McpDefinitionChanged, ToolFailed, ValidationFailed
 from acme.om.tools.rules import unreviewed
@@ -106,9 +106,7 @@ class McpToolImpl(ToolInterface):
     ) -> None:
         return None
 
-    async def run(
-        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
-    ) -> Platform:
+    async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
         text = await self._call(ctx, self._binding, call_input.model_dump(mode="json"), runtime)
         return McpOutput(text=text)
 

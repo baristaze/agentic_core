@@ -5,10 +5,6 @@ serving logins cannot rewrite or remove a hold or a settlement."""
 from uuid import UUID
 
 import pytest
-from contracts.doubles import context
-from contracts.ledger_storage import LedgerStorageContract, a_hold, a_line
-from contracts.racing import race
-from contracts.spend_budget_storage import make_spend_budget
 from sqlalchemy import TextClause, text
 from sqlalchemy.exc import DBAPIError
 
@@ -29,6 +25,11 @@ from acme.om.storage.logins import RUNTIME_LOGIN, SYSTEM_LOGIN
 from acme.om.storage.migrate import ensure_logins_everywhere
 from acme.om.storage.roles import DatabaseRole
 from acme.om.storage.settings import MigrationSettings
+
+from contracts.doubles import context
+from contracts.ledger_storage import LedgerStorageContract, a_hold, a_line
+from contracts.racing import race
+from contracts.spend_budget_storage import make_spend_budget
 
 pytestmark = pytest.mark.integration
 

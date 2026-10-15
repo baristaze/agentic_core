@@ -189,7 +189,7 @@ steps.
 **Severity.** medium
 
 **Shape.**
-`scaffold/acme_root/om/migrations/sql/activity/202610020101_steps.up.sql` and
+`scaffold/acme_root/om/migrations/sql/activity/` and
 `scaffold/acme_root/om/src/acme/om/agent_steps/storage/__init__.py`
 
 **Check.** `agentic-check` decides that no SQLAlchemy statement or SQL text
@@ -234,7 +234,7 @@ and deleted are flags that can be undone, except the deletes that are
 final. An archived session records arriving events without waking, and a
 principal's message unarchives it. The status is a projection of the
 steps, cached for queries. In code the session is `AgentSession`, never
-the guideline's sign-in `Session`.
+the guideline's sign-in `AuthSession`.
 
 **Source.** Loops, Runs, and Sessions, A Session Never Ends.
 

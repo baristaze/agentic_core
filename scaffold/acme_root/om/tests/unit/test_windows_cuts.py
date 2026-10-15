@@ -10,7 +10,6 @@ import random
 from collections.abc import Sequence
 
 import pytest
-from contracts.histories import History
 
 from acme.integrations.model_providers.calls import ModelCall, ToolSpec
 from acme.integrations.model_providers.types import ProviderName
@@ -21,6 +20,8 @@ from acme.om.language_models.types.fill import Fill
 from acme.om.windows import rules
 from acme.om.windows.types.kind import KindPrompts
 from acme.om.windows.types.policy import CompactionPolicy
+
+from contracts.histories import History
 
 KIND = KindPrompts(kind="k", version=1, prompts=("Work.",), tools=(ToolSpec(name="read_log"),))
 POLICY = CompactionPolicy(chars_per_token=1.0, step_overhead=8)

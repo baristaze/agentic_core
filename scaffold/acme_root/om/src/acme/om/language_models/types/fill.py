@@ -12,7 +12,7 @@ from uuid import UUID
 from pydantic import Field, StringConstraints, model_validator
 
 from acme.integrations.model_providers.types import Effort, ProviderName
-from acme.om.base import Created, Identifiable, Platform
+from acme.om.base import Created, Identifiable, OmBase
 
 ModelRole = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
 """A task a call site names: the main agent, the summarizer, a title, a log
@@ -35,7 +35,7 @@ class ModelSize(StrEnum):
     XL = "xl"
 
 
-class ModelAsk(Platform):
+class ModelAsk(OmBase):
     """What a kind asks of one of its model roles: how much model the role
     needs, and how hard it works. The resolver serves the size, and takes
     the effort only where the fill allows it."""
@@ -50,7 +50,7 @@ class OutputShape(StrEnum):
     SCHEMA = "schema"  # an answer in the shape a named schema gives
 
 
-class Eligibility(Platform):
+class Eligibility(OmBase):
     """What a fill offers, or what a session requires of every fill it may
     run on: zero data retention, a region."""
 
@@ -64,7 +64,7 @@ class Eligibility(Platform):
         return self.region is None or offered.region == self.region
 
 
-class Fill(Platform):
+class Fill(OmBase):
     """What serves a model role: a provider, a model, how hard it works, its
     output bound and shape, its context window, and the eligibility it
     carries. `efforts` are the levels an ask may move it to: the ones its
@@ -101,7 +101,7 @@ class Fill(Platform):
         return self.model_copy(update={"effort": effort})
 
 
-class RoleFill(Platform):
+class RoleFill(OmBase):
     """One model role's fill in a fill set, and the fallbacks it declares, in
     the order a fallback takes them. `ask` is what the kind asked of the
     role, kept beside what it got."""
@@ -118,7 +118,7 @@ class RoleFill(Platform):
         return self
 
 
-class SizeFill(Platform):
+class SizeFill(OmBase):
     """One model size's fill in a resolver's table, and the fallbacks it
     declares, in the order a fallback takes them."""
 
@@ -136,7 +136,7 @@ class SwitchReason(StrEnum):
     POLICY = "policy"  # a policy said so
 
 
-class FillSwitch(Platform):
+class FillSwitch(OmBase):
     """What a `switched` step says of a fill switch: the role, both fills,
     the version the switch made, and why."""
 

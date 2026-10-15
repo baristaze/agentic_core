@@ -10,15 +10,16 @@ kinds of thing [Acme is made of](../../../../README.md).
   status (queued, claimed, done, failed), when it becomes available,
   who claimed it and until when, its attempts, and its last error.
 - **Kind**: the job's shape, with a fixed payload and the permission a
-  person needs to ask for it. The core has nine: `NOOP`, a step of an
-  `ORCHESTRATION`, `WAKE_PARKED` for the records a cleared reason
-  frees, `DELETE_ACCOUNT` and `DELETE_ORG` for the identity provider's
-  side of a deletion, `WAKE_AGENT_SESSION` and `WAKE_AGENT_SESSIONS` for the
-  agent sessions a park's time or a raised budget frees,
-  `LEASE_NOTICE` for a session in line whose request was answered or
-  whose lease was revoked, and `LOOP` for a session's loop, which the
-  session runner runs. A kind whose payload names a time waits until
-  then.
+  person needs to ask for it, registered once by its name. This
+  namespace has five: `NOOP`, a step of an `ORCHESTRATION`,
+  `WAKE_PARKED` for the records a cleared reason frees, and
+  `DELETE_ACCOUNT` and `DELETE_ORG` for the identity provider's side of
+  a deletion. Another namespace registers its own: the agent sessions
+  register `WAKE_AGENT_SESSION` and `WAKE_AGENT_SESSIONS` for the
+  sessions a park's time or a raised budget frees, `LEASE_NOTICE` for a
+  session in line whose request was answered or whose lease was revoked,
+  and `LOOP` for a session's loop, which the session runner runs. A kind
+  whose payload names a time waits until then.
 - **Lane**: a routing name. A worker serves one lane. A kind can have a
   lane of its own, such as a long-held kind kept apart from short ones;
   any other kind runs on the default lane.
@@ -82,9 +83,12 @@ kinds of thing [Acme is made of](../../../../README.md).
 
 A write that starts work lands a `work.<kind>` outbox row beside its
 own, and the relay enqueues the item under the row's id; a namespace
-never enqueues across a role itself. A new kind adds its name to
-`WorkKind`, its payload to `WORK_PAYLOADS`, its permission to
-`WORK_ENQUEUE_PERMISSIONS`, and its handler to the worker. A kind that
-runs on a lane of its own adds the lane to `WORK_LANES`, which the relay
-reads through `relayed_lane`, and a worker serves that lane. A handler
-raises `WorkParked` to wait and `WorkRefused` to fail for good.
+never enqueues across a role itself. A namespace declares its kinds in
+its own `kinds.py`, each a `WorkKindSpec` with its payload, its
+permission, and its lane, and the root adds them to its registry,
+`KINDS`, below the marker line; the worker adds each kind's handler the
+same way. This namespace's own are `WORK_KINDS`, which no other
+namespace edits. A kind that runs on a lane of its own names the lane
+on its spec, where the relay reads it, and a worker serves that lane. A
+handler raises `WorkParked` to wait and `WorkRefused` to fail for
+good.

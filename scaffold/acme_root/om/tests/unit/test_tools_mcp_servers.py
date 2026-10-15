@@ -27,19 +27,6 @@ from pathlib import Path
 
 import httpx2
 import pytest
-from contracts.agent_session_storage import make_agent_session
-from contracts.doubles import context
-from contracts.factories import make_org
-from contracts.tools import (
-    TWIN_SPEC,
-    Tools,
-    failure_of,
-    put_call,
-    registry_of,
-    result_text,
-    tools_over,
-    twin_transport,
-)
 from pydantic import SecretStr
 
 from acme.infra.base import utcnow
@@ -61,6 +48,20 @@ from acme.om.tools.mcp import McpServers, McpToolImpl, definition_of, toolset_of
 from acme.om.tools.rules import definition_hash
 from acme.om.tools.types.mcp import McpBinding, McpOutput, McpToolDefinition
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput
+
+from contracts.agent_session_storage import make_agent_session
+from contracts.doubles import context
+from contracts.factories import make_org
+from contracts.tools import (
+    TWIN_SPEC,
+    Tools,
+    failure_of,
+    put_call,
+    registry_of,
+    result_text,
+    tools_over,
+    twin_transport,
+)
 
 SERVER = Path(__file__).parent / "mcp_server.py"
 SECRET = "words_token"
@@ -420,7 +421,7 @@ async def test_each_tool_declares_its_servers_secret_and_a_call_audits_it_by_nam
     # A call audits the secret's use by its name, never its value.
     response, through = await call_on(tmp_path, at, named(tools, "words_whoami"), {})
     assert failure_of(response) is None
-    events = await through.events.get_events(at.ctx, 0, 100)
+    events = await through.change_events.get_change_events(at.ctx, 0, 100)
     (audit,) = [event for event in events if event.kind == SECRET_USED]
     assert audit.payload["secret"] == SECRET and audit.payload["via"] == via.value
     assert audit.payload["tool"] == "words_whoami"

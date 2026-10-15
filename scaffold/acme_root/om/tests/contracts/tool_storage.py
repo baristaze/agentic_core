@@ -12,6 +12,9 @@ from acme.om.tools.storage import ToolStorageInterface
 from acme.om.tools.types.policy import ApproverRule, Decision, ToolPolicy, ToolPolicyRule
 from acme.om.tools.types.tool import Effect
 
+INTERFACE = ToolStorageInterface
+"""The storage interface whose cross-tenant cases this suite holds."""
+
 CROSS_TENANT_CASES: frozenset[str] = frozenset(
     {"create_policy", "purge_tenant", "read_policy", "write_policy"}
 )

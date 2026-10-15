@@ -3,6 +3,7 @@ from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
 from uuid import UUID
 
+from acme.om.agent_sessions.kinds import AgentSessionWorkKind, LoopPayload, WakeAgentSessionPayload
 from acme.om.agent_sessions.manager import AgentSessionPurged, AgentSessionsManagerInterface
 from acme.om.agent_sessions.rules import (
     announces,
@@ -32,7 +33,7 @@ from acme.om.agent_steps.types.header import ControlCommand, ControlHeader, Park
 from acme.om.attribution.rules import fold
 from acme.om.attribution.types.authority import Visibility
 from acme.om.attribution.types.principal import AgentRef
-from acme.om.base import EMPTY_UUID, Platform, new_id, utcnow
+from acme.om.base import EMPTY_UUID, OmBase, new_id, utcnow
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import (
     Conflict,
@@ -46,9 +47,6 @@ from acme.om.outbox import OutboxRelayInterface
 from acme.om.outbox.types.row import OutboxRow, outbox_row, versioned_row
 from acme.om.tenancy import TenancyManagerInterface
 from acme.om.work.types.work_item import (
-    LoopPayload,
-    WakeAgentSessionPayload,
-    WorkKind,
     work_row_kind,
 )
 
@@ -59,7 +57,7 @@ UPDATED = "agent_sessions.agent_session.updated"
 DELETED = "agent_sessions.agent_session.deleted"
 
 
-class AgentSessionsOptions(Platform):
+class AgentSessionsOptions(OmBase):
     max_limit: int = 50  # sessions one page holds at most
     project_batch: int = 200  # steps one read of the projection folds
     project_attempts: int = 3  # writers one projection reads again behind, at most
@@ -609,7 +607,10 @@ def loop_row(ctx: TenantContext, session: AgentSession) -> OutboxRow:
     write woke the session: the claim rebuilds that principal under the
     service role, and every tool call asks its own principal again."""
     return outbox_row(
-        ctx, work_row_kind(WorkKind.LOOP), session.id, LoopPayload().model_dump(mode="json")
+        ctx,
+        work_row_kind(AgentSessionWorkKind.LOOP),
+        session.id,
+        LoopPayload().model_dump(mode="json"),
     )
 
 
@@ -620,7 +621,7 @@ def wake_row(ctx: TenantContext, session: AgentSession, park: Park) -> OutboxRow
     payload = WakeAgentSessionPayload(not_before=park.retry_at or session.updated_at, park=park)
     return outbox_row(
         ctx,
-        work_row_kind(WorkKind.WAKE_AGENT_SESSION),
+        work_row_kind(AgentSessionWorkKind.WAKE_AGENT_SESSION),
         session.id,
         payload.model_dump(mode="json"),
     ).model_copy(update={"actor_id": session.created_by})

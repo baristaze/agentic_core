@@ -7,8 +7,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.doubles import Members, context, media_of
-from contracts.factories import make_org
 
 from acme.infra.buckets import Buckets
 from acme.infra.exceptions import UploadRefused
@@ -16,8 +14,8 @@ from acme.infra.flags import Flag
 from acme.infra.flags.memory import FlagRule, FlagsMemoryImpl
 from acme.infra.impl.local import InfraLocalImpl
 from acme.om.base import new_id, utcnow
+from acme.om.change_events.storage.impl.memory import ChangeEventStorageMemoryImpl
 from acme.om.context import Role, TenantContext
-from acme.om.events.storage.impl.memory import EventStorageMemoryImpl
 from acme.om.exceptions import FeatureOff, NotAuthorized, NotFound, ValidationFailed
 from acme.om.media import rules
 from acme.om.media.impl.manager import MediaManagerImpl, MediaOptions
@@ -25,6 +23,9 @@ from acme.om.media.storage.impl.memory import MediaStorageMemoryImpl
 from acme.om.media.types.file import File, FilePurpose, FileStatus
 from acme.om.outbox.impl.relay import OutboxRelayImpl
 from acme.om.outbox.storage.impl.memory import OutboxStorageMemoryImpl
+
+from contracts.doubles import Members, context, media_of
+from contracts.factories import make_org
 
 PDF = b"%PDF-1.7 a small file"
 
@@ -46,7 +47,7 @@ def outbox() -> OutboxStorageMemoryImpl:
 
 @pytest.fixture
 def relay(outbox: OutboxStorageMemoryImpl, infra: InfraLocalImpl) -> OutboxRelayImpl:
-    return OutboxRelayImpl(outbox, EventStorageMemoryImpl(), infra.get_topics())
+    return OutboxRelayImpl(outbox, ChangeEventStorageMemoryImpl(), infra.get_topics())
 
 
 @pytest.fixture

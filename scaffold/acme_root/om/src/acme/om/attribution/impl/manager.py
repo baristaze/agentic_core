@@ -28,7 +28,7 @@ from acme.om.attribution.types.authority import (
     RequestAttribution,
 )
 from acme.om.attribution.types.principal import Principal, PrincipalKind
-from acme.om.base import Platform, derived_id, utcnow
+from acme.om.base import OmBase, derived_id, utcnow
 from acme.om.context import Permission, RequestContext, TenantContext
 from acme.om.exceptions import (
     AuthorityRevoked,
@@ -48,7 +48,7 @@ CREATED = "attribution.agent_session_authority.created"
 UPDATED = "attribution.agent_session_authority.updated"
 
 
-class AttributionOptions(Platform):
+class AttributionOptions(OmBase):
     purge_batch: int = 1000  # authorities one purge statement deletes at most
     read_batch: int = 200  # steps one read of a request's range holds
     children_batch: int = 50  # children one read of a tree's walk holds

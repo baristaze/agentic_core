@@ -8,12 +8,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.agent_session_storage import make_agent_session
-from contracts.agent_step_storage import make_message, make_parked, make_request, make_response
-from contracts.doubles import context, model_request
-from contracts.factories import make_org
-from contracts.spend_budget_storage import make_spend_budget
-from contracts.tools import stand_ins
 from pydantic import ValidationError
 
 from acme.infra.impl.local import InfraLocalImpl
@@ -63,6 +57,13 @@ from acme.om.spend_budgets.types.spend_hold import SpendHold, SpendHoldRequest
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.tools.registry import ToolRegistry
 from acme.om.windows.impl.gate import scopes_of
+
+from contracts.agent_session_storage import make_agent_session
+from contracts.agent_step_storage import make_message, make_parked, make_request, make_response
+from contracts.doubles import context, model_request
+from contracts.factories import make_org
+from contracts.spend_budget_storage import make_spend_budget
+from contracts.tools import stand_ins
 
 DELIVERY = AgentKind(
     name="delivery",

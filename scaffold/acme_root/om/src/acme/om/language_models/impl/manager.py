@@ -5,7 +5,7 @@ from uuid import UUID
 from acme.om.agent_steps import AgentStepsManagerInterface
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
 from acme.om.agent_steps.types.header import SwitchedHeader
-from acme.om.base import Platform, new_id, utcnow
+from acme.om.base import OmBase, new_id, utcnow
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import NotFound, PreconditionFailed, ValidationFailed
 from acme.om.language_models import rules
@@ -24,7 +24,7 @@ from acme.om.language_models.types.fill import (
 from acme.om.tenancy import TenancyManagerInterface
 
 
-class LanguageModelsOptions(Platform):
+class LanguageModelsOptions(OmBase):
     purge_batch: int = 1000  # fill-set versions one purge statement deletes at most
 
 

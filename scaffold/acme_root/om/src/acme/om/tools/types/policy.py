@@ -13,7 +13,7 @@ from typing import ClassVar, Self
 
 from pydantic import Field, model_validator
 
-from acme.om.base import FrozenMapping, Identifiable, Platform, Trackable
+from acme.om.base import FrozenMapping, Identifiable, OmBase, Trackable
 from acme.om.context import Role
 from acme.om.tools.types.tool import CLASS_NAME, TOOL_NAME, Effect
 
@@ -33,7 +33,7 @@ class Decision(StrEnum):
 STRICTNESS = {Decision.ALLOW: 0, Decision.APPROVE: 1, Decision.DENY: 2}
 
 
-class Target(Platform):
+class Target(OmBase):
     """What a call acts on, as the system it acts on reports it (a branch
     and whether it is protected, a repository and whether it is public),
     never as the call's input describes it. A call that targets nothing in
@@ -43,7 +43,7 @@ class Target(Platform):
     attributes: FrozenMapping = Field(default_factory=dict, validate_default=True)
 
 
-class ToolPolicyCall(Platform):
+class ToolPolicyCall(OmBase):
     """Everything policy reads of a call, and all of it: the model's text and
     the call's input are not among it."""
 
@@ -53,7 +53,7 @@ class ToolPolicyCall(Platform):
     target: Target = Field(default_factory=Target)
 
 
-class ToolPolicyRule(Platform):
+class ToolPolicyRule(OmBase):
     """One row of a layer: what it matches and what it decides. A selector
     left unset matches any call; every target attribute it names must equal
     the target's. The more selectors a rule sets, the more specific it is."""
@@ -66,11 +66,11 @@ class ToolPolicyRule(Platform):
     decision: Decision
 
 
-class ToolPolicyLayer(Platform):
+class ToolPolicyLayer(OmBase):
     rules: tuple[ToolPolicyRule, ...] = ()
 
 
-class ApproverRule(Platform):
+class ApproverRule(OmBase):
     """Who may approve a call of one class in the tenant. A class with no
     rule takes the owners and the admins. A service is never an approver:
     an approval is a person's decision."""

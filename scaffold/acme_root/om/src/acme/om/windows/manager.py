@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from uuid import UUID
 
 from acme.om.agent_steps.types.agent_step import AgentStep
-from acme.om.context import TenantContext
+from acme.om.context import TenantContext, stageless
 from acme.om.language_models.types.fill import MAIN, ModelRole
 from acme.om.windows.types.kind import KindPrompts
 from acme.om.windows.types.tool_output import ToolOutputPage
@@ -117,8 +117,9 @@ class WindowsManagerInterface(ABC):
         ...
 
     @abstractmethod
+    @stageless
     async def purge_tool_outputs(self, org_id: UUID, agent_session_id: UUID) -> int:
-        """Platform-internal: the tool outputs of a session the sweep has
+        """System-internal: the tool outputs of a session the sweep has
         claimed for its purge go with its history, before its row, under the
         purge login, in the tenant named; for no principal. Each object goes
         before its record. Returns how many records went."""

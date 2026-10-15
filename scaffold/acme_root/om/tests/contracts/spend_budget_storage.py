@@ -14,6 +14,9 @@ from acme.om.spend_budgets.types.spend_budget import (
     WindowKind,
 )
 
+INTERFACE = SpendBudgetStorageInterface
+"""The storage interface whose cross-tenant cases this suite holds."""
+
 CROSS_TENANT_CASES: frozenset[str] = frozenset(
     {
         "create_spend_budget",

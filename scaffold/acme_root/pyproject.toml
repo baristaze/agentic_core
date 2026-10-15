@@ -41,8 +41,8 @@ dev = [
     "ruff>=0.16.8",
     "pyright>=1.1.414",
     "httpx>=0.28.1",
-    # Pinned exactly: `make openapi` regenerates clients/python/src/acme/client/schema.py
-    # with it and CI checks the committed file is current.
+    # Pinned exactly: `make openapi` regenerates clients/python/src/acme/client/schema/
+    # with it and CI checks the committed files are current.
     "datamodel-code-generator==0.82.0",
 ]
 
@@ -51,6 +51,7 @@ asyncio_mode = "auto"
 addopts = "--import-mode=importlib"
 pythonpath = [
     "om/tests",
+    "infra/tests",
     "services/api/tests",
     "workers/maintenance/tests",
     "workers/agent_session_runner/tests",
@@ -82,12 +83,12 @@ markers = [
 
 # The engine's static checker (`make agentic-check`), which `checkers/`
 # carries. The layout is the scaffold's, so only the package is named, and
-# the Python client's types, generated from the committed OpenAPI document
+# the Python client's types, generated from the committed OpenAPI documents
 # by `make openapi` and never hand-edited, are left out, as the linter
 # leaves them.
 [tool.agentic-check]
 package = "acme"
-exclude = ["clients/python/src/acme/client/schema.py"]
+exclude = ["clients/python/src/acme/client/schema/**"]
 
 # The guideline's static checker (`make arch-check`). The layout is the
 # guideline's, so only the package and the project's own lists are named.
@@ -117,60 +118,7 @@ reason = "the unique index is (org_id, idempotency_key), led by the tenant as th
 rule = "DEL-12"
 path = "apps/site/package.json"
 adr = "docs/adr/0002-technology-choices.md"
-reason = "a static page with no script and no state; the portal and every app that calls the platform stay React on Vite"
-
-# The storage methods that take no tenant, the same list
-# om/tests/unit/test_storage_exceptions.py holds.
-[tool.arch-check.options.CTX-12]
-tenantless = [
-    "AgentSessionStorageInterface.read_purgeable",
-    "EventStorageInterface.count_since",
-    "EventStorageInterface.trim",
-    "IdempotencyStorageInterface.purge_records",
-    "LeasesStorageInterface.purge_settled",
-    "LeasesStorageInterface.read_due_orgs",
-    "MediaStorageInterface.purge_files_across_tenants",
-    "MediaStorageInterface.read_purgeable",
-    "OrchestrationsStorageInterface.purge_settled",
-    "OutboxStorageInterface.claim_pending",
-    "OutboxStorageInterface.count_failed_since",
-    "OutboxStorageInterface.oldest_pending_at",
-    "OutboxStorageInterface.purge_done",
-    "TenancyStorageInterface.clear_failed_sign_ins",
-    "TenancyStorageInterface.confirm_totp",
-    "TenancyStorageInterface.count_orgs",
-    "TenancyStorageInterface.count_orgs_and_users",
-    "TenancyStorageInterface.delete_person",
-    "TenancyStorageInterface.disable_operator",
-    "TenancyStorageInterface.purge_deleted",
-    "TenancyStorageInterface.purge_sign_in_delays",
-    "TenancyStorageInterface.read_api_key_by_digest",
-    "TenancyStorageInterface.read_identity",
-    "TenancyStorageInterface.read_identity_by_email_digest",
-    "TenancyStorageInterface.read_identity_by_issuer_subject",
-    "TenancyStorageInterface.read_memberships_by_identity",
-    "TenancyStorageInterface.read_operator_tokens",
-    "TenancyStorageInterface.read_org_by_slug",
-    "TenancyStorageInterface.read_orgs",
-    "TenancyStorageInterface.read_platform_size",
-    "TenancyStorageInterface.read_session_by_digest",
-    "TenancyStorageInterface.read_session_by_id",
-    "TenancyStorageInterface.read_session_with_identity_by_digest",
-    "TenancyStorageInterface.read_sign_in_delay",
-    "TenancyStorageInterface.read_users_by_identity",
-    "TenancyStorageInterface.record_failed_sign_in",
-    "TenancyStorageInterface.redeem_socket_ticket",
-    "TenancyStorageInterface.use_totp_step",
-    "TenancyStorageInterface.write_identity",
-    "TenancyStorageInterface.write_platform_size",
-    "TenancyStorageInterface.write_time_zone",
-    "TenancyStorageInterface.write_totp_secret",
-    "WorkStorageInterface.claim_next",
-    "WorkStorageInterface.count_failed_since",
-    "WorkStorageInterface.oldest_ready_at",
-    "WorkStorageInterface.purge_items",
-    "WorkStorageInterface.requeue_stale",
-]
+reason = "a static page with no script and no state; the portal and every app that calls the system stay React on Vite"
 
 # The sites that build a stage above the request stage, the same list
 # om/tests/unit/test_stage_construction.py holds: the helper that assembles
@@ -187,7 +135,8 @@ sites = [
     "om/src/acme/om/tenancy/impl/manager.py::TenancyManagerImpl.service_context",
     "om/src/acme/om/tenancy/impl/manager.py::TenancyManagerImpl.member_context",
     "om/src/acme/om/tenancy/impl/manager.py::TenancyManagerImpl.service_contexts",
-    "om/src/acme/om/tenancy/impl/manager.py::TenancyManagerImpl.delegated_context",
     "om/src/acme/om/tenancy/impl/manager.py::TenancyManagerImpl.sweep_context",
+    # A copy adds its entries below this line.
+    "om/src/acme/om/tenancy/impl/manager.py::TenancyManagerImpl.delegated_context",
 ]
 builders = ["build_context"]

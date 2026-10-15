@@ -39,16 +39,16 @@ from acme.om.agent_steps.types.header import (
 )
 from acme.om.attribution import AttributionManagerInterface
 from acme.om.attribution.types.authority import CallReach
-from acme.om.base import Platform, derived_id, new_id, thaw_mapping, utcnow
+from acme.om.base import OmBase, derived_id, new_id, thaw_mapping, utcnow
+from acme.om.change_events import ChangeEventsManagerInterface
+from acme.om.change_events.manager import audit_change_event
 from acme.om.context import Permission, TenantContext
-from acme.om.events import EventsManagerInterface
-from acme.om.events.manager import audit_event
 from acme.om.exceptions import (
     AuthorityRevoked,
     JobRefused,
     NotAuthorized,
     NotFound,
-    PlatformException,
+    OmException,
     PreconditionFailed,
     StaleWriter,
     ToolFailed,
@@ -108,7 +108,7 @@ UPDATED = "tools.tool_policy.updated"
 SECRET_USED = "tools.secret.used"
 
 
-class ToolsOptions(Platform):
+class ToolsOptions(OmBase):
     # The platform's: no tenant loosens a call past them.
     ceilings: ToolPolicyLayer = Field(default_factory=lambda: DEFAULT_CEILINGS)
     engine_limit: timedelta = timedelta(minutes=30)  # the engine's ceiling on one call
@@ -134,7 +134,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         storage: ToolStorageInterface,
         steps: AgentStepsManagerInterface,
         tenancy: TenancyManagerInterface,
-        events: EventsManagerInterface,
+        change_events: ChangeEventsManagerInterface,
         relay: OutboxRelayInterface,
         workspaces: AgentWorkspaceProviderInterface,
         transport: TransportInterface,
@@ -159,7 +159,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         self._storage = storage
         self._steps = steps
         self._tenancy = tenancy
-        self._events = events
+        self._change_events = change_events
         self._relay = relay
         self._agent_workspaces = workspaces
         self._transport = transport
@@ -805,7 +805,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         read_only: bool = False,
     ) -> ToolRuntime:
         async def audit(use: SecretUse) -> None:
-            entry = audit_event(
+            entry = audit_change_event(
                 ctx,
                 derived_id(request.id, request.created_at, f"secret:{use.name}"),
                 SECRET_USED,
@@ -817,7 +817,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
                     "agent_session_id": str(request.agent_session_id),
                 },
             )
-            await self._events.append_event(ctx, entry)
+            await self._change_events.append_change_event(ctx, entry)
 
         return ToolRuntime(
             self._transport,
@@ -859,7 +859,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
                 raise StaleWriter(error.message) from error
             case InfraException():
                 return infra_failure(error.http_status, error.code), error.message
-            case PlatformException():
+            case OmException():
                 return ToolFailure.PERMANENT, error.message
             case _:
                 log.exception("tool %s failed", tool.spec.name, exc_info=error)

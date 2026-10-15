@@ -253,8 +253,8 @@ context: a transition does, in the adopter.
 A **step** is the smallest thing the engine records: a record of an
 event, never an orchestration's step. A loop, a session, a window, a
 trace, and a history are series of steps or references to them. In code
-it is `AgentStep`, in `agent_steps`, never the guideline's orchestration
-`Step`.
+it is `AgentStep`, in `agent_steps`, never the guideline's
+`OrchestrationStep`.
 
 ### One Event, One Step
 
@@ -384,7 +384,7 @@ what no step does: its creator, title, participants, agent kind and
 version, fill-set version, bounds, storage policy, its parent and root,
 and a cached status and visibility. Each is a projection of the steps,
 cached for queries; the steps are the truth. In code it is `AgentSession`, never
-the guideline's sign-in `Session`.
+the guideline's sign-in `AuthSession`.
 
 A loop ends; a session does not. An input that wakes it starts a new
 loop, and an unlock resumes a parked one. *Archived* and *deleted* are
@@ -1610,7 +1610,7 @@ memory-only session's runtime, a resource lease's hold time).
 | `person` | A question, an approval, a passed deadline, the step guard, a principal to reassign, a lost workspace | An answer, a decision, an extension, an assignment, an unlock | No |
 | `provider` | An outage, a rate limit, a billing or credential error, a missing key | The provider recovers; a key or account is fixed | At the retry time: an outage's or a rate limit's end, or the next try after a key or an account error, which finds the fix |
 | `spend_budget` | The gate refused | A raise, a close, or the window resets | At the reset |
-| `resource` | Waiting in line for a scarce resource ([Leases on a Resource][g-leases]), or for a workspace | A grant, or the request's end without one | On the grant or the end; for a workspace, at the retry time; for a job in line, at its deadline |
+| `leasable_resource` | Waiting in line for a scarce resource ([Leases on a Leasable Resource][g-leases]), or for a workspace | A grant, or the request's end without one | On the grant or the end; for a workspace, at the retry time; for a job in line, at its deadline |
 | `job` | A long-running tool job is working | The job's completion | On completion |
 | `children` | Waiting for sub-agents' reports | A report; the tree's deadline ends the wait | On the report; past the deadline it parks on `person` |
 | `handover` | A person holds the environment | Its holder gives it back | No |
@@ -1903,7 +1903,9 @@ reuse the guideline's: the session is `AgentSession`, the step
 `context` module, and attribution is `attribution` beside its identity
 plane. Nor do they take a word a copy's own product needs: a noun a
 product could own is named for the agent or the mechanism it serves, on
-every surface a copy shares, so the bare word stays the product's.
+every surface a copy shares, so the bare word stays the product's, as
+the guideline's naming rule holds of every noun a scaffold brings
+([Naming Entities][g-naming], OM-19).
 
 | Namespace | Holds |
 |---|---|
@@ -2057,39 +2059,39 @@ own tools and data.
 closed-loop, distributed platform: runners and hosts, placement,
 evidence, trust across a customer's wall, and money.
 
-[g]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md
-[g-read]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#how-to-read-this
-[g-leases]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#leases-on-a-resource
-[g-interfaces]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#interfaces
-[g-impls]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#multiple-impls-per-interface
-[g-decoration]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#composition-by-decoration
-[g-outage]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/lenses/contracts.md#con-24-a-providers-outage-is-one-mark-that-every-process-reads
-[g-stages]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#stages
-[g-scopes]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#scopes
-[g-naming]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#naming-entities
-[g-immut]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#immutability
-[g-ids]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#identifiers
-[g-namespaces]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#namespaces-as-swimlanes
-[g-roles]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#database-roles
-[g-infra]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#infrastructure
-[g-cache]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#cache
-[g-secrets]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#secrets
-[g-gateway]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#the-gateway
-[g-calls]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#direction-of-calls
-[g-realtime]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#realtime-at-the-edge
-[g-lro]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#long-running-orchestrations
-[g-workq]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#the-work-queue
-[g-worker]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#shape-of-a-worker
-[g-twins]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#twins-for-external-services
-[g-refuses]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#what-a-process-refuses
-[g-ops]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#operations
-[g-ops-skills]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#operational-skills
-[g-handoff]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#correlation-across-a-handoff
-[g-exceptions]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#exceptions
-[g-adr]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#records-of-decisions
-[g-tests]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#tests
-[g-resilience]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/architecture.md#resilience-by-design
-[g-lenses]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/lenses/README.md
-[g-adopting]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/docs/adopting.md#upgrade-a-copy-of-the-scaffold
-[g-adr-0039]: https://github.com/baristaze/swe_guidelines/blob/v0.60.0/scaffold/acme_root/docs/adr/0039-long-running-work-is-a-record-a-guard-parks-and-a-bound-fails.md
+[g]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md
+[g-read]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#how-to-read-this
+[g-leases]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#leases-on-a-leasable-resource
+[g-interfaces]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#interfaces
+[g-impls]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#multiple-impls-per-interface
+[g-decoration]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#composition-by-decoration
+[g-outage]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/lenses/contracts.md#con-24-a-providers-outage-is-one-mark-that-every-process-reads
+[g-stages]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#stages
+[g-scopes]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#scopes
+[g-naming]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#naming-entities
+[g-immut]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#immutability
+[g-ids]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#identifiers
+[g-namespaces]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#namespaces-as-swimlanes
+[g-roles]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#database-roles
+[g-infra]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#infrastructure
+[g-cache]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#cache
+[g-secrets]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#secrets
+[g-gateway]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#the-gateway
+[g-calls]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#direction-of-calls
+[g-realtime]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#realtime-at-the-edge
+[g-lro]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#long-running-orchestrations
+[g-workq]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#the-work-queue
+[g-worker]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#shape-of-a-worker
+[g-twins]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#twins-for-external-services
+[g-refuses]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#what-a-process-refuses
+[g-ops]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#operations
+[g-ops-skills]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#operational-skills
+[g-handoff]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#correlation-across-a-handoff
+[g-exceptions]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#exceptions
+[g-adr]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#records-of-decisions
+[g-tests]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#tests
+[g-resilience]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/architecture.md#resilience-by-design
+[g-lenses]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/lenses/README.md
+[g-adopting]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/docs/adopting.md#upgrade-a-copy-of-the-scaffold
+[g-adr-0039]: https://github.com/baristaze/swe_guidelines/blob/v0.61.0/scaffold/acme_root/docs/adr/0039-long-running-work-is-a-record-a-guard-parks-and-a-bound-fails.md
 [d]: https://github.com/baristaze/distro_gentic/blob/main/distro_gentic_spec.md

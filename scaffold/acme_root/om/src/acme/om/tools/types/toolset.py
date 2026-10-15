@@ -13,7 +13,7 @@ from typing import Self
 
 from pydantic import Field, model_validator
 
-from acme.om.base import Platform
+from acme.om.base import OmBase
 
 LOAD_TOOLSET = "load_toolset"
 """The engine's tool that loads a deferred toolset. A kind that defers one
@@ -23,7 +23,7 @@ TOOLSET_NAME = r"^[a-z][a-z0-9_]{0,63}$"
 SUMMARY_CHARS = 200
 
 
-class Toolset(Platform):
+class Toolset(OmBase):
     """A group of tools, by name, at a version. Its summary is the one line
     `load_toolset`'s description gives it when a kind defers it."""
 

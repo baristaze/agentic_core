@@ -1,9 +1,10 @@
 import pytest
-from contracts.fill_set_storage import FillSetStorageContract
 
 from acme.om.language_models.storage import FillSetStorageInterface
 from acme.om.language_models.storage.impl.postgres import FillSetStoragePostgresImpl
 from acme.om.storage.impl.pg_base import LoginSessions
+
+from contracts.fill_set_storage import FillSetStorageContract
 
 pytestmark = pytest.mark.integration
 

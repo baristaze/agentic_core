@@ -19,9 +19,6 @@ from typing import Any
 
 import aioboto3
 import pytest
-from contracts.doubles import context
-from contracts.factories import make_org
-from contracts.tools import tools_over
 
 from acme.infra.agent_workspaces import (
     AgentWorkspace,
@@ -48,6 +45,10 @@ from acme.om.agent_steps.types.header import SnapshotHeader
 from acme.om.base import new_id
 from acme.om.context import Role
 from acme.om.tools.impl.snapshots import session_prefix
+
+from contracts.doubles import context
+from contracts.factories import make_org
+from contracts.tools import tools_over
 
 KEPT = IsolationSpec(
     mode=IsolationMode.VM,

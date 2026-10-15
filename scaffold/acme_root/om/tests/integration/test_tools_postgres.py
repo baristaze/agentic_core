@@ -13,17 +13,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.loops import live
-from contracts.tools import (
-    HOST_SPEC,
-    INJECTED_TOKEN,
-    KIND_DEFAULTS,
-    Command,
-    failure_of,
-    put_call,
-    registry_of,
-    result_text,
-)
 
 from acme.infra.impl.configured import InfraConfiguredImpl
 from acme.infra.impl.settings import InfraSettings
@@ -40,6 +29,18 @@ from acme.om.tools.impl.manager import SECRET_USED
 from acme.om.tools.types.call import GateOutcome
 from acme.om.tools.types.policy import Decision, ToolPolicyRule
 from acme.om.tools.types.tool import Effect
+
+from contracts.loops import live
+from contracts.tools import (
+    HOST_SPEC,
+    INJECTED_TOKEN,
+    KIND_DEFAULTS,
+    Command,
+    failure_of,
+    put_call,
+    registry_of,
+    result_text,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -160,7 +161,7 @@ async def test_a_call_is_approved_run_audited_and_recovered_over_postgres(
     )
     assert failure_of(response) is None
     assert f"token {marker('api_token')}" in result_text(response)
-    events = await managers.events.get_events(owner, 0, 100)
+    events = await managers.change_events.get_change_events(owner, 0, 100)
     (audit,) = [event for event in events if event.kind == SECRET_USED]
     assert audit.payload["secret"] == "api_token" and audit.target_id == found.request.id
     held = [response.model_dump_json(), *(event.model_dump_json() for event in events)]

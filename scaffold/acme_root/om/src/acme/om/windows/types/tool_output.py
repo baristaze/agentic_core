@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import Field
 
-from acme.om.base import Created, Identifiable, Platform
+from acme.om.base import Created, Identifiable, OmBase
 
 
 class ToolOutput(Identifiable, Created):
@@ -20,7 +20,7 @@ class ToolOutput(Identifiable, Created):
     characters: int = Field(gt=0)
 
 
-class ToolOutputPage(Platform):
+class ToolOutputPage(OmBase):
     """The characters of the tool output from `offset`, and whether more follow.
     `characters` is the whole tool output's length."""
 

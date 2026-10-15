@@ -7,7 +7,6 @@ from datetime import timedelta
 from uuid import UUID
 
 import pytest
-from contracts.agent_step_storage import a_person, make_message, make_request
 from pydantic import ValidationError
 
 from acme.om.agent_sessions.limits import (
@@ -42,6 +41,8 @@ from acme.om.base import new_id, utcnow
 from acme.om.spend_budgets.rules import spend_budget_park
 from acme.om.spend_budgets.types.amount import AmountUnit
 from acme.om.spend_budgets.types.spend_breach import Refusal, SpendBreach, SpendBreachAction
+
+from contracts.agent_step_storage import a_person, make_message, make_request
 
 SESSION = new_id()
 NOW = utcnow()

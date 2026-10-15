@@ -13,14 +13,13 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.doubles import context
-from contracts.loops import Clock, Loop, loop_over, reply, said
 
 from acme.infra.base import SYSTEM_SCOPE
 from acme.integrations.model_providers import ModelProvidersInterface
 from acme.integrations.model_providers.calls import ModelCall
 from acme.integrations.model_providers.scripted import ScriptedFailure
 from acme.integrations.model_providers.types import ErrorKind, ProviderName
+from acme.om.agent_sessions.kinds import AgentSessionWorkKind, WakeAgentSessionPayload
 from acme.om.agent_steps.types.agent_step import AgentStepType
 from acme.om.agent_steps.types.header import LoopOutcome, ParkReason
 from acme.om.agents.impl.loop import LoopOptions
@@ -38,7 +37,9 @@ from acme.om.language_models.types.fill import Fill, ModelRole
 from acme.om.root import Managers
 from acme.om.windows.impl.gate import CallGateSpendBudgetImpl
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
-from acme.om.work.types.work_item import WakeAgentSessionPayload, WorkKind
+
+from contracts.doubles import context
+from contracts.loops import Clock, Loop, loop_over, reply, said
 
 KEY = "key-1"
 """The reference a tenant's own key is named by: never the key."""
@@ -276,7 +277,8 @@ async def test_a_park_on_a_key_or_an_account_says_who_acts_and_wakes_once_it_is_
     wakes = [
         item
         for _, item in work._items.values()  # pyright: ignore[reportPrivateUsage]
-        if item.kind is WorkKind.WAKE_AGENT_SESSION and item.target_id == agent_session_id
+        if item.kind == AgentSessionWorkKind.WAKE_AGENT_SESSION
+        and item.target_id == agent_session_id
     ]
     assert [WakeAgentSessionPayload.model_validate(w.payload).not_before for w in wakes] == [
         park.retry_at

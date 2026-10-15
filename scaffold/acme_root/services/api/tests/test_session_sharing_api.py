@@ -17,7 +17,6 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 from api_support import add_member, build_container, seed_request, sign_in_as
-from contracts.histories import History
 
 from acme.om.agent_steps.types.header import ToolResponseHeader
 from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
@@ -25,6 +24,8 @@ from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.context import Role
 from acme.services.api.container import AppContainer
+
+from contracts.histories import History
 
 ASSISTANT = AgentKind(
     name="assistant",

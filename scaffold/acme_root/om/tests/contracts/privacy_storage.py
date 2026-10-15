@@ -21,6 +21,9 @@ from acme.om.privacy.types.agent_session_privacy import (
     StoragePolicy,
 )
 
+INTERFACE = PrivacyStorageInterface
+"""The storage interface whose cross-tenant cases this suite holds."""
+
 CROSS_TENANT_CASES: frozenset[str] = frozenset(
     {
         "add_key",

@@ -13,10 +13,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.agent_session_storage import make_agent_session
-from contracts.doubles import context
-from contracts.factories import make_org
-from contracts.tools import Tools, stand_ins, tools_over
 
 from acme.infra.agent_workspaces import (
     AgentWorkspace,
@@ -45,6 +41,11 @@ from acme.om.root import build_managers
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.tools.impl.bases import base_agent_workspace_id, base_key
 from acme.om.tools.tool import TakenSnapshot
+
+from contracts.agent_session_storage import make_agent_session
+from contracts.doubles import context
+from contracts.factories import make_org
+from contracts.tools import Tools, stand_ins, tools_over
 
 PREFIX = "acme-test-"
 KEPT = IsolationSpec(

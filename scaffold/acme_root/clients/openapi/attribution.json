@@ -1,0 +1,21 @@
+{
+  "components": {
+    "schemas": {
+      "Visibility": {
+        "description": "Who sees a session and opens its content. The org is the team: there\nis no axis between the two.",
+        "enum": [
+          "org_wide",
+          "private"
+        ],
+        "title": "Visibility",
+        "type": "string"
+      }
+    }
+  },
+  "info": {
+    "title": "Acme API: attribution",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {}
+}

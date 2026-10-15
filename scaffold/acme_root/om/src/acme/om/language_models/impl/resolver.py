@@ -7,7 +7,7 @@ price row of its own: it asks before it answers."""
 from collections.abc import Sequence
 
 from acme.integrations.model_providers.types import Effort, ProviderName
-from acme.om.base import Platform
+from acme.om.base import OmBase
 from acme.om.context import TenantContext
 from acme.om.exceptions import UnpricedModel, UnresolvedRole
 from acme.om.language_models.prices import ModelPricesInterface
@@ -189,7 +189,7 @@ that asks nothing gets. A product maps the sizes to its own models in its
 options; each model needs a price row of its own."""
 
 
-class ResolverOptions(Platform):
+class ResolverOptions(OmBase):
     table: tuple[RoleFill, ...] = DEFAULT_TABLE
     sizes: tuple[SizeFill, ...] = DEFAULT_SIZES
 

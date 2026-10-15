@@ -2,8 +2,6 @@
 the thinking apart from its blocks, each block naming its place, and reads
 the turn back in the provider's order through storage's JSON."""
 
-from contracts.agent_step_storage import make_response
-
 from acme.integrations.model_providers.content import (
     TextBlock,
     ThinkingBlock,
@@ -14,6 +12,8 @@ from acme.integrations.model_providers.types import ProviderName
 from acme.om.agent_steps.types.agent_step import AgentStep
 from acme.om.agent_steps.types.content import Children, Content
 from acme.om.base import new_id
+
+from contracts.agent_step_storage import make_response
 
 SOURCE = ThinkingSource(provider=ProviderName.ANTHROPIC, model="claude-haiku-4-5")
 

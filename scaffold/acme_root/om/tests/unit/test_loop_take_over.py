@@ -4,6 +4,14 @@ tells the model what changed."""
 import asyncio
 from pathlib import Path
 
+from acme.om.agent_sessions.types.agent_session import AgentSessionStatus
+from acme.om.agent_steps.types.agent_step import AgentStepType
+from acme.om.agent_steps.types.header import (
+    LoopOutcome,
+    ParkReason,
+)
+from acme.om.agents.types.run import RunEnd
+
 from contracts.loops import (
     loop_over,
     of_type,
@@ -12,14 +20,6 @@ from contracts.loops import (
     text_of,
     use,
 )
-
-from acme.om.agent_sessions.types.agent_session import AgentSessionStatus
-from acme.om.agent_steps.types.agent_step import AgentStepType
-from acme.om.agent_steps.types.header import (
-    LoopOutcome,
-    ParkReason,
-)
-from acme.om.agents.types.run import RunEnd
 
 
 async def test_taking_over_fences_the_run_and_giving_back_tells_the_model_what_changed(

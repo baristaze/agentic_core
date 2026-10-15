@@ -11,7 +11,7 @@ from typing import Self
 
 from pydantic import Field, model_validator
 
-from acme.om.base import Platform
+from acme.om.base import OmBase
 
 
 class AmountUnit(StrEnum):
@@ -19,7 +19,7 @@ class AmountUnit(StrEnum):
     TOKENS = "tokens"  # native tokens
 
 
-class Amount(Platform):
+class Amount(OmBase):
     """A budget's amount, or a request's own: a unit left None is not
     bounded, and an amount bounds at least one."""
 
@@ -36,7 +36,7 @@ class Amount(Platform):
         return self.cost_micros if unit is AmountUnit.COST else self.tokens
 
 
-class Spend(Platform):
+class Spend(OmBase):
     """What a call or a job spends, or may spend: its reference cost and its
     native tokens. A cost of None is unknown, because no price applies."""
 

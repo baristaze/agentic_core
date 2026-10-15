@@ -9,12 +9,12 @@ from datetime import timedelta
 
 from pydantic import Field
 
-from acme.om.base import FrozenMapping, Platform
+from acme.om.base import FrozenMapping, OmBase
 from acme.om.tools.types.policy import Target
 from acme.om.tools.types.tool import CLASS_NAME, TOOL_NAME, Effect, ToolInput
 
 
-class McpToolDefinition(Platform):
+class McpToolDefinition(OmBase):
     """A tool as its server lists it."""
 
     name: str = Field(min_length=1)
@@ -23,7 +23,7 @@ class McpToolDefinition(Platform):
     annotations: FrozenMapping = Field(default_factory=dict, validate_default=True)
 
 
-class McpBinding(Platform):
+class McpBinding(OmBase):
     """What the adopter assigns one server's tool. `definition_hash` pins the
     definition it reviewed (`tools.mcp.definition_hash`); `target` is what
     every call of the tool acts on, as the adopter knows it."""
@@ -40,5 +40,5 @@ class McpBinding(Platform):
     definition_hash: str = Field(min_length=1)
 
 
-class McpOutput(Platform):
+class McpOutput(OmBase):
     text: str

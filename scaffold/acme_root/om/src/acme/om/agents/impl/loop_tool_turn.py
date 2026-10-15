@@ -16,6 +16,7 @@ from uuid import UUID
 from pydantic import ValidationError
 
 from acme.infra.transports import OutputSink
+from acme.om.agent_sessions.kinds import AGENT_SESSION_WAITER
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
 from acme.om.agent_steps.types.content import ToolUseBlock
 from acme.om.agent_steps.types.header import (
@@ -52,7 +53,7 @@ from acme.om.exceptions import (
     StaleWriter,
     ToolFailed,
 )
-from acme.om.leases.types.request import RequestStatus, WaiterKind
+from acme.om.leases.types.request import RequestStatus
 from acme.om.spend_budgets.rules import spend_budget_park
 from acme.om.tools.native.load_toolset import load, loads
 from acme.om.tools.rules import (
@@ -397,8 +398,8 @@ class LoopToolTurn(LoopCore):
         if started.completion is not None:
             await self._close_job(run, started, None)
             return Settled()
-        if started.park.line is not None:
-            return await self._wait_for_start(run, started, started.park.line.request_id)
+        if started.park.wait_line is not None:
+            return await self._wait_for_start(run, started, started.park.wait_line.request_id)
         retry_at = started.park.retry_at
         assert retry_at is not None  # a job park tries again at its deadline
         if self._clock() >= retry_at:
@@ -497,13 +498,13 @@ class LoopToolTurn(LoopCore):
         and answered with `why`, so no job outlives its loop. With a job in
         line, the session leaves every line first, so no grant starts a job
         for a loop that stops, and a job still in line then never started."""
-        if any(started.park.line is not None for started in jobs):
-            await self._leases.leave(run.ctx, WaiterKind.AGENT_SESSION, run.agent_session_id)
+        if any(started.park.wait_line is not None for started in jobs):
+            await self._leases.leave(run.ctx, AGENT_SESSION_WAITER, run.agent_session_id)
         for started in jobs:
             stopped = None if started.completion is not None else (why, ToolFailure.INTERRUPTED)
             ran = True
-            if stopped is not None and started.park.line is not None:
-                standing = await self._standing(run, started.park.line.request_id)
+            if stopped is not None and started.park.wait_line is not None:
+                standing = await self._standing(run, started.park.wait_line.request_id)
                 ran = standing is not None and standing.lease is not None
             await self._close_job(run, started, stopped, ran=ran)
 

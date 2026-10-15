@@ -11,8 +11,8 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.loops import LEAD, WORKER, Loop, call, loop_over, reply, said, use
 
+from acme.om.agent_sessions.kinds import AgentSessionWorkKind
 from acme.om.agent_sessions.limits import deadline_park
 from acme.om.agent_sessions.rules import QUESTION
 from acme.om.agent_sessions.types.agent_session import AgentSessionStatus
@@ -37,7 +37,8 @@ from acme.om.tools.rules import DEFAULT_CEILINGS
 from acme.om.tools.types.policy import ToolPolicyLayer
 from acme.om.windows.types.policy import CompactionPolicy
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
-from acme.om.work.types.work_item import WorkKind
+
+from contracts.loops import LEAD, WORKER, Loop, call, loop_over, reply, said, use
 
 KINDS = (LEAD, WORKER)
 
@@ -83,7 +84,13 @@ def runs_asked(loop: Loop, agent_session_id: UUID) -> int:
     work = loop.storage.get_work_storage()
     assert isinstance(work, WorkStorageMemoryImpl)
     items = [item for _, item in work._items.values()]  # pyright: ignore[reportPrivateUsage]
-    return len([i for i in items if i.kind is WorkKind.LOOP and i.target_id == agent_session_id])
+    return len(
+        [
+            i
+            for i in items
+            if i.kind == AgentSessionWorkKind.LOOP and i.target_id == agent_session_id
+        ]
+    )
 
 
 async def cached(loop: Loop, agent_session_id: UUID) -> AgentSessionStatus:

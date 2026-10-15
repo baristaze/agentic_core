@@ -23,6 +23,9 @@ from acme.om.language_models.types.fill import (
     SwitchReason,
 )
 
+INTERFACE = FillSetStorageInterface
+"""The storage interface whose cross-tenant cases this suite holds."""
+
 CROSS_TENANT_CASES: frozenset[str] = frozenset({"purge_tenant", "read_fill_set", "write_fill_set"})
 """Every method of `FillSetStorageInterface` that takes a tenant has a case
 in this module that presents another tenant's."""

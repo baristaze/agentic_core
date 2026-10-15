@@ -6,7 +6,7 @@ from typing import Self
 
 from pydantic import Field, model_validator
 
-from acme.om.base import Platform
+from acme.om.base import OmBase
 
 SUMMARIZER_PROMPT = (
     "You fold the record of an agent's session into a summary the agent "
@@ -39,7 +39,7 @@ The pinned zone quotes principals alone, so an objective an agent wrote,
 a hand-off's, lives on only in the summary."""
 
 
-class CompactionPolicy(Platform):
+class CompactionPolicy(OmBase):
     """Sizes are in characters, and a window's in tokens, estimated at
     `chars_per_token` where the provider reported none."""
 

@@ -10,9 +10,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.agent_session_storage import make_agent_session
-from contracts.histories import History
-from contracts.loops import ASSISTANT, SONNET, Loop, loop_over, reply, said, use
 from pydantic import BaseModel, ValidationError
 
 from acme.integrations.model_providers.anthropic import request_body
@@ -43,6 +40,10 @@ from acme.om.tools.native.load_toolset import loads
 from acme.om.tools.registry import ToolRegistry
 from acme.om.windows.rules import DATA_NOTICE, STANDING_LEAD, render_main
 from acme.om.windows.types.policy import CompactionPolicy
+
+from contracts.agent_session_storage import make_agent_session
+from contracts.histories import History
+from contracts.loops import ASSISTANT, SONNET, Loop, loop_over, reply, said, use
 
 MANUAL = "\n".join(f"{n:03d}. Quote the ledger's line for each total you give." for n in range(200))
 """An organization's manual: past the pinned zone's bound, which would cut

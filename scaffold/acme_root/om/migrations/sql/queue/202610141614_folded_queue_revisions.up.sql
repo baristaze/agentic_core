@@ -1,0 +1,3 @@
+-- The engine's own revisions of the queue role move stored values alone,
+-- so its fold holds no statement: a database at the head ran them, and a
+-- new one holds no row to move.

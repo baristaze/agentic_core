@@ -14,7 +14,7 @@ from pydantic import Field
 
 from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
 from acme.om.agent_steps.types.header import ToolRequestHeader, ToolResponseHeader
-from acme.om.base import Platform
+from acme.om.base import OmBase
 from acme.om.context import TenantContext
 from acme.om.tools.tool import ToolInterface, ToolRuntime
 from acme.om.tools.types.policy import Target
@@ -35,13 +35,13 @@ class WriteAgentPlanInput(ToolInput):
     plan: str = Field(min_length=1, max_length=AGENT_PLAN_CHARS)
 
 
-class AgentPlanKept(Platform):
+class AgentPlanKept(OmBase):
     """The plan as the call's answer keeps it, for a person to read."""
 
     plan: str
 
 
-class AgentPlan(Platform):
+class AgentPlan(OmBase):
     """The agent's current plan: its text, its version (how many plans the
     session has kept, this one included), and the answer that kept it."""
 
@@ -79,9 +79,7 @@ class WriteAgentPlanToolImpl(ToolInterface):
     ) -> None:
         return None
 
-    async def run(
-        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
-    ) -> Platform:
+    async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
         assert isinstance(call_input, WriteAgentPlanInput)
         return AgentPlanKept(plan=call_input.plan)
 

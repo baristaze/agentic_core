@@ -43,7 +43,7 @@ from acme.om.agent_steps.types.header import (
     ParkReason,
     ToolRequestHeader,
 )
-from acme.om.base import Platform
+from acme.om.base import OmBase
 from acme.om.language_models.types.fill import MAIN
 
 STEP_GUARD_CEILING = 1000
@@ -82,7 +82,7 @@ LIMIT_KINDS: dict[Limit, LimitKind] = {
 }
 
 
-class Limits(Platform):
+class Limits(OmBase):
     """The limits of one loop. Each has a value; none can be switched off."""
 
     step_guard: int = Field(default=50, ge=1, le=STEP_GUARD_CEILING)
@@ -91,7 +91,7 @@ class Limits(Platform):
     run_time: timedelta = Field(default=timedelta(minutes=15), gt=timedelta(0))
 
 
-class LoopTally(Platform):
+class LoopTally(OmBase):
     """What a loop's limits read, folded from its steps in `seq` order."""
 
     model_calls: int = 0  # since the loop began, or since its step guard last parked
@@ -111,7 +111,7 @@ class LoopTally(Platform):
     last_answered: bool = False
 
 
-class Trip(Platform):
+class Trip(OmBase):
     """A limit that tripped, and what it does: a guard's park, a bound's
     outcome, or neither for a yield."""
 

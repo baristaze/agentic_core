@@ -12,6 +12,15 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 from api_support import add_member, build_container, seed_request, sign_in_as
+
+from acme.om.agent_sessions.kinds import AgentSessionWorkKind
+from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
+from acme.om.attribution.types.authority import AuthorityMode
+from acme.om.context import Role
+from acme.om.tools.types.tool import ToolClass
+from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
+from acme.services.api.container import AppContainer
+
 from contracts.agent_step_storage import (
     make_request,
     make_response,
@@ -19,14 +28,6 @@ from contracts.agent_step_storage import (
     make_tool_response,
 )
 from contracts.tools import Command
-
-from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
-from acme.om.attribution.types.authority import AuthorityMode
-from acme.om.context import Role
-from acme.om.tools.types.tool import ToolClass
-from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
-from acme.om.work.types.work_item import WorkKind
-from acme.services.api.container import AppContainer
 
 ASSISTANT = AgentKind(
     name="assistant",
@@ -68,7 +69,11 @@ def runs_of(container: AppContainer, agent_session_id: str) -> int:
     assert isinstance(work, WorkStorageMemoryImpl)
     items = [item for _, item in work._items.values()]  # pyright: ignore[reportPrivateUsage]
     return len(
-        [i for i in items if i.kind is WorkKind.LOOP and str(i.target_id) == agent_session_id]
+        [
+            i
+            for i in items
+            if i.kind == AgentSessionWorkKind.LOOP and str(i.target_id) == agent_session_id
+        ]
     )
 
 

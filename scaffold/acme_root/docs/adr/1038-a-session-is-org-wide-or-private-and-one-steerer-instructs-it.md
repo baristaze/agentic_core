@@ -66,9 +66,6 @@ loop reads its session whoever it is visible to.
 - A product lists a person's own sessions (`among=mine`) and the ones
   they may explore and join (`among=visible`), joins one, switches who
   sees it, and hands its steer on, each through the session API.
-- A session stored before this change is private until its creator
-  switches it: one hidden from a teammate costs a switch, while one left
-  open would show another person's delegated results.
 - A participant's message marks the session untrusted, as any data does,
   so a marked session that holds private data asks a person before it
   acts outward.

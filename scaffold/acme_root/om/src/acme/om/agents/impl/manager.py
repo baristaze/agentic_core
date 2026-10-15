@@ -39,7 +39,7 @@ from acme.om.attribution import AttributionManagerInterface
 from acme.om.attribution.rules import visibility_of
 from acme.om.attribution.types.authority import AgentSessionAuthority
 from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
-from acme.om.base import Platform, derived_id, new_id, utcnow
+from acme.om.base import OmBase, derived_id, new_id, utcnow
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import (
     KeyRevoked,
@@ -61,7 +61,7 @@ CREATED = "agents.agent_tree.created"
 UPDATED = "agents.agent_tree.updated"
 
 
-class AgentsOptions(Platform):
+class AgentsOptions(OmBase):
     max_limit: int = 50  # children one read of the cascade holds
     purge_batch: int = 1000  # trees one purge statement deletes at most
 

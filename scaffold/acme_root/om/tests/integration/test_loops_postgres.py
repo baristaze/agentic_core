@@ -10,20 +10,6 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
-from contracts import sub_agents
-from contracts.loops import (
-    ASSISTANT,
-    BUILDER,
-    DELIVERY,
-    LEAD,
-    WORKER,
-    Loop,
-    call,
-    loop_over,
-    reply,
-    said,
-    use,
-)
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -43,6 +29,21 @@ from acme.om.storage.impl.postgres import StoragePostgresImpl
 from acme.om.storage.roles import DatabaseRole
 from acme.om.storage.settings import MigrationSettings
 from acme.om.tools.types.call import JobCompletion
+
+from contracts import sub_agents
+from contracts.loops import (
+    ASSISTANT,
+    BUILDER,
+    DELIVERY,
+    LEAD,
+    WORKER,
+    Loop,
+    call,
+    loop_over,
+    reply,
+    said,
+    use,
+)
 
 pytestmark = pytest.mark.integration
 

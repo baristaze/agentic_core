@@ -36,7 +36,7 @@ from acme.om.exceptions import (
     GateParked,
     NoCredential,
     NoSpender,
-    PlatformException,
+    OmException,
     SpendBudgetRefused,
     SpenderUnknown,
     Unavailable,
@@ -74,7 +74,7 @@ class LoopModelTurn(LoopCore):
             # The key the call goes out on, the tenant's own when it pays its
             # provider: read per call, so a rotated key is never used.
             used = await self._credentials.client_for(ctx, fill.provider)
-        except PlatformException as refused:
+        except OmException as refused:
             return await self._refused(run, refused)
         # A provider marked failing for this credential parks the loop at
         # once, before anything is rendered, held, or spent, until the mark's
@@ -124,13 +124,13 @@ class LoopModelTurn(LoopCore):
             # switch of the main role mends.
             summarizer = fill_set.fill_for(SUMMARIZER) or fill
             return await self._failed(run, summarizer, None, failed, failed.credential)
-        except PlatformException as refused:
+        except OmException as refused:
             return await self._refused(run, refused)
         try:
             replied = await self._call(run, fill, rendered, used)
         except ModelCallFailed as failed:
             return await self._failed(run, fill, rendered, failed, used.credential)
-        except PlatformException as refused:
+        except OmException as refused:
             return await self._refused(run, refused)
         run.failures, run.refused = 0, None
         run.tried.clear()
@@ -150,7 +150,7 @@ class LoopModelTurn(LoopCore):
             await self._notice(run, rules.CUT)
         return None
 
-    async def _refused(self, run: RunState, refused: PlatformException) -> LoopRun:
+    async def _refused(self, run: RunState, refused: OmException) -> LoopRun:
         """What stops a model turn before its call is made: the gate's refusal
         parks on the budget, a gate that parks the call parks where it says,
         nobody to pay parks for a person, and a window that cannot be read

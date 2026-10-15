@@ -73,7 +73,6 @@ it.
   wakes the sessions parked on it with `wake_parked`.
 - A refused key or a short account costs one failed call per parked
   session per wait. The provider bills no tokens for a refused call.
-- A hand-over parked before this change names no holder, and any unlock
-  clears it, as before.
-- Nothing is migrated: a step's header and a session's park are stored
-  as JSON, and both read an absent holder or sender as none.
+- A step's header and a session's park are stored as JSON, and both
+  read an absent holder or sender as none: a hand-over park that names
+  no holder is cleared by any unlock.

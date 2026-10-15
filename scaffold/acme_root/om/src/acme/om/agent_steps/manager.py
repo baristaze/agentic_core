@@ -24,7 +24,7 @@ from uuid import UUID
 
 from acme.om.agent_steps.types.agent_step import AgentStep
 from acme.om.agent_steps.types.page import AgentStepCursor, AgentStepPage
-from acme.om.context import TenantContext
+from acme.om.context import TenantContext, stageless
 
 InstructCheck = Callable[[TenantContext, UUID], Awaitable[None]]
 """Refuses, with `NotAuthorized`, a context that may not instruct a session:
@@ -107,10 +107,11 @@ class AgentStepsManagerInterface(ABC):
         ...
 
     @abstractmethod
+    @stageless
     async def purge_histories(
         self, sessions: Sequence[tuple[UUID, UUID]]
     ) -> list[tuple[UUID, UUID]]:
-        """Platform-internal: the sweep's, for no principal: for each
+        """System-internal: the sweep's, for no principal: for each
         session, named with its tenant, a batch of its steps at most, then
         its cursor row once none is left, under the purge login. It holds no retention
         of its own: only the agent sessions' purge calls it, with sessions it

@@ -13,7 +13,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.loops import ALLOWED, Loop, call, loop_over, reply, said, tools, use
 
 from acme.integrations.model_providers.anthropic import request_body
 from acme.integrations.model_providers.calls import ModelCall
@@ -40,6 +39,8 @@ from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.types.toolset import LOAD_TOOLSET, Toolset
 from acme.om.windows.rules import render_main
 from acme.om.windows.types.policy import CompactionPolicy
+
+from contracts.loops import ALLOWED, Loop, call, loop_over, reply, said, tools, use
 
 # `slow` sorts after the tools a load of `writes` adds, so a load that
 # sorted them in among the rest would move it.

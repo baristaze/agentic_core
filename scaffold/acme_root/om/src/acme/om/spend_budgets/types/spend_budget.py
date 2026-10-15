@@ -18,7 +18,7 @@ from typing import ClassVar, Self
 from pydantic import Field, model_validator
 
 from acme.om.agent_steps.types.content import Stored
-from acme.om.base import Identifiable, Platform, Trackable
+from acme.om.base import Identifiable, OmBase, Trackable
 from acme.om.spend_budgets.types.amount import Amount
 
 MAX_KEY = 200
@@ -33,7 +33,7 @@ class SpendBudgetScopeKind(StrEnum):
     TENANT = "tenant"
 
 
-class SpendBudgetScope(Platform):
+class SpendBudgetScope(OmBase):
     """One scope a call is charged to: its kind and the key the platform
     gives it, such as a session's id or a project's name."""
 
@@ -50,7 +50,7 @@ class WindowKind(StrEnum):
     SPAN = "span"  # a custom span of whole seconds, counted from the Unix epoch
 
 
-class SpendBudgetWindow(Platform):
+class SpendBudgetWindow(OmBase):
     kind: WindowKind
     seconds: int | None = Field(default=None, ge=1)  # a span's length, and only a span's
 
@@ -95,6 +95,6 @@ class SpendBudget(Identifiable, Trackable):
         return Amount(cost_micros=self.cost_micros, tokens=self.tokens)
 
 
-class SpendBudgetPage(Platform):
+class SpendBudgetPage(OmBase):
     items: tuple[SpendBudget, ...]
     has_more: bool

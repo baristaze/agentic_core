@@ -7,8 +7,6 @@ its schema refuses parks nothing."""
 import json
 from pathlib import Path
 
-from contracts.loops import ASSISTANT, DELIVERY, HELPER, Loop, call, loop_over, reply, said
-
 from acme.integrations.model_providers.calls import ModelCall
 from acme.om.agent_sessions.rules import QUESTION
 from acme.om.agent_sessions.types.agent_session import AgentSessionStatus
@@ -24,6 +22,8 @@ from acme.om.agent_steps.types.header import (
 )
 from acme.om.agents.types.run import RunEnd
 from acme.om.base import new_id, utcnow
+
+from contracts.loops import ASSISTANT, DELIVERY, HELPER, Loop, call, loop_over, reply, said
 
 
 def helper(tmp_path: Path) -> Loop:

@@ -12,6 +12,9 @@ from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
 from acme.om.exceptions import PreconditionFailed
 
+INTERFACE = AttributionStorageInterface
+"""The storage interface whose cross-tenant cases this suite holds."""
+
 CROSS_TENANT_CASES: frozenset[str] = frozenset(
     {"create_authority", "purge_authority", "purge_tenant", "read_authority", "write_authority"}
 )

@@ -6,7 +6,7 @@ from uuid import UUID
 
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_steps import AgentStepsManagerInterface
-from acme.om.base import Platform, new_id, utcnow
+from acme.om.base import OmBase, new_id, utcnow
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import PolicyFixed
 from acme.om.outbox import OutboxRelayInterface
@@ -21,7 +21,7 @@ CREATED = "privacy.agent_session_privacy.created"
 UPDATED = "privacy.agent_session_privacy.updated"
 
 
-class PrivacyOptions(Platform):
+class PrivacyOptions(OmBase):
     rewrap_batch: int = 100  # key versions one rewrap moves at most
     purge_batch: int = 1000  # rows one purge statement deletes at most
 

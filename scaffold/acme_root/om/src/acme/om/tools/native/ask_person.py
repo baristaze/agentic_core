@@ -9,7 +9,7 @@ from datetime import timedelta
 
 from pydantic import Field
 
-from acme.om.base import Platform
+from acme.om.base import OmBase
 from acme.om.context import TenantContext
 from acme.om.tools.tool import ToolInterface, ToolRuntime
 from acme.om.tools.types.policy import Target
@@ -30,7 +30,7 @@ class AskPersonInput(ToolInput):
     question: str = Field(min_length=1, max_length=QUESTION_CHARS)
 
 
-class Asked(Platform):
+class Asked(OmBase):
     """The question, as the person reads it in the session's history."""
 
     question: str
@@ -65,8 +65,6 @@ class AskPersonToolImpl(ToolInterface):
     ) -> None:
         return None
 
-    async def run(
-        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
-    ) -> Platform:
+    async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
         assert isinstance(call_input, AskPersonInput)
         return Asked(question=call_input.question)

@@ -21,6 +21,30 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from pydantic import ValidationError
+
+from acme.infra.exceptions import InfraException
+from acme.om.agent_sessions.types.agent_session import AgentSessionStatus
+from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
+from acme.om.agent_steps.types.header import (
+    ControlCommand,
+    ControlHeader,
+    LoopOutcome,
+    ParkReason,
+    ToolFailure,
+)
+from acme.om.agents.types.run import RunEnd
+from acme.om.base import OmBase, new_id
+from acme.om.context import Role, TenantContext
+from acme.om.exceptions import JobRefused, NotFound, UnresolvedRole
+from acme.om.spend_budgets.types.amount import Amount
+from acme.om.spend_budgets.types.spend_budget import SpendBudgetScopeKind
+from acme.om.spend_budgets.types.spend_hold import SpendTally
+from acme.om.tools.tool import ToolRuntime
+from acme.om.tools.types.call import MAX_JOB_COST_MICROS, JobCompletion
+from acme.om.tools.types.policy import Decision, ToolPolicyLayer, ToolPolicyRule
+from acme.om.tools.types.tool import Effect, ToolClass, ToolInput
+
 from contracts.doubles import context
 from contracts.factories import make_org
 from contracts.loops import (
@@ -35,29 +59,6 @@ from contracts.loops import (
     said,
 )
 from contracts.spend_budget_storage import make_spend_budget
-from pydantic import ValidationError
-
-from acme.infra.exceptions import InfraException
-from acme.om.agent_sessions.types.agent_session import AgentSessionStatus
-from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
-from acme.om.agent_steps.types.header import (
-    ControlCommand,
-    ControlHeader,
-    LoopOutcome,
-    ParkReason,
-    ToolFailure,
-)
-from acme.om.agents.types.run import RunEnd
-from acme.om.base import Platform, new_id
-from acme.om.context import Role, TenantContext
-from acme.om.exceptions import JobRefused, NotFound, UnresolvedRole
-from acme.om.spend_budgets.types.amount import Amount
-from acme.om.spend_budgets.types.spend_budget import SpendBudgetScopeKind
-from acme.om.spend_budgets.types.spend_hold import SpendTally
-from acme.om.tools.tool import ToolRuntime
-from acme.om.tools.types.call import MAX_JOB_COST_MICROS, JobCompletion
-from acme.om.tools.types.policy import Decision, ToolPolicyLayer, ToolPolicyRule
-from acme.om.tools.types.tool import Effect, ToolClass, ToolInput
 
 
 def builder_loop(tmp_path: Path) -> Loop:
@@ -309,7 +310,7 @@ async def failed_start(
     compute = loop.jobs["compute"]  # 3.6 units an hour, for two hours: 7.2 held
     begin = compute.run
 
-    async def run(ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> Platform:
+    async def run(ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
         if began:
             await begin(ctx, call_input, runtime)
         raise raised

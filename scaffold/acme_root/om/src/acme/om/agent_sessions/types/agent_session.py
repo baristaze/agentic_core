@@ -12,7 +12,7 @@ steps are the truth, and the cache is rebuilt from them
 attribution: the speaker its latest model request recorded, and the
 untrusted mark. It also holds whether it holds private data, which it
 takes from where it came as it takes the mark. In code it is
-`AgentSession`, never the sign-in `Session` of the tenancy namespace."""
+`AgentSession`, never the sign-in `AuthSession` of the tenancy namespace."""
 
 from datetime import datetime
 from enum import StrEnum
@@ -25,7 +25,7 @@ from acme.om.agent_steps.types.content import Stored
 from acme.om.agent_steps.types.header import Park
 from acme.om.attribution.types.authority import Visibility
 from acme.om.attribution.types.principal import MAX_KIND, Principal
-from acme.om.base import Identifiable, Platform, SoftDeletable, Trackable
+from acme.om.base import Identifiable, OmBase, SoftDeletable, Trackable
 
 
 class AgentSessionStatus(StrEnum):
@@ -140,6 +140,6 @@ class AgentSession(Identifiable, Trackable, SoftDeletable):
         return self
 
 
-class AgentSessionPage(Platform):
+class AgentSessionPage(OmBase):
     items: tuple[AgentSession, ...]
     has_more: bool

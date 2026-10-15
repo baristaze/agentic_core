@@ -14,11 +14,11 @@ from typing import Self
 
 from pydantic import Field, model_validator
 
-from acme.om.base import FrozenMapping, Platform
+from acme.om.base import FrozenMapping, OmBase
 from acme.om.spend_budgets.types.spend_budget import MAX_KEY
 
 
-class Rates(Platform):
+class Rates(OmBase):
     """List rates per million tokens. A cache write is the provider's short
     cache; a provider that also keeps a longer-lived cache names its write
     rate. Thinking is billed at the output rate unless the model names one
@@ -32,7 +32,7 @@ class Rates(Platform):
     thinking: int | None = Field(default=None, ge=0)
 
 
-class PriceTier(Platform):
+class PriceTier(OmBase):
     """Rates that apply once a prompt passes `above` tokens, to its input and
     its output alike."""
 
@@ -40,7 +40,7 @@ class PriceTier(Platform):
     rates: Rates
 
 
-class ModelPrice(Platform):
+class ModelPrice(OmBase):
     rates: Rates
     tiers: tuple[PriceTier, ...] = ()
     tool_fees: FrozenMapping = Field(default_factory=dict, validate_default=True)
@@ -54,7 +54,7 @@ class ModelPrice(Platform):
         return self
 
 
-class PriceRow(Platform):
+class PriceRow(OmBase):
     """One model's price, as its provider lists it on the date the row was read."""
 
     provider: str = Field(min_length=1, max_length=MAX_KEY)
@@ -63,7 +63,7 @@ class PriceRow(Platform):
     as_of: date
 
 
-class PriceTable(Platform):
+class PriceTable(OmBase):
     """The list prices of one reading: its version, and a row per model."""
 
     version: str = Field(min_length=1, max_length=MAX_KEY)

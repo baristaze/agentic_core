@@ -12,9 +12,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.doubles import context
-from contracts.factories import make_org
-from contracts.tools import Tools, tools_over
 
 from acme.infra.agent_workspaces import (
     AgentWorkspace,
@@ -40,6 +37,10 @@ from acme.om.base import new_id
 from acme.om.context import Role, TenantContext
 from acme.om.tools.impl.bases import BUCKET, PREFIX, base_key
 from acme.om.tools.impl.manager import ToolsOptions
+
+from contracts.doubles import context
+from contracts.factories import make_org
+from contracts.tools import Tools, tools_over
 
 IMAGE = "python:3.14-slim"
 OPEN = EgressPolicy(mode=EgressMode.OPEN)

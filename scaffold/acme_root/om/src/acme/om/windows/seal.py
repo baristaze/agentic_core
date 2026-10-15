@@ -8,11 +8,11 @@ namespace's seal behind it."""
 from abc import ABC, abstractmethod
 from uuid import UUID
 
-from acme.om.base import Platform
+from acme.om.base import OmBase
 from acme.om.context import TenantContext
 
 
-class SealedToolOutput(Platform):
+class SealedToolOutput(OmBase):
     """A tool output's text, sealed, and whether its session keeps content at
     rest: when it does not, the blob is held in the runtime's memory alone,
     never in the store."""

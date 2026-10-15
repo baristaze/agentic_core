@@ -5,15 +5,13 @@ unit tested without either."""
 from collections.abc import Sequence
 from uuid import UUID
 
-from acme.client.types import (
+from acme.client.types.agent_sessions import (
     AgentSessionStatus,
     AgentSessionView,
-    AgentStepType,
     AgentStepView,
-    LoopOutcome,
-    MembershipChoiceView,
-    OrgKind,
 )
+from acme.client.types.agent_steps import AgentStepType, LoopOutcome
+from acme.client.types.tenancy import MembershipChoiceView, OrgKind
 
 
 def describe(kind: str, target_id: UUID, actor: str) -> str:

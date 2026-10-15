@@ -13,8 +13,6 @@ from typing import cast
 from uuid import UUID
 
 import pytest
-from contracts.doubles import context
-from contracts.histories import AT, MAIN_FILL, History
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.integrations.model_providers import reply_of
@@ -76,6 +74,9 @@ from acme.om.windows.impl.hashes import PromptHashMemoryImpl, PromptHashNullImpl
 from acme.om.windows.impl.manager import WindowsManagerImpl, WindowsOptions
 from acme.om.windows.types.kind import KindPrompts
 from acme.om.windows.types.policy import CompactionPolicy
+
+from contracts.doubles import context
+from contracts.histories import AT, MAIN_FILL, History
 
 WIDE = Fill(
     provider=ProviderName.ANTHROPIC,

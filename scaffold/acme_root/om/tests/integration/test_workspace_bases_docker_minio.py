@@ -27,7 +27,6 @@ from uuid import UUID
 
 import aioboto3
 import pytest
-from contracts.loops import ASSISTANT, Loop, loop_over
 
 from acme.infra.agent_workspaces import (
     AgentWorkspace,
@@ -48,6 +47,8 @@ from acme.infra.impl.settings import InfraSettings
 from acme.infra.transports import TransportInterface
 from acme.infra.transports.container import TransportContainerImpl
 from acme.om.tools.impl.bases import BUCKET, PREFIX, base_key
+
+from contracts.loops import ASSISTANT, Loop, loop_over
 
 IMAGE = "python:3.14-slim"
 TOKEN = "SERVICE_TOKEN"

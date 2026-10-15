@@ -9,9 +9,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.agent_session_storage import make_agent_session
-from contracts.doubles import Members, context
-from contracts.histories import History
 
 from acme.infra.buckets import Buckets
 from acme.infra.impl.local import InfraLocalImpl
@@ -36,6 +33,10 @@ from acme.om.windows.impl.hashes import PromptHashNullImpl
 from acme.om.windows.impl.manager import WindowsManagerImpl, WindowsOptions
 from acme.om.windows.impl.seal import ToolOutputSealNullImpl
 from acme.om.windows.types.policy import CompactionPolicy
+
+from contracts.agent_session_storage import make_agent_session
+from contracts.doubles import Members, context
+from contracts.histories import History
 
 LINE = "a line of the whole log"
 

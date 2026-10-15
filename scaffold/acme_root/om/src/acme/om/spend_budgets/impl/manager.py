@@ -4,8 +4,9 @@ from uuid import UUID
 
 from pydantic import Field
 
+from acme.om.agent_sessions.kinds import AgentSessionWorkKind, WakeAgentSessionsPayload
 from acme.om.agent_steps.types.header import ParkReason
-from acme.om.base import Platform, utcnow
+from acme.om.base import OmBase, utcnow
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import NotFound, PreconditionFailed, TenantMismatch
 from acme.om.outbox import OutboxRelayInterface
@@ -23,7 +24,7 @@ from acme.om.spend_budgets.types.spend_budget import (
 from acme.om.spend_budgets.types.spend_hold import SpendTally
 from acme.om.spend_budgets.types.usage import UsageRecord
 from acme.om.tenancy import TenancyManagerInterface
-from acme.om.work.types.work_item import WakeAgentSessionsPayload, WorkKind, work_row_kind
+from acme.om.work.types.work_item import work_row_kind
 
 CREATED = "spend_budgets.spend_budget.created"
 UPDATED = "spend_budgets.spend_budget.updated"
@@ -33,7 +34,7 @@ SETS_SPEND_BUDGETS = Permission.MANAGE_MEMBERS
 the permission that governs members."""
 
 
-class SpendBudgetsOptions(Platform):
+class SpendBudgetsOptions(OmBase):
     max_limit: int = 50  # budgets one page holds at most
     purge_batch: int = 1000  # the sweep's batch, which a report of what is left stays under
     # A close is a compare-and-set, tried again when an amount moved the
@@ -140,7 +141,7 @@ class SpendBudgetsManagerImpl(SpendBudgetsManagerInterface):
             rows += (
                 outbox_row(
                     ctx,
-                    work_row_kind(WorkKind.WAKE_AGENT_SESSIONS),
+                    work_row_kind(AgentSessionWorkKind.WAKE_AGENT_SESSIONS),
                     ctx.org_id,
                     wake.model_dump(mode="json", exclude_none=True),
                 ),
@@ -181,7 +182,7 @@ class SpendBudgetsManagerImpl(SpendBudgetsManagerInterface):
             versioned_row(ctx, UPDATED, closed.id, closed.version),
             outbox_row(
                 ctx,
-                work_row_kind(WorkKind.WAKE_AGENT_SESSIONS),
+                work_row_kind(AgentSessionWorkKind.WAKE_AGENT_SESSIONS),
                 ctx.org_id,
                 wake.model_dump(mode="json"),
             ),

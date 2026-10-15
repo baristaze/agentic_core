@@ -12,7 +12,7 @@ from typing import Self
 from pydantic import Field, model_validator
 
 from acme.infra.transports import SecretUse
-from acme.om.base import FrozenMapping, Platform
+from acme.om.base import FrozenMapping, OmBase
 
 TOOL_NAME = r"^[a-z][a-z0-9_]{0,63}$"
 CLASS_NAME = r"^[a-z][a-z0-9_]{0,63}$"
@@ -51,12 +51,12 @@ class ToolClass(StrEnum):
     DESTRUCTIVE = "destructive"  # irreversible changes outside the workspace
 
 
-class ToolInput(Platform):
+class ToolInput(OmBase):
     """The root of every tool's input: frozen, and refusing a field it does
     not declare, so the schema the model reads is the one the call holds."""
 
 
-class ToolSpec(Platform):
+class ToolSpec(OmBase):
     """What a tool declares. `secrets` names what its process may be given,
     by name, never by value; a call that uses one is audited by its name.
     `rate_micros_per_hour` is what a job that spends (compute, a leased
@@ -67,7 +67,7 @@ class ToolSpec(Platform):
     name: str = Field(pattern=TOOL_NAME)
     description: str = Field(min_length=1)
     input_model: type[ToolInput]
-    output_model: type[Platform]
+    output_model: type[OmBase]
     timeout: timedelta = Field(gt=timedelta(0))
     authorization_class: str = Field(pattern=CLASS_NAME)
     effect: Effect
@@ -83,7 +83,7 @@ class ToolSpec(Platform):
         return self
 
 
-class ToolDefinition(Platform):
+class ToolDefinition(OmBase):
     """A tool as the model reads it: the registry renders these in a fixed
     order, so the prompt prefix stays stable."""
 

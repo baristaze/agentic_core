@@ -2,15 +2,17 @@
 
 This page names the things Acme is made of and says how they relate.
 It is written for anyone; you need no code to read it. Each kind of
-thing has a page of its own one level down, which says what can happen
-to it and which rules always hold. A product built on Acme adds its own
-kinds beside these.
+thing has a page of its own one level down, linked where the kind is
+first named, which says what can happen to it and which rules always
+hold. A product built on Acme adds its own kinds beside these, each
+with its page.
 
 ## The org and the people in it
 
-An **organization**, org for short, is one tenant: a company, a team, a
-household. Everything in Acme belongs to exactly one org, and nothing
-in one org can see anything in another. That is a rule, not a choice.
+An [**organization**](src/acme/om/tenancy/README.md), org for short, is
+one tenant: a company, a team, a household. Everything in Acme belongs
+to exactly one org, and nothing in one org can see anything in another.
+That is a rule, not a choice.
 
 Every person has one **personal org**, made with them the first time
 they sign in. It is theirs for as long as they exist, and it goes only
@@ -30,8 +32,9 @@ The sign-in provider sends the email.
 
 ## How a person proves who they are
 
-A **session** is a signed-in visit to one org. It ends when the person
-signs out, when it sits idle too long, or when it reaches its lifetime.
+An [**auth session**](src/acme/om/tenancy/README.md) is a signed-in
+visit to one org. It ends when the person signs out, when it sits idle
+too long, or when it reaches its lifetime.
 
 An **API key** is a named, expiring credential for a program, with a
 role no higher than its maker's. Acme keeps only its fingerprint, so
@@ -40,24 +43,24 @@ the key is shown once.
 A **socket ticket** is a one-use pass that opens the live channel, the
 connection through which changes reach a screen as they happen.
 
-An **operator** is a person on the platform's own allowlist. An
+An **operator** is a person on the system's own allowlist. An
 operator works across orgs with an **operator token**: one permission,
 an hour at most.
 
 ## Files
 
-A **file** is a record of something an org keeps in the object store:
-its name, type, size, who uploaded it, and why. The bytes live in the
-store, never in the record.
+A [**file**](src/acme/om/media/README.md) is a record of something an
+org keeps in the object store: its name, type, size, who uploaded it,
+and why. The bytes live in the store, never in the record.
 
 ## Agent sessions and their history
 
-An **agent session** is a conversation with an agent. It never ends: it
+An [**agent session**](src/acme/om/agent_sessions/README.md) is a conversation with an agent. It never ends: it
 is a series of **loops**, each running from what woke the session to how
 the loop ended, over one history. Its status says whether an input waits,
 the agent works, a loop waits on something, or nothing is open.
 
-A **step** is one event of a session's history: a message, a control, a
+A [**step**](src/acme/om/agent_steps/README.md) is one event of a session's history: a message, a control, a
 model's request or response, a tool's request or response, a summary, or
 a mark of a loop's life. Steps are numbered with no gaps and written
 once; the history only grows, until its purge.
@@ -67,27 +70,27 @@ waited out its retention, the sweep **purges** it with its history, the
 one delete a history has, under a database login no serving process
 holds.
 
-What a step says is its **content**, and it is **sealed**: kept only
-under a **session key** of its own session, which the platform holds
+What a step says is its **content**, and it is [**sealed**](src/acme/om/privacy/README.md): kept only
+under a **session key** of its own session, which the system holds
 locked by the org's key. Everything else about a step, its **shape**,
 stays readable. **Revoking** a session's key erases its content and
 keeps its shape, so the history keeps its holes in known places. A
 session may instead keep its content in **memory only**.
 
-An **agent kind** is what kind of agent a session runs: the tools it may
+An [**agent kind**](src/acme/om/agents/README.md) is what kind of agent a session runs: the tools it may
 call, when its work is done, and how its calls are allowed. A session
 may start **sub-agents**, sessions of their own below it; together they
 form a **tree** that shares one budget and one deadline. A session may
 also **hand off** work to another kind, as a new session.
 
 Every step says who produced it. A message and a tool call say on whose
-**authority** they run, and a call to a model says who **pays** for it:
+[**authority**](src/acme/om/attribution/README.md) they run, and a call to a model says who **pays** for it:
 a person of the org, never the agent. A session that has read outside
 data carries an **untrusted mark**, and passes it on.
 
 ## Budgets
 
-A **budget** says how much may be spent, in money at list price, in
+A [**budget**](src/acme/om/spend_budgets/README.md) says how much may be spent, in money at list price, in
 tokens, or both, by a session, a tree of sessions, a person, a project,
 a team, or the whole org, over its life or per hour, day, week, or
 month.
@@ -100,14 +103,14 @@ the call, the hold is settled at what the call really cost.
 
 ## Models
 
-A **model role** is a job an agent session hands a model: the agent's
+A [**model role**](src/acme/om/language_models/README.md) is a job an agent session hands a model: the agent's
 own turns, or a summary. A **fill** is the model that does it, and how. A
 session's **fill set** holds its fills, one per model role; a **switch**
 gives it a new version, and the session's history records each one.
 
 ## What a model reads
 
-A **window** is the part of a session's history one call of a model
+A [**window**](src/acme/om/windows/README.md) is the part of a session's history one call of a model
 reads, sized for that model. When the agent's own window nears its limit,
 its oldest part is folded into a **summary**, a step of its own, and the
 **pinned zone** carries the session's objective and its principals'
@@ -125,7 +128,7 @@ to whoever watches.
 
 ## Tools and who agrees to them
 
-A **tool** is one thing an agent can do, such as run a command or push a
+A [**tool**](src/acme/om/tools/README.md) is one thing an agent can do, such as run a command or push a
 branch, with the kind of power it uses and whether doing it twice is
 harmless. An agent can do only what its kind's tools allow.
 
@@ -134,43 +137,48 @@ on their own, which wait for a person, and which never run, and who may
 approve each kind. A person's yes or no to one call is a step of the
 session's history.
 
-## What the platform writes for itself
+## What the system writes for itself
 
 No person creates these and no screen shows them, but each belongs to
 an org like everything else.
 
-An **event** is a line in the org's diary: what changed, how, by whom,
-and when. The lines are numbered with no gaps. An **audit entry** is an
-event the platform records about itself, such as a job that failed for
-good.
+A [**change event**](src/acme/om/change_events/README.md) is a line in
+the org's diary: what changed, how, by whom, and when. The lines are
+numbered with no gaps. An **audit entry** is a change event the system
+records about itself, such as a job that failed for good.
 
-An **outbox row** is a note written in the same stroke as a change,
-saying "tell everyone about this". The event and the live push come
-from it, so no change goes unannounced.
+An [**outbox row**](src/acme/om/outbox/README.md) is a note written in
+the same stroke as a change, saying "tell everyone about this". The
+change event and the live push come from it, so no change goes
+unannounced.
 
-A **work item** is a job for later. It waits in a queue until a worker
-claims it, holds it for a short lease, and does it.
+A [**work item**](src/acme/om/work/README.md) is a job for later. It
+waits in a queue until a worker claims it, holds it for a short lease,
+and does it.
 
-An **orchestration** is a long job kept as a record, done one step at a
-time. It succeeds, fails, or parks until what it waits for is back,
-and a person may cancel it on the way.
+An [**orchestration**](src/acme/om/orchestrations/README.md) is a long
+job kept as a record, done one step at a time. It succeeds, fails, or
+parks until what it waits for is back, and a person may cancel it on the
+way.
 
-A **lease** lends one holder a thing only one may use at a time, such
-as a loading dock, for a term it renews. Each grant carries a token
-higher than the last, and the others wait in line.
+A [**lease**](src/acme/om/leases/README.md) lends one holder a thing
+only one may use at a time, such as a loading dock, for a term it
+renews. Each grant carries a token higher than the last, and the others
+wait in line.
 
-An **idempotency record** remembers the outcome of a request that may
-arrive twice, so the second copy gets the first one's answer.
+An [**idempotency record**](src/acme/om/idempotency/README.md) remembers
+the outcome of a request that may arrive twice, so the second copy gets
+the first one's answer.
 
 ## How they fit together
 
 - An org has users. A user is one identity's place in the org, held by
   a membership with a role.
-- A session or an API key belongs to a user, so everything done with
+- An auth session or an API key belongs to a user, so everything done with
   it is done as that user in that org.
-- Every change a screen acts on writes an outbox row, which becomes an
-  event in the org's diary, which reaches every open screen of the org.
-- A work item, an orchestration, an idempotency record, an event, and
+- Every change a screen acts on writes an outbox row, which becomes a
+  change event in the org's diary, which reaches every open screen of the org.
+- A work item, an orchestration, an idempotency record, a change event, and
   an outbox row each name their org, so the fence between orgs holds
   for them too.
 - An agent session's fill set names the model for each of its jobs, and
@@ -193,23 +201,3 @@ arrive twice, so the second copy gets the first one's answer.
 - A loop is a run of a session's steps and has no record of its own; it
   reads where it is from them, so a loop a crash interrupted goes on
   where it stopped.
-
-## One page per kind
-
-- [Orgs, identities, users, memberships, and credentials](src/acme/om/tenancy/README.md)
-- [Files](src/acme/om/media/README.md)
-- [Agent sessions](src/acme/om/agent_sessions/README.md)
-- [Steps](src/acme/om/agent_steps/README.md)
-- [Agents](src/acme/om/agents/README.md)
-- [Attribution](src/acme/om/attribution/README.md)
-- [Privacy](src/acme/om/privacy/README.md)
-- [Budgets](src/acme/om/spend_budgets/README.md)
-- [Models](src/acme/om/language_models/README.md)
-- [Windows](src/acme/om/windows/README.md)
-- [Tools](src/acme/om/tools/README.md)
-- [Events](src/acme/om/events/README.md)
-- [Outbox rows](src/acme/om/outbox/README.md)
-- [Work items](src/acme/om/work/README.md)
-- [Orchestrations](src/acme/om/orchestrations/README.md)
-- [Resources, leases, and the line](src/acme/om/leases/README.md)
-- [Idempotency records](src/acme/om/idempotency/README.md)

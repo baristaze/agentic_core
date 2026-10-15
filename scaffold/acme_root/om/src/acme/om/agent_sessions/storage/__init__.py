@@ -10,6 +10,7 @@ from datetime import datetime
 from uuid import UUID
 
 from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus, Among
+from acme.om.context import tenantless
 from acme.om.outbox.types.row import OutboxRow
 
 
@@ -67,6 +68,7 @@ class AgentSessionStorageInterface(ABC):
         ...
 
     @abstractmethod
+    @tenantless
     async def read_purgeable(
         self, deleted_before: datetime, limit: int
     ) -> list[tuple[UUID, AgentSession]]:

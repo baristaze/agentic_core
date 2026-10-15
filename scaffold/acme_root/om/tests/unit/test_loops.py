@@ -11,17 +11,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.loops import (
-    ASSISTANT,
-    DELIVERY,
-    loop_over,
-    of_type,
-    ran_alone,
-    reply,
-    said,
-    text_of,
-    use,
-)
 
 from acme.infra.agent_workspaces import (
     AgentWorkspace,
@@ -46,6 +35,18 @@ from acme.om.agents.impl.loop import LOST_SOURCE
 from acme.om.agents.loop_rules import REPEATED
 from acme.om.agents.types.run import RunEnd
 from acme.om.context import TenantContext
+
+from contracts.loops import (
+    ASSISTANT,
+    DELIVERY,
+    loop_over,
+    of_type,
+    ran_alone,
+    reply,
+    said,
+    text_of,
+    use,
+)
 
 
 def turns(call: ModelCall) -> list[str]:

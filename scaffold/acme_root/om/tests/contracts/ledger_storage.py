@@ -27,7 +27,11 @@ from acme.om.spend_budgets.types.spend_hold import (
     SpendTally,
 )
 from acme.om.spend_budgets.types.usage import UsageRecord, UsageRollup
+
 from contracts.racing import race
+
+INTERFACE = LedgerStorageInterface
+"""The storage interface whose cross-tenant cases this suite holds."""
 
 CROSS_TENANT_CASES: frozenset[str] = frozenset(
     {

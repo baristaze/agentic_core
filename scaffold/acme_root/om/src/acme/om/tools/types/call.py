@@ -12,7 +12,7 @@ from acme.om.agent_steps.types.agent_step import AgentStep
 from acme.om.agent_steps.types.content import MAX_NAME
 from acme.om.agent_steps.types.header import ToolFailure
 from acme.om.attribution.types.authority import CallAuthority
-from acme.om.base import Platform
+from acme.om.base import OmBase
 from acme.om.tools.types.policy import Decision
 
 
@@ -31,7 +31,7 @@ class GateOutcome(StrEnum):
     REFUSE = "refuse"  # it never runs: `response` answers it
 
 
-class Gate(Platform):
+class Gate(OmBase):
     """Where a call stands before it runs. A refused call carries the
     response that answers it; `decision` is policy's, when policy was asked,
     and `authority` attribution's answer for the call then: the principal it
@@ -44,7 +44,7 @@ class Gate(Platform):
     authority: CallAuthority | None = None
 
 
-class JobStarted(Platform):
+class JobStarted(OmBase):
     """The output of a job tool's run: the tool's own name for the work, a
     name the loop's park keeps. A tool whose work needs a leased resource
     asks in line first, as its session's waiter, and names the request:
@@ -55,7 +55,7 @@ class JobStarted(Platform):
     request_id: UUID | None = None  # the request in line whose grant starts the work
 
 
-class JobHandle(Platform):
+class JobHandle(OmBase):
     """Work a `job` tool started, under the key of its request: the loop
     parks on it, and its completion arrives as an event. Work that waits
     for a grant names its request, and the loop parks in line first."""
@@ -67,7 +67,7 @@ class JobHandle(Platform):
     request_id: UUID | None = None  # the request in line whose grant starts the work
 
 
-class JobNotStarted(Platform):
+class JobNotStarted(OmBase):
     """A job whose start was refused before any work began: its input,
     refused before its tool ran, or the tool's own `JobRefused`. `response`
     answers its call. Nothing ran, so its hold is released; a start that
@@ -86,7 +86,7 @@ cost: a billion units, past any job's, and far inside the 64-bit tallies the
 cost is counted in."""
 
 
-class JobCompletion(Platform):
+class JobCompletion(OmBase):
     """How a job ended, as its completion event says. It names the job by
     its key and the tool's handle, both of which must be the job a loop
     waits on; it carries the job's result as text, the class of its failure

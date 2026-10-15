@@ -13,7 +13,7 @@ from typing import ClassVar
 from pydantic import Field
 
 from acme.om.attribution.types.principal import Principal
-from acme.om.base import Identifiable, Platform, Trackable
+from acme.om.base import Identifiable, OmBase, Trackable
 from acme.om.context import TenantContext
 
 
@@ -61,7 +61,7 @@ class AgentSessionAuthority(Identifiable, Trackable):
     version: int = Field(default=1, ge=1)
 
 
-class RequestAttribution(Platform):
+class RequestAttribution(OmBase):
     """What a model request records: the speaker, the principal behind the
     latest principal-authored input the model has received, its delivery
     included, and the spender who pays for it."""
@@ -70,7 +70,7 @@ class RequestAttribution(Platform):
     spender: Principal
 
 
-class CallReach(Platform):
+class CallReach(OmBase):
     """What a tool call's policy knows of it and of the session that asks
     it: whether the call acts outward (on external state beyond the
     session's own work product, or past its egress allowlist), and whether
@@ -80,7 +80,7 @@ class CallReach(Platform):
     holds_private: bool
 
 
-class CallAuthority(Platform):
+class CallAuthority(OmBase):
     """A tool call's answer: the principal it runs under, the mode that
     chose it, that principal's live context as the adopter's transition
     gave it this time, and whether a person must approve it (the rule of

@@ -13,24 +13,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.doubles import context
-from contracts.factories import make_org
-from contracts.loops import (
-    ASSISTANT,
-    DELIVERY,
-    LEAD,
-    WORKER,
-    Asked,
-    Found,
-    Lookup,
-    call,
-    control,
-    loop_over,
-    reply,
-    said,
-    text_of,
-    use,
-)
 
 from acme.infra.agent_workspaces import (
     AgentWorkspace,
@@ -63,7 +45,7 @@ from acme.om.agents.hooks import (
 )
 from acme.om.agents.types.request import Spawn
 from acme.om.agents.types.run import RunEnd
-from acme.om.base import Platform, new_id, utcnow
+from acme.om.base import OmBase, new_id, utcnow
 from acme.om.context import Role, TenantContext
 from acme.om.exceptions import NotAuthorized, UnresolvedRole
 from acme.om.tools.rules import DEFAULT_CEILINGS
@@ -71,6 +53,25 @@ from acme.om.tools.tool import ToolRuntime
 from acme.om.tools.types.policy import ToolPolicyLayer
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolSpec
 from acme.om.tools.types.toolset import LOAD_TOOLSET, Toolset
+
+from contracts.doubles import context
+from contracts.factories import make_org
+from contracts.loops import (
+    ASSISTANT,
+    DELIVERY,
+    LEAD,
+    WORKER,
+    Asked,
+    Found,
+    Lookup,
+    call,
+    control,
+    loop_over,
+    reply,
+    said,
+    text_of,
+    use,
+)
 
 LEDGER = Toolset(name="ledger", version=1, summary="The tenant's ledger.", tools=("ledger_read",))
 ARCHIVE = Toolset(
@@ -112,9 +113,7 @@ class VaultSync(Lookup):
     def spec(self) -> ToolSpec:
         return self._given
 
-    async def run(
-        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
-    ) -> Platform:
+    async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
         assert isinstance(call_input, Asked)
         if self._twin is not None:
             self._twin.files[runtime.agent_session_id] = f"token={VALUE}".encode()
@@ -298,7 +297,7 @@ async def test_a_loop_whose_first_run_parks_before_its_first_call_is_new_to_the_
 
     done = await loop.loops.run(loop.owner, agent_session_id)
 
-    assert waiting.park is not None and waiting.park.reason is ParkReason.RESOURCE
+    assert waiting.park is not None and waiting.park.reason is ParkReason.LEASABLE_RESOURCE
     assert done.outcome is LoopOutcome.SUCCEEDED and done.loop_id == waiting.loop_id
     assert [start.new_loop for start in layer.starts] == [True], "new until its first call"
     assert layer.renewed == [(done.loop_id, done.epoch)], "renewed before that call"

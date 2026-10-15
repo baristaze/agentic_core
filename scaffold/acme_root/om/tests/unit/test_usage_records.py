@@ -7,7 +7,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.loops import ASSISTANT, Loop, loop_over, reply, said, use
 from sqlalchemy import BigInteger, Boolean, DateTime, Integer, Text, Uuid
 
 from acme.integrations.model_providers.calls import ModelCall
@@ -26,6 +25,8 @@ from acme.om.spend_budgets.rules import usage_spend
 from acme.om.spend_budgets.storage.tables.usage_records import UsageRecords
 from acme.om.spend_budgets.types.spend_hold import SpendSettlement
 from acme.om.spend_budgets.types.usage import UsageRecord
+
+from contracts.loops import ASSISTANT, Loop, loop_over, reply, said, use
 
 FIRST = Usage(input=1_200, cache_read=800, cache_write=300, output=45, thinking=20)
 SECOND = Usage(input=1_400, cache_read=1_100, cache_write=0, output=60, thinking=0)

@@ -13,7 +13,7 @@ from typing import Self
 
 from pydantic import Field, model_validator
 
-from acme.om.base import Platform
+from acme.om.base import OmBase
 from acme.om.spend_budgets.types.spend_budget import MAX_KEY
 
 
@@ -32,12 +32,12 @@ class CacheWrite(StrEnum):
     LONG = "long"  # a longer-lived cache, which some providers bill higher
 
 
-class PromptSize(Platform):
+class PromptSize(OmBase):
     tokens: int = Field(ge=0)
     counted_by: PromptCount
 
 
-class ProviderTool(Platform):
+class ProviderTool(OmBase):
     """A tool the provider runs itself, as a request enables it: the most
     calls it may make, and the most input tokens one call may add, such as
     a search's results, which the provider bills as input on top of its fee."""
@@ -47,7 +47,7 @@ class ProviderTool(Platform):
     input_per_call: int = Field(ge=0)
 
 
-class CallShape(Platform):
+class CallShape(OmBase):
     prompt: PromptSize
     cache: CacheWrite = CacheWrite.NONE  # the prompt cache the request writes
     output_bound: int = Field(ge=1)  # the most output tokens the request allows

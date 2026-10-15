@@ -13,10 +13,10 @@ from uuid import UUID
 
 from pydantic import Field
 
-from acme.om.base import Platform
+from acme.om.base import OmBase
 
 
-class OpenKey(Platform):
+class OpenKey(OmBase):
     """One version of a session's key, in the clear, for the call in hand."""
 
     version: int = Field(ge=1)

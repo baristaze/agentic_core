@@ -7,12 +7,13 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
-from contracts.loops import loop_over, outage_parks_at_once_and_resumes_at_the_retry_time
 
 from acme.infra.base import SYSTEM_SCOPE, new_id
 from acme.infra.impl.configured import InfraConfiguredImpl
 from acme.infra.impl.settings import InfraSettings
 from acme.om.agents.impl.loop import LoopOptions
+
+from contracts.loops import loop_over, outage_parks_at_once_and_resumes_at_the_retry_time
 
 pytestmark = pytest.mark.integration
 

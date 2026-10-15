@@ -14,7 +14,7 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
-from acme.om.base import Created, Identifiable, Platform
+from acme.om.base import Created, Identifiable, OmBase
 
 
 class StorageMode(StrEnum):
@@ -24,7 +24,7 @@ class StorageMode(StrEnum):
     MEMORY_ONLY = "memory_only"  # only while a runtime holds the session
 
 
-class StoragePolicy(Platform):
+class StoragePolicy(OmBase):
     """A session's storage, chosen once. A memory-only session keeps its
     shape at rest when `keep_shape` allows, so its audit survives; a sealed
     one always does. A call's cost survives in every mode, in its usage
@@ -75,7 +75,7 @@ class AgentSessionKey(Identifiable, Created):
         return self.destroyed_at is not None
 
 
-class KeyRing(Platform):
+class KeyRing(OmBase):
     """A session's key as storage holds it: every version, live and
     destroyed, in version order, and whether the key is revoked."""
 

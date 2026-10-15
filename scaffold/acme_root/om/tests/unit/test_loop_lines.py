@@ -1,6 +1,6 @@
 """A session in line for a leased resource, over the memory storage and the
 scripted provider: a tool's ask answers at once with its place, and when
-the turn ends while it waits, the loop parks on `resource` naming its
+the turn ends while it waits, the loop parks on `leasable_resource` naming its
 place, and makes no model call until the grant, which reaches the model as
 the engine's notice with the lease and its token; a grant that lands after
 the ask was read and before the park wakes it all the same; a session
@@ -17,9 +17,13 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.loops import ALLOWED, Loop, call, loop_over, reply, said
 
 from acme.integrations.model_providers.calls import ModelCall
+from acme.om.agent_sessions.kinds import (
+    AGENT_SESSION_WAITER,
+    AgentSessionWorkKind,
+    LeaseNoticePayload,
+)
 from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
 from acme.om.agent_steps.types.header import (
@@ -34,22 +38,22 @@ from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
 from acme.om.agents.types.line import InLine
 from acme.om.agents.types.run import RunEnd
 from acme.om.attribution.types.authority import AuthorityMode
-from acme.om.base import Platform, new_id, utcnow
+from acme.om.base import OmBase, new_id, utcnow
 from acme.om.context import TenantContext
 from acme.om.leases import LeasesManagerInterface
+from acme.om.leases.types.leasable_resource import LeasableResource, LeasableResourceKind
 from acme.om.leases.types.lease import Lease, LeaseStatus
 from acme.om.leases.types.request import (
     EndReason,
     LeaseRequest,
     RequestStatus,
     Standing,
-    WaiterKind,
 )
-from acme.om.leases.types.resource import Resource, ResourceKind
 from acme.om.tools.tool import ToolInterface, ToolRuntime
 from acme.om.tools.types.policy import Target
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolSpec
-from acme.om.work.types.work_item import LeaseNoticePayload, WorkKind
+
+from contracts.loops import ALLOWED, Loop, call, loop_over, reply, said
 
 
 class Reserving(ToolInput):
@@ -72,7 +76,7 @@ class Reserve(ToolInterface):
             interruptible=True,
         )
         self.leases: LeasesManagerInterface | None = None
-        self.resource_id: UUID | None = None
+        self.leasable_resource_id: UUID | None = None
 
     @property
     def spec(self) -> ToolSpec:
@@ -86,11 +90,11 @@ class Reserve(ToolInterface):
     ) -> None:
         return None
 
-    async def run(
-        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
-    ) -> Platform:
-        assert self.leases is not None and self.resource_id is not None
-        ask = lines.in_line(an_ask(self.resource_id), runtime.agent_session_id, runtime.key)
+    async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
+        assert self.leases is not None and self.leasable_resource_id is not None
+        ask = lines.in_line(
+            an_ask(self.leasable_resource_id), runtime.agent_session_id, runtime.key
+        )
         return InLine.of(await self.leases.ask(ctx, ask))
 
 
@@ -106,7 +110,7 @@ RESERVER = AgentKind(
 )
 
 
-def an_ask(resource_id: UUID) -> LeaseRequest:
+def an_ask(leasable_resource_id: UUID) -> LeaseRequest:
     now = utcnow()
     return LeaseRequest(
         id=new_id(),
@@ -115,12 +119,12 @@ def an_ask(resource_id: UUID) -> LeaseRequest:
         created_by=new_id(),
         updated_by=new_id(),
         idempotency_key=new_id(),
-        kind=ResourceKind.NOOP,
-        resource_id=resource_id,
+        kind=LeasableResourceKind.NOOP,
+        leasable_resource_id=leasable_resource_id,
     )
 
 
-async def held_resource(tmp_path: Path) -> tuple[Loop, Resource, Lease]:
+async def held_resource(tmp_path: Path) -> tuple[Loop, LeasableResource, Lease]:
     """A loop whose `reserver` kind asks in line for a resource the owner
     holds."""
     reserve = Reserve()
@@ -128,18 +132,18 @@ async def held_resource(tmp_path: Path) -> tuple[Loop, Resource, Lease]:
     now = utcnow()
     resource = await loop.managers.leases.register(
         loop.owner,
-        Resource(
+        LeasableResource(
             id=new_id(),
             created_at=now,
             updated_at=now,
             created_by=loop.owner.user_id,
             updated_by=loop.owner.user_id,
-            kind=ResourceKind.NOOP,
+            kind=LeasableResourceKind.NOOP,
             ref_id=new_id(),
             max_term_seconds=300,
         ),
     )
-    reserve.leases, reserve.resource_id = loop.managers.leases, resource.id
+    reserve.leases, reserve.leasable_resource_id = loop.managers.leases, resource.id
     held = await loop.managers.leases.ask(loop.owner, an_ask(resource.id))
     assert held.lease is not None
     return loop, resource, held.lease
@@ -167,7 +171,7 @@ async def notices(loop: Loop) -> list[tuple[UUID, UUID]]:
     found: list[tuple[UUID, UUID]] = []
     while True:
         claimed = await work.claim_next(
-            "default", [WorkKind.LEASE_NOTICE], "test", timedelta(seconds=30)
+            "default", [AgentSessionWorkKind.LEASE_NOTICE], "test", timedelta(seconds=30)
         )
         if claimed is None:
             return found
@@ -181,7 +185,7 @@ async def unlocked(loop: Loop, ctx: TenantContext, agent_session_id: UUID) -> Ag
     unlocked."""
     session = await loop.managers.agent_sessions.get_agent_session(ctx, agent_session_id)
     park = session.park
-    if session.status is not AgentSessionStatus.PARKED or park is None or park.line is None:
+    if session.status is not AgentSessionStatus.PARKED or park is None or park.wait_line is None:
         return session
     return await loop.managers.agent_sessions.wake_agent_session(ctx, agent_session_id, park)
 
@@ -195,14 +199,22 @@ async def test_a_session_parks_in_line_and_wakes_with_its_lease_with_no_model_ca
 
     # The stop reason names the request, its place, and its estimate, and
     # no time: only the grant, or the request's end, clears it.
-    assert (park.reason, park.unlock, park.retry_at) == (ParkReason.RESOURCE, "grant", None)
-    assert park.line is not None
-    assert (park.line.request_id, park.line.resource_id, park.line.place) == (
+    assert (park.reason, park.unlock, park.retry_at) == (
+        ParkReason.LEASABLE_RESOURCE,
+        "grant",
+        None,
+    )
+    assert park.wait_line is not None
+    assert (
+        park.wait_line.request_id,
+        park.wait_line.leasable_resource_id,
+        park.wait_line.place,
+    ) == (
         request.id,
         resource.id,
         1,
     )
-    assert park.line.estimate_seconds is not None
+    assert park.wait_line.estimate_seconds is not None
     session = await loop.managers.agent_sessions.get_agent_session(loop.owner, agent_session_id)
     assert (session.status, session.park) == (AgentSessionStatus.PARKED, park)
     assert len(loop.anthropic.calls) == 2
@@ -212,7 +224,7 @@ async def test_a_session_parks_in_line_and_wakes_with_its_lease_with_no_model_ca
     await loop.managers.agent_sessions.wake_agent_session(loop.owner, agent_session_id, park)
     again = await loop.loops.run(loop.owner, agent_session_id)
     assert again.end is RunEnd.PARKED and again.park is not None
-    assert again.park.line is not None and again.park.line.request_id == request.id
+    assert again.park.wait_line is not None and again.park.wait_line.request_id == request.id
     assert len(loop.anthropic.calls) == 2, "no model call while the ask waits"
 
     # The resource frees: the grant asks for the session's notice in its own
@@ -244,7 +256,7 @@ async def test_a_grant_between_the_read_and_the_park_wakes_the_session(
     ) -> object:
         # The resource frees after the run read its ask waiting, and before
         # its park lands: the grant finds no park to clear.
-        if park.line is not None:
+        if park.wait_line is not None:
             await loop.managers.leases.release(loop.owner, held.id)
         return await park_as_written(ctx, agent_session_id, epoch, loop_id, park)
 
@@ -292,7 +304,7 @@ async def test_a_session_cancelled_in_line_leaves_it_and_the_next_request_is_gra
     assert run.outcome is LoopOutcome.CANCELLED
     left = (await loop.managers.leases.get_request(loop.owner, request.id)).request
     assert (left.status, left.end_reason) == (RequestStatus.CANCELLED, EndReason.WAITER_GONE)
-    line = await loop.managers.leases.line(loop.owner, resource.id)
+    line = await loop.managers.leases.wait_line(loop.owner, resource.id)
     assert [r.id for r in line.requests] == [behind.request.id]
     await loop.managers.leases.release(loop.owner, held.id)
     granted = await loop.managers.leases.get_request(loop.owner, behind.request.id)
@@ -377,12 +389,12 @@ async def test_a_turn_that_ends_past_the_deadline_parks_on_it_and_holds_no_line(
     run = await loop.loops.run(loop.owner, agent_session_id)
 
     assert run.end is RunEnd.PARKED and run.park is not None
-    assert (run.park.reason, run.park.unlock, run.park.line) == (
+    assert (run.park.reason, run.park.unlock, run.park.wait_line) == (
         ParkReason.PERSON,
         "deadline",
         None,
     )
-    line = await loop.managers.leases.line(loop.owner, resource.id)
+    line = await loop.managers.leases.wait_line(loop.owner, resource.id)
     assert line.requests == (), "no line held"
     (request,) = [
         s for s in await loop.history(agent_session_id) if s.type is AgentStepType.TOOL_REQUEST
@@ -401,8 +413,10 @@ async def test_a_session_granted_past_the_deadline_parks_on_it_and_gives_the_lea
     await loop.say(agent_session_id, "Take the resource.")
     loop.anthropic.add(reply(call("reserve")), reply(said("I am in line for it, and I wait.")))
     parked = await loop.loops.run(loop.owner, agent_session_id)
-    assert parked.park is not None and parked.park.line is not None, "in line before the deadline"
-    request_id = parked.park.line.request_id
+    assert parked.park is not None and parked.park.wait_line is not None, (
+        "in line before the deadline"
+    )
+    request_id = parked.park.wait_line.request_id
 
     # The deadline passes while it waits, and the grant lands after it.
     loop.clock.now = deadline + timedelta(seconds=1)
@@ -442,7 +456,7 @@ def a_standing(status: RequestStatus, lease: LeaseStatus | None = None) -> Stand
             updated_at=now,
             created_by=new_id(),
             updated_by=new_id(),
-            resource_id=new_id(),
+            leasable_resource_id=new_id(),
             request_id=request.id,
             holder_id=new_id(),
             token=7,
@@ -466,7 +480,7 @@ def test_an_ask_is_the_calls_and_its_session_waits_on_it() -> None:
     agent_session_id, key = new_id(), new_id()
     ask = lines.in_line(an_ask(new_id()), agent_session_id, key)
     assert (ask.id, ask.idempotency_key) == (key, key)
-    assert (ask.waiter_kind, ask.waiter_id) == (WaiterKind.AGENT_SESSION, agent_session_id)
+    assert (ask.waiter_kind, ask.waiter_id) == (AGENT_SESSION_WAITER, agent_session_id)
 
 
 def test_each_answer_is_told_once_and_a_grant_the_call_answered_with_never() -> None:

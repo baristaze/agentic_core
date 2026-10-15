@@ -9,20 +9,6 @@ from datetime import timedelta
 from pathlib import Path
 from uuid import UUID
 
-from contracts.agent_step_storage import make_request, make_response
-from contracts.loops import (
-    ASSISTANT,
-    loop_over,
-    of_type,
-    outage_parks_at_once_and_resumes_at_the_retry_time,
-    person,
-    ran_alone,
-    reply,
-    said,
-    text_of,
-    use,
-)
-
 from acme.integrations.model_providers.scripted import ScriptedFailure
 from acme.integrations.model_providers.types import Effort, ErrorKind, StopReason
 from acme.om.agent_sessions.limits import Limit, Limits, tally_loop, tripped
@@ -40,6 +26,20 @@ from acme.om.agents.loop_rules import retry_wait
 from acme.om.agents.types.run import RunEnd
 from acme.om.base import new_id, utcnow
 from acme.om.language_models.types.fill import MAIN, ModelAsk, ModelSize
+
+from contracts.agent_step_storage import make_request, make_response
+from contracts.loops import (
+    ASSISTANT,
+    loop_over,
+    of_type,
+    outage_parks_at_once_and_resumes_at_the_retry_time,
+    person,
+    ran_alone,
+    reply,
+    said,
+    text_of,
+    use,
+)
 
 
 def exchange(
