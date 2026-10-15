@@ -1,0 +1,1 @@
+-- The fold holds no statement, so its downgrade holds none.

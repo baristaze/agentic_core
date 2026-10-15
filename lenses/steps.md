@@ -189,7 +189,7 @@ steps.
 **Severity.** medium
 
 **Shape.**
-`scaffold/acme_root/om/migrations/sql/activity/202610020101_steps.up.sql` and
+`scaffold/acme_root/om/migrations/sql/activity/202610150049_folded_activity_revisions.up.sql` and
 `scaffold/acme_root/om/src/acme/om/agent_steps/storage/__init__.py`
 
 **Check.** `agentic-check` decides that no SQLAlchemy statement or SQL text
