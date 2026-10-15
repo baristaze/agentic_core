@@ -10,11 +10,11 @@ from uuid import UUID
 from pydantic import Field
 
 from acme.om.agent_steps.types.content import Attachment
-from acme.om.base import Platform
+from acme.om.base import OmBase
 from acme.om.context import TenantContext
 
 
-class AttachmentText(Platform):
+class AttachmentText(OmBase):
     """An attachment's text, page by page. A file with no pages of its own,
     such as plain text, is one page."""
 

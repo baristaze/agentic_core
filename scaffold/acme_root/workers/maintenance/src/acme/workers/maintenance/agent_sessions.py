@@ -12,14 +12,16 @@ import logging
 from typing import ClassVar
 
 from acme.om.agent_sessions import AgentSessionsManagerInterface
+from acme.om.agent_sessions.kinds import (
+    LeaseNoticePayload,
+    WakeAgentSessionPayload,
+    WakeAgentSessionsPayload,
+)
 from acme.om.agent_sessions.types.agent_session import AgentSessionStatus
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import NotFound
 from acme.om.work.types.handler import WorkHandlerInterface
 from acme.om.work.types.work_item import (
-    LeaseNoticePayload,
-    WakeAgentSessionPayload,
-    WakeAgentSessionsPayload,
     WorkItem,
 )
 
@@ -91,7 +93,11 @@ class LeaseNoticeHandlerImpl(WorkHandlerInterface):
             log.info("session %s is gone; notice %s has nothing to do", item.target_id, item.id)
             return
         park = session.park
-        if session.status is not AgentSessionStatus.PARKED or park is None or park.line is None:
+        if (
+            session.status is not AgentSessionStatus.PARKED
+            or park is None
+            or park.wait_line is None
+        ):
             log.info(
                 "session %s in org %s is %s; request %s is read by its run",
                 session.id,

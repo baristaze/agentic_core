@@ -10,10 +10,10 @@ from uuid import UUID
 from pydantic import model_validator
 
 from acme.om.agent_steps.types.header import AcceptedResult, LoopOutcome, Park
-from acme.om.base import Platform
+from acme.om.base import OmBase
 
 
-class Report(Platform):
+class Report(OmBase):
     """One status change of a child's loop `loop_id`: it ended with
     `outcome`, or it parked on `park`. `accepted` is the verdict its result
     gate gave, when it ended on one. `answer` is the text of the loop's

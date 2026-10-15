@@ -7,13 +7,10 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.agent_session_storage import make_agent_session
-from contracts.agent_step_storage import make_request, make_response
-from contracts.doubles import context
-from contracts.tools import stand_ins
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.om.agent_root import AgentRootOptions
+from acme.om.agent_sessions.kinds import AgentSessionWorkKind
 from acme.om.agent_sessions.rules import QUESTION, asks_for_run, parked_step
 from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus
 from acme.om.agent_steps.rules import control_step, message_step
@@ -42,7 +39,12 @@ from acme.om.exceptions import NotAuthorized, NotFound
 from acme.om.root import Managers, build_managers
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
-from acme.om.work.types.work_item import WorkItem, WorkKind
+from acme.om.work.types.work_item import WorkItem
+
+from contracts.agent_session_storage import make_agent_session
+from contracts.agent_step_storage import make_request, make_response
+from contracts.doubles import context
+from contracts.tools import stand_ins
 
 # What `make_agent_session` names, so the agents manager classes every tool it
 # offers.
@@ -68,7 +70,11 @@ class Engine:
         work = self.storage.get_work_storage()
         assert isinstance(work, WorkStorageMemoryImpl)
         items = [item for _, item in work._items.values()]  # pyright: ignore[reportPrivateUsage]
-        return [i for i in items if i.kind is WorkKind.LOOP and i.target_id == agent_session_id]
+        return [
+            i
+            for i in items
+            if i.kind == AgentSessionWorkKind.LOOP and i.target_id == agent_session_id
+        ]
 
     async def session(self, ctx: TenantContext) -> AgentSession:
         return await self.managers.agent_sessions.create_agent_session(ctx, make_agent_session())

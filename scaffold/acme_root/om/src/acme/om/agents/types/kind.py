@@ -23,7 +23,7 @@ from acme.infra.agent_workspaces import EgressMode, EgressPolicy, IsolationMode,
 from acme.om.agent_sessions.limits import Limits
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.attribution.types.principal import MAX_KIND
-from acme.om.base import Platform
+from acme.om.base import OmBase
 from acme.om.exceptions import UnknownAgentKind
 from acme.om.language_models.types.fill import MAIN, SUMMARIZER, ModelAsk, ModelRole
 from acme.om.spend_budgets.types.amount import Amount
@@ -43,7 +43,7 @@ class DoneRule(StrEnum):
     RESULT_TOOL = "result_tool"  # a delivery agent: only its result tool ends a loop
 
 
-class TreeLimits(Platform):
+class TreeLimits(OmBase):
     """The bounds of a tree. Height 1 is a single agent, 2 lets the root have
     children that have none, and so on. Count is the most sub-agents the
     tree holds besides its root, and concurrency, when set, the most that
@@ -55,7 +55,7 @@ class TreeLimits(Platform):
     concurrency: int | None = Field(default=None, ge=1)
 
 
-class AgentKind(Platform):
+class AgentKind(OmBase):
     name: str = Field(min_length=1, max_length=MAX_KIND)
     version: int = Field(ge=1)
     # Every tool it may call, by name: those it names alone, its toolsets',
@@ -156,7 +156,7 @@ class AgentKind(Platform):
         )
 
 
-class AgentKindCatalog(Platform):
+class AgentKindCatalog(OmBase):
     """The kinds a product declares, every version it still runs: a session
     pins a version, and keeps it until it switches. The toolsets its kinds
     name are held beside them: a version of a toolset names one group of

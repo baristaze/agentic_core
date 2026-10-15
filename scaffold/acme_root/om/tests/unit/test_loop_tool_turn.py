@@ -7,23 +7,6 @@ import asyncio
 from pathlib import Path
 from uuid import UUID
 
-from contracts.loops import (
-    ALLOWED,
-    ASSISTANT,
-    DELIVERY,
-    Lookup,
-    Loop,
-    answer_to,
-    control,
-    loop_over,
-    of_type,
-    person,
-    reply,
-    said,
-    text_of,
-    use,
-)
-
 from acme.infra.agent_workspaces import (
     EgressMode,
     EgressPolicy,
@@ -47,6 +30,23 @@ from acme.om.base import new_id
 from acme.om.tools.rules import DEFAULT_CEILINGS
 from acme.om.tools.types.policy import Decision, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import ToolClass
+
+from contracts.loops import (
+    ALLOWED,
+    ASSISTANT,
+    DELIVERY,
+    Lookup,
+    Loop,
+    answer_to,
+    control,
+    loop_over,
+    of_type,
+    person,
+    reply,
+    said,
+    text_of,
+    use,
+)
 
 
 def interrupt_of(loop: Loop, agent_session_id: UUID, request: AgentStep) -> AgentStep:

@@ -8,7 +8,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.loops import Loop, loop_over, reply, said, use
 
 from acme.integrations.model_providers.scripted import ScriptedFailure
 from acme.integrations.model_providers.types import ErrorKind
@@ -19,6 +18,8 @@ from acme.om.agents.impl.sink import StreamSinkMemoryImpl
 from acme.om.context import TenantContext
 from acme.om.tools.tool import ToolRuntime
 from acme.om.tools.types.tool import ToolInput
+
+from contracts.loops import Loop, loop_over, reply, said, use
 
 OPENED, PART, COMPLETED = "opened", "part", "completed"
 

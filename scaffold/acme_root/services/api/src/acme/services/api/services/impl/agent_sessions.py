@@ -36,8 +36,8 @@ from acme.om.windows import WindowsManagerInterface
 from acme.services.api.services.agent_sessions import AgentSessionsServiceInterface
 from acme.services.api.services.impl.tenancy import decode_cursor, encode_cursor
 from acme.services.api.types.agent_sessions import (
-    AgentSessionUsageView,
     AgentSessionPageView,
+    AgentSessionUsageView,
     AgentSessionView,
     AgentStepPageView,
     AgentStepUsageView,
@@ -52,6 +52,7 @@ from acme.services.api.types.agent_sessions import (
     PrincipalRequest,
     SnapshotView,
     StartAgentSessionRequest,
+    StopReason,
     ToolOutputPageView,
     VisibilityRequest,
 )
@@ -112,7 +113,11 @@ def step_view(step: AgentStep) -> AgentStepView:
         created_at=step.created_at,
         text=text_of(step),
         tools=[use.name for use in step.as_tool_uses()] if responded is not None else [],
-        stop_reason=None if responded is None else responded.stop_reason,
+        stop_reason=(
+            None
+            if responded is None or responded.stop_reason is None
+            else StopReason(responded.stop_reason)
+        ),
         usage=usage_view(responded.usage) if responded is not None else None,
         tool=header.tool if isinstance(header, ToolRequestHeader) else None,
         failure=header.failure if isinstance(header, ToolResponseHeader) else None,

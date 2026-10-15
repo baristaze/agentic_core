@@ -8,6 +8,7 @@ from collections.abc import Callable
 from uuid import UUID
 
 from acme.om.agent_sessions import AgentSessionsManagerInterface
+from acme.om.agent_sessions.kinds import AgentSessionWorkKind, LeaseNoticePayload
 from acme.om.agent_sessions.types.agent_session import AgentSessionStatus
 from acme.om.context import TenantContext
 from acme.om.exceptions import NotFound
@@ -15,7 +16,7 @@ from acme.om.leases.hooks import WaiterInterface
 from acme.om.leases.types.lease import Lease
 from acme.om.leases.types.request import LeaseRequest
 from acme.om.outbox.types.row import OutboxRow, outbox_row
-from acme.om.work.types.work_item import LeaseNoticePayload, WorkKind, work_row_kind
+from acme.om.work.types.work_item import work_row_kind
 
 
 class AgentSessionWaiterImpl(WaiterInterface):
@@ -52,7 +53,7 @@ def _notice(ctx: TenantContext, agent_session_id: UUID, request_id: UUID) -> tup
     return (
         outbox_row(
             ctx,
-            work_row_kind(WorkKind.LEASE_NOTICE),
+            work_row_kind(AgentSessionWorkKind.LEASE_NOTICE),
             agent_session_id,
             payload.model_dump(mode="json"),
         ),

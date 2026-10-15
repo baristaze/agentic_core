@@ -41,7 +41,7 @@ from acme.om.agents.types.result import Claim
 from acme.om.agents.types.run import RunEnd
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.attribution.types.principal import Principal, PrincipalKind
-from acme.om.base import Platform, new_id, utcnow
+from acme.om.base import OmBase, new_id, utcnow
 from acme.om.context import CredentialKind, RequestContext, Role, TenantContext, build_context
 from acme.om.language_models.impl.credentials import CallCredentialsPlatformImpl
 from acme.om.language_models.layer import LanguageModelsLayer
@@ -60,6 +60,7 @@ from acme.om.tools.types.policy import Decision, Target, ToolPolicyLayer, ToolPo
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolMode, ToolSpec
 from acme.om.windows.gate import CallGateInterface
 from acme.om.windows.impl.gate import CallGateSpendBudgetImpl
+
 from contracts.agent_step_storage import make_message
 from contracts.doubles import APP, context
 from contracts.factories import make_org
@@ -80,7 +81,7 @@ class Asked(ToolInput):
     q: str = "the total"
 
 
-class Found(Platform):
+class Found(OmBase):
     text: str
 
 
@@ -128,9 +129,7 @@ class Lookup(ToolInterface):
     ) -> None:
         return None
 
-    async def run(
-        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
-    ) -> Platform:
+    async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
         assert isinstance(call_input, Asked)
         self.ran_as.append(ctx.user_id)
         if self.holds and len(self.ran_as) == 1:
@@ -174,9 +173,7 @@ class Build(JobToolInterface):
     ) -> None:
         return None
 
-    async def run(
-        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
-    ) -> Platform:
+    async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
         handle = self.started.setdefault(runtime.key, f"{self._spec.name}-{len(self.started) + 1}")
         self.deadlines.append(runtime.deadline)
         return JobStarted(handle=handle)
@@ -292,7 +289,7 @@ async def live(rctx: RequestContext, org_id: UUID, principal: Principal) -> Tena
         org_id=org_id,
         role=Role.MEMBER,
         permissions=permissions_of(Role.MEMBER),
-        credential_kind=CredentialKind.SESSION_TOKEN,
+        credential_kind=CredentialKind.AUTH_SESSION_TOKEN,
     )
 
 
@@ -357,7 +354,7 @@ class Loop:
             org_id=self.owner.org_id,
             role=Role.MEMBER,
             permissions=permissions_of(Role.MEMBER),
-            credential_kind=CredentialKind.SESSION_TOKEN,
+            credential_kind=CredentialKind.AUTH_SESSION_TOKEN,
         )
 
 

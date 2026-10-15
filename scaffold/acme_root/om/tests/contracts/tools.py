@@ -51,10 +51,10 @@ from acme.om.agent_steps.types.header import ModelResponseHeader, ToolFailure, T
 from acme.om.attribution import AttributionManagerInterface
 from acme.om.attribution.types.authority import AuthorityMode, CallAuthority, CallReach
 from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
-from acme.om.base import Platform, new_id, utcnow
+from acme.om.base import OmBase, new_id, utcnow
+from acme.om.change_events import ChangeEventsManagerInterface
+from acme.om.change_events.impl.manager import ChangeEventsManagerImpl, ChangeEventsOptions
 from acme.om.context import Role, TenantContext, build_context
-from acme.om.events import EventsManagerInterface
-from acme.om.events.impl.manager import EventsManagerImpl, EventsOptions
 from acme.om.exceptions import ToolFailed
 from acme.om.outbox.impl.relay import OutboxRelayImpl
 from acme.om.privacy.impl.keys import AgentSessionKeysImpl
@@ -72,6 +72,7 @@ from acme.om.tools.tool import ToolInterface, ToolRuntime
 from acme.om.tools.types.policy import Decision, Target, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolMode, ToolSpec
 from acme.om.windows.impl.hashes import PromptHashMemoryImpl
+
 from contracts.agent_step_storage import a_person, make_message, make_request
 from contracts.doubles import Members
 
@@ -86,7 +87,7 @@ class CommandInput(ToolInput):
     argv: tuple[str, ...]
 
 
-class CommandOutput(Platform):
+class CommandOutput(OmBase):
     exit_code: int | None
     stdout: str
     stderr: str
@@ -130,9 +131,7 @@ class Command(ToolInterface):
     ) -> None:
         return None
 
-    async def run(
-        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
-    ) -> Platform:
+    async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
         assert isinstance(call_input, CommandInput)
         result = await runtime.run(
             call_input.argv, secrets=tuple(use.name for use in self._spec.secrets)
@@ -147,7 +146,7 @@ class PushInput(ToolInput):
     justification: str = ""
 
 
-class Pushed(Platform):
+class Pushed(OmBase):
     branch: str
 
 
@@ -185,9 +184,7 @@ class PushBranch(ToolInterface):
         if call_input.branch not in self._protections:
             raise ToolFailed(ToolFailure.INVALID_INPUT, f"no branch {call_input.branch!r}")
 
-    async def run(
-        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
-    ) -> Platform:
+    async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
         assert isinstance(call_input, PushInput)
         self.pushed.append(call_input.branch)
         return Pushed(branch=call_input.branch)
@@ -263,7 +260,7 @@ Answering.__abstractmethods__ = frozenset()
 class Tools:
     manager: ToolsManagerImpl
     steps: AgentStepsManagerInterface
-    events: EventsManagerInterface
+    change_events: ChangeEventsManagerInterface
     storage: StorageMemoryImpl
     clock: Clock
     attribution: Answering
@@ -292,9 +289,11 @@ def tools_over(
         steers=no_steerer,
         opens=no_session,
     )
-    events = EventsManagerImpl(storage.get_event_storage(), members, EventsOptions())
+    change_events = ChangeEventsManagerImpl(
+        storage.get_change_event_storage(), members, ChangeEventsOptions()
+    )
     relay = OutboxRelayImpl(
-        storage.get_outbox_storage(), storage.get_event_storage(), TopicsMemoryImpl()
+        storage.get_outbox_storage(), storage.get_change_event_storage(), TopicsMemoryImpl()
     )
     clock = Clock()
     attribution = Answering()  # pyright: ignore[reportAbstractUsage] (a partial double)
@@ -332,7 +331,7 @@ def tools_over(
         storage.get_tool_storage(),
         steps,
         members,
-        events,
+        change_events,
         relay,
         workspaces,
         transport,
@@ -346,7 +345,7 @@ def tools_over(
         bases=bases,
         sleep=sleep,
     )
-    return Tools(manager, steps, events, storage, clock, attribution, waits, members)
+    return Tools(manager, steps, change_events, storage, clock, attribution, waits, members)
 
 
 def twin_transport(

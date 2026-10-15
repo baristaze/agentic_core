@@ -36,7 +36,11 @@ from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.attribution.types.principal import AgentRef, Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
 from acme.om.exceptions import StaleWriter, TenantMismatch, UniqueKeyTaken, ValidationFailed
+
 from contracts.racing import race
+
+INTERFACE = AgentStepStorageInterface
+"""The storage interface whose cross-tenant cases this suite holds."""
 
 CROSS_TENANT_CASES: frozenset[str] = frozenset(
     {
@@ -79,7 +83,7 @@ def make_message(
     )
 
 
-def make_event(agent_session_id: UUID, *, principal: Principal | None = None) -> AgentStep:
+def make_event_step(agent_session_id: UUID, *, principal: Principal | None = None) -> AgentStep:
     """An event from outside, built with no word on whether it wakes, on
     the authority the adopter's routing delivers it under."""
     agent_step_id = new_id()
@@ -289,7 +293,7 @@ class AgentStepStorageContract:
         org, session = new_id(), new_id()
         message = make_message(session)
         waits = Park(
-            reason=ParkReason.RESOURCE,
+            reason=ParkReason.LEASABLE_RESOURCE,
             unlock="agent_workspace",
             retry_at=utcnow(),
             cause="the workspace base is being built",
@@ -332,7 +336,7 @@ class AgentStepStorageContract:
         await storage.append_agent_steps(
             org, session, epoch, [message, request, response, call, result]
         )
-        await storage.append_inputs(org, session, [make_event(session, principal=routed)])
+        await storage.append_inputs(org, session, [make_event_step(session, principal=routed)])
         stored = await storage.read_agent_steps(org, session, 0, 10)
         assert [(step.actor, attributed(step)) for step in stored] == [
             (Actor.PERSON, asker),

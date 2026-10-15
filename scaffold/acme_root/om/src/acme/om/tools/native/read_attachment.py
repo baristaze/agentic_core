@@ -19,7 +19,7 @@ from pydantic_core import to_json
 from acme.om.agent_steps import AgentStepsManagerInterface
 from acme.om.agent_steps.types.content import Attachment
 from acme.om.agent_steps.types.header import ToolFailure
-from acme.om.base import Platform
+from acme.om.base import OmBase
 from acme.om.context import TenantContext
 from acme.om.exceptions import ToolFailed
 from acme.om.tools.attachments import AttachmentReaderInterface
@@ -42,7 +42,7 @@ DESCRIPTION = (
 )
 
 
-class ReadAttachmentOptions(Platform):
+class ReadAttachmentOptions(OmBase):
     """The bound of one read. `max_chars` bounds the answer as the model
     reads it, its JSON with every quote and newline escaped, and stays under
     the window's result bound, so an answer is kept in its step whole."""
@@ -73,7 +73,7 @@ class ReadAttachmentInput(ToolInput):
         return self
 
 
-class AttachmentRange(Platform):
+class AttachmentRange(OmBase):
     """What one read answers: the lines or pages from `first` to `last`, of
     the `total` the file has. `cut` says the text stopped at the bound of
     one read before the range's end: read on from `last`. `offset` is there
@@ -132,9 +132,7 @@ class ReadAttachmentToolImpl(ToolInterface):
                 f"to {call_input.first + bound - 1}, then read on",
             )
 
-    async def run(
-        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
-    ) -> Platform:
+    async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
         assert isinstance(call_input, ReadAttachmentInput)
         await self.preflight(ctx, call_input, runtime)
         attachment = await self._find(ctx, runtime.agent_session_id, call_input.attachment_id)

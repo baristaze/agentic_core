@@ -3,8 +3,8 @@ in-process, over the memory storage and the twin workspace and transport,
 on a kind whose workspace starts from a base with setup. A setup command
 that fails ends the loop `errored`, and its end step names the command and
 its exit code, never what the command wrote. A loop whose base another
-prepare is building parks on the resource, and its park says so, on the
-step and on the session."""
+prepare is building parks on the leasable resource, and its park says so,
+on the step and on the session."""
 
 import asyncio
 from collections.abc import Mapping
@@ -142,7 +142,7 @@ async def test_a_park_on_a_base_being_built_says_so_on_the_step_and_the_session(
     setup.gate.set()
     await first
 
-    assert (parked["type"], parked["park"]["reason"]) == ("parked", "resource")
+    assert (parked["type"], parked["park"]["reason"]) == ("parked", "leasable_resource")
     assert parked["park"]["cause"] == "the workspace base is being built"
     assert session.status_code == 200, session.text
     assert session.json()["park"] == parked["park"], "the session shows the park it waits on"

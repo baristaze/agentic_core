@@ -21,7 +21,7 @@ from acme.integrations.model_providers.types import StopReason, Usage
 from acme.om.agent_steps.types.content import MAX_NAME, Stored
 from acme.om.attribution.types.authority import AuthorityMode, Visibility
 from acme.om.attribution.types.principal import AgentRef, Principal
-from acme.om.base import Platform
+from acme.om.base import OmBase
 from acme.om.context import Role
 from acme.om.language_models.types.fill import FillSwitch
 
@@ -66,7 +66,7 @@ class ParkReason(StrEnum):
     PERSON = "person"  # a question, an approval, a deadline, a principal to reassign
     PROVIDER = "provider"  # an outage, a rate limit, a billing or credential error
     SPEND_BUDGET = "spend_budget"  # the gate refused
-    RESOURCE = "resource"  # a scarce resource or a workspace, in line
+    LEASABLE_RESOURCE = "leasable_resource"  # a leasable resource or a workspace, in line
     JOB = "job"  # a long-running tool job is working
     CHILDREN = "children"  # sub-agents have not reported
     HANDOVER = "handover"  # a person holds the environment
@@ -99,7 +99,7 @@ PERSON_ONLY = frozenset({ParkReason.PERSON, ParkReason.HANDOVER, ParkReason.PAUS
 """The reasons only a person clears: a question, a hand-over, a pause."""
 
 
-class JobPark(Platform):
+class JobPark(OmBase):
     """The job a loop parks on: its key, the id of the call's request; the
     tool's own name for the work; the budget hold it started under, when it
     spends; and the request in line whose grant starts it, when its tool
@@ -112,21 +112,21 @@ class JobPark(Platform):
     request_id: UUID | None = None
 
 
-class LinePark(Platform):
-    """The line a loop waits in for a leased resource: the request it waits
-    on, what it asked for (a kind, and the resource when it named one), and
-    where it stood when the loop parked, its place (1 is next in some line it
-    stands in) and the estimate of its wait. Ids, a kind, and numbers, never
-    what the work said."""
+class WaitLinePark(OmBase):
+    """The wait line a loop stands in for a leasable resource: the request it
+    waits on, what it asked for (a kind, and the leasable resource when it
+    named one), and where it stood when the loop parked, its place (1 is next
+    in some wait line it stands in) and the estimate of its wait. Ids, a
+    kind, and numbers, never what the work said."""
 
     request_id: UUID
     kind: Stored = Field(min_length=1, max_length=MAX_NAME)
-    resource_id: UUID | None = None
+    leasable_resource_id: UUID | None = None
     place: int | None = Field(default=None, ge=1)
     estimate_seconds: float | None = Field(default=None, ge=0)
 
 
-class Park(Platform):
+class Park(OmBase):
     """What a parked loop waits on: its reason, what clears it, and when it
     tries again by itself. No retry time means only a person can unblock it,
     so a park only a person clears carries none, except a park in line,
@@ -145,7 +145,7 @@ class Park(Platform):
     call open at it may have started: the run that resumes it settles each
     by its effect."""
     job: JobPark | None = None
-    line: LinePark | None = None
+    wait_line: WaitLinePark | None = None
     cause: Cause | None = None
     """Why it waits, when the engine can name it: a workspace's refusal,
     such as a base still being built, or a key or an account a provider
@@ -161,14 +161,14 @@ class Park(Platform):
             raise ValueError(f"a {self.reason.value} park is cleared by a person, never by a time")
         if self.holder is not None and self.reason is not ParkReason.HANDOVER:
             raise ValueError("only a hand-over names the person who holds it")
-        waits_for = ParkReason.JOB if self.line is None else ParkReason.RESOURCE
+        waits_for = ParkReason.JOB if self.wait_line is None else ParkReason.LEASABLE_RESOURCE
         if self.job is not None and (self.reason is not waits_for or self.retry_at is None):
             raise ValueError(
                 "only a job park names a job, or a park in line for the job its grant "
                 + "starts, and it tries again at the job's deadline"
             )
-        if self.line is not None and (
-            self.reason is not ParkReason.RESOURCE
+        if self.wait_line is not None and (
+            self.reason is not ParkReason.LEASABLE_RESOURCE
             or (self.retry_at is not None and self.job is None)
         ):
             raise ValueError(
@@ -178,7 +178,7 @@ class Park(Platform):
         return self
 
 
-class ToolOutputRef(Platform):
+class ToolOutputRef(OmBase):
     """The handle of a text kept whole as a tool output, outside the step: a
     tool result, or a child's report to its parent. It holds the tool output's
     id and how many characters it holds. The step keeps the text's head and
@@ -195,7 +195,7 @@ session's."""
 SNAPSHOT_HASH = re.compile(rf"^{HASH_SCHEME}[0-9a-f]{{64}}$")
 
 
-class AgentWorkspaceSnapshot(Platform):
+class AgentWorkspaceSnapshot(OmBase):
     """A workspace's snapshot as the history names it: its id, the hash of
     its bytes keyed by its session, so once the key is revoked nothing can
     confirm what it held, its size, and the workspace it was taken from:
@@ -208,7 +208,7 @@ class AgentWorkspaceSnapshot(Platform):
     agent_workspace_id: UUID
 
 
-class InputHeader(Platform):
+class InputHeader(OmBase):
     """A `message` or an `event`. `waking` is set when the input arrives, by
     the adopter's routing: a waking input starts a loop on an idle session.
     Left None, it takes its type's default when the step is built
@@ -242,7 +242,7 @@ class InputHeader(Platform):
     participant: bool = False
 
 
-class DecidedCall(Platform):
+class DecidedCall(OmBase):
     """The tool call a person's approve or deny decides: its tool and its
     input's hash, as its request recorded them, and who decided, with the
     role they held in the tenant then. The history writes both in the name
@@ -259,7 +259,7 @@ class DecidedCall(Platform):
     expires_at: datetime | None = None
 
 
-class ControlHeader(Platform):
+class ControlHeader(OmBase):
     """`call` is the decided call of an approve or a deny, and of nothing
     else. `snapshot` is what a restore starts the workspace from, and is
     named by nothing else. `principal` is who sent it: a principal's control
@@ -287,7 +287,7 @@ class ControlHeader(Platform):
         return self
 
 
-class ModelRequestHeader(Platform):
+class ModelRequestHeader(OmBase):
     """One call of one model role. Its content is empty: it references the
     inputs it delivered, and records the window it read by reference: the
     fill it was sized for and the fill set's version that named it, its left
@@ -313,7 +313,7 @@ class ModelRequestHeader(Platform):
     spend_hold_id: UUID | None = None
 
 
-class ModelResponseHeader(Platform):
+class ModelResponseHeader(OmBase):
     """A response saved once, whole, when its stream ends. `truncated` marks
     a stream that broke, or a reply cut by its output bound, holding what
     arrived; `abandoned` marks the close of a request that never got its
@@ -328,7 +328,7 @@ class ModelResponseHeader(Platform):
     stop_reason: StopReason | None = None
 
 
-class ToolRequestHeader(Platform):
+class ToolRequestHeader(OmBase):
     """One tool call, referencing the tool-use block of the response that
     asked for it (`tool_use_id`, with that response among the step's
     `refs`) and carrying its input's hash, never its input, and the class
@@ -346,7 +346,7 @@ class ToolRequestHeader(Platform):
     authorization_class: Stored = Field(min_length=1, max_length=MAX_NAME)
 
 
-class AcceptedResult(Platform):
+class AcceptedResult(OmBase):
     """A result the kind's result gate accepted: the outcome its loop ends
     with, and whether a gate that knows the evidence judged it."""
 
@@ -354,7 +354,7 @@ class AcceptedResult(Platform):
     verified: bool = False
 
 
-class ToolResponseHeader(Platform):
+class ToolResponseHeader(OmBase):
     """A result, or the class of the failure the call met. `interrupted`
     marks a call stopped before it answered, its outcome unknown, so the
     model verifies before it retries. `tool_output` is the handle of a result
@@ -379,7 +379,7 @@ class ToolResponseHeader(Platform):
         return self.failure is ToolFailure.INTERRUPTED
 
 
-class SummaryHeader(Platform):
+class SummaryHeader(OmBase):
     """The range of the history a summary stands for when a model reads it."""
 
     kind: Literal["summary"] = "summary"
@@ -393,14 +393,14 @@ class SummaryHeader(Platform):
         return self
 
 
-class ParkedHeader(Platform):
+class ParkedHeader(OmBase):
     """A `parked` step writes no outcome: the loop is suspended, not ended."""
 
     kind: Literal["parked"] = "parked"
     park: Park
 
 
-class LoopEndedHeader(Platform):
+class LoopEndedHeader(OmBase):
     """A loop's outcome, and its cause when the engine can name it, such as
     the setup command that failed and its exit code. None says no more than
     the outcome."""
@@ -410,7 +410,7 @@ class LoopEndedHeader(Platform):
     cause: Cause | None = None
 
 
-class ToolsetSwitch(Platform):
+class ToolsetSwitch(OmBase):
     """What a `switched` step says of a load: the toolset, its version, and
     the tools the load added to the session's registry, in the order they
     render, after every tool the registry held before."""
@@ -420,7 +420,7 @@ class ToolsetSwitch(Platform):
     tools: tuple[Stored, ...] = Field(min_length=1)
 
 
-class StandingSwitch(Platform):
+class StandingSwitch(OmBase):
     """What a `switched` step says of the session's standing text: how many
     characters it holds. The text is the step's content, sealed at rest as
     every step's is; a switch to none holds no text."""
@@ -428,7 +428,7 @@ class StandingSwitch(Platform):
     chars: int = Field(ge=0)
 
 
-class SteerSwitch(Platform):
+class SteerSwitch(OmBase):
     """What a `switched` step says of the session's steer: the principal who
     steers it from here, and who moved it there, the history's to write
     (`attribution.rules.switched_by`): the steerer who handed it over, or a
@@ -438,7 +438,7 @@ class SteerSwitch(Platform):
     by: Principal
 
 
-class VisibilitySwitch(Platform):
+class VisibilitySwitch(OmBase):
     """What a `switched` step says of who sees the session: org-wide or
     private from here, and who switched it, the history's to write. Only
     its creator's switch counts (`agent_sessions.rules.projected`)."""
@@ -447,7 +447,7 @@ class VisibilitySwitch(Platform):
     by: Principal
 
 
-class SwitchedHeader(Platform):
+class SwitchedHeader(OmBase):
     """A switch, explicit: the fill set's new version and both fills it
     names, a toolset a load added to the session's registry, with the
     tools it added, the session's standing text, its steerer, or who sees
@@ -473,14 +473,14 @@ class SwitchedHeader(Platform):
         return self
 
 
-class SnapshotHeader(Platform):
+class SnapshotHeader(OmBase):
     """A `snapshotted` step: the snapshot the session now holds."""
 
     kind: Literal["snapshot"] = "snapshot"
     snapshot: AgentWorkspaceSnapshot
 
 
-class MarkHeader(Platform):
+class MarkHeader(OmBase):
     """A lifecycle mark with nothing of its own to say: `resumed`,
     `environment_changed`."""
 

@@ -74,7 +74,9 @@ def test_each_schema_is_defined_once_in_the_document_of_its_defining_module(
     emitted: dict[str, dict[str, Any]],
 ) -> None:
     owners = defining_namespaces()
-    assert set(emitted) == {COMMON, *HOSTED}
+    # A namespace no route serves has a document when an enum of its own is
+    # on the wire; the loop below holds each schema to its defining module.
+    assert {COMMON, *HOSTED} <= set(emitted)
     for namespace, document in emitted.items():
         for name in document["components"]["schemas"]:
             if name in FRAMEWORK:
@@ -130,7 +132,7 @@ def test_no_route_is_in_two_documents_and_none_is_lost(
         assert all(op["tags"] == [namespace] for op in operations)
         ids = [op["operationId"] for op in operations]
         assert len(ids) == len(set(ids)), f"{namespace}.json repeats an operation id"
-        if namespace != COMMON:
+        if namespace in HOSTED:
             (tag,) = document["tags"]
             assert tag["name"] == namespace and tag["description"]
 

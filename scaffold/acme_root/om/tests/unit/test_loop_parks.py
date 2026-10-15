@@ -4,15 +4,6 @@ it left, and a pause parks at the next safe point until a resume."""
 import asyncio
 from pathlib import Path
 
-from contracts.loops import (
-    control,
-    loop_over,
-    of_type,
-    reply,
-    said,
-    use,
-)
-
 from acme.om.agent_sessions.types.agent_session import AgentSessionStatus
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
 from acme.om.agent_steps.types.header import (
@@ -24,6 +15,15 @@ from acme.om.agent_steps.types.header import (
 )
 from acme.om.agents.types.run import RunEnd
 from acme.om.base import new_id
+
+from contracts.loops import (
+    control,
+    loop_over,
+    of_type,
+    reply,
+    said,
+    use,
+)
 
 
 async def test_a_cancelled_loop_starts_no_new_loop_on_a_message_it_left_undelivered(

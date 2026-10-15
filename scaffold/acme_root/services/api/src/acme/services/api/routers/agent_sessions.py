@@ -29,8 +29,8 @@ from acme.services.api.gateway.auth import Ctx
 from acme.services.api.gateway.idempotency import Idem
 from acme.services.api.gateway.resolve import AgentSessionsService
 from acme.services.api.types.agent_sessions import (
-    AgentSessionUsageView,
     AgentSessionPageView,
+    AgentSessionUsageView,
     AgentSessionView,
     AgentStepPageView,
     AgentStepView,

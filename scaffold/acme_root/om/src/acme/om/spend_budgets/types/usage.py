@@ -13,14 +13,14 @@ from uuid import UUID
 
 from pydantic import Field
 
-from acme.om.base import Created, Identifiable, Platform
+from acme.om.base import Created, Identifiable, OmBase
 
 MAX_LABEL = 200
 """The longest label a record keeps: an agent kind, a model role, a
 provider, or a model, each a name the product or its catalog defines."""
 
 
-class CallLabels(Platform):
+class CallLabels(OmBase):
     """What a record names of a call besides where it sat: its session, the
     session's tree, the agent kind and version that made it, its model role,
     and what served it."""
@@ -34,7 +34,7 @@ class CallLabels(Platform):
     model: str = Field(min_length=1, max_length=MAX_LABEL)
 
 
-class CallSite(Platform):
+class CallSite(OmBase):
     """Where a billed call sat and how long its provider took to answer:
     what its caller knows of it that the gate does not. `agent_step_id` is the
     call's response step. `labels` names a call the settling gate never
@@ -79,7 +79,7 @@ class UsageRecord(Identifiable, Created):
     settled_whole: bool = False
 
 
-class UsageRollup(Platform):
+class UsageRollup(OmBase):
     """The sum of some records: how many calls, their tokens by class, their
     reference cost, and their latency. `unpriced` counts the calls no price
     applied to; their cost is in no figure here, so a rollup with any is a
@@ -99,14 +99,14 @@ class UsageRollup(Platform):
     latency_ms: int = Field(default=0, ge=0)
 
 
-class LoopUsage(Platform):
+class LoopUsage(OmBase):
     """One loop's rollup."""
 
     loop_id: UUID
     rollup: UsageRollup
 
 
-class AgentSessionUsage(Platform):
+class AgentSessionUsage(OmBase):
     """A page of a session's records, in the order they were written, a
     rollup per loop, in the order each loop first called, and the rollup of
     every record of the session. With `has_more`, the next page starts after

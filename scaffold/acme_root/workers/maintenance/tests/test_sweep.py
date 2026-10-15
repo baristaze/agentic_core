@@ -67,12 +67,12 @@ from acme.om.orchestrations.types.orchestration import (
 )
 from acme.om.outbox import OutboxRelayInterface
 from acme.om.privacy.types.agent_session_privacy import AgentSessionKey, AgentSessionPrivacy
+from acme.om.root import KINDS
 from acme.om.spend_budgets.rules import lines_of
 from acme.om.spend_budgets.types.amount import Spend
 from acme.om.spend_budgets.types.spend_budget import SpendBudget, SpendBudgetScopeKind, WindowKind
 from acme.om.spend_budgets.types.spend_hold import SpendHold
 from acme.om.spend_budgets.types.usage import UsageRecord
-from acme.om.root import KINDS
 from acme.om.tenancy.rules import hash_token, permissions_of
 from acme.om.tenancy.storage.impl.memory import TenancyStorageMemoryImpl
 from acme.om.tenancy.types.org import Org

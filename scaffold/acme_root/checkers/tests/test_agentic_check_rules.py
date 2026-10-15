@@ -115,20 +115,20 @@ def test_tol11_a_secret_typed_field_on_a_tool_input_output_or_step_is_a_finding(
     tool = (
         BASE[TOOL]
         .replace(
-            "from acme.om.base import Platform\n",
-            "from pydantic import SecretBytes, SecretStr\n\nfrom acme.om.base import Platform\n",
+            "from acme.om.base import OmBase\n",
+            "from pydantic import SecretBytes, SecretStr\n\nfrom acme.om.base import OmBase\n",
         )
         .replace(
             "class EchoInput(ToolInput):\n    text: str\n",
             "class EchoInput(ToolInput):\n    text: str\n    token: SecretStr\n",
         )
         .replace(
-            "class EchoOutput(Platform):\n    text: str\n",
-            "class EchoOutput(Platform):\n    key: SecretBytes | None = None\n",
+            "class EchoOutput(OmBase):\n    text: str\n",
+            "class EchoOutput(OmBase):\n    key: SecretBytes | None = None\n",
         )
     )
-    step = "from pydantic import SecretStr\n\nfrom acme.om.base import Platform\n\n\n"
-    step += "class AgentStep(Platform):\n    secret: 'SecretStr'\n"
+    step = "from pydantic import SecretStr\n\nfrom acme.om.base import OmBase\n\n\n"
+    step += "class AgentStep(OmBase):\n    secret: 'SecretStr'\n"
     write_project(tmp_path, {TOOL: tool, f"{OM}/agent_steps/types/agent_step.py": step})
     hits = found(tmp_path, "TOL-11")
     assert sorted(m.split(" is a")[0] for _, _, m in hits) == [

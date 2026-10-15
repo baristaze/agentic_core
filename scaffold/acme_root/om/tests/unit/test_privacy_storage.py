@@ -1,8 +1,9 @@
 import pytest
-from contracts.privacy_storage import PrivacyStorageContract
 
 from acme.om.privacy.storage import PrivacyStorageInterface
 from acme.om.privacy.storage.impl.memory import PrivacyStorageMemoryImpl
+
+from contracts.privacy_storage import PrivacyStorageContract
 
 
 class TestPrivacyStorageMemory(PrivacyStorageContract):

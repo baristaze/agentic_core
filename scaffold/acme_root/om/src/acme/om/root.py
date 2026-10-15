@@ -16,6 +16,7 @@ from acme.om.agent_root import (
     agent_session_waiters,
     build_agent_managers,
 )
+from acme.om.agent_sessions.kinds import AGENT_SESSION_WORK_KINDS
 from acme.om.base import utcnow
 from acme.om.change_events import ChangeEventsManagerInterface
 from acme.om.change_events.impl.manager import ChangeEventsManagerImpl, ChangeEventsOptions
@@ -51,6 +52,7 @@ KINDS = WorkKinds(
     (
         *WORK_KINDS,
         # A copy adds its entries below this line.
+        *AGENT_SESSION_WORK_KINDS,
     )
 )
 """Every kind of work this process knows: the work namespace's own, then

@@ -13,6 +13,22 @@ import re
 from pathlib import Path
 from uuid import UUID
 
+from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
+from acme.om.agent_steps.types.content import TextBlock, ToolResultBlock, ToolUseBlock
+from acme.om.agent_steps.types.header import (
+    ControlCommand,
+    LoopOutcome,
+    ToolFailure,
+    ToolResponseHeader,
+)
+from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
+from acme.om.attribution.types.authority import AuthorityMode
+from acme.om.base import OmBase
+from acme.om.context import TenantContext
+from acme.om.storage.root import StorageInterface
+from acme.om.tools.tool import ToolRuntime
+from acme.om.tools.types.tool import ToolInput
+
 from contracts.histories import History
 from contracts.loops import (
     ALLOWED,
@@ -27,22 +43,6 @@ from contracts.loops import (
     said,
     use,
 )
-
-from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
-from acme.om.agent_steps.types.content import TextBlock, ToolResultBlock, ToolUseBlock
-from acme.om.agent_steps.types.header import (
-    ControlCommand,
-    LoopOutcome,
-    ToolFailure,
-    ToolResponseHeader,
-)
-from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
-from acme.om.attribution.types.authority import AuthorityMode
-from acme.om.base import Platform
-from acme.om.context import TenantContext
-from acme.om.storage.root import StorageInterface
-from acme.om.tools.tool import ToolRuntime
-from acme.om.tools.types.tool import ToolInput
 
 LARGE = "".join(f'{n:06d} "row"\n' for n in range(2_500))
 """A dump whose answer is past the size bound, with quotes and newlines the
@@ -71,9 +71,7 @@ class Dump(Lookup):
         super().__init__(name)
         self.text = text
 
-    async def run(
-        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
-    ) -> Platform:
+    async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
         return Found(text=self.text)
 
 

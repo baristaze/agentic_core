@@ -23,9 +23,6 @@ from uuid import UUID
 
 import aioboto3
 import pytest
-from contracts.loops import ALLOWED, ASSISTANT, DELIVERY, Loop, call, loop_over, reply, said
-from contracts.sub_agents import answers, failure_of, text_of
-from contracts.tools import Command
 
 from acme.infra.agent_workspaces import (
     AgentWorkspace,
@@ -68,6 +65,10 @@ from acme.om.tools.native.ask_person import ASK_PERSON
 from acme.om.tools.native.spawn_sub_agent import SPAWN_SUB_AGENT
 from acme.om.tools.types.policy import Decision, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import ToolClass
+
+from contracts.loops import ALLOWED, ASSISTANT, DELIVERY, Loop, call, loop_over, reply, said
+from contracts.sub_agents import answers, failure_of, text_of
+from contracts.tools import Command
 
 IMAGE = "python:3.14-slim"
 CREDENTIALS = "/etc/acme-credentials"

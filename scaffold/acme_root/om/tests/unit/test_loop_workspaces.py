@@ -2,7 +2,7 @@
 provider (ADR 1009). A refusal that cannot clear, as each of the engine's
 own providers gives, ends the loop `errored`, and its end report wakes a
 parent waiting on it. One that waits for a workspace that may come parks
-the loop on `resource`, to ask again after a wait, and a workspace whose
+the loop on `leasable_resource`, to ask again after a wait, and a workspace whose
 durable state is gone parks it for a person. No call is made. A park on
 the workspace comes before its run settles anything, so it is marked
 unsettled, and the run that resumes it settles each open call by its
@@ -12,8 +12,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts import sub_agents
-from contracts.loops import call, loop_over, reply, said, use
 
 from acme.infra.agent_workspaces import (
     AgentWorkspace,
@@ -40,6 +38,9 @@ from acme.om.agents.rules import CHILDREN_PARK
 from acme.om.agents.types.run import RunEnd
 from acme.om.context import TenantContext
 from acme.om.tools.native.wait_for_sub_agents import WAIT_FOR_SUB_AGENTS
+
+from contracts import sub_agents
+from contracts.loops import call, loop_over, reply, said, use
 
 CONTAINER = IsolationSpec(mode=IsolationMode.CONTAINER, egress=EgressPolicy(mode=EgressMode.NONE))
 """A spec neither the twin nor the null provider makes."""
@@ -96,7 +97,7 @@ async def test_a_refusal_that_clears_parks_on_the_resource_and_asks_again_after_
 
     assert waiting.end is RunEnd.PARKED and waiting.park is not None, "never ended"
     assert (waiting.park.reason, waiting.park.unlock, waiting.park.retry_at) == (
-        ParkReason.RESOURCE,
+        ParkReason.LEASABLE_RESOURCE,
         "agent_workspace",
         loop.clock() + LoopOptions().agent_workspace_wait,
     )
@@ -165,7 +166,10 @@ async def test_a_refused_isolation_after_a_settled_park_parks_on_the_resource_se
     waiting = await loop.loops.run(loop.owner, agent_session_id)
 
     assert waiting.end is RunEnd.PARKED and waiting.park is not None
-    assert (waiting.park.reason, waiting.park.unlock) == (ParkReason.RESOURCE, "agent_workspace")
+    assert (waiting.park.reason, waiting.park.unlock) == (
+        ParkReason.LEASABLE_RESOURCE,
+        "agent_workspace",
+    )
     assert waiting.park.retry_at is not None and waiting.park.retry_at > loop.clock()
     assert not waiting.park.unsettled, "its run resumed a settled park"
     assert loop.tools["send"].ran_as == [], "nothing ran"

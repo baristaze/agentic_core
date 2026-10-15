@@ -40,7 +40,7 @@ from acme.om.agents.sink import StreamSinkInterface
 from acme.om.agents.types.kind import AgentKind, AgentKindCatalog
 from acme.om.agents.types.run import LoopRun, RunEnd
 from acme.om.attribution import AttributionManagerInterface
-from acme.om.base import Platform, new_id, utcnow
+from acme.om.base import OmBase, new_id, utcnow
 from acme.om.context import TenantContext
 from acme.om.exceptions import (
     NotFound,
@@ -70,7 +70,7 @@ Sleep = Callable[[float], Awaitable[None]]
 """How the loop waits, injected beside its clock, so a test never sleeps."""
 
 
-class LoopOptions(Platform):
+class LoopOptions(OmBase):
     # The name of the platform's own key, as the outage signal keeps it,
     # which a root gives the call credentials it wires.
     credential: str = Field(default="platform", min_length=1)

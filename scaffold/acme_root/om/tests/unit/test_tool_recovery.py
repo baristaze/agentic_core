@@ -7,6 +7,16 @@ record of how its command ended answers it, and with none it is
 from pathlib import Path
 
 import pytest
+
+from acme.infra.transports import StaleCommand
+from acme.infra.transports.twin import RecordSealTwin
+from acme.om.agent_steps.types.header import ToolFailure
+from acme.om.base import new_id
+from acme.om.context import Role
+from acme.om.exceptions import StaleWriter
+from acme.om.tools.rules import engine_retries
+from acme.om.tools.types.tool import Effect
+
 from contracts.doubles import context
 from contracts.factories import make_org
 from contracts.tools import (
@@ -21,15 +31,6 @@ from contracts.tools import (
     tools_over,
     twin_transport,
 )
-
-from acme.infra.transports import StaleCommand
-from acme.infra.transports.twin import RecordSealTwin
-from acme.om.agent_steps.types.header import ToolFailure
-from acme.om.base import new_id
-from acme.om.context import Role
-from acme.om.exceptions import StaleWriter
-from acme.om.tools.rules import engine_retries
-from acme.om.tools.types.tool import Effect
 
 
 @pytest.mark.parametrize("effect", [Effect.READ_ONLY, Effect.IDEMPOTENT])

@@ -14,10 +14,10 @@ from uuid import UUID
 from pydantic import Field
 
 from acme.om.agent_steps.types.content import MAX_NAME
-from acme.om.base import Platform
+from acme.om.base import OmBase
 
 
-class PartBase(Platform):
+class PartBase(OmBase):
     agent_session_id: UUID
     agent_step_id: UUID  # the step the part adds up to
     n: int = Field(ge=0)  # its place in its stream

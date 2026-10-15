@@ -13,8 +13,6 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from contracts.loops import ASSISTANT, DELIVERY, HELPER, Loop, call, loop_over, reply, said
-
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
 from acme.om.agent_steps.types.content import (
     Attachment,
@@ -35,6 +33,8 @@ from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
 from acme.om.context import TenantContext
 from acme.om.tools.attachments import AttachmentReaderInterface, AttachmentText
+
+from contracts.loops import ASSISTANT, DELIVERY, HELPER, Loop, call, loop_over, reply, said
 
 LINES = "\n".join(f"line {n}" for n in range(1, 451)) + "\n"
 QUOTED = "".join(f'"{n}",' + ",".join(['"a ""quoted"" cell"'] * 6) + "\n" for n in range(1, 401))

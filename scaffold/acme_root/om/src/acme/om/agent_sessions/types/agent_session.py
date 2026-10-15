@@ -25,7 +25,7 @@ from acme.om.agent_steps.types.content import Stored
 from acme.om.agent_steps.types.header import Park
 from acme.om.attribution.types.authority import Visibility
 from acme.om.attribution.types.principal import MAX_KIND, Principal
-from acme.om.base import Identifiable, Platform, SoftDeletable, Trackable
+from acme.om.base import Identifiable, OmBase, SoftDeletable, Trackable
 
 
 class AgentSessionStatus(StrEnum):
@@ -140,6 +140,6 @@ class AgentSession(Identifiable, Trackable, SoftDeletable):
         return self
 
 
-class AgentSessionPage(Platform):
+class AgentSessionPage(OmBase):
     items: tuple[AgentSession, ...]
     has_more: bool

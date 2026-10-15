@@ -8,18 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from contracts.doubles import context
-from contracts.factories import make_org
-from contracts.tools import (
-    KIND_DEFAULTS,
-    Command,
-    PushBranch,
-    put_call,
-    registry_of,
-    result_text,
-    tools_over,
-    twin_transport,
-)
 from pydantic import ValidationError
 
 from acme.infra.agent_workspaces import (
@@ -53,6 +41,19 @@ from acme.om.tools.types.policy import (
     ToolPolicyRule,
 )
 from acme.om.tools.types.tool import Effect, ToolClass
+
+from contracts.doubles import context
+from contracts.factories import make_org
+from contracts.tools import (
+    KIND_DEFAULTS,
+    Command,
+    PushBranch,
+    put_call,
+    registry_of,
+    result_text,
+    tools_over,
+    twin_transport,
+)
 
 ALLOW, APPROVE, DENY = Decision.ALLOW, Decision.APPROVE, Decision.DENY
 

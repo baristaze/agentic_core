@@ -22,7 +22,7 @@ from pydantic import Field, ValidationError
 
 from acme.om.agent_steps.types.agent_step import AgentStep
 from acme.om.agent_steps.types.header import SwitchedHeader, ToolFailure, ToolsetSwitch
-from acme.om.base import Platform
+from acme.om.base import OmBase
 from acme.om.context import TenantContext
 from acme.om.exceptions import ToolFailed
 from acme.om.tools.tool import ToolInterface, ToolRuntime
@@ -41,7 +41,7 @@ class LoadToolsetInput(ToolInput):
     toolset: str = Field(pattern=TOOLSET_NAME)
 
 
-class ToolsetLoaded(Platform):
+class ToolsetLoaded(OmBase):
     """What a load answers: the toolset, its version, and the tools it
     added, none when every one was already in the registry."""
 
@@ -50,7 +50,7 @@ class ToolsetLoaded(Platform):
     tools: tuple[str, ...]
 
 
-class Load(Platform):
+class Load(OmBase):
     """A load as the loop records it: the answer the model reads, and the
     switch it writes after it, None when the load adds nothing."""
 
@@ -154,7 +154,5 @@ class LoadToolsetToolImpl(ToolInterface):
     ) -> None:
         return None
 
-    async def run(
-        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
-    ) -> Platform:
+    async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
         raise ToolFailed(ToolFailure.PERMANENT, f"the loop answers {LOAD_TOOLSET}")

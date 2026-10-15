@@ -26,7 +26,7 @@ from acme.infra.agent_workspaces import AgentWorkspace, IsolationSpec
 from acme.infra.transports import OutputSink
 from acme.om.agent_steps.types.agent_step import AgentStep
 from acme.om.agent_steps.types.header import AgentWorkspaceSnapshot
-from acme.om.context import TenantContext
+from acme.om.context import TenantContext, stageless
 from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.tool import TakenSnapshot, ToolInterface
 from acme.om.tools.types.call import Gate, JobHandle, JobNotStarted
@@ -274,8 +274,9 @@ class ToolsManagerInterface(ABC):
         ...
 
     @abstractmethod
+    @stageless
     async def purge_agent_workspace(self, org_id: UUID, agent_session_id: UUID) -> None:
-        """Platform-internal: what a session the sweep has claimed for its
+        """System-internal: what a session the sweep has claimed for its
         purge left where its tools ran goes with its history: its workspace,
         files and instance, the transport's records of how each command
         there ended, and every snapshot kept of it. For no principal. A

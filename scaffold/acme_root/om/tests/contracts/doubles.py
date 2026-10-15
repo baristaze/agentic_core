@@ -26,6 +26,7 @@ from acme.om.root import Managers
 from acme.om.tenancy import TenancyManagerInterface
 from acme.om.tenancy.rules import permissions_of
 from acme.om.tenancy.types.org import Org
+
 from contracts.agent_step_storage import make_request
 from contracts.factories import make_org, make_user
 

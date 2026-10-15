@@ -138,7 +138,7 @@ def in_person(ctx: TenantContext) -> bool:
     """Whether a person acts themselves, signed in on a session of their
     own: a program on an API key, and an agent's call on a principal's
     live context, are no person in person."""
-    return ctx.credential_kind is CredentialKind.SESSION_TOKEN
+    return ctx.credential_kind is CredentialKind.AUTH_SESSION_TOKEN
 
 
 def principal_of(ctx: TenantContext) -> Principal:

@@ -8,10 +8,9 @@ from uuid import UUID
 from acme.client.types.agent_sessions import (
     AgentSessionStatus,
     AgentSessionView,
-    AgentStepType,
     AgentStepView,
-    LoopOutcome,
 )
+from acme.client.types.agent_steps import AgentStepType, LoopOutcome
 from acme.client.types.tenancy import MembershipChoiceView, OrgKind
 
 

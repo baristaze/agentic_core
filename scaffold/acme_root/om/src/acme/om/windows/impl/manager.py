@@ -22,7 +22,7 @@ from acme.om.agent_steps.types.header import (
     ToolResponseHeader,
 )
 from acme.om.attribution import AttributionManagerInterface
-from acme.om.base import Platform, derived_id, new_id, utcnow
+from acme.om.base import OmBase, derived_id, new_id, utcnow
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import (
     CompactionFailed,
@@ -55,7 +55,7 @@ CONTENT_TYPE = "application/octet-stream"
 bytes no reader can take for text."""
 
 
-class WindowsOptions(Platform):
+class WindowsOptions(OmBase):
     page: int = Field(default=200, gt=0)  # steps one read of the history asks for
     purge_batch: int = Field(default=200, gt=0)  # tool outputs one read of a purge takes
 

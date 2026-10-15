@@ -6,8 +6,6 @@ render as themselves, an instruction, and the steerer pays."""
 
 from pathlib import Path
 
-from contracts.loops import loop_over, reply, said
-
 from acme.om.agent_sessions.types.agent_session import AgentSessionStatus
 from acme.om.agent_steps.types.agent_step import AgentStepType
 from acme.om.agent_steps.types.content import TextBlock
@@ -17,6 +15,8 @@ from acme.om.attribution.rules import instructs, trust_of
 from acme.om.attribution.types.authority import Trust
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.windows.rules import data_block
+
+from contracts.loops import loop_over, reply, said
 
 SUGGESTION = "Don't touch the retry settings."
 ASK = "Find out why an order drops before its payment confirms."

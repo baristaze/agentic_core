@@ -20,7 +20,7 @@ from acme.om.agent_steps.types.agent_step import AgentStep
 from acme.om.agent_steps.types.header import Park, ParkReason
 from acme.om.attribution.types.authority import Visibility
 from acme.om.attribution.types.principal import AgentRef
-from acme.om.context import TenantContext
+from acme.om.context import TenantContext, stageless
 
 AgentSessionPurged = Callable[[UUID, UUID, UUID | None], Awaitable[None]]
 """What other namespaces hold of a session, purged before its row: given its
@@ -255,8 +255,9 @@ class AgentSessionsManagerInterface(ABC):
         ...
 
     @abstractmethod
+    @stageless
     async def purge_across_tenants(self) -> int:
-        """Platform-internal: the sweep, across tenants, once a pass, for no
+        """System-internal: the sweep, across tenants, once a pass, for no
         tenant and no principal: the sessions marked deleted longer ago than
         the retention, a batch at most a call. Each is claimed first, by a compare-and-set that makes
         its delete final, so an unmark that lands first keeps the session.

@@ -1,9 +1,10 @@
 import pytest
-from contracts.spend_budget_storage import SpendBudgetStorageContract
 
 from acme.om.spend_budgets.storage import SpendBudgetStorageInterface
 from acme.om.spend_budgets.storage.impl.postgres import SpendBudgetStoragePostgresImpl
 from acme.om.storage.impl.pg_base import LoginSessions
+
+from contracts.spend_budget_storage import SpendBudgetStorageContract
 
 pytestmark = pytest.mark.integration
 

@@ -9,11 +9,11 @@ from uuid import UUID
 
 from pydantic import Field
 
-from acme.om.base import Platform
+from acme.om.base import OmBase
 from acme.om.leases.types.request import Standing
 
 
-class InLine(Platform):
+class InLine(OmBase):
     request_id: UUID
     lease_id: UUID | None = None
     token: int | None = None  # the fencing token every act on the resource presents

@@ -31,7 +31,7 @@ class LoopManagerInterface(ABC):
         happened, or begins the loop its waking input asks for; it prepares
         the session's workspace before its first model call. A refusal of
         its isolation spec that cannot clear ends the loop `errored`; one
-        that `clears` parks it on `resource`, to ask again after the
+        that `clears` parks it on `leasable_resource`, to ask again after the
         options' wait; and a workspace whose durable state is gone
         (`AgentWorkspaceLost`) parks it for a person, all before any call is
         made, each step naming the refusal's cause, or what was lost.

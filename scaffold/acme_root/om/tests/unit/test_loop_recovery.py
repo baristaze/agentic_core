@@ -8,18 +8,6 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
-from contracts.loops import (
-    ASSISTANT,
-    answer_to,
-    control,
-    loop_over,
-    of_type,
-    person,
-    ran_alone,
-    reply,
-    said,
-    use,
-)
 
 from acme.infra.agent_workspaces import (
     AgentWorkspace,
@@ -45,6 +33,19 @@ from acme.om.language_models.types.fill import MAIN, SUMMARIZER, Eligibility
 from acme.om.tools.registry import ToolRegistry
 from acme.om.windows.impl.gate import CallGateSpendBudgetImpl
 from acme.om.windows.rules import request_step
+
+from contracts.loops import (
+    ASSISTANT,
+    answer_to,
+    control,
+    loop_over,
+    of_type,
+    person,
+    ran_alone,
+    reply,
+    said,
+    use,
+)
 
 
 async def test_a_new_run_refuses_the_lost_one_and_settles_its_calls_by_their_effect(
@@ -199,7 +200,7 @@ async def test_a_call_a_lost_run_may_have_started_is_settled_by_its_effect_befor
     [
         (
             IsolationRefused("no host can give it the workspace yet", clears=True),
-            ParkReason.RESOURCE,
+            ParkReason.LEASABLE_RESOURCE,
         ),
         (AgentWorkspaceLost("the branch of the session is gone"), ParkReason.PERSON),
     ],
@@ -273,7 +274,7 @@ async def test_an_approved_call_held_back_by_a_park_runs_once_after_a_workspace_
     )
     sent = await loop.loops.run(loop.owner, agent_session_id)
 
-    assert waiting.park is not None and waiting.park.reason is ParkReason.RESOURCE
+    assert waiting.park is not None and waiting.park.reason is ParkReason.LEASABLE_RESOURCE
     assert sent.outcome is LoopOutcome.SUCCEEDED
     assert loop.tools["send"].ran_as == [loop.owner.user_id], "it never ran, so it runs"
 

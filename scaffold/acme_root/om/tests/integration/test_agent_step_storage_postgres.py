@@ -7,8 +7,6 @@ import asyncio
 from uuid import UUID
 
 import pytest
-from contracts.agent_step_storage import AgentStepStorageContract, make_message
-from contracts.racing import race
 from sqlalchemy import TextClause, text, update
 from sqlalchemy.exc import DBAPIError
 
@@ -24,6 +22,9 @@ from acme.om.storage.logins import PURGE_LOGIN, RUNTIME_LOGIN, SYSTEM_LOGIN
 from acme.om.storage.migrate import ensure_logins_everywhere
 from acme.om.storage.roles import PURGED_TABLES, DatabaseRole
 from acme.om.storage.settings import MigrationSettings
+
+from contracts.agent_step_storage import AgentStepStorageContract, make_message
+from contracts.racing import race
 
 pytestmark = pytest.mark.integration
 

@@ -26,17 +26,18 @@ from uuid import UUID
 
 from pydantic import ValidationError
 
+from acme.om.agent_sessions.kinds import AGENT_SESSION_WAITER
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep
 from acme.om.agent_steps.types.content import TextBlock
 from acme.om.agent_steps.types.header import (
     InputHeader,
     JobPark,
-    LinePark,
     Park,
     ParkReason,
     ToolFailure,
     ToolRequestHeader,
     ToolResponseHeader,
+    WaitLinePark,
 )
 from acme.om.agents.types.line import InLine
 from acme.om.base import derived_id
@@ -46,7 +47,6 @@ from acme.om.leases.types.request import (
     LeaseRequest,
     RequestStatus,
     Standing,
-    WaiterKind,
 )
 
 LINE_UNLOCK = "grant"
@@ -115,7 +115,7 @@ def in_line(request: LeaseRequest, agent_session_id: UUID, key: UUID) -> LeaseRe
         update={
             "id": key,
             "idempotency_key": key,
-            "waiter_kind": WaiterKind.AGENT_SESSION,
+            "waiter_kind": AGENT_SESSION_WAITER,
             "waiter_id": agent_session_id,
         }
     )
@@ -214,7 +214,7 @@ def line_park(waiting: Sequence[Standing]) -> Park:
         waiting,
         key=lambda standing: (standing.place is None, standing.place or 0),
     )
-    return Park(reason=ParkReason.RESOURCE, unlock=LINE_UNLOCK, line=_line(first))
+    return Park(reason=ParkReason.LEASABLE_RESOURCE, unlock=LINE_UNLOCK, wait_line=_line(first))
 
 
 def job_line_park(standing: Standing, job: JobPark, deadline: datetime) -> Park:
@@ -222,20 +222,20 @@ def job_line_park(standing: Standing, job: JobPark, deadline: datetime) -> Park:
     its place and estimate, and the job it waits to start. The grant, or the
     request's end, clears it, and the job's deadline bounds it."""
     return Park(
-        reason=ParkReason.RESOURCE,
+        reason=ParkReason.LEASABLE_RESOURCE,
         unlock=LINE_UNLOCK,
         retry_at=deadline,
         job=job,
-        line=_line(standing),
+        wait_line=_line(standing),
     )
 
 
-def _line(standing: Standing) -> LinePark:
+def _line(standing: Standing) -> WaitLinePark:
     request = standing.request
-    return LinePark(
+    return WaitLinePark(
         request_id=request.id,
-        kind=request.kind.value,
-        resource_id=request.resource_id,
+        kind=request.kind,
+        leasable_resource_id=request.leasable_resource_id,
         place=standing.place,
         estimate_seconds=standing.estimate_seconds,
     )

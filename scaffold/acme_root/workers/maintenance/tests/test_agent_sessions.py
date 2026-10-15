@@ -10,30 +10,35 @@ from uuid import UUID
 
 from worker_support import build_container, request, sign_in
 
+from acme.om.agent_sessions.kinds import AgentSessionWorkKind
 from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
 from acme.om.agent_steps.types.content import Content, TextBlock
 from acme.om.agent_steps.types.header import (
     InputHeader,
-    LinePark,
     ModelRequestHeader,
     Park,
     ParkReason,
+    WaitLinePark,
 )
 from acme.om.agents.line_rules import in_line
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id, utcnow
 from acme.om.context import TenantContext
+from acme.om.leases.types.leasable_resource import LeasableResource, LeasableResourceKind
 from acme.om.leases.types.request import LeaseRequest
-from acme.om.leases.types.resource import Resource, ResourceKind
 from acme.om.spend_budgets.types.amount import Amount
 from acme.om.spend_budgets.types.spend_budget import SpendBudget, SpendBudgetScopeKind, WindowKind
-from acme.om.work.types.work_item import WorkItem, WorkKind
+from acme.om.work.types.work_item import WorkItem
 from acme.workers.maintenance.container import WorkerContainer
 from acme.workers.maintenance.main import build_loop
 
 LEASE = timedelta(seconds=30)
-KINDS = [WorkKind.WAKE_AGENT_SESSION, WorkKind.WAKE_AGENT_SESSIONS, WorkKind.LEASE_NOTICE]
+KINDS = [
+    AgentSessionWorkKind.WAKE_AGENT_SESSION,
+    AgentSessionWorkKind.WAKE_AGENT_SESSIONS,
+    AgentSessionWorkKind.LEASE_NOTICE,
+]
 
 
 async def drain(container: WorkerContainer) -> list[WorkItem]:
@@ -125,7 +130,7 @@ async def test_a_park_whose_retry_time_came_is_woken_from_the_queue(tmp_path: Pa
     woken, waiting = await parked(container, ctx, due), await parked(container, ctx, later)
     ran = await drain(container)
     assert [(item.kind, item.target_id) for item in ran] == [
-        (WorkKind.WAKE_AGENT_SESSION, woken.id)
+        (AgentSessionWorkKind.WAKE_AGENT_SESSION, woken.id)
     ]
     assert await status_of(container, ctx, woken.id) is AgentSessionStatus.PENDING
     assert await status_of(container, ctx, waiting.id) is AgentSessionStatus.PARKED
@@ -162,7 +167,7 @@ async def test_a_raised_budget_wakes_the_sessions_parked_on_a_budget(tmp_path: P
     )
     ran = await drain(container)
     assert [(item.kind, item.target_id) for item in ran] == [
-        (WorkKind.WAKE_AGENT_SESSIONS, ctx.org_id)
+        (AgentSessionWorkKind.WAKE_AGENT_SESSIONS, ctx.org_id)
     ]
     assert await status_of(container, ctx, on_budget.id) is AgentSessionStatus.PENDING
     assert await status_of(container, ctx, on_person.id) is AgentSessionStatus.PARKED
@@ -193,13 +198,13 @@ async def test_a_closed_budget_wakes_the_sessions_parked_on_it_alone(tmp_path: P
     await container.managers.spend_budgets.close_spend_budget(ctx, budget.id)
     ran = await drain(container)
     assert [(item.kind, item.target_id) for item in ran] == [
-        (WorkKind.WAKE_AGENT_SESSIONS, ctx.org_id)
+        (AgentSessionWorkKind.WAKE_AGENT_SESSIONS, ctx.org_id)
     ]
     assert await status_of(container, ctx, on_it.id) is AgentSessionStatus.PENDING
     assert await status_of(container, ctx, on_another.id) is AgentSessionStatus.PARKED
 
 
-def an_ask(ctx: TenantContext, resource_id: UUID) -> LeaseRequest:
+def an_ask(ctx: TenantContext, leasable_resource_id: UUID) -> LeaseRequest:
     now = utcnow()
     return LeaseRequest(
         id=new_id(),
@@ -208,8 +213,8 @@ def an_ask(ctx: TenantContext, resource_id: UUID) -> LeaseRequest:
         created_by=ctx.user_id,
         updated_by=ctx.user_id,
         idempotency_key=new_id(),
-        kind=ResourceKind.NOOP,
-        resource_id=resource_id,
+        kind=LeasableResourceKind.NOOP,
+        leasable_resource_id=leasable_resource_id,
     )
 
 
@@ -218,22 +223,22 @@ async def test_a_grant_wakes_the_session_parked_in_line_and_no_other(tmp_path: P
     ctx = await sign_in(container)
     leases = container.managers.leases
     line = Park(
-        reason=ParkReason.RESOURCE,
+        reason=ParkReason.LEASABLE_RESOURCE,
         unlock="grant",
-        line=LinePark(request_id=new_id(), kind=ResourceKind.NOOP.value, place=1),
+        wait_line=WaitLinePark(request_id=new_id(), kind=LeasableResourceKind.NOOP.value, place=1),
     )
     in_the_line = await parked(container, ctx, line)
     on_a_person = await parked(container, ctx, Park(reason=ParkReason.PERSON, unlock="approval"))
     now = utcnow()
     resource = await leases.register(
         ctx,
-        Resource(
+        LeasableResource(
             id=new_id(),
             created_at=now,
             updated_at=now,
             created_by=ctx.user_id,
             updated_by=ctx.user_id,
-            kind=ResourceKind.NOOP,
+            kind=LeasableResourceKind.NOOP,
             ref_id=new_id(),
         ),
     )
@@ -250,7 +255,8 @@ async def test_a_grant_wakes_the_session_parked_in_line_and_no_other(tmp_path: P
     await leases.release(ctx, granted.id)
     ran = await drain(container)
     assert sorted((item.kind, str(item.target_id)) for item in ran) == sorted(
-        (WorkKind.LEASE_NOTICE, str(session.id)) for session in (in_the_line, on_a_person)
+        (AgentSessionWorkKind.LEASE_NOTICE, str(session.id))
+        for session in (in_the_line, on_a_person)
     )
     assert await status_of(container, ctx, in_the_line.id) is AgentSessionStatus.PENDING
     assert await status_of(container, ctx, on_a_person.id) is AgentSessionStatus.PARKED

@@ -16,25 +16,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from contracts.doubles import context
-from contracts.factories import make_org
-from contracts.tools import (
-    HOST_SPEC,
-    INJECTED_TOKEN,
-    KIND_DEFAULTS,
-    TWIN_SPEC,
-    Command,
-    CommandOutput,
-    PushBranch,
-    Tools,
-    echoing,
-    failure_of,
-    put_call,
-    registry_of,
-    result_text,
-    tools_over,
-    twin_transport,
-)
 
 from acme.infra.agent_workspaces import (
     AgentWorkspace,
@@ -54,13 +35,33 @@ from acme.infra.transports.twin import TwinHandler, TwinReply
 from acme.om.agent_steps.types.agent_step import AgentStep
 from acme.om.agent_steps.types.content import UNPARSED
 from acme.om.agent_steps.types.header import ToolFailure
-from acme.om.base import Platform, new_id, utcnow
+from acme.om.base import OmBase, new_id, utcnow
 from acme.om.context import Role, TenantContext
 from acme.om.exceptions import StaleWriter, ToolFailed
 from acme.om.tools.impl.manager import SECRET_USED, ToolsOptions
 from acme.om.tools.rules import ADVICE, call_deadline, command_text, recovered_text
 from acme.om.tools.tool import ToolRuntime
 from acme.om.tools.types.tool import Effect, ToolInput
+
+from contracts.doubles import context
+from contracts.factories import make_org
+from contracts.tools import (
+    HOST_SPEC,
+    INJECTED_TOKEN,
+    KIND_DEFAULTS,
+    TWIN_SPEC,
+    Command,
+    CommandOutput,
+    PushBranch,
+    Tools,
+    echoing,
+    failure_of,
+    put_call,
+    registry_of,
+    result_text,
+    tools_over,
+    twin_transport,
+)
 
 SECRET = "ghs_9f8e7d6c5b4a3f2e1d0c-token"
 
@@ -109,7 +110,7 @@ async def test_a_secret_is_audited_by_name_and_never_reaches_a_step_or_an_event(
     assert failure_of(response) is None
     text = result_text(response)
     assert text.count(marker("api_token")) == 3
-    events = await tools.events.get_events(ctx, 0, 100)
+    events = await tools.change_events.get_change_events(ctx, 0, 100)
     (audit,) = [event for event in events if event.kind == SECRET_USED]
     assert audit.target_id == found.request.id
     assert audit.payload["secret"] == "api_token" and audit.payload["tool"] == "call_api"
@@ -409,7 +410,9 @@ async def test_a_secret_the_tool_does_not_declare_is_never_given(tmp_path: Path)
     )
     assert failure_of(response) is ToolFailure.PERMANENT
     assert transport.commands == []
-    assert [e for e in await tools.events.get_events(ctx, 0, 10) if e.kind == SECRET_USED] == []
+    assert [
+        e for e in await tools.change_events.get_change_events(ctx, 0, 10) if e.kind == SECRET_USED
+    ] == []
 
 
 async def test_a_stale_run_is_refused_by_the_transport(tmp_path: Path) -> None:
@@ -550,9 +553,7 @@ class Flaky(Command):
         self.failures = failures
         self.runs = 0
 
-    async def run(
-        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
-    ) -> Platform:
+    async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
         self.runs += 1
         if self.runs <= self.failures:
             raise ToolFailed(ToolFailure.TRANSIENT, "the service did not answer")

@@ -186,7 +186,7 @@ of](../../../../README.md).
 - **A wait in line holds until its answer.** A tool that answers
   `InLine` asks for a leased resource with the session as its waiter,
   and answers at once with its place. When the agent's turn ends while
-  an ask waits, the loop parks on `resource`, naming the request, its
+  an ask waits, the loop parks on `leasable_resource`, naming the request, its
   place, and its estimate, and calls no model until a grant or the
   request's end clears the park. The run reads its asks once more after
   it parks, so an answer that came just before is never missed. The
@@ -213,7 +213,7 @@ of](../../../../README.md).
 - **An interrupt stops the call it names,** and no other.
 - **Isolation is refused, never weakened.** A refusal of the kind's spec
   that cannot clear ends the loop before its first model call. One that
-  waits for a workspace that may come parks the loop on `resource`, and
+  waits for a workspace that may come parks the loop on `leasable_resource`, and
   it asks again after a wait. A workspace whose durable state is gone
   parks the loop, loudly, for a person. The step that ends or parks the
   loop names its cause for a person: what the spec asks that the

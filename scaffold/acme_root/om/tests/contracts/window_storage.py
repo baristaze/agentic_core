@@ -12,6 +12,9 @@ from acme.om.base import new_id, utcnow
 from acme.om.windows.storage import WindowStorageInterface
 from acme.om.windows.types.tool_output import ToolOutput
 
+INTERFACE = WindowStorageInterface
+"""The storage interface whose cross-tenant cases this suite holds."""
+
 CROSS_TENANT_CASES: frozenset[str] = frozenset(
     {"read_tool_output", "write_tool_output", "read_tool_outputs", "purge_tool_outputs"}
 )

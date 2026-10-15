@@ -9,8 +9,6 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from contracts.agent_session_storage import make_agent_session
-from contracts.doubles import APP, context
 
 from acme.infra.agent_workspaces import (
     AgentWorkspace,
@@ -52,7 +50,7 @@ from acme.om.attribution.impl.manager import no_principal_context
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import utcnow
 from acme.om.context import RequestContext, Role
-from acme.om.exceptions import PlatformException, UnsafeConfiguration
+from acme.om.exceptions import OmException, UnsafeConfiguration
 from acme.om.language_models.impl.prices import ModelPricesNullImpl
 from acme.om.language_models.prices import ModelPricesInterface
 from acme.om.root import build_managers
@@ -70,6 +68,9 @@ from acme.om.windows.impl.hashes import PromptHashNullImpl
 from acme.om.windows.impl.seal import ToolOutputSealNullImpl
 from acme.om.windows.seal import ToolOutputSealInterface
 
+from contracts.agent_session_storage import make_agent_session
+from contracts.doubles import APP, context
+
 CTX = context(Role.OWNER)
 PAYER = Principal(kind=PrincipalKind.PERSON, id=CTX.user_id)
 CALL = ModelCall(model="any", messages=(), max_output_tokens=1)
@@ -81,7 +82,7 @@ def refusing(act: Callable[[], Awaitable[Any]]) -> Callable[[], Awaitable[BaseEx
     async def refused() -> BaseException:
         try:
             await act()
-        except (PlatformException, InfraException) as error:
+        except (OmException, InfraException) as error:
             return error
         raise AssertionError("a loud null did something")
 

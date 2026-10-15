@@ -19,7 +19,7 @@ from pydantic_core import to_json
 from acme.om.agent_steps import AgentStepsManagerInterface
 from acme.om.agent_steps.types.agent_step import AgentStep
 from acme.om.agent_steps.types.header import ToolFailure, ToolResponseHeader
-from acme.om.base import Platform
+from acme.om.base import OmBase
 from acme.om.context import TenantContext
 from acme.om.exceptions import NotFound, ToolFailed
 from acme.om.tools.tool import ToolInterface, ToolRuntime
@@ -39,7 +39,7 @@ DESCRIPTION = (
 )
 
 
-class ReadToolOutputOptions(Platform):
+class ReadToolOutputOptions(OmBase):
     """The bound of one read. `max_chars` bounds the answer as the model
     reads it, its JSON with every quote and newline escaped, and stays under
     the window's result bound, so an answer is kept in its step whole."""
@@ -54,7 +54,7 @@ class ReadToolOutputInput(ToolInput):
     limit: int | None = Field(default=None, gt=0)  # None reads as much as one answer holds
 
 
-class ToolOutputRange(Platform):
+class ToolOutputRange(OmBase):
     """What one read answers: the text kept under `handle` from `offset`, of
     the `characters` the whole holds. `next_offset` is where to read on
     from, there only while more follow."""
@@ -100,9 +100,7 @@ class ReadToolOutputToolImpl(ToolInterface):
     ) -> None:
         return None
 
-    async def run(
-        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
-    ) -> Platform:
+    async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
         assert isinstance(call_input, ReadToolOutputInput)
         handle, offset = call_input.handle, call_input.offset
         want = min(call_input.limit or self._options.max_chars, self._options.max_chars)

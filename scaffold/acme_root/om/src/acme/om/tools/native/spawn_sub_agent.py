@@ -22,7 +22,7 @@ from acme.om.agent_steps.types.header import ToolFailure
 from acme.om.agents.manager import AgentsManagerInterface
 from acme.om.agents.types.request import MAX_OBJECTIVE, MAX_TITLE, Spawn
 from acme.om.attribution.types.principal import MAX_KIND
-from acme.om.base import Platform
+from acme.om.base import OmBase
 from acme.om.context import TenantContext
 from acme.om.exceptions import (
     NotAuthorized,
@@ -57,7 +57,7 @@ class SpawnSubAgentInput(ToolInput):
     fork: bool = False
 
 
-class Spawned(Platform):
+class Spawned(OmBase):
     """The sub-agent the call started, the same one however often the call
     is asked."""
 
@@ -109,9 +109,7 @@ class SpawnSubAgentToolImpl(ToolInterface):
     ) -> None:
         return None
 
-    async def run(
-        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
-    ) -> Platform:
+    async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
         assert isinstance(call_input, SpawnSubAgentInput)
         kind = call_input.kind
         if kind is None:

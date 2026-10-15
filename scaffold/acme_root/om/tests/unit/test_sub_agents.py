@@ -4,6 +4,7 @@ cases the suite over Postgres runs too (`contracts.sub_agents`)."""
 from pathlib import Path
 
 import pytest
+
 from contracts import sub_agents
 from contracts.loops import loop_over
 

@@ -11,19 +11,6 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from contracts.agent_step_storage import a_person, make_event, make_message
-from contracts.doubles import context
-from contracts.factories import make_org
-from contracts.tools import (
-    TWIN_SPEC,
-    Command,
-    PushBranch,
-    failure_of,
-    put_call,
-    registry_of,
-    tools_over,
-    twin_transport,
-)
 from pydantic import ValidationError
 
 from acme.infra.impl.local import InfraLocalImpl
@@ -35,7 +22,7 @@ from acme.om.agents.types.request import Spawn, Start
 from acme.om.attribution.rules import trust_of
 from acme.om.attribution.types.authority import AuthorityMode, Trust
 from acme.om.attribution.types.principal import AgentRef
-from acme.om.base import Platform, new_id, utcnow
+from acme.om.base import OmBase, new_id, utcnow
 from acme.om.context import Role, TenantContext
 from acme.om.exceptions import McpDefinitionChanged, NotAuthorized, NotFound, ValidationFailed
 from acme.om.root import build_managers
@@ -49,6 +36,20 @@ from acme.om.tools.types.call import JobHandle, JobNotStarted, JobStarted
 from acme.om.tools.types.mcp import McpBinding, McpToolDefinition
 from acme.om.tools.types.policy import Target
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolMode, ToolSpec
+
+from contracts.agent_step_storage import a_person, make_event_step, make_message
+from contracts.doubles import context
+from contracts.factories import make_org
+from contracts.tools import (
+    TWIN_SPEC,
+    Command,
+    PushBranch,
+    failure_of,
+    put_call,
+    registry_of,
+    tools_over,
+    twin_transport,
+)
 
 
 def test_the_registry_renders_in_a_fixed_order_whatever_the_order_given() -> None:
@@ -99,7 +100,7 @@ async def test_a_message_buys_no_call_its_sender_may_not_make(tmp_path: Path) ->
     await managers.attribution.assign_principal(admin, session.id, member.user_id)
     with pytest.raises(NotAuthorized, match="manage_members"):
         await managers.agent_steps.append_inputs(member, session.id, [make_message(session.id)])
-    await managers.agent_steps.append_inputs(member, session.id, [make_event(session.id)])
+    await managers.agent_steps.append_inputs(member, session.id, [make_event_step(session.id)])
     held = (await managers.agent_steps.get_agent_steps(admin, session.id, 0, 10)).items
     assert [step.type for step in held] == [
         AgentStepType.MESSAGE,
@@ -214,7 +215,7 @@ def test_a_tool_declares_its_whole_contract() -> None:
     } <= fields
     with pytest.raises(ValidationError):
         ToolSpec.model_validate(
-            {"name": "x", "description": "x", "input_model": ToolInput, "output_model": Platform}
+            {"name": "x", "description": "x", "input_model": ToolInput, "output_model": OmBase}
         )
 
 
@@ -351,9 +352,7 @@ class Reindex(JobToolInterface):
     ) -> None:
         return None
 
-    async def run(
-        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
-    ) -> Platform:
+    async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
         # Started under the call's key: starting it again attaches.
         handle = self.started.setdefault(runtime.key, f"job-{len(self.started) + 1}")
         return JobStarted(handle=handle)

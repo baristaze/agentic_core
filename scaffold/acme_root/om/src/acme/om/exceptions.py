@@ -299,7 +299,7 @@ class InvitationClosed(TenancyException, Conflict):
     code = "invitation_closed"
 
 
-class AgentStepsException(PlatformException): ...
+class AgentStepsException(OmException): ...
 
 
 class StaleWriter(AgentStepsException, PreconditionFailed):
@@ -311,7 +311,7 @@ class StaleWriter(AgentStepsException, PreconditionFailed):
     code = "stale_writer"
 
 
-class AttributionException(PlatformException): ...
+class AttributionException(OmException): ...
 
 
 class NoSpender(AttributionException, PreconditionFailed):
@@ -337,7 +337,7 @@ class PrincipalLapsed(AttributionException, PreconditionFailed):
     code = "principal_lapsed"
 
 
-class AgentsException(PlatformException): ...
+class AgentsException(OmException): ...
 
 
 class UnknownAgentKind(AgentsException, NotFound):
@@ -354,7 +354,7 @@ class TreeBoundReached(AgentsException, Conflict):
     code = "tree_bound_reached"
 
 
-class PrivacyException(PlatformException): ...
+class PrivacyException(OmException): ...
 
 
 class KeyRevoked(PrivacyException):
@@ -372,7 +372,7 @@ class PolicyFixed(PrivacyException, Conflict):
     code = "policy_fixed"
 
 
-class SpendBudgetsException(PlatformException): ...
+class SpendBudgetsException(OmException): ...
 
 
 class SpendBudgetRefused(SpendBudgetsException):
@@ -407,7 +407,7 @@ class GateParked(SpendBudgetsException):
         self.park = park
 
 
-class LanguageModelsException(PlatformException): ...
+class LanguageModelsException(OmException): ...
 
 
 class UnpricedModel(LanguageModelsException, ValidationFailed):
@@ -437,7 +437,7 @@ class NoCredential(LanguageModelsException, PreconditionFailed):
         self.unlock = f"{provider}:key"
 
 
-class WindowsException(PlatformException): ...
+class WindowsException(OmException): ...
 
 
 class ContextOverflow(WindowsException):
@@ -455,7 +455,7 @@ class CompactionFailed(WindowsException):
     code = "compaction_failed"
 
 
-class ToolsException(PlatformException): ...
+class ToolsException(OmException): ...
 
 
 class ToolFailed(ToolsException, ValidationFailed):

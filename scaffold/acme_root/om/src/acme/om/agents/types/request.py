@@ -15,7 +15,7 @@ from uuid import UUID
 from pydantic import AfterValidator, Field
 
 from acme.om.attribution.types.principal import MAX_KIND
-from acme.om.base import Platform
+from acme.om.base import OmBase
 
 MAX_TITLE = 200
 
@@ -48,7 +48,7 @@ which render in the system layer of every request. Past its bound it is
 refused when it is pinned, with the reason, and nothing is made."""
 
 
-class Start(Platform):
+class Start(OmBase):
     """A root session on the latest version of a kind. `deadline` is the
     tree's instant; None takes the kind's from now. `standing` is the
     standing text the session pins at its start, empty for none."""
@@ -61,7 +61,7 @@ class Start(Platform):
     standing: StandingText = ""
 
 
-class Spawn(Platform):
+class Spawn(OmBase):
     """A child of the session that asks. `id` is taken from the spawning
     tool call's request, so a retry finds the child it made. `objective`
     holds what the child starts from: the objective, the constraints that
@@ -76,7 +76,7 @@ class Spawn(Platform):
     standing: StandingText = ""
 
 
-class Handoff(Platform):
+class Handoff(OmBase):
     """Work handed from one kind to another: a new root session that holds
     `objective` and where it came from, and waits for its principal to
     confirm it. `standing` is the standing text it pins, as a spawn's is."""
@@ -88,7 +88,7 @@ class Handoff(Platform):
     standing: StandingText = ""
 
 
-class SwitchStanding(Platform):
+class SwitchStanding(OmBase):
     """A switch of a session's standing text to `standing`, empty for none.
     `id` is the switch's step, so a retry finds the one it recorded. The
     session's requests render it from its next loop on."""

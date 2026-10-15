@@ -10,19 +10,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.doubles import context
-from contracts.factories import make_org
-from contracts.tools import (
-    KIND_DEFAULTS,
-    PushBranch,
-    Tools,
-    failure_of,
-    put_call,
-    registry_of,
-    result_text,
-    tools_over,
-    twin_transport,
-)
 from pydantic import ValidationError
 
 from acme.infra.agent_workspaces import AgentWorkspace
@@ -44,6 +31,20 @@ from acme.om.tools.registry import ToolRegistry
 from acme.om.tools.rules import decides, verdict
 from acme.om.tools.types.call import GateOutcome, Verdict
 from acme.om.tools.types.policy import ApproverRule, Decision
+
+from contracts.doubles import context
+from contracts.factories import make_org
+from contracts.tools import (
+    KIND_DEFAULTS,
+    PushBranch,
+    Tools,
+    failure_of,
+    put_call,
+    registry_of,
+    result_text,
+    tools_over,
+    twin_transport,
+)
 
 PROTECTIONS = {"main": True, "feature": False, "hotfix": False}
 OWNERS = (Role.OWNER, Role.ADMIN)

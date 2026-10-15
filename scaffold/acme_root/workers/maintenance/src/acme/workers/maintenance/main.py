@@ -19,6 +19,7 @@ from acme.infra.observability import (
     name_process,
 )
 from acme.infra.trust import install_trust_store
+from acme.om.agent_sessions.kinds import AgentSessionWorkKind
 from acme.om.context import RequestContext
 from acme.om.orchestrations.types.orchestration import OrchestrationKind
 from acme.om.root import KINDS, ORCHESTRATION_KINDS
@@ -188,9 +189,13 @@ def build_loop(container: WorkerContainer, lane: str | None = None) -> WorkerLoo
             ),
             WorkKind.WAKE_PARKED: WakeParkedHandlerImpl(managers.orchestrations),
             # A copy adds its entries below this line.
-            WorkKind.WAKE_AGENT_SESSION: WakeAgentSessionHandlerImpl(managers.agent_sessions),
-            WorkKind.WAKE_AGENT_SESSIONS: WakeAgentSessionsHandlerImpl(managers.agent_sessions),
-            WorkKind.LEASE_NOTICE: LeaseNoticeHandlerImpl(managers.agent_sessions),
+            AgentSessionWorkKind.WAKE_AGENT_SESSION: WakeAgentSessionHandlerImpl(
+                managers.agent_sessions
+            ),
+            AgentSessionWorkKind.WAKE_AGENT_SESSIONS: WakeAgentSessionsHandlerImpl(
+                managers.agent_sessions
+            ),
+            AgentSessionWorkKind.LEASE_NOTICE: LeaseNoticeHandlerImpl(managers.agent_sessions),
         },
         topics=container.infra.get_topics(),
         liveness=container.infra.get_cache(CacheScope.WORKER_LIVENESS),

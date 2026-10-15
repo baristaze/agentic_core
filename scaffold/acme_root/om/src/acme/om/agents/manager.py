@@ -23,7 +23,7 @@ from acme.om.agents.types.report import Report
 from acme.om.agents.types.request import Handoff, Spawn, Start, SwitchStanding
 from acme.om.agents.types.result import Result, Verdict
 from acme.om.agents.types.tree import AgentTree
-from acme.om.context import TenantContext
+from acme.om.context import TenantContext, stageless
 from acme.om.tools.tool import TakeSnapshot
 
 
@@ -154,8 +154,9 @@ class AgentsManagerInterface(ABC):
         ...
 
     @abstractmethod
+    @stageless
     async def purge_tree(self, org_id: UUID, tree_id: UUID) -> bool:
-        """Platform-internal: a tree goes when the last of its sessions is
+        """System-internal: a tree goes when the last of its sessions is
         purged, before that session's row, under the purge login, in the
         tenant named; for no principal. False when none was left."""
         ...

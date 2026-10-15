@@ -15,7 +15,7 @@ from acme.integrations.model_providers.content import TextBlock, ToolUseBlock
 from acme.integrations.model_providers.types import StopReason, Usage
 from acme.om.agents.types.kind import NO_AGENT_WORKSPACE, AgentKind, DoneRule, TreeLimits
 from acme.om.attribution.types.authority import AuthorityMode
-from acme.om.base import Platform
+from acme.om.base import OmBase
 from acme.om.context import TenantContext
 from acme.om.tools.native.write_agent_plan import WRITE_AGENT_PLAN
 from acme.om.tools.tool import ToolInterface, ToolRuntime
@@ -34,7 +34,7 @@ class CommandInput(ToolInput):
     argv: tuple[str, ...]
 
 
-class CommandOutput(Platform):
+class CommandOutput(OmBase):
     exit_code: int | None
     stdout: str
     stderr: str
@@ -70,9 +70,7 @@ class RunCommand(ToolInterface):
     ) -> None:
         return None
 
-    async def run(
-        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
-    ) -> Platform:
+    async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
         assert isinstance(call_input, CommandInput)
         result = await runtime.run(call_input.argv)
         return CommandOutput(exit_code=result.exit_code, stdout=result.stdout, stderr=result.stderr)

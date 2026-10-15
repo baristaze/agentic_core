@@ -16,9 +16,6 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from contracts.agent_session_storage import make_agent_session
-from contracts.agent_step_storage import AgentStepStorageContract, a_loop, make_message
-from contracts.tools import stand_ins
 from sqlalchemy import text
 
 from acme.infra.impl.local import InfraLocalImpl
@@ -42,6 +39,10 @@ from acme.om.storage.impl.pg_base import LoginSessions, set_scope
 from acme.om.storage.impl.postgres import StoragePostgresImpl
 from acme.om.storage.roles import DatabaseRole
 from acme.om.storage.settings import MigrationSettings
+
+from contracts.agent_session_storage import make_agent_session
+from contracts.agent_step_storage import AgentStepStorageContract, a_loop, make_message
+from contracts.tools import stand_ins
 
 pytestmark = pytest.mark.integration
 

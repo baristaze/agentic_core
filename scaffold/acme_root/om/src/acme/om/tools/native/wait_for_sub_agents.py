@@ -13,7 +13,7 @@ from uuid import UUID
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus
 from acme.om.agent_steps.types.header import ToolFailure
-from acme.om.base import Platform
+from acme.om.base import OmBase
 from acme.om.context import TenantContext
 from acme.om.exceptions import ToolFailed
 from acme.om.tools.tool import ToolInterface, ToolRuntime
@@ -35,14 +35,14 @@ class WaitForSubAgentsInput(ToolInput):
     """No input: the call waits on the session's own children."""
 
 
-class SubAgent(Platform):
+class SubAgent(OmBase):
     agent_session_id: UUID
     title: str
     kind: str
     status: AgentSessionStatus
 
 
-class Waiting(Platform):
+class Waiting(OmBase):
     """The sub-agents the loop waits on: the session's children whose loop
     is open."""
 
@@ -80,9 +80,7 @@ class WaitForSubAgentsToolImpl(ToolInterface):
     ) -> None:
         return None
 
-    async def run(
-        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
-    ) -> Platform:
+    async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
         assert isinstance(call_input, WaitForSubAgentsInput)
         running = [
             child

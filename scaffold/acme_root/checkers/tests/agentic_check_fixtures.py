@@ -33,18 +33,18 @@ BASE: dict[str, str] = {
     f"{OM}/__init__.py": "",
     f"{OM}/base.py": (
         "from pydantic import BaseModel, ConfigDict\n\n\n"
-        'class Platform(BaseModel):\n    model_config = ConfigDict(frozen=True, extra="forbid")\n'
+        'class OmBase(BaseModel):\n    model_config = ConfigDict(frozen=True, extra="forbid")\n'
     ),
     # the tool contract, re-exported by its package, and one tool built on it
     f"{OM}/tools/__init__.py": "from .tool import ToolInterface as ToolInterface\n",
     f"{OM}/tools/types/__init__.py": "",
     f"{OM}/tools/types/tool.py": (
         "from datetime import timedelta\nfrom enum import StrEnum\n\n"
-        "from acme.om.base import Platform\n\n\n"
+        "from acme.om.base import OmBase\n\n\n"
         'class Effect(StrEnum):\n    READ_ONLY = "read_only"\n\n\n'
         'class ToolMode(StrEnum):\n    SYNC = "sync"\n\n\n'
-        "class ToolInput(Platform):\n    pass\n\n\n"
-        "class ToolSpec(Platform):\n    name: str\n    input_model: type[ToolInput]\n    output_model: type[Platform]\n"
+        "class ToolInput(OmBase):\n    pass\n\n\n"
+        "class ToolSpec(OmBase):\n    name: str\n    input_model: type[ToolInput]\n    output_model: type[OmBase]\n"
         "    timeout: timedelta\n    authorization_class: str\n    effect: Effect\n    interruptible: bool\n"
         "    mode: ToolMode = ToolMode.SYNC\n"
     ),
@@ -55,10 +55,10 @@ BASE: dict[str, str] = {
     ),
     TOOL: (
         "from datetime import timedelta\n\n"
-        "from acme.om.base import Platform\nfrom acme.om.tools import ToolInterface\n"
+        "from acme.om.base import OmBase\nfrom acme.om.tools import ToolInterface\n"
         "from acme.om.tools.types.tool import Effect, ToolInput, ToolMode, ToolSpec\n\n\n"
         "class EchoInput(ToolInput):\n    text: str\n\n\n"
-        "class EchoOutput(Platform):\n    text: str\n\n\n"
+        "class EchoOutput(OmBase):\n    text: str\n\n\n"
         "class EchoTool(ToolInterface):\n"
         "    @property\n    def spec(self) -> ToolSpec:\n        return ToolSpec(\n"
         '            name="echo",\n            input_model=EchoInput,\n            output_model=EchoOutput,\n'
@@ -70,7 +70,7 @@ BASE: dict[str, str] = {
     f"{OM}/agent_steps/__init__.py": "",
     f"{OM}/agent_steps/types/__init__.py": "",
     f"{OM}/agent_steps/types/agent_step.py": (
-        "from acme.om.base import Platform\n\n\nclass AgentStep(Platform):\n    seq: int\n    text: str\n"
+        "from acme.om.base import OmBase\n\n\nclass AgentStep(OmBase):\n    seq: int\n    text: str\n"
     ),
     f"{OM}/agent_steps/storage/__init__.py": "",
     f"{OM}/agent_steps/storage/tables/__init__.py": "",

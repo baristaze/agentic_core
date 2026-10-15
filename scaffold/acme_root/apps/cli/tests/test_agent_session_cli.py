@@ -8,7 +8,6 @@ from uuid import UUID
 
 from api_support import OWNER, run, seed_request
 from cli_support import Stack
-from contracts.agent_step_storage import make_request, make_response
 
 from acme.apps.cli import main
 from acme.om.agent_steps.types.header import LoopOutcome, Park, ParkReason
@@ -16,10 +15,12 @@ from acme.om.agents.loop_rules import ended_step
 from acme.om.base import new_id, utcnow
 from acme.om.context import TenantContext
 
+from contracts.agent_step_storage import make_request, make_response
+
 
 def owner_context(stack: Stack) -> TenantContext:
     tenancy = stack.container.managers.tenancy
-    return run(tenancy.authenticate(seed_request(), stack.session_token(OWNER["email"])))
+    return run(tenancy.authenticate(seed_request(), stack.auth_session_token(OWNER["email"])))
 
 
 def started(stack: Stack) -> str:

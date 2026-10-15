@@ -12,16 +12,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.agent_session_storage import make_agent_session
-from contracts.agent_step_storage import (
-    AgentStepStorageContract,
-    a_loop,
-    make_message,
-    make_parked,
-)
-from contracts.doubles import context
-from contracts.factories import make_org
-from contracts.tools import stand_ins
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.infra.keys.memory import KeyServiceMemoryImpl
@@ -41,6 +31,17 @@ from acme.om.privacy.storage.impl.memory import PrivacyStorageMemoryImpl
 from acme.om.privacy.types.agent_session_privacy import StorageMode, StoragePolicy
 from acme.om.root import Managers, build_managers
 from acme.om.storage.impl.memory import StorageMemoryImpl
+
+from contracts.agent_session_storage import make_agent_session
+from contracts.agent_step_storage import (
+    AgentStepStorageContract,
+    a_loop,
+    make_message,
+    make_parked,
+)
+from contracts.doubles import context
+from contracts.factories import make_org
+from contracts.tools import stand_ins
 
 # What `make_agent_session` names, so the agents manager classes every tool it
 # offers.
@@ -250,7 +251,7 @@ async def test_a_revocation_is_announced_once(managers: Managers) -> None:
     await managers.agent_steps.append_inputs(ctx, session, [make_message(session)])
     first = await managers.privacy.revoke_key(ctx, session)
     assert await managers.privacy.revoke_key(ctx, session) == first
-    events = await managers.events.get_events(ctx, 0, 100)
+    events = await managers.change_events.get_change_events(ctx, 0, 100)
     assert [e.kind for e in events if e.target_id == session].count(
         "privacy.agent_session_privacy.updated"
     ) == 1

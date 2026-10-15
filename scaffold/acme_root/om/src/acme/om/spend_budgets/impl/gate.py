@@ -5,7 +5,7 @@ from uuid import UUID
 
 from acme.infra.base import QuietNull
 from acme.infra.observability import OUTCOMES
-from acme.om.base import Platform, new_id, utcnow
+from acme.om.base import OmBase, new_id, utcnow
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import NotFound, SpenderUnknown, ValidationFailed
 from acme.om.spend_budgets.gate import SpendBudgetGateInterface
@@ -24,7 +24,7 @@ from acme.om.spend_budgets.types.spend_hold import (
 log = logging.getLogger(__name__)
 
 
-class SpendBudgetGateOptions(Platform):
+class SpendBudgetGateOptions(OmBase):
     max_lines: int = 32  # budgets one call may be charged to, at most
 
 

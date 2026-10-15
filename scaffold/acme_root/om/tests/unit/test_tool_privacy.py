@@ -14,21 +14,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.agent_session_storage import make_agent_session
-from contracts.doubles import context
-from contracts.loops import Loop, loop_over, reply, said, use
-from contracts.tools import (
-    HOST_SPEC,
-    TWIN_SPEC,
-    Call,
-    Command,
-    echoing,
-    failure_of,
-    put_call,
-    registry_of,
-    result_text,
-    stand_ins,
-)
 
 from acme.infra.agent_workspaces import AgentWorkspace, AgentWorkspaceProviderInterface
 from acme.infra.agent_workspaces.host import AgentWorkspaceHostImpl
@@ -53,6 +38,22 @@ from acme.om.root import Managers, build_managers
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.tools.rules import INPUT_HASH, canonical_input
 from acme.om.tools.types.tool import Effect
+
+from contracts.agent_session_storage import make_agent_session
+from contracts.doubles import context
+from contracts.loops import Loop, loop_over, reply, said, use
+from contracts.tools import (
+    HOST_SPEC,
+    TWIN_SPEC,
+    Call,
+    Command,
+    echoing,
+    failure_of,
+    put_call,
+    registry_of,
+    result_text,
+    stand_ins,
+)
 
 LINE = "the-build-log-line"
 """What the command prints, which nothing at rest may hold in the clear."""

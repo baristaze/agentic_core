@@ -1,7 +1,7 @@
 import logging
 from uuid import UUID
 
-from acme.om.base import Platform
+from acme.om.base import OmBase
 from acme.om.context import OperatorContext, OperatorPermission
 from acme.om.exceptions import NotFound
 from acme.om.spend_budgets.manager import SpendBudgetsOperatorManagerInterface
@@ -12,7 +12,7 @@ from acme.om.tenancy.storage import TenancyStorageInterface
 log = logging.getLogger(__name__)
 
 
-class SpendBudgetsOperatorOptions(Platform):
+class SpendBudgetsOperatorOptions(OmBase):
     max_limit: int = 200  # usage records one page holds at most
     max_loops: int = 1000  # loop rollups one read holds at most
 

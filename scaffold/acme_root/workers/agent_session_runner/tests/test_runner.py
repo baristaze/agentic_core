@@ -22,6 +22,7 @@ from acme.integrations.model_providers.content import TextBlock, ToolUseBlock
 from acme.integrations.model_providers.registry import scripted_model_providers
 from acme.integrations.model_providers.types import ProviderName, StopReason, Usage
 from acme.om.agent_sessions.impl.manager import wake_row
+from acme.om.agent_sessions.kinds import LOOP_LANE, AgentSessionWorkKind
 from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus
 from acme.om.agent_steps.rules import message_step
 from acme.om.agent_steps.types.agent_step import AgentStepType
@@ -33,7 +34,7 @@ from acme.om.agents.types.kind import NO_AGENT_WORKSPACE, AgentKind, DoneRule, T
 from acme.om.agents.types.request import Start
 from acme.om.agents.types.run import LoopRun, RunEnd
 from acme.om.attribution.types.authority import AuthorityMode
-from acme.om.base import Platform, new_id, utcnow
+from acme.om.base import OmBase, new_id, utcnow
 from acme.om.context import (
     AppContext,
     AppType,
@@ -43,6 +44,7 @@ from acme.om.context import (
     TenantContext,
 )
 from acme.om.exceptions import NotFound, UnknownAgentKind
+from acme.om.root import KINDS
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.tenancy.rules import ROLE_PERMISSIONS
 from acme.om.tools.attachments import AttachmentReaderInterface, AttachmentText
@@ -52,10 +54,7 @@ from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolSpec
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
 from acme.om.work.types.handler import WorkParked
 from acme.om.work.types.work_item import (
-    WORK_ENQUEUE_PERMISSIONS,
-    WORK_LANES,
     WorkItem,
-    WorkKind,
     WorkStatus,
 )
 from acme.workers.agent_session_runner import container as runner_container
@@ -101,7 +100,7 @@ def an_item(ctx: TenantContext, agent_session_id: UUID) -> WorkItem:
         updated_at=now,
         created_by=ctx.user_id,
         updated_by=ctx.user_id,
-        kind=WorkKind.LOOP,
+        kind=AgentSessionWorkKind.LOOP,
         target_id=agent_session_id,
         idempotency_key=new_id(),
         request_id=new_id(),
@@ -191,7 +190,7 @@ async def test_a_runner_that_lacks_the_kind_leaves_the_loop_to_a_retry(tmp_path:
 
     def loop_items() -> list[WorkItem]:
         items = [item for _, item in work._items.values()]  # pyright: ignore[reportPrivateUsage]
-        return [i for i in items if i.kind is WorkKind.LOOP]
+        return [i for i in items if i.kind == AgentSessionWorkKind.LOOP]
 
     runner = build_runner(lacking)
     running = asyncio.create_task(runner.run())
@@ -221,9 +220,11 @@ def test_every_kind_is_claimed_by_one_worker_and_asked_for_as_widely_as_it_runs(
     maintenance = set(build_loop(worker).kinds)
     runner = runner_over(tmp_path)
     handlers = build_runner(runner)._handlers  # pyright: ignore[reportPrivateUsage]
-    assert set(handlers) == {WorkKind.LOOP} and not maintenance & set(handlers)
-    assert maintenance | set(handlers) == set(WorkKind)
-    asking = WORK_ENQUEUE_PERMISSIONS[WorkKind.LOOP]
+    assert set(handlers) == {AgentSessionWorkKind.LOOP} and not maintenance & set(handlers)
+    assert maintenance | set(handlers) == {kind.name for kind in KINDS}
+    loop_kind = KINDS.get(AgentSessionWorkKind.LOOP)
+    assert loop_kind is not None
+    asking = loop_kind.permission
     for role, permissions in ROLE_PERMISSIONS.items():
         if asking in permissions:
             missing = [p for p in LoopHandlerImpl.REQUIRES if p not in permissions]
@@ -255,7 +256,9 @@ async def test_a_tenants_running_loop_leaves_its_wake_to_the_capped_maintenance_
     runner = loop_options(settings())
     work = api.managers.work
 
-    running = await work.claim(rctx, runner.lane, [WorkKind.LOOP], runner.worker_id, runner.lease)
+    running = await work.claim(
+        rctx, runner.lane, [AgentSessionWorkKind.LOOP], runner.worker_id, runner.lease
+    )
 
     assert running is not None and running[1].target_id == session.id, "a runner holds the loop"
     assert running[1].lane == "loop", "the relay lands a loop on the loop's own lane"
@@ -272,20 +275,18 @@ async def test_a_tenants_running_loop_leaves_its_wake_to_the_capped_maintenance_
         rctx, capped.lane, list(kinds), capped.worker_id, capped.lease, capped.tenant_cap
     )
 
-    assert woken is not None and woken[1].kind is WorkKind.WAKE_AGENT_SESSION, "not passed over"
+    assert woken is not None and woken[1].kind == AgentSessionWorkKind.WAKE_AGENT_SESSION, (
+        "not passed over"
+    )
 
 
-def test_the_runner_sweeps_recovery_alone_on_knobs_of_its_own(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The lane is a knob too, for a layer that lands its loops on a lane of
-    its own and registers it."""
-    monkeypatch.setitem(WORK_LANES, WorkKind.LOOP, "loops")
-    options = loop_options(settings(runner_lease_seconds=7, runner_lane="loops"))
+def test_the_runner_sweeps_recovery_alone_on_knobs_of_its_own() -> None:
+    """The runner claims from the lane the loop's kind is registered on."""
+    options = loop_options(settings(runner_lease_seconds=7))
     assert options.recovery_only, "the runner purges nothing and judges no tenant purged"
     assert (options.lease, options.lane, options.worker_id) == (
         timedelta(seconds=7),
-        "loops",
+        LOOP_LANE,
         "runner-test",
     )
 
@@ -389,7 +390,7 @@ class Nothing(ToolInput):
     pass
 
 
-class Seen(Platform):
+class Seen(OmBase):
     role: str
 
 
@@ -421,9 +422,7 @@ class WhoAmI(ToolInterface):
     ) -> None:
         return None
 
-    async def run(
-        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
-    ) -> Platform:
+    async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
         self.seen.append(ctx)
         return Seen(role=ctx.role.value)
 

@@ -8,7 +8,7 @@ from uuid import UUID
 from pydantic import Field, model_validator
 
 from acme.om.agent_steps.types.header import LoopOutcome
-from acme.om.base import Platform
+from acme.om.base import OmBase
 
 
 class Turn(StrEnum):
@@ -26,7 +26,7 @@ class Claim(StrEnum):
     FAILED = "failed"  # the objective cannot be met as asked: a conclusion, not an error
 
 
-class Result(Platform):
+class Result(OmBase):
     """A result submitted through a kind's result tool: what it claims, and
     the steps it cites as evidence, such as the tool responses that show
     it."""
@@ -35,7 +35,7 @@ class Result(Platform):
     evidence: tuple[UUID, ...] = ()
 
 
-class Verdict(Platform):
+class Verdict(OmBase):
     """The gate's answer. An accepted result ends the loop with the outcome
     it claims; a refused one goes back to the model with `reason`.
     `verified` is False where no gate that knows the evidence looked at it,

@@ -1,14 +1,12 @@
 """The agent_sessions namespace's types: a session with an agent, its
-history's steps, and where its loop stands."""
+history's steps as the wire carries them, and where its loop stands."""
 
 from acme.client.schema.agent_sessions import (
     AgentSessionControl,
     AgentSessionStatus,
     AgentSessionView,
     AgentStepPageView,
-    AgentStepType,
     AgentStepView,
-    LoopOutcome,
     ParkView,
 )
 
@@ -17,8 +15,6 @@ __all__ = [
     "AgentSessionStatus",
     "AgentSessionView",
     "AgentStepPageView",
-    "AgentStepType",
     "AgentStepView",
-    "LoopOutcome",
     "ParkView",
 ]

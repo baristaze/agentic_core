@@ -7,7 +7,7 @@ from acme.integrations.model_providers.calls import ModelCall
 from acme.integrations.model_providers.types import Usage
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.attribution.types.principal import Principal
-from acme.om.base import Platform, new_id, utcnow
+from acme.om.base import OmBase, new_id, utcnow
 from acme.om.context import TenantContext
 from acme.om.exceptions import SpendBudgetRefused, Unavailable
 from acme.om.language_models.types.fill import Fill, ModelRole
@@ -79,7 +79,7 @@ class CallGateNullImpl(CallGateInterface):
         raise Unavailable("no budget gate is wired, so there is no hold to settle")
 
 
-class _Held(Platform):
+class _Held(OmBase):
     """What the gate read of a call at its hold and keeps until it settles:
     its price, and what its usage record names."""
 

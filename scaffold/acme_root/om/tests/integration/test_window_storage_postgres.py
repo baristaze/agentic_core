@@ -4,7 +4,6 @@ and insert it and never rewrite or remove it, and the purge login, which
 takes it with its history, may read and remove it and nothing more."""
 
 import pytest
-from contracts.window_storage import WindowStorageContract
 from sqlalchemy import text
 
 from acme.om.storage.impl.pg_base import LoginSessions
@@ -14,6 +13,8 @@ from acme.om.storage.roles import DatabaseRole
 from acme.om.storage.settings import MigrationSettings
 from acme.om.windows.storage import WindowStorageInterface
 from acme.om.windows.storage.impl.postgres import WindowStoragePostgresImpl
+
+from contracts.window_storage import WindowStorageContract
 
 pytestmark = pytest.mark.integration
 

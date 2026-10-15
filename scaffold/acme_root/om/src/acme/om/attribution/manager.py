@@ -21,7 +21,7 @@ from acme.om.attribution.types.authority import (
     RequestAttribution,
 )
 from acme.om.attribution.types.principal import Principal
-from acme.om.context import RequestContext, TenantContext
+from acme.om.context import RequestContext, TenantContext, stageless
 
 PrincipalContext = Callable[[RequestContext, UUID, Principal], Awaitable[TenantContext]]
 """The adopter's transition, one operation of its tenancy manager: the live
@@ -141,8 +141,9 @@ class AttributionManagerInterface(ABC):
         ...
 
     @abstractmethod
+    @stageless
     async def purge_authority(self, org_id: UUID, agent_session_id: UUID) -> bool:
-        """Platform-internal: the authority of a session the sweep has
+        """System-internal: the authority of a session the sweep has
         claimed for its purge goes before its row, under the purge login, in
         the tenant named; for no principal. False when none was left."""
         ...

@@ -8,18 +8,6 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from contracts.agent_session_storage import make_agent_session
-from contracts.agent_step_storage import (
-    a_person,
-    make_event,
-    make_message,
-    make_parked,
-    make_request,
-    make_response,
-)
-from contracts.doubles import context
-from contracts.factories import make_org
-from contracts.tools import stand_ins
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.om.agent_root import AgentRootOptions
@@ -63,6 +51,19 @@ from acme.om.outbox.storage.impl.memory import OutboxStorageMemoryImpl
 from acme.om.outbox.types.row import OutboxRow
 from acme.om.root import Managers, build_managers
 from acme.om.storage.impl.memory import StorageMemoryImpl
+
+from contracts.agent_session_storage import make_agent_session
+from contracts.agent_step_storage import (
+    a_person,
+    make_event_step,
+    make_message,
+    make_parked,
+    make_request,
+    make_response,
+)
+from contracts.doubles import context
+from contracts.factories import make_org
+from contracts.tools import stand_ins
 
 # What `make_agent_session` names, so the agents manager classes every tool it
 # offers.
@@ -131,7 +132,7 @@ def test_an_input_that_wakes_starts_a_loop_on_an_idle_session_and_no_other() -> 
 def test_an_event_built_with_no_word_on_waking_leaves_an_idle_session_idle() -> None:
     """A principal's message wakes by default, and an event from outside
     does not."""
-    event = make_event(SESSION)
+    event = make_event_step(SESSION)
     assert isinstance(event.header, InputHeader) and event.header.waking is False
     assert after_step(IDLE, event) == IDLE
     unsaid = InputHeader(principal=a_person())
@@ -179,7 +180,7 @@ def test_a_loop_that_ends_with_a_waking_input_undelivered_leaves_the_session_pen
     for cut_short in (response_to(request, truncated=True), response_to(request, abandoned=True)):
         cut = fold([first, request, cut_short, loop_ended()])
         assert cut.status is AgentSessionStatus.PENDING, cut_short.header
-    quiet = fold([first, request, answered, make_event(SESSION), loop_ended()])
+    quiet = fold([first, request, answered, make_event_step(SESSION), loop_ended()])
     assert quiet.status is AgentSessionStatus.IDLE, "an input that does not wake waits quietly"
 
 
@@ -334,7 +335,7 @@ def managers(tmp_path: Path) -> Managers:
 
 async def kinds(managers: Managers, ctx: TenantContext, target: UUID) -> list[str]:
     """What the tenant's stream announced of one session."""
-    events = await managers.events.get_events(ctx, 0, 100)
+    events = await managers.change_events.get_change_events(ctx, 0, 100)
     return [e.kind.rsplit(".", 1)[-1] for e in events if e.target_id == target]
 
 
@@ -567,7 +568,7 @@ async def test_only_an_idle_session_is_archived_and_a_message_brings_it_back(
     archived = await managers.agent_sessions.archive_agent_session(ctx, sid)
     assert archived.archived_at is not None and archived.version == 2
     assert await managers.agent_sessions.archive_agent_session(ctx, sid) == archived
-    await managers.agent_steps.append_inputs(ctx, sid, [make_event(sid)])
+    await managers.agent_steps.append_inputs(ctx, sid, [make_event_step(sid)])
     quiet = await managers.agent_sessions.project_status(ctx, sid)
     assert quiet.archived_at is not None and quiet.status is AgentSessionStatus.IDLE
     await managers.agent_steps.append_inputs(ctx, sid, [make_message(sid)])
@@ -601,7 +602,7 @@ async def test_a_deleted_session_is_hidden_from_every_read_and_comes_back_whole(
     ctx = context(Role.MEMBER)
     sessions, steps = managers.agent_sessions, managers.agent_steps
     sid = (await sessions.create_agent_session(ctx, make_agent_session())).id
-    history = await steps.append_inputs(ctx, sid, [make_event(sid), make_event(sid)])
+    history = await steps.append_inputs(ctx, sid, [make_event_step(sid), make_event_step(sid)])
     idle = await sessions.project_status(ctx, sid)
     deleted = await sessions.delete_agent_session(ctx, sid)
     assert deleted.deleted_at is not None and deleted.deleted_by == ctx.user_id
@@ -661,7 +662,7 @@ async def test_a_switch_of_visibility_and_a_move_of_the_steer_are_each_announced
     await sessions.add_participant(ctx, sid, mia.user_id)
 
     async def updates() -> int:
-        events = await managers.events.get_events(ctx, 0, 100)
+        events = await managers.change_events.get_change_events(ctx, 0, 100)
         return sum(e.kind == UPDATED and e.target_id == sid for e in events)
 
     joined = await updates()
@@ -823,7 +824,7 @@ async def test_a_claimed_session_cannot_come_back_and_its_long_history_goes_in_b
     sessions = purging(managers, storage, clock, batch=2)
     ctx = context(Role.MEMBER)
     sid = (await sessions.create_agent_session(ctx, make_agent_session())).id
-    await managers.agent_steps.append_inputs(ctx, sid, [make_event(sid) for _ in range(3)])
+    await managers.agent_steps.append_inputs(ctx, sid, [make_event_step(sid) for _ in range(3)])
     rows, history = storage.get_agent_session_storage(), storage.get_agent_step_storage()
     await sessions.delete_agent_session(ctx, sid)
     clock.now += timedelta(days=31)

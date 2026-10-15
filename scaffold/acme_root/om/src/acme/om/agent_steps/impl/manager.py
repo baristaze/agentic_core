@@ -18,13 +18,13 @@ from acme.om.attribution.rules import (
     said_by,
     switched_by,
 )
-from acme.om.base import Platform
+from acme.om.base import OmBase
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import NotAuthorized, ValidationFailed
 from acme.om.tenancy import TenancyManagerInterface
 
 
-class AgentStepsOptions(Platform):
+class AgentStepsOptions(OmBase):
     max_limit: int = 200  # steps one page holds at most
     max_append: int = 100  # steps one append writes at most
     purge_batch: int = 1000  # steps one purge statement deletes at most

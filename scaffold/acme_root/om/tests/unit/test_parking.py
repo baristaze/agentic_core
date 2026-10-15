@@ -9,14 +9,14 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.agent_session_storage import make_agent_session
-from contracts.agent_step_storage import make_message, make_request
-from contracts.doubles import context
-from contracts.spend_budget_storage import make_spend_budget
-from contracts.tools import stand_ins
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.om.agent_root import AgentRootOptions
+from acme.om.agent_sessions.kinds import (
+    AgentSessionWorkKind,
+    WakeAgentSessionPayload,
+    WakeAgentSessionsPayload,
+)
 from acme.om.agent_sessions.limits import step_guard_park
 from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus
 from acme.om.agent_steps.types.agent_step import Actor, AgentStepType
@@ -43,11 +43,14 @@ from acme.om.spend_budgets.types.spend_hold import Billed, SpendHold, SpendHoldR
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
 from acme.om.work.types.work_item import (
-    WakeAgentSessionPayload,
-    WakeAgentSessionsPayload,
     WorkItem,
-    WorkKind,
 )
+
+from contracts.agent_session_storage import make_agent_session
+from contracts.agent_step_storage import make_message, make_request
+from contracts.doubles import context
+from contracts.spend_budget_storage import make_spend_budget
+from contracts.tools import stand_ins
 
 # What `make_agent_session` names, so the agents manager classes every tool it
 # offers.
@@ -65,13 +68,13 @@ class Engine:
             agent_root_options=AgentRootOptions(tool_catalog=TOOLS),
         )
 
-    def queued(self, kind: WorkKind) -> list[WorkItem]:
+    def queued(self, kind: str) -> list[WorkItem]:
         """The items of a kind in the queue, whatever their time: the worker
         suite claims them, under the person who asked."""
         work = self.storage.get_work_storage()
         assert isinstance(work, WorkStorageMemoryImpl)
         items = [item for _, item in work._items.values()]  # pyright: ignore[reportPrivateUsage]
-        return [item for item in items if item.kind is kind]
+        return [item for item in items if item.kind == kind]
 
 
 @pytest.fixture
@@ -114,7 +117,7 @@ async def test_a_park_with_a_retry_time_waits_in_the_queue_until_it(engine: Engi
     later = utcnow() + timedelta(hours=1)
     park = Park(reason=ParkReason.PROVIDER, unlock="anthropic", retry_at=later)
     await engine.managers.agent_sessions.park(ctx, session.id, epoch, loop, park)
-    (wake,) = engine.queued(WorkKind.WAKE_AGENT_SESSION)
+    (wake,) = engine.queued(AgentSessionWorkKind.WAKE_AGENT_SESSION)
     assert (wake.target_id, wake.available_at, wake.created_by) == (
         session.id,
         later,
@@ -130,7 +133,7 @@ async def test_a_park_resumes_by_itself_once_its_retry_time_comes(engine: Engine
     reset = utcnow() - timedelta(seconds=1)
     park = spend_budget_park(refusal_resetting_at(reset), utcnow())
     await engine.managers.agent_sessions.park(ctx, session.id, epoch, loop, park)
-    (item,) = engine.queued(WorkKind.WAKE_AGENT_SESSION)
+    (item,) = engine.queued(AgentSessionWorkKind.WAKE_AGENT_SESSION)
     assert item.available_at <= utcnow(), "its time has come"
     payload = WakeAgentSessionPayload.model_validate(dict(item.payload))
     woken = await engine.managers.agent_sessions.wake_agent_session(
@@ -158,7 +161,7 @@ async def test_a_park_only_a_person_clears_asks_for_no_wake(engine: Engine) -> N
         ctx, session.id, epoch, loop, step_guard_park()
     )
     assert parked.park is not None and parked.park.retry_at is None
-    assert engine.queued(WorkKind.WAKE_AGENT_SESSION) == []
+    assert engine.queued(AgentSessionWorkKind.WAKE_AGENT_SESSION) == []
     # Nothing but its park's own wake unlocks it.
     budget_wake = Park(reason=ParkReason.SPEND_BUDGET, unlock="b", retry_at=utcnow())
     assert (
@@ -226,14 +229,14 @@ async def test_a_call_no_window_holds_parks_for_a_raise_which_wakes_it(engine: E
         assert (parked.park.reason, parked.park.unlock) == (ParkReason.SPEND_BUDGET, str(line.id))
         assert parked.park.retry_at is None, "a fresh window refuses it too"
         on_budget.append(session.id)
-    assert engine.queued(WorkKind.WAKE_AGENT_SESSION) == []
+    assert engine.queued(AgentSessionWorkKind.WAKE_AGENT_SESSION) == []
     waiting, epoch, loop = await running(engine, admin)
     await managers.agent_sessions.park(admin, waiting.id, epoch, loop, step_guard_park())
 
     await managers.spend_budgets.change_amount(
         admin, line.id, Amount(cost_micros=5_000), line.version
     )
-    (item,) = engine.queued(WorkKind.WAKE_AGENT_SESSIONS)
+    (item,) = engine.queued(AgentSessionWorkKind.WAKE_AGENT_SESSIONS)
     assert (item.target_id, dict(item.payload)) == (admin.org_id, {"reason": "spend_budget"})
     assert await managers.agent_sessions.wake_parked(admin, ParkReason.SPEND_BUDGET) == 2
     for agent_session_id in on_budget:
@@ -294,7 +297,7 @@ async def test_a_runs_budget_caps_the_run_alone_and_its_close_lets_the_session_g
     await managers.agent_sessions.park(admin, elsewhere.id, other_epoch, other_loop, other_park)
 
     await managers.spend_budgets.close_spend_budget(admin, run.id)
-    (item,) = engine.queued(WorkKind.WAKE_AGENT_SESSIONS)
+    (item,) = engine.queued(AgentSessionWorkKind.WAKE_AGENT_SESSIONS)
     wake = WakeAgentSessionsPayload.model_validate(dict(item.payload))
     assert await managers.agent_sessions.wake_parked(admin, wake.reason, wake.unlock) == 1
     woken = await managers.agent_sessions.get_agent_session(admin, session.id)
@@ -338,7 +341,7 @@ async def test_a_call_open_holds_refuse_wakes_soon_and_fits_once_they_settle(
     assert park.retry_at == now + HOLD_RETRY
     assert month_end is not None and now + HOLD_RETRY < month_end
     await managers.agent_sessions.park(admin, session.id, epoch, loop, park)
-    (wake,) = engine.queued(WorkKind.WAKE_AGENT_SESSION)
+    (wake,) = engine.queued(AgentSessionWorkKind.WAKE_AGENT_SESSION)
     assert wake.available_at == park.retry_at
 
     await managers.spend_budget_gate.settle(

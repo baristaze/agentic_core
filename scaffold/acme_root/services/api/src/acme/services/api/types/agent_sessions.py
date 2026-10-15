@@ -11,7 +11,6 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, Field, model_validator
 
-from acme.integrations.model_providers.types import StopReason
 from acme.om.agent_sessions.types.agent_session import AgentSessionStatus
 from acme.om.agent_steps.types.agent_step import Actor, AgentStepType, Origin
 from acme.om.agent_steps.types.content import MAX_NAME
@@ -22,18 +21,31 @@ from acme.om.attribution.types.principal import MAX_KIND
 from acme.om.tools.types.call import MAX_REPORT
 from acme.services.api.types.common import RequestBody, View
 
+class StopReason(StrEnum):
+    """Why a model's response stopped, as the wire carries it: the model
+    providers' own reason, by value. A refusal is a response the agent kind
+    handles, never a provider error."""
+
+    END_TURN = "end_turn"
+    TOOL_USE = "tool_use"
+    OUTPUT_LIMIT = "output_limit"  # cut by its output bound: never complete
+    REFUSAL = "refusal"
+    CONTENT_FILTER = "content_filter"
+    PAUSE = "pause"  # the provider paused a long turn; the next call continues it
+
+
 MAX_MESSAGE = 100_000
 """The most characters one message carries."""
 
 
-class LineParkView(View):
-    """The line a loop waits in: the request, what it asked for (a kind,
-    and the resource when it named one), its place (1 is next in some line
-    it stands in), and the estimate of its wait."""
+class WaitLineParkView(View):
+    """The wait line a loop stands in: the request, what it asked for (a
+    kind, and the leasable resource when it named one), its place (1 is next
+    in some wait line it stands in), and the estimate of its wait."""
 
     request_id: UUID
     kind: str
-    resource_id: UUID | None
+    leasable_resource_id: UUID | None
     place: int | None
     estimate_seconds: float | None
 
@@ -49,7 +61,7 @@ class ParkView(View):
     reason: ParkReason
     unlock: str
     retry_at: datetime | None
-    line: LineParkView | None = None
+    wait_line: WaitLineParkView | None = None
     cause: str | None
     holder: UUID | None = None
 

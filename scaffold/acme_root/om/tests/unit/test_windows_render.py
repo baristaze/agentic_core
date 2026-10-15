@@ -7,8 +7,6 @@ render as data."""
 from collections.abc import Sequence
 from itertools import pairwise
 
-from contracts.histories import MAIN_FILL, History
-
 from acme.integrations.model_providers.calls import Message, ModelCall, ToolSpec
 from acme.integrations.model_providers.types import ProviderName, Usage
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
@@ -27,6 +25,8 @@ from acme.om.language_models.types.fill import Fill
 from acme.om.windows import rules
 from acme.om.windows.types.kind import KindPrompts
 from acme.om.windows.types.policy import CompactionPolicy
+
+from contracts.histories import MAIN_FILL, History
 
 FILL = Fill(
     provider=ProviderName.ANTHROPIC,

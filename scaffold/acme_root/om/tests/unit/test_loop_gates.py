@@ -10,7 +10,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.loops import ASSISTANT, BUILDER, DELIVERY, Clock, call, loop_over, reply, said
 
 from acme.integrations.model_providers.calls import ModelCall
 from acme.om.agent_steps.types.agent_step import AgentStepType
@@ -19,10 +18,12 @@ from acme.om.agents.loop_rules import SPENDER_UNLOCK
 from acme.om.agents.types.run import RunEnd
 from acme.om.attribution.types.principal import Principal
 from acme.om.context import TenantContext
-from acme.om.exceptions import GateParked, PlatformException, SpenderUnknown
+from acme.om.exceptions import GateParked, OmException, SpenderUnknown
 from acme.om.language_models.types.fill import Fill, ModelRole
 from acme.om.root import Managers
 from acme.om.windows.impl.gate import CallGateSpendBudgetImpl
+
+from contracts.loops import ASSISTANT, BUILDER, DELIVERY, Clock, call, loop_over, reply, said
 
 NORM = Park(reason=ParkReason.PERSON, unlock="norm")
 """A gate's own park: a call far above its session's norm, for a person."""
@@ -37,8 +38,8 @@ class Parking(CallGateSpendBudgetImpl):
         managers: Managers,
         clock: Clock,
         *,
-        turn: PlatformException | None = None,
-        job: PlatformException | None = None,
+        turn: OmException | None = None,
+        job: OmException | None = None,
     ) -> None:
         super().__init__(
             managers.spend_budget_gate,
@@ -97,7 +98,7 @@ IDS = ["gate-parked", "spender-unknown"]
 
 @pytest.mark.parametrize(("raised", "park"), CASES, ids=IDS)
 async def test_a_gate_that_parks_a_model_call_parks_the_loop_where_it_says(
-    tmp_path: Path, raised: PlatformException, park: Park
+    tmp_path: Path, raised: OmException, park: Park
 ) -> None:
     gates: list[Parking] = []
 
@@ -127,7 +128,7 @@ async def test_a_gate_that_parks_a_model_call_parks_the_loop_where_it_says(
 
 @pytest.mark.parametrize(("raised", "park"), CASES, ids=IDS)
 async def test_a_gate_that_parks_a_spending_job_parks_the_loop_and_starts_nothing(
-    tmp_path: Path, raised: PlatformException, park: Park
+    tmp_path: Path, raised: OmException, park: Park
 ) -> None:
     gates: list[Parking] = []
 

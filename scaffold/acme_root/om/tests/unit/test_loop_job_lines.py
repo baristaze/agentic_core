@@ -1,6 +1,6 @@
 """A job's call in line for a leased resource, over the memory storage and
 the scripted provider: a job tool whose work runs on a held resource asks
-in line, and its loop parks on `resource` at once, naming its place and
+in line, and its loop parks on `leasable_resource` at once, naming its place and
 the job; the grant starts the job in its own commit, the park moves to
 the job's, and the job's result answers the call, with no model call and
 no notice between the ask and the answer; a free resource's grant starts
@@ -15,7 +15,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.loops import ALLOWED, Loop, call, loop_over, reply, said
 from unit.test_loop_jobs import cancel
 from unit.test_loop_lines import an_ask, notices, unlocked
 
@@ -35,19 +34,21 @@ from acme.om.agents import line_rules as lines
 from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
 from acme.om.agents.types.run import RunEnd
 from acme.om.attribution.types.authority import AuthorityMode
-from acme.om.base import Platform, new_id, utcnow
+from acme.om.base import OmBase, new_id, utcnow
 from acme.om.context import TenantContext
 from acme.om.leases import LeasesManagerInterface
-from acme.om.leases.impl.kinds import NoopResourceKindImpl
+from acme.om.leases.impl.kinds import NoopLeasableResourceKindImpl
+from acme.om.leases.types.leasable_resource import LeasableResource, LeasableResourceKind
 from acme.om.leases.types.lease import JobClaim, Lease, LeaseStatus
 from acme.om.leases.types.request import EndReason, LeaseRequest, RequestStatus
-from acme.om.leases.types.resource import Resource, ResourceKind
 from acme.om.outbox.types.row import OutboxRow, outbox_row
 from acme.om.tools.tool import JobToolInterface, ToolRuntime
 from acme.om.tools.types.call import JobCompletion, JobHandle, JobStarted
 from acme.om.tools.types.policy import Target
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolMode, ToolSpec
 from acme.om.work.types.work_item import WorkItem, WorkKind, work_row_kind
+
+from contracts.loops import ALLOWED, Loop, call, loop_over, reply, said
 
 
 class Docking(ToolInput):
@@ -73,7 +74,7 @@ class Dock(JobToolInterface):
             mode=ToolMode.JOB,
         )
         self.leases: LeasesManagerInterface | None = None
-        self.resource_id: UUID | None = None
+        self.leasable_resource_id: UUID | None = None
         self.cancelled: list[JobHandle] = []
 
     @property
@@ -88,11 +89,11 @@ class Dock(JobToolInterface):
     ) -> None:
         return None
 
-    async def run(
-        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
-    ) -> Platform:
-        assert self.leases is not None and self.resource_id is not None
-        ask = lines.in_line(an_ask(self.resource_id), runtime.agent_session_id, runtime.key)
+    async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
+        assert self.leases is not None and self.leasable_resource_id is not None
+        ask = lines.in_line(
+            an_ask(self.leasable_resource_id), runtime.agent_session_id, runtime.key
+        )
         standing = await self.leases.ask(ctx, ask)
         return JobStarted(handle="dock-1", request_id=standing.request.id)
 
@@ -121,9 +122,9 @@ DOCKER = AgentKind(
 
 
 def starts_the_job(
-    self: NoopResourceKindImpl,
+    self: NoopLeasableResourceKindImpl,
     ctx: TenantContext,
-    resource: Resource,
+    resource: LeasableResource,
     request: LeaseRequest,
     lease: Lease,
 ) -> tuple[OutboxRow, ...]:
@@ -132,23 +133,25 @@ def starts_the_job(
     return (outbox_row(ctx, work_row_kind(WorkKind.NOOP), lease.id, {}),)
 
 
-async def a_resource(loop: Loop, dock: Dock, *, held: bool) -> tuple[Resource, Lease | None]:
+async def a_leasable_resource(
+    loop: Loop, dock: Dock, *, held: bool
+) -> tuple[LeasableResource, Lease | None]:
     """The resource the dock's job runs on, held by its owner when `held`."""
     now = utcnow()
     resource = await loop.managers.leases.register(
         loop.owner,
-        Resource(
+        LeasableResource(
             id=new_id(),
             created_at=now,
             updated_at=now,
             created_by=loop.owner.user_id,
             updated_by=loop.owner.user_id,
-            kind=ResourceKind.NOOP,
+            kind=LeasableResourceKind.NOOP,
             ref_id=new_id(),
             max_term_seconds=300,
         ),
     )
-    dock.leases, dock.resource_id = loop.managers.leases, resource.id
+    dock.leases, dock.leasable_resource_id = loop.managers.leases, resource.id
     if not held:
         return resource, None
     holding = await loop.managers.leases.ask(loop.owner, an_ask(resource.id))
@@ -158,13 +161,13 @@ async def a_resource(loop: Loop, dock: Dock, *, held: bool) -> tuple[Resource, L
 
 async def docking(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, held: bool = True
-) -> tuple[Loop, Dock, Resource, Lease | None]:
+) -> tuple[Loop, Dock, LeasableResource, Lease | None]:
     """A loop whose `docker` kind runs the dock's job on a resource, whose
     grant from now on starts that job."""
     dock = Dock()
     loop = loop_over(tmp_path, kinds=(DOCKER,), extra=(dock,))
-    resource, holding = await a_resource(loop, dock, held=held)
-    monkeypatch.setattr(NoopResourceKindImpl, "grant_rows", starts_the_job)
+    resource, holding = await a_leasable_resource(loop, dock, held=held)
+    monkeypatch.setattr(NoopLeasableResourceKindImpl, "grant_rows", starts_the_job)
     return loop, dock, resource, holding
 
 
@@ -231,9 +234,13 @@ async def test_a_job_tool_waits_in_line_and_its_grant_starts_the_job_with_no_mod
     # The call parks in line at once: the stop reason names the request, its
     # place, and the job it waits to start, and tries again at the job's
     # deadline.
-    assert (park.reason, park.unlock) == (ParkReason.RESOURCE, "grant")
-    assert park.line is not None and park.job is not None and park.retry_at is not None
-    assert (park.line.request_id, park.line.resource_id, park.line.place) == (
+    assert (park.reason, park.unlock) == (ParkReason.LEASABLE_RESOURCE, "grant")
+    assert park.wait_line is not None and park.job is not None and park.retry_at is not None
+    assert (
+        park.wait_line.request_id,
+        park.wait_line.leasable_resource_id,
+        park.wait_line.place,
+    ) == (
         request.id,
         resource.id,
         1,
@@ -246,7 +253,7 @@ async def test_a_job_tool_waits_in_line_and_its_grant_starts_the_job_with_no_mod
     await loop.managers.agent_sessions.wake_agent_session(loop.owner, agent_session_id, park)
     again = await loop.loops.run(loop.owner, agent_session_id)
     assert again.end is RunEnd.PARKED and again.park is not None
-    assert again.park.line is not None and again.park.job is not None
+    assert again.park.wait_line is not None and again.park.job is not None
     assert len(loop.anthropic.calls) == 1, "no model call while the job waits in line"
 
     # The resource frees: the grant queues the job and the session's notice
@@ -261,7 +268,7 @@ async def test_a_job_tool_waits_in_line_and_its_grant_starts_the_job_with_no_mod
 
     # The park moves to the job's, with no model call.
     assert moved.end is RunEnd.PARKED and moved.park is not None
-    assert (moved.park.reason, moved.park.unlock, moved.park.line) == (
+    assert (moved.park.reason, moved.park.unlock, moved.park.wait_line) == (
         ParkReason.JOB,
         str(request.id),
         None,
@@ -302,7 +309,7 @@ async def test_a_free_resources_grant_starts_the_job_and_the_loop_parks_on_it(
 
     _, request, park = await asked(loop)
 
-    assert (park.reason, park.unlock, park.line) == (ParkReason.JOB, str(request.id), None)
+    assert (park.reason, park.unlock, park.wait_line) == (ParkReason.JOB, str(request.id), None)
     lease = (await loop.managers.leases.get_request(loop.owner, request.id)).lease
     assert lease is not None
     assert await the_job(loop, lease) is not None, "the grant queued the job"
@@ -321,7 +328,7 @@ async def test_a_grant_between_the_read_and_the_park_still_reaches_the_jobs_call
     ) -> object:
         # The resource frees after the run read the request waiting, and
         # before its park lands: the grant finds no park to clear.
-        if park.line is not None:
+        if park.wait_line is not None:
             await loop.managers.leases.release(loop.owner, holding.id)
         return await park_as_written(ctx, agent_session_id, epoch, loop_id, park)
 
@@ -366,7 +373,7 @@ async def test_a_session_cancelled_while_its_job_waits_in_line_leaves_it_and_no_
     assert run.outcome is LoopOutcome.CANCELLED
     left = (await loop.managers.leases.get_request(loop.owner, request.id)).request
     assert (left.status, left.end_reason) == (RequestStatus.CANCELLED, EndReason.WAITER_GONE)
-    assert (await loop.managers.leases.line(loop.owner, resource.id)).requests == ()
+    assert (await loop.managers.leases.wait_line(loop.owner, resource.id)).requests == ()
     assert [job.key for job in dock.cancelled] == [request.id], "the job is cancelled"
     (answer,) = [s for s in await loop.history(agent_session_id) if s.responds_to == request.id]
     assert isinstance(answer.header, ToolResponseHeader)

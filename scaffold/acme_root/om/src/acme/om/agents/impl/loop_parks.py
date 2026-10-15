@@ -6,6 +6,7 @@ told to the model."""
 import logging
 from collections.abc import Sequence
 
+from acme.om.agent_sessions.kinds import AGENT_SESSION_WAITER
 from acme.om.agent_steps.types.agent_step import AgentStep
 from acme.om.agent_steps.types.header import (
     ControlCommand,
@@ -32,7 +33,7 @@ from acme.om.exceptions import (
     PrincipalLapsed,
 )
 from acme.om.leases.types.lease import LeaseStatus
-from acme.om.leases.types.request import RequestStatus, Standing, WaiterKind
+from acme.om.leases.types.request import RequestStatus, Standing
 from acme.om.tools.rules import (
     response_id,
 )
@@ -99,7 +100,7 @@ class LoopParks(LoopCore):
         # A loop that ends waits on nothing: its session leaves every line
         # before the loop is closed, and a run that ends it again leaves
         # again, finding nothing.
-        await self._leases.leave(run.ctx, WaiterKind.AGENT_SESSION, run.agent_session_id)
+        await self._leases.leave(run.ctx, AGENT_SESSION_WAITER, run.agent_session_id)
         step = rules.ended_step(
             new_id(), self._clock(), run.agent_session_id, run.loop_id, outcome, cause=cause
         )
@@ -112,11 +113,11 @@ class LoopParks(LoopCore):
     async def _park(self, run: RunState, park: Park) -> LoopRun:
         await self._keep(run)
         await self._sessions.park(run.ctx, run.agent_session_id, run.epoch, run.loop_id, park)
-        if park.line is not None and park.job is not None:
+        if park.wait_line is not None and park.job is not None:
             # A job's call in line: a grant, or the request's end, that came
             # after the run read the request and before the park found no
             # park to clear, so the run reads it again and clears its own.
-            standing = await self._standing(run, park.line.request_id)
+            standing = await self._standing(run, park.wait_line.request_id)
             if standing is None or standing.request.status is not RequestStatus.WAITING:
                 await self._sessions.wake_agent_session(run.ctx, run.agent_session_id, park)
         parent_id = run.session.parent_id

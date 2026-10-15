@@ -33,10 +33,6 @@ class WorkKind(StrEnum):
     WAKE_PARKED = "WAKE_PARKED"  # the reason an org's records parked for is gone
     DELETE_ACCOUNT = "DELETE_ACCOUNT"  # a deleted account's providers, then its personal org
     DELETE_ORG = "DELETE_ORG"  # a closed team org: its providers, then the org
-    WAKE_AGENT_SESSION = "WAKE_AGENT_SESSION"  # a parked session's retry time has come
-    WAKE_AGENT_SESSIONS = "WAKE_AGENT_SESSIONS"  # the reason an org's sessions parked for is gone
-    LOOP = "LOOP"  # a session's loop, for the session runner to run
-    LEASE_NOTICE = "LEASE_NOTICE"  # a session's lease request answered, or its lease revoked
 
 
 WORK_ROW_PREFIX = "work."

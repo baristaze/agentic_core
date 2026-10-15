@@ -7,19 +7,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.agent_session_storage import make_agent_session
-from contracts.agent_step_storage import (
-    a_person,
-    make_event,
-    make_message,
-    make_parked,
-    make_request,
-    make_response,
-    make_tool_response,
-)
-from contracts.doubles import context, model_request, next_attribution
-from contracts.factories import make_org
-from contracts.tools import stand_ins
 from pydantic import ValidationError
 
 from acme.infra.impl.local import InfraLocalImpl
@@ -90,6 +77,20 @@ from acme.om.root import Managers, build_managers
 from acme.om.spend_budgets.types.amount import Amount
 from acme.om.storage.impl.memory import StorageMemoryImpl
 from acme.om.tenancy.rules import permissions_of
+
+from contracts.agent_session_storage import make_agent_session
+from contracts.agent_step_storage import (
+    a_person,
+    make_event_step,
+    make_message,
+    make_parked,
+    make_request,
+    make_response,
+    make_tool_response,
+)
+from contracts.doubles import context, model_request, next_attribution
+from contracts.factories import make_org
+from contracts.tools import stand_ins
 
 SESSION = new_id()
 
@@ -219,7 +220,7 @@ def test_only_a_principals_message_instructs() -> None:
         "a parent's message to its child": (parent, Trust.INSTRUCTION),
         "the engine's notice": (notice, Trust.INSTRUCTION),
         "an agent's message from no parent": (handed, Trust.DATA),
-        "an event from outside": (make_event(SESSION), Trust.DATA),
+        "an event from outside": (make_event_step(SESSION), Trust.DATA),
         "a tool's output": (make_tool_response(SESSION, new_id(), new_id()), Trust.DATA),
         "a summary of the window": (summary, Trust.DATA),
         "the model's request": (request, None),
@@ -293,7 +294,7 @@ def test_a_request_records_the_latest_principal_who_spoke_and_nothing_after_move
     first, routed, agents, automation = a_person(), a_person(), a_person(), a_person()
     steps = [
         make_message(SESSION, principal=first),
-        make_event(SESSION, principal=routed),
+        make_event_step(SESSION, principal=routed),
         from_an_agent(SESSION, agents, origin=Origin.PARENT),
     ]
     assert speaker_after(None, steps) == first, "an event or an agent never speaks"
@@ -313,7 +314,7 @@ def test_a_message_is_said_in_the_name_of_the_context_that_appends_it() -> None:
     claimed, appender = a_person(), a_person().model_copy(update={"key_id": new_id()})
     said = said_by(make_message(SESSION, principal=claimed), appender)
     assert isinstance(said.header, InputHeader) and said.header.principal == appender
-    event = make_event(SESSION, principal=claimed)
+    event = make_event_step(SESSION, principal=claimed)
     assert said_by(event, appender) == event, "an event is routed, never said"
     parent = from_an_agent(SESSION, claimed, origin=Origin.PARENT)
     assert said_by(parent, appender) == parent
@@ -438,7 +439,7 @@ async def test_a_recorded_loop_names_who_acted_on_whose_authority_and_who_paid(
     result = make_tool_response(sid, loop, call.id)
     await steps.append_agent_steps(ctx, sid, epoch, [call, result])
     routed = a_person()
-    event = await say(managers, ctx, sid, make_event(sid, principal=routed))
+    event = await say(managers, ctx, sid, make_event_step(sid, principal=routed))
     again = await attribution.attribute_request(ctx, sid, stored.seq, {event.id: event.seq})
     second = make_request(
         sid, loop, (result.id, event.id), spender=again.spender, speaker=again.speaker
@@ -498,14 +499,14 @@ async def test_the_person_who_asked_pays_and_nobody_else_ever_does(
     attribution = managers.attribution
     with pytest.raises(NoSpender):
         await next_attribution(managers, owner, sid)
-    await say(managers, owner, sid, make_event(sid, principal=a_person()))
+    await say(managers, owner, sid, make_event_step(sid, principal=a_person()))
     with pytest.raises(NoSpender):
         await next_attribution(managers, owner, sid)
     first = await say(managers, owner, sid)
     paid = await next_attribution(managers, owner, sid)
     assert (paid.speaker, paid.spender) == (person_of(owner), person_of(owner))
     await model_request(managers, owner, sid, [first])
-    await say(managers, owner, sid, make_event(sid, principal=a_person()))
+    await say(managers, owner, sid, make_event_step(sid, principal=a_person()))
     await say(managers, owner, sid, from_an_agent(sid, a_person(), origin=Origin.PARENT))
     carried = await next_attribution(managers, owner, sid)
     assert carried.spender == person_of(owner), "the current spender carries over"
@@ -646,7 +647,7 @@ async def test_the_mark_is_sticky_from_the_first_data_and_passes_to_children(
         ctx, parent.id, Spawn(id=new_id(), kind="delivery", title="early", objective="look")
     )
     assert not clean.untrusted and not await attribution.is_marked(ctx, clean.id)
-    await say(managers, ctx, parent.id, make_event(parent.id))
+    await say(managers, ctx, parent.id, make_event_step(parent.id))
     assert await attribution.is_marked(ctx, parent.id)
     cached = await managers.agent_sessions.project_status(ctx, parent.id)
     assert cached.untrusted
@@ -686,7 +687,7 @@ async def test_a_marked_session_holding_private_data_needs_a_person_to_act_outwa
     inward = CallReach(outward=False, holds_private=True)
     nothing_private = CallReach(outward=True, holds_private=False)
     assert not (await attribution.authorize_call(ctx, sid, OUTWARD)).needs_person
-    await say(managers, ctx, sid, make_event(sid))
+    await say(managers, ctx, sid, make_event_step(sid))
     assert (await attribution.authorize_call(ctx, sid, OUTWARD)).needs_person
     assert not (await attribution.authorize_call(ctx, sid, inward)).needs_person
     assert not (await attribution.authorize_call(ctx, sid, nothing_private)).needs_person

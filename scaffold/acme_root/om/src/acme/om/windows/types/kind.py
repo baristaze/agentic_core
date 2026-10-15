@@ -7,10 +7,10 @@ value."""
 from pydantic import Field
 
 from acme.integrations.model_providers.calls import OutputSchema, ToolSpec
-from acme.om.base import Platform
+from acme.om.base import OmBase
 
 
-class KindPrompts(Platform):
+class KindPrompts(OmBase):
     """An agent kind's prompts, in order, at `version`; the standing text its
     session pinned, which renders after them, empty for none; the tools it
     offers, rendered sorted by name, then those its session's loads added,

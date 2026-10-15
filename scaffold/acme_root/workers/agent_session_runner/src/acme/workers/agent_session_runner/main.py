@@ -24,10 +24,11 @@ from acme.infra.observability import (
     name_process,
 )
 from acme.infra.trust import install_trust_store
+from acme.om.agent_sessions.kinds import LOOP_LANE, AgentSessionWorkKind
 from acme.om.agents.types.kind import AgentKind
+from acme.om.root import KINDS
 from acme.om.tools.attachments import AttachmentReaderInterface
 from acme.om.tools.tool import ToolInterface
-from acme.om.work.types.work_item import WorkKind, relayed_lane
 from acme.workers.agent_session_runner.container import RunnerContainer
 from acme.workers.agent_session_runner.runs import LoopHandlerImpl
 from acme.workers.agent_session_runner.settings import AgentSessionRunnerSettings
@@ -40,10 +41,10 @@ log = logging.getLogger(__name__)
 def claimed_lane(settings: AgentSessionRunnerSettings, lane: str | None = None) -> str:
     """The lane the runner claims from: `--lane`, else `ACME_RUNNER_LANE`. A
     lane the relay lands no `LOOP` item on is refused, naming both, since a
-    runner there claims nothing while every session waits. A layer that
-    lands its loops on a lane of its own registers it in `WORK_LANES`."""
+    runner there claims nothing while every session waits. The relay lands
+    them on the lane their kind is registered on, `LOOP_LANE`."""
     claimed = lane or settings.runner_lane
-    relayed = relayed_lane(WorkKind.LOOP)
+    relayed = LOOP_LANE
     if claimed != relayed:
         raise ValueError(
             f"the runner claims from lane {claimed!r} (--lane or ACME_RUNNER_LANE), "
@@ -73,7 +74,10 @@ def build_runner(container: RunnerContainer, lane: str | None = None) -> WorkerL
         work=managers.work,
         outbox=managers.outbox,
         purges={},
-        handlers={WorkKind.LOOP: LoopHandlerImpl(managers.loop, managers.agent_sessions)},
+        kinds=KINDS,
+        handlers={
+            AgentSessionWorkKind.LOOP: LoopHandlerImpl(managers.loop, managers.agent_sessions)
+        },
         topics=container.infra.get_topics(),
         liveness=container.infra.get_cache(CacheScope.WORKER_LIVENESS),
         options=loop_options(container.settings, lane),

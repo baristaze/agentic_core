@@ -1,9 +1,10 @@
 import pytest
-from contracts.agent_session_storage import AgentSessionStorageContract
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.storage.impl.postgres import AgentSessionStoragePostgresImpl
 from acme.om.storage.impl.pg_base import LoginSessions
+
+from contracts.agent_session_storage import AgentSessionStorageContract
 
 pytestmark = pytest.mark.integration
 

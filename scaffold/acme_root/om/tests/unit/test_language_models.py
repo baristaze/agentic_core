@@ -6,9 +6,6 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from contracts.agent_step_storage import make_message
-from contracts.doubles import APP, context
-from contracts.fill_set_storage import HAIKU, SOL, SONNET
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.integrations.model_providers.types import Effort, ProviderName
@@ -51,6 +48,10 @@ from acme.om.language_models.types.fill import (
 from acme.om.root import Managers, build_managers
 from acme.om.spend_budgets.impl.pricing import PricingTableImpl
 from acme.om.storage.impl.memory import StorageMemoryImpl
+
+from contracts.agent_step_storage import make_message
+from contracts.doubles import APP, context
+from contracts.fill_set_storage import HAIKU, SOL, SONNET
 
 UNLISTED = Fill(
     provider=ProviderName.ANTHROPIC,

@@ -31,7 +31,7 @@ from acme.infra.transports import (
     TransportInterface,
 )
 from acme.om.agent_steps.types.header import ToolFailure
-from acme.om.base import Platform
+from acme.om.base import OmBase
 from acme.om.context import TenantContext
 from acme.om.exceptions import ToolFailed
 from acme.om.tools.rules import command_text
@@ -218,9 +218,7 @@ class ToolInterface(ABC):
         ...
 
     @abstractmethod
-    async def run(
-        self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime
-    ) -> Platform:
+    async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
         """Does the call and returns its output, an instance of the spec's
         `output_model`; a job tool starts its work and answers `JobStarted`.
         A failure is a `ToolFailed` with its class, decided here, where it

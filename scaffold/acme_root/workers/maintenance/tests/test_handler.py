@@ -3,6 +3,7 @@ from pathlib import Path
 
 from worker_support import RecordingHandler, build_container, make_item, sign_in
 
+from acme.om.agent_sessions.kinds import AgentSessionWorkKind
 from acme.om.root import KINDS
 from acme.om.tenancy.rules import ROLE_PERMISSIONS
 from acme.om.work.types.work_item import WorkKind

@@ -11,11 +11,11 @@ from pydantic import Field
 from acme.integrations.model_providers.calls import ModelCall
 from acme.om.agent_steps.types.content import Attachment
 from acme.om.attribution.types.authority import RequestAttribution
-from acme.om.base import Platform
+from acme.om.base import OmBase
 from acme.om.language_models.types.fill import ModelRole
 
 
-class ContextWindow(Platform):
+class ContextWindow(OmBase):
     """The steps one request of `role` reads, by reference: the fill it is
     sized for, the fill's window (`max_tokens`), what the window holds
     (`used_tokens`: the size the provider reported for the last call over
@@ -33,7 +33,7 @@ class ContextWindow(Platform):
     summary_id: UUID | None = None
 
 
-class RenderedRequest(Platform):
+class RenderedRequest(OmBase):
     """A request as the renderer made it. `delivers` are the new inputs it
     carries, which its step references; `attachments` are the placeholders
     whose bytes the call takes from blob storage; `prompt_hash` is keyed by

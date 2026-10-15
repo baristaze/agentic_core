@@ -15,7 +15,7 @@ from uuid import UUID
 from pydantic import Field
 
 from acme.om.agent_steps.types.content import Stored
-from acme.om.base import Created, Identifiable, Platform
+from acme.om.base import Created, Identifiable, OmBase
 from acme.om.spend_budgets.types.amount import Amount, Spend
 from acme.om.spend_budgets.types.spend_budget import MAX_KEY, SpendBudgetScope
 
@@ -24,7 +24,7 @@ MAX_SCOPES = 16
 person who pays, a project, a team, the tenant, and room beside them."""
 
 
-class SpendHoldRequest(Platform):
+class SpendHoldRequest(OmBase):
     """What the engine asks the gate before a model call or a job that spends:
     who pays, the scopes it is charged to, and its worst case."""
 
@@ -36,7 +36,7 @@ class SpendHoldRequest(Platform):
     purpose: Stored = Field(min_length=1, max_length=MAX_KEY)  # a model role, or a job's kind
 
 
-class SpendHoldLine(Platform):
+class SpendHoldLine(OmBase):
     """One budget a hold is charged to, as the gate found it: its window at
     the time of the call, and its amount then."""
 
@@ -67,12 +67,12 @@ class NotBilledProof(StrEnum):
     NEVER_SENT = "never_sent"  # no connection carried the request
 
 
-class NotBilled(Platform):
+class NotBilled(OmBase):
     kind: Literal["not_billed"] = "not_billed"
     proof: NotBilledProof
 
 
-class Billed(Platform):
+class Billed(OmBase):
     """The usage the provider reported with its response, or that was
     retrieved later, priced at list price."""
 
@@ -80,7 +80,7 @@ class Billed(Platform):
     usage: Spend
 
 
-class BillUnknown(Platform):
+class BillUnknown(OmBase):
     """A call sent and never answered with its usage: a broken stream, or a
     crash after the send. It is usually billed, so the whole hold counts."""
 
@@ -100,7 +100,7 @@ class SpendSettlement(Identifiable, Created):
     overshoot: Spend | None = None  # recorded and alarmed, never absorbed
 
 
-class SpendTally(Platform):
+class SpendTally(OmBase):
     """One budget's count in one window: what open holds reserve, and what
     settlements spent. A cost no price gave counts as nothing here: the gate
     refuses such a call on every line that bounds cost."""

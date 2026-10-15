@@ -49,7 +49,6 @@ class WaiterKind(StrEnum):
     namespace's module, never here."""
 
     ORCHESTRATION = "orchestration"  # a long-running record parked on `resource`
-    AGENT_SESSION = "agent_session"  # an agent session whose loop parks on `resource`
 
 
 class LeaseRequest(Identifiable, Trackable):
