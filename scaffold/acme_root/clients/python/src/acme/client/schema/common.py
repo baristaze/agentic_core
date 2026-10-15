@@ -51,6 +51,7 @@ class Permission(StrEnum):
     write = 'write'
     manage_members = 'manage_members'
     manage_keys = 'manage_keys'
+    manage_agent_sessions = 'manage_agent_sessions'
 
 
 class Role(StrEnum):

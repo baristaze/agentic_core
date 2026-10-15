@@ -1508,7 +1508,7 @@ export interface components {
          * Permission
          * @enum {string}
          */
-        Permission: "read" | "write" | "manage_members" | "manage_keys";
+        Permission: "read" | "write" | "manage_members" | "manage_keys" | "manage_agent_sessions";
         /**
          * OwnedOrgRef
          * @description An org named in a refusal: enough to find it and to say which.

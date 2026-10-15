@@ -1,0 +1,3045 @@
+{
+  "components": {
+    "schemas": {
+      "AgentSessionControl": {
+        "description": "The controls a person sends a session out of band. A decision on one\ntool call is a route of its own.",
+        "enum": [
+          "pause",
+          "resume",
+          "cancel",
+          "interrupt",
+          "compact",
+          "unlock",
+          "restore"
+        ],
+        "title": "AgentSessionControl",
+        "type": "string"
+      },
+      "AgentSessionPageView": {
+        "description": "One page of root sessions by id. With `has_more`, the next page\nstarts after the last one's id.",
+        "properties": {
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentSessionView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "title": "AgentSessionPageView",
+        "type": "object"
+      },
+      "AgentSessionStatus": {
+        "enum": [
+          "pending",
+          "running",
+          "parked",
+          "idle"
+        ],
+        "title": "AgentSessionStatus",
+        "type": "string"
+      },
+      "AgentSessionUsageView": {
+        "description": "A page of a session's usage records, oldest first, with the rollup of\neach loop, in the order it first called, and of the whole session. The\nrollups cover every record, whatever the page; `has_more_loops` says the\nsession ran more loops than `loops` holds. With `next_cursor`, the next\npage of `items` starts there.",
+        "properties": {
+          "agent_session_id": {
+            "format": "uuid",
+            "title": "Agent Session Id",
+            "type": "string"
+          },
+          "has_more_loops": {
+            "title": "Has More Loops",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UsageRecordView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "loops": {
+            "items": {
+              "$ref": "#/components/schemas/LoopUsageView"
+            },
+            "title": "Loops",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "$ref": "#/components/schemas/UsageRollupView"
+          }
+        },
+        "required": [
+          "agent_session_id",
+          "items",
+          "next_cursor",
+          "loops",
+          "has_more_loops",
+          "total"
+        ],
+        "title": "AgentSessionUsageView",
+        "type": "object"
+      },
+      "AgentSessionView": {
+        "description": "A session: its kind, its title, and its status, which follows its\nsteps. `pending` while an input waits for a run, `running` while a run\nholds its loop, `parked` while the loop waits, `idle` when no loop is\nopen. `visibility` says who sees it: every member of the org, who may\njoin it, or its creator and its `participants` alone. `steerer` is the\nperson whose messages instruct it, its creator until a hand-off; a\nparticipant's message is data. A sub-agent names none: its parent\nsteers it, and it is seen as its root is.",
+        "properties": {
+          "archived_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "format": "uuid",
+            "title": "Created By",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "kind_version": {
+            "title": "Kind Version",
+            "type": "integer"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "park": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ParkView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "participants": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Participants",
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AgentSessionStatus"
+          },
+          "steerer": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steerer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "visibility": {
+            "$ref": "attribution.json#/components/schemas/Visibility"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "kind",
+          "kind_version",
+          "status",
+          "park",
+          "created_at",
+          "created_by",
+          "archived_at",
+          "visibility",
+          "participants",
+          "steerer",
+          "parent_id"
+        ],
+        "title": "AgentSessionView",
+        "type": "object"
+      },
+      "AgentStepPageView": {
+        "description": "One page of a session's history, after the seq the request named.\nWith `has_more`, the next page starts after the last step's seq.",
+        "properties": {
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentStepView"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "title": "AgentStepPageView",
+        "type": "object"
+      },
+      "AgentStepUsageView": {
+        "description": "What a model call used, as its provider reported it, in disjoint\nclasses, so no token is counted twice.",
+        "properties": {
+          "cache_read": {
+            "title": "Cache Read",
+            "type": "integer"
+          },
+          "cache_write": {
+            "title": "Cache Write",
+            "type": "integer"
+          },
+          "input": {
+            "title": "Input",
+            "type": "integer"
+          },
+          "output": {
+            "title": "Output",
+            "type": "integer"
+          },
+          "thinking": {
+            "title": "Thinking",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "input",
+          "cache_read",
+          "cache_write",
+          "output",
+          "thinking"
+        ],
+        "title": "AgentStepUsageView",
+        "type": "object"
+      },
+      "AgentStepView": {
+        "description": "One step of a session's history, in its order. `text` is what it\nsays: a message's words, a model's answer, a tool's result. The rest is\nits header's, by type: the tools a model response called, why it\nstopped, and what it used; a tool call's tool and the class of its\nfailure; a control's command; a park; a loop's outcome, and its cause\nwhen the engine names one, such as the setup command that failed and\nits exit code; the snapshot a `snapshotted` step names, or a restore\nstarts from. A message names its `author`, and `participant` says it is\na participant's, data, never an instruction. A `switched` step that\nmoved the steer names the new `steerer`, and one that switched who sees\nthe session its `visibility`.",
+        "properties": {
+          "actor": {
+            "$ref": "agent_steps.json#/components/schemas/Actor"
+          },
+          "author": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author"
+          },
+          "cause": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cause"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "$ref": "agent_steps.json#/components/schemas/ControlCommand"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "failure": {
+            "anyOf": [
+              {
+                "$ref": "agent_steps.json#/components/schemas/ToolFailure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "loop_id": {
+            "format": "uuid",
+            "title": "Loop Id",
+            "type": "string"
+          },
+          "origin": {
+            "$ref": "agent_steps.json#/components/schemas/Origin"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "$ref": "agent_steps.json#/components/schemas/LoopOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "park": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ParkView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "participant": {
+            "title": "Participant",
+            "type": "boolean"
+          },
+          "refs": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Refs",
+            "type": "array"
+          },
+          "responds_to": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responds To"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SnapshotView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "steerer": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steerer"
+          },
+          "stop_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StopReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tools",
+            "type": "array"
+          },
+          "type": {
+            "$ref": "agent_steps.json#/components/schemas/AgentStepType"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentStepUsageView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "$ref": "attribution.json#/components/schemas/Visibility"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "seq",
+          "loop_id",
+          "type",
+          "actor",
+          "origin",
+          "responds_to",
+          "refs",
+          "created_at",
+          "text",
+          "tools",
+          "stop_reason",
+          "usage",
+          "tool",
+          "failure",
+          "command",
+          "park",
+          "outcome",
+          "cause",
+          "snapshot",
+          "author",
+          "participant",
+          "steerer",
+          "visibility"
+        ],
+        "title": "AgentStepView",
+        "type": "object"
+      },
+      "Among": {
+        "description": "Which root sessions a person's list holds: sub-agents are read\nthrough their tree.",
+        "enum": [
+          "mine",
+          "visible"
+        ],
+        "title": "Among",
+        "type": "string"
+      },
+      "ControlRequest": {
+        "additionalProperties": false,
+        "description": "A control. An interrupt names the seq of the tool request it stops,\nand a restore the id of a snapshot the session's history names, which\nits workspace's next prepare starts from; no other control names\neither.",
+        "properties": {
+          "command": {
+            "$ref": "#/components/schemas/AgentSessionControl"
+          },
+          "request_seq": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Seq"
+          },
+          "snapshot_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Id"
+          }
+        },
+        "required": [
+          "command"
+        ],
+        "title": "ControlRequest",
+        "type": "object"
+      },
+      "DeadlineRequest": {
+        "additionalProperties": false,
+        "description": "The deadline the session's tree shares, set whole: an instant, or\nnull to take it away. One past now, or none, unlocks every session of\nthe tree parked on the deadline. An instant with no offset names no\nmoment, so it is refused.",
+        "properties": {
+          "deadline": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline"
+          }
+        },
+        "required": [
+          "deadline"
+        ],
+        "title": "DeadlineRequest",
+        "type": "object"
+      },
+      "DecisionRequest": {
+        "additionalProperties": false,
+        "description": "A person's decision on the tool call at a seq. A denial's note is what\nthe model reads.",
+        "properties": {
+          "approve": {
+            "title": "Approve",
+            "type": "boolean"
+          },
+          "note": {
+            "default": "",
+            "maxLength": 100000,
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "approve"
+        ],
+        "title": "DecisionRequest",
+        "type": "object"
+      },
+      "GiveBackRequest": {
+        "additionalProperties": false,
+        "description": "What the person who held the environment did there, which the model\nreads as their message when the loop goes on.",
+        "properties": {
+          "summary": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary"
+        ],
+        "title": "GiveBackRequest",
+        "type": "object"
+      },
+      "JobCompletionRequest": {
+        "additionalProperties": false,
+        "description": "How a job ended, from the system it ran on: the tool's handle for\nthe work, its result as text, and the class of its failure when it\nfailed. A job that spends is counted at its whole hold: no cost is\ntaken over the wire.",
+        "properties": {
+          "failure": {
+            "anyOf": [
+              {
+                "$ref": "agent_steps.json#/components/schemas/ToolFailure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "handle": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Handle",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "maxLength": 1000000,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "handle"
+        ],
+        "title": "JobCompletionRequest",
+        "type": "object"
+      },
+      "LoopUsageView": {
+        "properties": {
+          "loop_id": {
+            "format": "uuid",
+            "title": "Loop Id",
+            "type": "string"
+          },
+          "rollup": {
+            "$ref": "#/components/schemas/UsageRollupView"
+          }
+        },
+        "required": [
+          "loop_id",
+          "rollup"
+        ],
+        "title": "LoopUsageView",
+        "type": "object"
+      },
+      "MessageRequest": {
+        "additionalProperties": false,
+        "description": "A message to the session, said in the caller's name. It wakes an idle\nsession, and a running loop reads it at its next model request.",
+        "properties": {
+          "text": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "MessageRequest",
+        "type": "object"
+      },
+      "ParkView": {
+        "description": "Why a parked loop waits, what clears it, and when it tries again by\nitself; a park only a person clears has no time, and neither has a park\nin line, which names where it stands. `cause` says why in words when the\nengine can name it, such as a workspace base still being built, or a\nkey a provider refused and who must act. A hand-over names `holder`,\nthe user who holds the environment and alone gives it back.",
+        "properties": {
+          "cause": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cause"
+          },
+          "holder": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Holder"
+          },
+          "reason": {
+            "$ref": "agent_steps.json#/components/schemas/ParkReason"
+          },
+          "retry_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry At"
+          },
+          "unlock": {
+            "title": "Unlock",
+            "type": "string"
+          },
+          "wait_line": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WaitLineParkView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "reason",
+          "unlock",
+          "retry_at",
+          "cause"
+        ],
+        "title": "ParkView",
+        "type": "object"
+      },
+      "PrincipalRequest": {
+        "additionalProperties": false,
+        "description": "Who steers the session from here: a participant its steerer hands it\nto. Left out, the caller takes it.",
+        "properties": {
+          "steerer": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steerer"
+          }
+        },
+        "title": "PrincipalRequest",
+        "type": "object"
+      },
+      "SnapshotView": {
+        "description": "A workspace's snapshot a step names: its id, which a restore names,\nthe hash of its bytes keyed by its session, its size in bytes, and the\nworkspace it was taken from.",
+        "properties": {
+          "agent_workspace_id": {
+            "format": "uuid",
+            "title": "Agent Workspace Id",
+            "type": "string"
+          },
+          "hash": {
+            "title": "Hash",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "hash",
+          "size",
+          "agent_workspace_id"
+        ],
+        "title": "SnapshotView",
+        "type": "object"
+      },
+      "StartAgentSessionRequest": {
+        "additionalProperties": false,
+        "description": "A session to start on the latest version of a kind the product runs.",
+        "properties": {
+          "kind": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Kind",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title"
+        ],
+        "title": "StartAgentSessionRequest",
+        "type": "object"
+      },
+      "StopReason": {
+        "description": "Why a model's response stopped, as the wire carries it: the model\nproviders' own reason, by value. A refusal is a response the agent kind\nhandles, never a provider error.",
+        "enum": [
+          "end_turn",
+          "tool_use",
+          "output_limit",
+          "refusal",
+          "content_filter",
+          "pause"
+        ],
+        "title": "StopReason",
+        "type": "string"
+      },
+      "ToolOutputPageView": {
+        "description": "A page of what a session keeps whole outside its window, such as a\nlong tool result: its characters from `start`, the whole tool output's\nlength, and whether more follow.",
+        "properties": {
+          "characters": {
+            "title": "Characters",
+            "type": "integer"
+          },
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "start": {
+            "title": "Start",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "tool_output_id": {
+            "format": "uuid",
+            "title": "Tool Output Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tool_output_id",
+          "start",
+          "text",
+          "characters",
+          "has_more"
+        ],
+        "title": "ToolOutputPageView",
+        "type": "object"
+      },
+      "UsageRecordView": {
+        "description": "One model call a provider billed, as the ledger keeps it: ids, tokens\nby disjoint class, reference cost in millionths (null when no price\napplied), the provider's latency, and the labels of what served it. It\nholds no content, so it reads the same in every storage mode. `agent_step_id`\nis the call's response step; `spend_hold_id` its hold; `tree_id` the\nsession's tree; `kind_version` the agent kind's version the session\nran. `settled_whole` marks a call whose usage was never reported whole\n(a broken stream, a lost run): its cost is its whole hold, and its\ntokens are what a partial reply reported, else 0.",
+        "properties": {
+          "agent_kind": {
+            "title": "Agent Kind",
+            "type": "string"
+          },
+          "agent_session_id": {
+            "format": "uuid",
+            "title": "Agent Session Id",
+            "type": "string"
+          },
+          "agent_step_id": {
+            "format": "uuid",
+            "title": "Agent Step Id",
+            "type": "string"
+          },
+          "cache_read_tokens": {
+            "title": "Cache Read Tokens",
+            "type": "integer"
+          },
+          "cache_write_tokens": {
+            "title": "Cache Write Tokens",
+            "type": "integer"
+          },
+          "cost_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Micros"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "input_tokens": {
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "kind_version": {
+            "title": "Kind Version",
+            "type": "integer"
+          },
+          "latency_ms": {
+            "title": "Latency Ms",
+            "type": "integer"
+          },
+          "loop_id": {
+            "format": "uuid",
+            "title": "Loop Id",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "output_tokens": {
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "settled_whole": {
+            "title": "Settled Whole",
+            "type": "boolean"
+          },
+          "spend_hold_id": {
+            "format": "uuid",
+            "title": "Spend Hold Id",
+            "type": "string"
+          },
+          "thinking_tokens": {
+            "title": "Thinking Tokens",
+            "type": "integer"
+          },
+          "tree_id": {
+            "format": "uuid",
+            "title": "Tree Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "spend_hold_id",
+          "agent_session_id",
+          "tree_id",
+          "loop_id",
+          "agent_step_id",
+          "agent_kind",
+          "kind_version",
+          "role",
+          "provider",
+          "model",
+          "input_tokens",
+          "cache_read_tokens",
+          "cache_write_tokens",
+          "output_tokens",
+          "thinking_tokens",
+          "cost_micros",
+          "latency_ms",
+          "settled_whole"
+        ],
+        "title": "UsageRecordView",
+        "type": "object"
+      },
+      "UsageRollupView": {
+        "description": "The sum of some records. `unpriced` counts the calls no price applied\nto, whose cost is in no figure here: a rollup with any is a floor.\n`settled_whole` counts the calls settled at their whole hold, whose cost\nis in `cost_micros` at the hold, as the ledger counts it.",
+        "properties": {
+          "cache_read_tokens": {
+            "title": "Cache Read Tokens",
+            "type": "integer"
+          },
+          "cache_write_tokens": {
+            "title": "Cache Write Tokens",
+            "type": "integer"
+          },
+          "calls": {
+            "title": "Calls",
+            "type": "integer"
+          },
+          "cost_micros": {
+            "title": "Cost Micros",
+            "type": "integer"
+          },
+          "input_tokens": {
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "latency_ms": {
+            "title": "Latency Ms",
+            "type": "integer"
+          },
+          "output_tokens": {
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "settled_whole": {
+            "title": "Settled Whole",
+            "type": "integer"
+          },
+          "thinking_tokens": {
+            "title": "Thinking Tokens",
+            "type": "integer"
+          },
+          "unpriced": {
+            "title": "Unpriced",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "calls",
+          "input_tokens",
+          "cache_read_tokens",
+          "cache_write_tokens",
+          "output_tokens",
+          "thinking_tokens",
+          "cost_micros",
+          "unpriced",
+          "settled_whole",
+          "latency_ms"
+        ],
+        "title": "UsageRollupView",
+        "type": "object"
+      },
+      "VisibilityRequest": {
+        "additionalProperties": false,
+        "description": "Who sees the session from here: every member of the org, or its\ncreator and its participants alone.",
+        "properties": {
+          "visibility": {
+            "$ref": "attribution.json#/components/schemas/Visibility"
+          }
+        },
+        "required": [
+          "visibility"
+        ],
+        "title": "VisibilityRequest",
+        "type": "object"
+      },
+      "WaitLineParkView": {
+        "description": "The wait line a loop stands in: the request, what it asked for (a\nkind, and the leasable resource when it named one), its place (1 is next\nin some wait line it stands in), and the estimate of its wait.",
+        "properties": {
+          "estimate_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimate Seconds"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "leasable_resource_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leasable Resource Id"
+          },
+          "place": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "kind",
+          "leasable_resource_id",
+          "place",
+          "estimate_seconds"
+        ],
+        "title": "WaitLineParkView",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Acme API: agent_sessions",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v1/admin/orgs/{org_id}/agent-sessions/{agent_session_id}/usage": {
+      "get": {
+        "description": "What one session's model calls used and cost, in every storage mode\n(ADR 1014). Requires the read permission.\n\nThe answer is a `AgentSessionUsageView`: `agent_session_id`; `items`, a page of the\nsession's usage records, oldest first, each with `id`, `created_at`,\n`spend_hold_id`, `agent_session_id`, `tree_id`, `loop_id`, `agent_step_id` (the call's\nresponse step), `agent_kind`, `kind_version`, `role`, `provider`, `model`, `input_tokens`,\n`cache_read_tokens`, `cache_write_tokens`, `output_tokens`,\n`thinking_tokens`, `cost_micros` (reference cost in millionths, null when\nno price applied), `latency_ms`, and `settled_whole` (a call whose usage\nwas never reported whole, counted at its whole hold, its tokens partial\nat most); `next_cursor`, the next page's `cursor`, or null; `loops`, one\n`{loop_id, rollup}` per loop in the order it first called;\n`has_more_loops`; and `total`, the session's rollup. A rollup holds\n`calls`, the five token classes, `cost_micros`, `unpriced` (calls no\nprice applied to, whose cost no figure holds), `settled_whole` (calls\ncounted at their whole hold), and `latency_ms`. The rollups cover every\nrecord, whatever the page.\n\nA record holds ids, counts, money, a duration, and labels, and no\ncontent. `404 not_found` for an unknown org, and for a session the org\nholds no record of, which is how another tenant's session reads.",
+        "operationId": "get_agent_session_usage",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "org_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Org Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent_session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionUsageView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "common.json#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Agent Session Usage",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions": {
+      "get": {
+        "description": "The org's root sessions by id, after `after`: the ones the caller\nmade or takes part in (`mine`), or every one they see (`visible`).",
+        "operationId": "list_sessions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "among",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Among",
+              "default": "visible"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AgentSessionStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionPageView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "common.json#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Sessions",
+        "tags": [
+          "agent_sessions"
+        ]
+      },
+      "post": {
+        "description": "A session on the kind, idle until a message wakes it.",
+        "operationId": "start_agent_session",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          },
+          {
+            "in": "header",
+            "name": "idempotency-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartAgentSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "common.json#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Agent Session",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/{agent_session_id}": {
+      "get": {
+        "operationId": "get_agent_session",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "common.json#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Agent Session",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/{agent_session_id}/calls/{request_seq}/decision": {
+      "post": {
+        "description": "An approval or a denial of the tool call at `request_seq`, as stored.",
+        "operationId": "decide_call",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_seq",
+            "required": true,
+            "schema": {
+              "title": "Request Seq",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          },
+          {
+            "in": "header",
+            "name": "idempotency-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentStepView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "common.json#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decide Call",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/{agent_session_id}/controls": {
+      "post": {
+        "description": "The control as stored, out of band: it never waits behind a message.",
+        "operationId": "send_control",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          },
+          {
+            "in": "header",
+            "name": "idempotency-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControlRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentStepView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "common.json#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send Control",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/{agent_session_id}/deadline": {
+      "put": {
+        "description": "The deadline of the session's tree, moved for every session of it.\nOne past now, or null, unlocks each session parked on the deadline.",
+        "operationId": "set_deadline",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeadlineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "common.json#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Deadline",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/{agent_session_id}/give-back": {
+      "post": {
+        "description": "The holder, in person, gives the environment back with what they\ndid there, and the loop goes on: 403 for anyone else.",
+        "operationId": "give_back",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          },
+          {
+            "in": "header",
+            "name": "idempotency-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GiveBackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "common.json#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Give Back",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/{agent_session_id}/jobs/{key}/completion": {
+      "post": {
+        "description": "How the job of `key` ended, from the system it ran on: the loop that\nwaits on it goes on. 404 for a job the session does not wait on.",
+        "operationId": "complete_job",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          },
+          {
+            "in": "header",
+            "name": "idempotency-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobCompletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "common.json#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Job",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/{agent_session_id}/messages": {
+      "post": {
+        "description": "The message as stored, durable when this answers.",
+        "operationId": "send_message",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          },
+          {
+            "in": "header",
+            "name": "idempotency-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentStepView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "common.json#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send Message",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/{agent_session_id}/participants/{user_id}": {
+      "delete": {
+        "description": "`user_id` takes no part in the session: its creator removes anyone,\nand a participant leaves on their own. 403 for anyone else, 409 for\nits steerer until the steer is handed on.",
+        "operationId": "remove_participant",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "common.json#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Participant",
+        "tags": [
+          "agent_sessions"
+        ]
+      },
+      "put": {
+        "description": "`user_id` takes part in the session: any member joins an org-wide\none, and its creator adds anyone. A private one is joined only by whom\nits creator adds and by its steerer: 403 for any other self-join,\n`manage_agent_sessions` included, and for anyone else's add.",
+        "operationId": "add_participant",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "common.json#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Participant",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/{agent_session_id}/principal": {
+      "put": {
+        "description": "The steer moves, recorded as a step: its steerer hands it to the\nparticipant the body names, or with no body the caller takes it, for a\nsteerer who lapsed with `manage_agent_sessions`. Its tool calls run under the\nsteerer, and a loop parked on a principal who no longer holds goes on.\n403 for anyone else, 422 for one who takes no part in it.",
+        "operationId": "assign_principal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PrincipalRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "common.json#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assign Principal",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/{agent_session_id}/steps": {
+      "get": {
+        "description": "The history in order, strictly after `after_seq`.",
+        "operationId": "get_agent_steps",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after_seq",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "After Seq",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentStepPageView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "common.json#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Agent Steps",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/{agent_session_id}/take-over": {
+      "post": {
+        "description": "The caller, in person, takes the environment to work by hand: the\nloop parks on a hand-over they hold. 409 when another person holds it.",
+        "operationId": "take_over",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "common.json#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Take Over",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/{agent_session_id}/tool-outputs/{tool_output_id}": {
+      "get": {
+        "description": "A page of what the session keeps whole outside its window, from the\ncharacter at `start`: a tool output is written once, so no character's\nplace moves between pages. The policy's page bounds `limit`.",
+        "operationId": "get_tool_output",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tool_output_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tool Output Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Start",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolOutputPageView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "common.json#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Tool Output",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/{agent_session_id}/visibility": {
+      "put": {
+        "description": "Its creator switches who sees the session, recorded as a step: 403\nfor anyone else.",
+        "operationId": "switch_visibility",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VisibilityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentSessionView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "common.json#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Switch Visibility",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "description": "Agent session routes: start a session on a kind, list the ones a\nperson takes part in or sees, join one or leave it, switch who sees it,\nhand its steer on, send it a message or a control, decide a tool call it\nwaits on, clear the park a person clears, and read its history and its\ntool_outputs a page at a time. Each function is one call into the agent\nsessions service; every create runs under the idempotency record, so a\nretried send is one step. The loop runs in the session runner: a route\nwrites what a person said and answers once it is durable. A session the\ncaller does not see answers 404, as one that never existed.\n\nEach park a person clears has its route, held to the permission its\nmanager checks, and clearing it wakes the session: a message answers a\nquestion, a decision an approval, a moved deadline the deadline, an\nassignment a principal who no longer holds, a giving back the hand-over\nits holder holds, a job's completion its job, and an unlock the step\nguard, a spender, a lost workspace, and a key or a price fixed outside.\n\nOn the operator plane (`routers/tenancy.py`), an operator token that may\nread reads what one session's model calls used and cost.",
+      "name": "agent_sessions"
+    }
+  ]
+}

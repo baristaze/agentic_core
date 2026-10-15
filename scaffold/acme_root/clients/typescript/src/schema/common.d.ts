@@ -79,7 +79,7 @@ export interface components {
          * Permission
          * @enum {string}
          */
-        Permission: "read" | "write" | "manage_members" | "manage_keys";
+        Permission: "read" | "write" | "manage_members" | "manage_keys" | "manage_agent_sessions";
         /**
          * Role
          * @enum {string}
