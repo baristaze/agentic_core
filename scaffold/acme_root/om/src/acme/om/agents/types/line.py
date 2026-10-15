@@ -2,7 +2,7 @@
 joined the line with, and its lease when the ask was granted at once, or
 its place and the estimate of its wait. A tool whose output is this shape,
 or one built on it, is a tool that asks in line, and its loop parks on
-`resource` when its turn ends while the request still waits."""
+`leasable_resource` when its turn ends while the request still waits."""
 
 from typing import Self
 from uuid import UUID

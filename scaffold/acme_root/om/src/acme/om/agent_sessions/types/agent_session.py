@@ -12,7 +12,7 @@ steps are the truth, and the cache is rebuilt from them
 attribution: the speaker its latest model request recorded, and the
 untrusted mark. It also holds whether it holds private data, which it
 takes from where it came as it takes the mark. In code it is
-`AgentSession`, never the sign-in `Session` of the tenancy namespace."""
+`AgentSession`, never the sign-in `AuthSession` of the tenancy namespace."""
 
 from datetime import datetime
 from enum import StrEnum

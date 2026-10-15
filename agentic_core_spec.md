@@ -253,8 +253,8 @@ context: a transition does, in the adopter.
 A **step** is the smallest thing the engine records: a record of an
 event, never an orchestration's step. A loop, a session, a window, a
 trace, and a history are series of steps or references to them. In code
-it is `AgentStep`, in `agent_steps`, never the guideline's orchestration
-`Step`.
+it is `AgentStep`, in `agent_steps`, never the guideline's
+`OrchestrationStep`.
 
 ### One Event, One Step
 
@@ -384,7 +384,7 @@ what no step does: its creator, title, participants, agent kind and
 version, fill-set version, bounds, storage policy, its parent and root,
 and a cached status and visibility. Each is a projection of the steps,
 cached for queries; the steps are the truth. In code it is `AgentSession`, never
-the guideline's sign-in `Session`.
+the guideline's sign-in `AuthSession`.
 
 A loop ends; a session does not. An input that wakes it starts a new
 loop, and an unlock resumes a parked one. *Archived* and *deleted* are
@@ -1610,7 +1610,7 @@ memory-only session's runtime, a resource lease's hold time).
 | `person` | A question, an approval, a passed deadline, the step guard, a principal to reassign, a lost workspace | An answer, a decision, an extension, an assignment, an unlock | No |
 | `provider` | An outage, a rate limit, a billing or credential error, a missing key | The provider recovers; a key or account is fixed | At the retry time: an outage's or a rate limit's end, or the next try after a key or an account error, which finds the fix |
 | `spend_budget` | The gate refused | A raise, a close, or the window resets | At the reset |
-| `resource` | Waiting in line for a scarce resource ([Leases on a Resource][g-leases]), or for a workspace | A grant, or the request's end without one | On the grant or the end; for a workspace, at the retry time; for a job in line, at its deadline |
+| `leasable_resource` | Waiting in line for a scarce resource ([Leases on a Leasable Resource][g-leases]), or for a workspace | A grant, or the request's end without one | On the grant or the end; for a workspace, at the retry time; for a job in line, at its deadline |
 | `job` | A long-running tool job is working | The job's completion | On completion |
 | `children` | Waiting for sub-agents' reports | A report; the tree's deadline ends the wait | On the report; past the deadline it parks on `person` |
 | `handover` | A person holds the environment | Its holder gives it back | No |
