@@ -16,7 +16,6 @@ from acme.services.api.services.webhooks import WebhooksServiceInterface
 
 __all__ = [
     "AdminServiceInterface",
-    "AgentSessionsServiceInterface",
     "ChangeEventsServiceInterface",
     "FlagsServiceInterface",
     "LeasesServiceInterface",
@@ -28,6 +27,7 @@ __all__ = [
 ]
 __all__ += [
     # A copy adds its entries below this line.
+    "AgentSessionsServiceInterface",
 ]
 
 
