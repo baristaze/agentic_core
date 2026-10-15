@@ -62,7 +62,7 @@ async def start_agent_session(
 
 
 @router.get("", response_model=AgentSessionPageView)
-async def list_sessions(
+async def list_agent_sessions(
     ctx: Ctx,
     sessions: AgentSessionsService,
     among: Among = Among.VISIBLE,
@@ -72,7 +72,7 @@ async def list_sessions(
 ) -> AgentSessionPageView:
     """The org's root sessions by id, after `after`: the ones the caller
     made or takes part in (`mine`), or every one they see (`visible`)."""
-    return await sessions.list_sessions(ctx, among, status, after, limit)
+    return await sessions.list_agent_sessions(ctx, among, status, after, limit)
 
 
 @router.get("/{agent_session_id}", response_model=AgentSessionView)

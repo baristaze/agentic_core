@@ -53,11 +53,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List Sessions
+         * List Agent Sessions
          * @description The org's root sessions by id, after `after`: the ones the caller
          *     made or takes part in (`mine`), or every one they see (`visible`).
          */
-        get: operations["list_sessions"];
+        get: operations["list_agent_sessions"];
         put?: never;
         /**
          * Start Agent Session
@@ -964,7 +964,7 @@ export interface operations {
             };
         };
     };
-    list_sessions: {
+    list_agent_sessions: {
         parameters: {
             query?: {
                 among?: components["schemas"]["Among"];

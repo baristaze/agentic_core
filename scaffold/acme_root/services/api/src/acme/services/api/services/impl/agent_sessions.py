@@ -187,7 +187,7 @@ class AgentSessionsServiceImpl(AgentSessionsServiceInterface):
     ) -> AgentSessionView:
         return agent_session_view(await self._sessions.get_agent_session(ctx, agent_session_id))
 
-    async def list_sessions(
+    async def list_agent_sessions(
         self,
         ctx: TenantContext,
         among: Among,

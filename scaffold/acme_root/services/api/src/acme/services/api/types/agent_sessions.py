@@ -21,6 +21,7 @@ from acme.om.attribution.types.principal import MAX_KIND
 from acme.om.tools.types.call import MAX_REPORT
 from acme.services.api.types.common import RequestBody, View
 
+
 class StopReason(StrEnum):
     """Why a model's response stopped, as the wire carries it: the model
     providers' own reason, by value. A refusal is a response the agent kind

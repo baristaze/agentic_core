@@ -201,4 +201,3 @@ the first one's answer.
 - A loop is a run of a session's steps and has no record of its own; it
   reads where it is from them, so a loop a crash interrupted goes on
   where it stopped.
-

@@ -1242,7 +1242,7 @@
     "/v1/agent-sessions": {
       "get": {
         "description": "The org's root sessions by id, after `after`: the ones the caller\nmade or takes part in (`mine`), or every one they see (`visible`).",
-        "operationId": "list_sessions",
+        "operationId": "list_agent_sessions",
         "parameters": [
           {
             "in": "query",
@@ -1367,7 +1367,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List Sessions",
+        "summary": "List Agent Sessions",
         "tags": [
           "agent_sessions"
         ]
