@@ -234,7 +234,7 @@ and deleted are flags that can be undone, except the deletes that are
 final. An archived session records arriving events without waking, and a
 principal's message unarchives it. The status is a projection of the
 steps, cached for queries. In code the session is `AgentSession`, never
-the guideline's sign-in `Session`.
+the guideline's sign-in `AuthSession`.
 
 **Source.** Loops, Runs, and Sessions, A Session Never Ends.
 

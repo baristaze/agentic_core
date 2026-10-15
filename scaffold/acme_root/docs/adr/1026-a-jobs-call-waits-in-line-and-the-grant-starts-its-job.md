@@ -27,7 +27,7 @@ starts the work in the grant's commit.
 
 **The call parks in line at once.** The call stays open: nothing can
 answer it until the job runs, so the loop parks without waiting for the
-turn's end. The park is on `resource`. It names the request, its place
+turn's end. The park is on `leasable_resource`. It names the request, its place
 and estimate, and the job, and tries again at the job's deadline. The
 grant's notice unlocks it as it unlocks any park in line, and the run
 reads the request again once its park lands, so a grant just before the
