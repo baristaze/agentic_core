@@ -1,14 +1,14 @@
 """The work that wakes a session says agent session.
 
 Revision ID: 202610141603
-Revises: 202609280003
+Revises: 202610141707
 """
 
 from acme.om.storage.migrate import run_sql
 from acme.om.storage.roles import DatabaseRole
 
 revision = "202610141603"
-down_revision = "202609280003"
+down_revision = "202610141707"
 branch_labels = None
 depends_on = None
 

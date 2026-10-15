@@ -2,14 +2,14 @@
 to SELECT and INSERT for the serving logins.
 
 Revision ID: 202610020101
-Revises: 202609280001
+Revises: 202610142241
 """
 
 from acme.om.storage.migrate import run_sql
 from acme.om.storage.roles import DatabaseRole
 
 revision = "202610020101"
-down_revision = "202609280001"
+down_revision = "202610142241"
 branch_labels = None
 depends_on = None
 
