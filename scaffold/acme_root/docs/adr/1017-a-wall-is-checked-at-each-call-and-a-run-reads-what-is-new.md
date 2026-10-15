@@ -35,9 +35,8 @@ under its class's policy.
 **Private data passes like the mark.** A session stores whether it holds
 private data. Its maker sets it from its kind and its tools' secrets,
 and a session spawned or handed over takes its source's. Its column
-defaults to holding it: every session stored before the column holds
-it, and so does one an older release writes during a roll or after a
-rollback.
+defaults to holding it, so a row written with no mark, as the release
+before writes one during a roll or after a rollback, holds it.
 
 **An API key decides as a program.** A decision sent on one is recorded
 with that credential's actor, and approves nothing a person must.

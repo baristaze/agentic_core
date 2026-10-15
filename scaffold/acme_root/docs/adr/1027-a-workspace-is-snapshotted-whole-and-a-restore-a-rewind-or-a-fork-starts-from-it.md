@@ -1,6 +1,6 @@
 # ADR 1027: A workspace is snapshotted whole, and a restore, a rewind, or a fork starts from it
 
-**Status**: accepted (2026-10-10), amended by [ADR 1030](1030-a-fork-starts-from-its-parents-workspace-as-it-stands-at-the-spawn.md)
+**Status**: accepted (2026-10-10)
 
 ## Context
 
@@ -95,12 +95,11 @@ and holds it to its hash before the provider sees it: bytes gone,
 erased, or altered lose the workspace before it starts. An
 `environment_changed` step that references the control records the
 restore and tells the model. A principal's restore is a rewind; nothing
-is deleted. A spawn with `fork` reads its parent's latest snapshot
-before it takes the tree's slot or makes the child, and one whose parent
-holds none is refused with nothing spent. It copies the snapshot, sealed
-again under the child's key and stored as the child's, and writes the
-child's restore before its objective, so the child's first loop starts
-from it and its writes never reach the parent.
+is deleted. A spawn with `fork` starts the child from its parent's
+workspace as it stands at the spawn
+([ADR 1030](1030-a-fork-starts-from-its-parents-workspace-as-it-stands-at-the-spawn.md)),
+so the child's first loop starts from it and its writes never reach the
+parent.
 
 **A lost restore.** A restore that cannot load, a rewind's, a fork's, or
 the next run's from the latest snapshot, parks the loop for a person.

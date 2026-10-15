@@ -5,9 +5,8 @@
 ## Context
 
 A copy of the scaffold is the product. The engine's nouns and the
-product's share one codebase, one database, one API document with one
-flat namespace of schemas, one command line, and one tool registry the
-model reads. A bare session, step, budget, plan, workspace, machine,
+product's share one codebase, one database, one API, one command line,
+and one tool registry the model reads. A bare session, step, budget, plan, workspace, machine,
 model, or artifact is a word a product needs for itself: a clinic's
 sessions, a workflow's steps, a campaign's budget, a care plan, a
 tenant's workspace, a factory's machines, a trained model, a build's
@@ -48,24 +47,16 @@ stored values move in place in the same migrations, each with a
 downgrade that restores both. No alias, view, or shim keeps an old name.
 A route renamed inside `/v1` departs from the guideline's rule that a
 removal takes a new prefix, since no deployed copy serves a customer.
-The release before cannot run on the renamed schema, so its tests that
-read the old names are left out of its run (ADR 0084), and a rollback
-across this release is not supported.
 
-**The role check knows a renamed table.** A table the chain renamed
-away is known by its old name to its own chain, as one it dropped, so
-the chain's earlier files run on a fresh database.
+**The role check knows a renamed table by its old name.** Each table
+the engine renamed is listed by the name it had in
+`DROPPED_TABLE_ROLES`, below its marker, so a copy's chain that still
+names it passes the role check.
 
 ## Consequences
 
 - A product's own session, step, budget, plan, workspace, machine,
   model, or artifact takes the bare word on every surface, and needs no
   rename of its own.
-- A copy that moves its base to this release renames its references to
-  the engine's nouns once; its stored values move with the migrations,
-  and its release before leaves out the tests this release names.
-- A step's content is sealed at rest, so a tool name a model's reply
-  used stays as written: a plan kept before the rename is found again
-  once the agent writes it anew.
 - A new engine noun is held to this rule before it lands: a word a
   product could own names the agent or the mechanism it serves.

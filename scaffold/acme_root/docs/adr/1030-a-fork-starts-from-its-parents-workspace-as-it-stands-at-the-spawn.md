@@ -4,16 +4,14 @@
 
 ## Context
 
-ADR 1027 starts a forked sub-agent from its parent's latest snapshot. A
-snapshot is taken only at a run's end, so a child spawned in the middle
-of a run misses everything its parent wrote in that run. A fork in the
-parent's first run is refused, since no snapshot exists yet, and a
-parent whose workspace is a cache never holds one. A fork exists to try
-something on what the parent has now. A child that starts on older
-files works on them without knowing it.
-
-This amends the fork of ADR 1027. Its restore, its rewind, and the
-snapshot at a run's end stand as they are.
+A fork exists to try something on what the parent has now. ADR 1027
+takes a snapshot only at a run's end, so a child started from the
+parent's latest snapshot would miss everything its parent wrote in that
+run, a fork in the parent's first run would have none to start from,
+and a parent whose workspace is a cache never holds one. A child that
+starts on older files works on them without knowing it. ADR 1027's
+restore, its rewind, and its snapshot at a run's end hold for a fork's
+parent as for any session.
 
 ## Decision
 
