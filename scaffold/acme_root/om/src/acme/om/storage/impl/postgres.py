@@ -18,8 +18,8 @@ from acme.om.agents.storage import AgentStorageInterface
 from acme.om.agents.storage.impl.postgres import AgentStoragePostgresImpl
 from acme.om.attribution.storage import AttributionStorageInterface
 from acme.om.attribution.storage.impl.postgres import AttributionStoragePostgresImpl
-from acme.om.events.storage import EventStorageInterface
-from acme.om.events.storage.impl.postgres import EventStoragePostgresImpl
+from acme.om.change_events.storage import ChangeEventStorageInterface
+from acme.om.change_events.storage.impl.postgres import ChangeEventStoragePostgresImpl
 from acme.om.idempotency.storage import IdempotencyStorageInterface
 from acme.om.idempotency.storage.impl.postgres import IdempotencyStoragePostgresImpl
 from acme.om.language_models.storage import FillSetStorageInterface
@@ -175,78 +175,25 @@ class StoragePostgresImpl(StorageInterface):
         )
         self._engines = engines
         self._sessions = sessions
+        self._change_events = ChangeEventStoragePostgresImpl(sessions)
+        self._idempotency = IdempotencyStoragePostgresImpl(sessions)
+        self._leases = LeasesStoragePostgresImpl(sessions)
+        self._media = MediaStoragePostgresImpl(sessions)
+        self._orchestrations = OrchestrationsStoragePostgresImpl(sessions)
+        self._outbox = OutboxStoragePostgresImpl(sessions)
         self._tenancy = TenancyStoragePostgresImpl(sessions)
         self._work = WorkStoragePostgresImpl(sessions)
-        self._media = MediaStoragePostgresImpl(sessions)
-        self._idempotency = IdempotencyStoragePostgresImpl(sessions)
-        self._events = EventStoragePostgresImpl(sessions)
-        self._outbox = OutboxStoragePostgresImpl(sessions)
-        self._orchestrations = OrchestrationsStoragePostgresImpl(sessions)
-        self._leases = LeasesStoragePostgresImpl(sessions)
-        self._steps = AgentStepStoragePostgresImpl(sessions)
+        # A copy adds its entries below this line.
+        self._agent_steps = AgentStepStoragePostgresImpl(sessions)
         self._agent_sessions = AgentSessionStoragePostgresImpl(sessions)
         self._agents = AgentStoragePostgresImpl(sessions)
         self._attribution = AttributionStoragePostgresImpl(sessions)
         self._privacy = PrivacyStoragePostgresImpl(sessions)
-        self._budgets = SpendBudgetStoragePostgresImpl(sessions)
+        self._spend_budgets = SpendBudgetStoragePostgresImpl(sessions)
         self._ledger = LedgerStoragePostgresImpl(sessions)
         self._fill_sets = FillSetStoragePostgresImpl(sessions)
         self._windows = WindowStoragePostgresImpl(sessions)
         self._tools = ToolStoragePostgresImpl(sessions)
-
-    def get_tenancy_storage(self) -> TenancyStorageInterface:
-        return self._tenancy
-
-    def get_work_storage(self) -> WorkStorageInterface:
-        return self._work
-
-    def get_media_storage(self) -> MediaStorageInterface:
-        return self._media
-
-    def get_idempotency_storage(self) -> IdempotencyStorageInterface:
-        return self._idempotency
-
-    def get_event_storage(self) -> EventStorageInterface:
-        return self._events
-
-    def get_outbox_storage(self) -> OutboxStorageInterface:
-        return self._outbox
-
-    def get_orchestrations_storage(self) -> OrchestrationsStorageInterface:
-        return self._orchestrations
-
-    def get_lease_storage(self) -> LeasesStorageInterface:
-        return self._leases
-
-    def get_agent_step_storage(self) -> AgentStepStorageInterface:
-        return self._steps
-
-    def get_agent_session_storage(self) -> AgentSessionStorageInterface:
-        return self._agent_sessions
-
-    def get_agent_storage(self) -> AgentStorageInterface:
-        return self._agents
-
-    def get_attribution_storage(self) -> AttributionStorageInterface:
-        return self._attribution
-
-    def get_privacy_storage(self) -> PrivacyStorageInterface:
-        return self._privacy
-
-    def get_spend_budget_storage(self) -> SpendBudgetStorageInterface:
-        return self._budgets
-
-    def get_ledger_storage(self) -> LedgerStorageInterface:
-        return self._ledger
-
-    def get_fill_set_storage(self) -> FillSetStorageInterface:
-        return self._fill_sets
-
-    def get_window_storage(self) -> WindowStorageInterface:
-        return self._windows
-
-    def get_tool_storage(self) -> ToolStorageInterface:
-        return self._tools
 
     async def healthcheck(self) -> bool:
         """A connect and a `SELECT 1` on every engine, each under the bounds its
@@ -268,3 +215,59 @@ class StoragePostgresImpl(StorageInterface):
     async def close(self) -> None:
         for engine in self._engines.values():
             await engine.dispose()
+
+    def get_change_event_storage(self) -> ChangeEventStorageInterface:
+        return self._change_events
+
+    def get_idempotency_storage(self) -> IdempotencyStorageInterface:
+        return self._idempotency
+
+    def get_lease_storage(self) -> LeasesStorageInterface:
+        return self._leases
+
+    def get_media_storage(self) -> MediaStorageInterface:
+        return self._media
+
+    def get_orchestrations_storage(self) -> OrchestrationsStorageInterface:
+        return self._orchestrations
+
+    def get_outbox_storage(self) -> OutboxStorageInterface:
+        return self._outbox
+
+    def get_tenancy_storage(self) -> TenancyStorageInterface:
+        return self._tenancy
+
+    def get_work_storage(self) -> WorkStorageInterface:
+        return self._work
+
+    # A copy adds its entries below this line.
+
+    def get_agent_step_storage(self) -> AgentStepStorageInterface:
+        return self._agent_steps
+
+    def get_agent_session_storage(self) -> AgentSessionStorageInterface:
+        return self._agent_sessions
+
+    def get_agent_storage(self) -> AgentStorageInterface:
+        return self._agents
+
+    def get_attribution_storage(self) -> AttributionStorageInterface:
+        return self._attribution
+
+    def get_privacy_storage(self) -> PrivacyStorageInterface:
+        return self._privacy
+
+    def get_spend_budget_storage(self) -> SpendBudgetStorageInterface:
+        return self._spend_budgets
+
+    def get_ledger_storage(self) -> LedgerStorageInterface:
+        return self._ledger
+
+    def get_fill_set_storage(self) -> FillSetStorageInterface:
+        return self._fill_sets
+
+    def get_window_storage(self) -> WindowStorageInterface:
+        return self._windows
+
+    def get_tool_storage(self) -> ToolStorageInterface:
+        return self._tools

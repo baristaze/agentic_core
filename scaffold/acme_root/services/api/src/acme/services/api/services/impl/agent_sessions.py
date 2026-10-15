@@ -25,14 +25,18 @@ from acme.om.agents.loop import LoopManagerInterface
 from acme.om.agents.types.request import Start
 from acme.om.attribution import AttributionManagerInterface
 from acme.om.base import utcnow
-from acme.om.context import TenantContext
+from acme.om.context import OperatorContext, TenantContext
 from acme.om.exceptions import NotFound
+from acme.om.spend_budgets import SpendBudgetsOperatorManagerInterface
+from acme.om.spend_budgets.types.usage import AgentSessionUsage
 from acme.om.tools import ToolsManagerInterface
 from acme.om.tools.rules import named_snapshot
 from acme.om.tools.types.call import JobCompletion
 from acme.om.windows import WindowsManagerInterface
 from acme.services.api.services.agent_sessions import AgentSessionsServiceInterface
+from acme.services.api.services.impl.tenancy import decode_cursor, encode_cursor
 from acme.services.api.types.agent_sessions import (
+    AgentSessionUsageView,
     AgentSessionPageView,
     AgentSessionView,
     AgentStepPageView,
@@ -128,6 +132,20 @@ def step_view(step: AgentStep) -> AgentStepView:
     )
 
 
+def agent_session_usage_view(usage: AgentSessionUsage) -> AgentSessionUsageView:
+    last = usage.records[-1].id if usage.records else None
+    return AgentSessionUsageView.model_validate(
+        {
+            "agent_session_id": usage.agent_session_id,
+            "items": [record.model_dump() for record in usage.records],
+            "next_cursor": encode_cursor("usage", last) if usage.has_more and last else None,
+            "loops": [loop.model_dump() for loop in usage.loops],
+            "has_more_loops": usage.has_more_loops,
+            "total": usage.total.model_dump(),
+        }
+    )
+
+
 def snapshot_view(snapshot: AgentWorkspaceSnapshot | None) -> SnapshotView | None:
     return None if snapshot is None else SnapshotView.model_validate(snapshot.model_dump())
 
@@ -142,6 +160,7 @@ class AgentSessionsServiceImpl(AgentSessionsServiceInterface):
         attribution: AttributionManagerInterface,
         loop: LoopManagerInterface,
         windows: WindowsManagerInterface,
+        spend_budgets_operator: SpendBudgetsOperatorManagerInterface,
     ) -> None:
         self._windows = windows
         self._sessions = sessions
@@ -150,6 +169,7 @@ class AgentSessionsServiceImpl(AgentSessionsServiceInterface):
         self._tools = tools
         self._attribution = attribution
         self._loop = loop
+        self._spend_budgets_operator = spend_budgets_operator
 
     async def start_agent_session(
         self, ctx: TenantContext, body: StartAgentSessionRequest, agent_session_id: UUID
@@ -310,3 +330,17 @@ class AgentSessionsServiceImpl(AgentSessionsServiceInterface):
             characters=page.characters,
             has_more=page.has_more,
         )
+
+    async def get_agent_session_usage(
+        self,
+        admin: OperatorContext,
+        org_id: UUID,
+        agent_session_id: UUID,
+        cursor: str | None,
+        limit: int,
+    ) -> AgentSessionUsageView:
+        after = decode_cursor("usage", cursor) if cursor else None
+        usage = await self._spend_budgets_operator.get_agent_session_usage(
+            admin, org_id, agent_session_id, after, clamp_limit(limit)
+        )
+        return agent_session_usage_view(usage)

@@ -1,21 +1,19 @@
 # Infrastructure
 
-The capabilities the platform asks for and never implements itself:
-cache, buckets, topics, queues, secrets, keys, flags, outages,
-observability, and where an agent's tools run: workspaces, the
-VMs a VM workspace runs on, and the transport. Each is an
-interface with a twin that runs on a laptop and an implementation that
-runs in the cloud. The object model sees the interface alone, and
-infra imports nothing from the object model.
+The capabilities the system asks for and never implements itself, one
+row each in the table below, each in its own module under
+`src/acme/infra/`. Each is an interface with a twin that runs on a laptop
+and an implementation that runs in the cloud. The object model sees the
+interface alone, and infra imports nothing from the object model.
 
 ## The capabilities
 
 | Capability | What it promises | Locally | In the cloud |
 |------------|------------------|---------|--------------|
 | Cache | Named scopes, so unrelated consumers never share a key; one atomic windowed counter for rate limits and generations; a read cache under the tenant's generation; fails open | In-process, or Valkey | Valkey (ElastiCache) |
-| Buckets | Blobs under the tenant's prefix (`user-file-uploads`, `exports`, `tool-outputs`): put, get, exists, list, delete, a presigned download, and a presigned form upload bounded by type and size | A folder, or MinIO | S3, one private versioned bucket each |
-| Topics | Wake-ups and live updates (`work_available`, `entity_changed`), best effort; a publish answers whether the bus took it | In-process, or Valkey pub/sub | Valkey pub/sub |
-| Queues | Work whose producer is outside the platform: `webhooks`, what a provider sends; at least once, so the consumer is idempotent | In-process, or ElasticMQ | SQS, with a dead-letter queue |
+| Buckets | Blobs under the tenant's prefix, one bucket per member of `Buckets`: put, get, exists, list, delete, a presigned download, and a presigned form upload bounded by type and size | A folder, or MinIO | S3, one private versioned bucket each |
+| Topics | Wake-ups and live updates, one per member of `Topics`, best effort; a publish answers whether the bus took it | In-process, or Valkey pub/sub | Valkey pub/sub |
+| Queues | Work whose producer is outside the system, such as a provider's delivery, one queue per member of `Queues`; at least once, so the consumer is idempotent | In-process, or ElasticMQ | SQS, with a dead-letter queue |
 | Secrets | Get, has, put, and delete by name; the object model holds a name, never a value | The settings, from `.env` and the environment | Secrets Manager |
 | Keys | Make, unwrap, and re-wrap a data key bound to its tenant, its key, and its version; keeps no copy | In-process, derived from a root key | KMS, under the account's key |
 | Flags | Every declared flag's value for an org and a person in it, one call; a user's rule over its org's, over the provider's default, over the code's; a provider that fails reads the code's | A rules file, read on every evaluation | LaunchDarkly through OpenFeature, in process, or none |
@@ -40,7 +38,7 @@ environment refuses them at boot.
   the AWS impl cuts the call there
   ([ADR 0069](../docs/adr/0069-a-request-has-a-deadline-its-provider-calls-share.md)).
 - **One exception family**, rooted at `InfraException`, with the status
-  and code the platform's own exceptions carry
+  and code the system's own exceptions carry
   ([ADR 0005](../docs/adr/0005-infra-exception-root.md)).
 - **One breaker in front of Valkey.** A run of calls that spend their
   whole timeout opens it. While it is open, a read is a miss, a write
@@ -55,7 +53,7 @@ environment refuses them at boot.
 A manager receives the interfaces it needs from the root at boot and
 passes the org's id on every tenant call, so keys, prefixes, and
 secrets of one org never meet another's. `EMPTY_UUID` names the
-platform's own. A manager that caches a read does it through
+system's own. A manager that caches a read does it through
 `ReadCache`, and every write it makes bumps the tenant's generation
 once its transaction commits
 ([ADR 0095](../docs/adr/0095-a-read-cache-is-keyed-by-the-tenants-generation.md)).

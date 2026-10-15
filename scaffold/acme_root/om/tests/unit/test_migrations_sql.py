@@ -1,5 +1,6 @@
 """The migration files obey the role rules without a database."""
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -7,14 +8,15 @@ import pytest
 from acme.om.media.types.file import FileStatus
 from acme.om.storage.migrate import (
     MIGRATIONS_DIR,
+    backfill_statements,
+    chain,
     check_role_of_sql,
-    dropped_tables,
     head,
     migrations_of,
     role_metadata,
     split_statements,
 )
-from acme.om.storage.roles import DatabaseRole, role_for
+from acme.om.storage.roles import TABLE_ROLES, DatabaseRole
 
 
 def test_every_sql_file_names_only_its_own_role() -> None:
@@ -33,49 +35,6 @@ def test_a_file_naming_another_role_is_refused() -> None:
     check_role_of_sql(DatabaseRole.QUEUE, "ALTER INDEX queue.ix_work_items_a RENAME TO ix_b")
     with pytest.raises(RuntimeError):
         check_role_of_sql(DatabaseRole.CORE, "DROP INDEX queue.ix_work_items_org_id")
-
-
-def test_a_table_the_chain_dropped_is_known_to_its_own_chain_alone() -> None:
-    """The role map holds no table the chain dropped, so the role check
-    knows one from the chain's own drop, and only in the role that dropped it."""
-    dropped = {role: dropped_tables(role) for role in DatabaseRole}
-    for role, tables in dropped.items():
-        for table in tables:
-            with pytest.raises(LookupError):
-                role_for(table)
-            check_role_of_sql(role, f"CREATE TABLE {role.value}.{table} (id uuid)")
-            for other in DatabaseRole:
-                if table not in dropped[other]:
-                    with pytest.raises(LookupError):
-                        check_role_of_sql(other, f"CREATE TABLE {other.value}.{table} (id uuid)")
-
-
-def test_a_table_the_chain_renamed_is_known_by_its_old_name_to_its_own_chain_alone(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A rename keeps the rows, and the chain's earlier files still name the
-    table as it was: an up file's rename makes the old name known to its own
-    role, and neither a down file's rename back nor a renamed constraint does."""
-    sql = tmp_path / "sql" / "core"
-    sql.mkdir(parents=True)
-    (sql / "202601010000_rename.up.sql").write_text(
-        "ALTER TABLE core.ledgers RENAME TO kept_ledgers;\n"
-        "ALTER TABLE core.kept_ledgers RENAME CONSTRAINT pk_ledgers TO pk_kept_ledgers;\n"
-    )
-    (sql / "202601010000_rename.down.sql").write_text(
-        "ALTER TABLE core.ghosts RENAME TO ledgers;\n"
-    )
-    monkeypatch.setattr("acme.om.storage.migrate.MIGRATIONS_DIR", tmp_path)
-    dropped_tables.cache_clear()
-    try:
-        assert dropped_tables(DatabaseRole.CORE) == {"ledgers"}
-        check_role_of_sql(DatabaseRole.CORE, "CREATE TABLE core.ledgers (id uuid)")
-        with pytest.raises(LookupError):
-            check_role_of_sql(DatabaseRole.QUEUE, "CREATE TABLE queue.ledgers (id uuid)")
-        with pytest.raises(LookupError):
-            check_role_of_sql(DatabaseRole.CORE, "CREATE TABLE core.ghosts (id uuid)")
-    finally:
-        dropped_tables.cache_clear()
 
 
 def test_split_statements_drops_comments_and_blanks() -> None:
@@ -108,51 +67,99 @@ def test_a_function_is_checked_by_its_schema_alone() -> None:
         check_role_of_sql(DatabaseRole.CORE, "CREATE FUNCTION queue.f() RETURNS trigger")
 
 
-def test_a_table_one_chain_drops_passes_that_role_and_fails_another(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_a_data_migrations_file_is_a_count_then_an_update(tmp_path: Path) -> None:
+    """What `run_backfill` reads from the file its wrapper names: the count
+    it compares the update's rows with, and the update. An update with no
+    count could not tell a backfill that touched nothing from one that had
+    nothing to do, so it is refused."""
+    (tmp_path / "sql" / "core").mkdir(parents=True)
+    count = "SELECT count(*) FROM core.users WHERE locale IS NULL"
+    update = "UPDATE core.users SET locale = 'en' WHERE locale IS NULL"
+    (tmp_path / "sql" / "core" / "a.up.sql").write_text(f"-- the backfill\n{count};\n{update};\n")
+    (tmp_path / "sql" / "core" / "b.up.sql").write_text(f"{update};\n")
+    assert backfill_statements(DatabaseRole.CORE, "a.up.sql", tmp_path) == (count, update)
+    with pytest.raises(RuntimeError, match="holds 1 statements"):
+        backfill_statements(DatabaseRole.CORE, "b.up.sql", tmp_path)
+
+
+def assert_one_chain_of_stamped_wrappers(
+    role: DatabaseRole, migrations_dir: Path = MIGRATIONS_DIR
 ) -> None:
-    """Only a role's own up files make a dropped table: a down file's drop does
-    not, and neither does a drop of a name the live role map gives another role."""
-    for role, up, down in (
-        (DatabaseRole.CORE, "DROP TABLE IF EXISTS core.retired_ledgers", "DROP TABLE core.ghosts"),
-        (DatabaseRole.QUEUE, "DROP TABLE queue.orgs", ""),
-    ):
-        sql = tmp_path / "sql" / role.value
-        sql.mkdir(parents=True)
-        (sql / "202601010000_retire.up.sql").write_text(f"{up};\n")
-        (sql / "202601010000_retire.down.sql").write_text(f"{down};\n")
-    monkeypatch.setattr("acme.om.storage.migrate.MIGRATIONS_DIR", tmp_path)
-    dropped_tables.cache_clear()
-    try:
-        assert dropped_tables(DatabaseRole.CORE) == {"retired_ledgers"}
-        assert dropped_tables(DatabaseRole.QUEUE) == frozenset()
-        check_role_of_sql(DatabaseRole.CORE, "CREATE TABLE core.retired_ledgers (id uuid)")
-        with pytest.raises(LookupError):
-            check_role_of_sql(DatabaseRole.QUEUE, "CREATE TABLE queue.retired_ledgers (id uuid)")
-        with pytest.raises(RuntimeError):
-            check_role_of_sql(DatabaseRole.QUEUE, "DROP TABLE core.retired_ledgers")
-        with pytest.raises(LookupError):
-            check_role_of_sql(DatabaseRole.CORE, "CREATE TABLE core.ghosts (id uuid)")
-        with pytest.raises(RuntimeError):
-            check_role_of_sql(DatabaseRole.QUEUE, "CREATE TABLE queue.orgs (id uuid)")
-    finally:
-        dropped_tables.cache_clear()
-
-
-@pytest.mark.parametrize("role", list(DatabaseRole))
-def test_each_role_has_at_most_one_head_and_stamped_wrappers(role: DatabaseRole) -> None:
-    versions = MIGRATIONS_DIR / "versions" / role.value
+    """The gate on a role's chain: one head, one first revision, and every
+    parent present (`chain` refuses the rest), every wrapper in it, named by
+    its stamp, with its SQL pair. The order is the parents', so a wrapper's
+    stamp may sort below its parent's."""
+    versions = migrations_dir / "versions" / role.value
     wrappers = sorted(versions.glob("*.py")) if versions.is_dir() else []
-    if not wrappers:
-        assert head(role) is None
-        return
-    assert head(role) == wrappers[-1].stem.split("_", 1)[0]
+    revisions = chain(role, migrations_dir)
+    assert sorted(revisions) == sorted(wrapper.stem.split("_", 1)[0] for wrapper in wrappers)
+    assert head(role, migrations_dir) == (revisions[-1] if revisions else None)
     for wrapper in wrappers:
         stamp = wrapper.stem.split("_", 1)[0]
         assert len(stamp) == 12 and stamp.isdigit(), wrapper.name
         assert f'revision = "{stamp}"' in wrapper.read_text()
         for suffix in (".up.sql", ".down.sql"):
-            assert (MIGRATIONS_DIR / "sql" / role.value / f"{wrapper.stem}{suffix}").is_file()
+            assert (migrations_dir / "sql" / role.value / f"{wrapper.stem}{suffix}").is_file()
+
+
+@pytest.mark.parametrize("role", list(DatabaseRole))
+def test_each_role_is_one_chain_of_stamped_wrappers(role: DatabaseRole) -> None:
+    assert_one_chain_of_stamped_wrappers(role)
+
+
+def a_chain(tmp_path: Path, parents: dict[str, str | None]) -> Path:
+    """A checkout whose admin chain is `parents`, each revision's wrapper
+    naming its parent, with its SQL pair."""
+    there = migrations_of(tmp_path)
+    (there / "versions" / "admin").mkdir(parents=True)
+    (there / "sql" / "admin").mkdir(parents=True)
+    shutil.copy(MIGRATIONS_DIR / "alembic.ini", there)
+    for revision, parent in parents.items():
+        stem = f"{revision}_step"
+        (there / "versions" / "admin" / f"{stem}.py").write_text(
+            f'revision = "{revision}"\n'
+            f"down_revision = {parent!r}\n"
+            "branch_labels = None\n"
+            "depends_on = None\n"
+        )
+        for suffix in (".up.sql", ".down.sql"):
+            (there / "sql" / "admin" / f"{stem}{suffix}").write_text("SELECT 1;\n")
+    return there
+
+
+def test_a_chain_is_ordered_by_its_parents_never_by_its_stamps(tmp_path: Path) -> None:
+    """A base's migration written after a tree's own sorts above it, and the
+    tree's own then follows it on the chain: its stamp sorts below its
+    parent's, and the gate passes it under its own name."""
+    there = a_chain(
+        tmp_path,
+        {"202601010000": None, "202602010000": "202601010000", "202512010000": "202602010000"},
+    )
+    assert_one_chain_of_stamped_wrappers(DatabaseRole.ADMIN, there)
+    assert chain(DatabaseRole.ADMIN, there) == ["202601010000", "202602010000", "202512010000"]
+    assert head(DatabaseRole.ADMIN, there) == "202512010000"
+
+
+@pytest.mark.parametrize(
+    ("parents", "refusal"),
+    [
+        (
+            {"202601010000": None, "202602010000": "202601010000", "202603010000": "202601010000"},
+            "2 heads",
+        ),
+        (
+            {"202601010000": None, "202602010000": "202501010000"},
+            "a parent its chain does not hold",
+        ),
+    ],
+    ids=["two heads", "a missing parent"],
+)
+def test_a_chain_with_two_heads_or_a_missing_parent_fails_the_gate(
+    tmp_path: Path, parents: dict[str, str | None], refusal: str
+) -> None:
+    there = a_chain(tmp_path, parents)
+    with pytest.raises(RuntimeError, match=refusal):
+        assert_one_chain_of_stamped_wrappers(DatabaseRole.ADMIN, there)
 
 
 def test_the_head_of_another_checkouts_chain_is_read_from_its_files(
@@ -168,26 +175,15 @@ def test_the_head_of_another_checkouts_chain_is_read_from_its_files(
     assert migrations_of(MIGRATIONS_DIR.parents[1]) == MIGRATIONS_DIR
 
 
-def test_role_metadata_holds_only_that_role() -> None:
-    core = role_metadata(DatabaseRole.CORE)
-    assert {t.name for t in core.tables.values()} >= {"orgs", "identities", "users"}
-    assert all(t.schema == "core" for t in core.tables.values())
-    assert {t.name for t in role_metadata(DatabaseRole.QUEUE).tables.values()} == {
-        "work_items",
-        "tenant_caps",
+@pytest.mark.parametrize("role", list(DatabaseRole))
+def test_role_metadata_holds_only_that_role(role: DatabaseRole) -> None:
+    """Each role's metadata holds exactly the tables the role map gives it, each
+    in the role's schema, so a table a copy adds is held once it names its role."""
+    tables = role_metadata(role).tables.values()
+    assert {t.name for t in tables} == {
+        name for name, owner in TABLE_ROLES.items() if owner is role
     }
-    assert {t.name for t in role_metadata(DatabaseRole.ACTIVITY).tables.values()} == {
-        "events",
-        "event_cursors",
-        "agent_steps",
-        "agent_step_cursors",
-        "spend_budget_tallies",
-        "spend_budget_holds",
-        "spend_budget_settlements",
-        "usage_records",
-        "tool_outputs",
-    }
-    assert {t.name for t in role_metadata(DatabaseRole.ADMIN).tables.values()} == {"platform_sizes"}
+    assert all(t.schema == role.value for t in tables)
 
 
 SWEEP_INDEXES = {

@@ -10,7 +10,6 @@ from datetime import timedelta
 from uuid import UUID
 
 import pytest
-from contracts.outbox_storage import a_user, claim_all, make_row
 
 from acme.infra.impl.settings import InfraSettings
 from acme.infra.impl.valkey import ValkeyConnection
@@ -24,12 +23,14 @@ from acme.infra.topics import (
 )
 from acme.infra.topics.valkey import TopicsValkeyImpl
 from acme.om.base import new_id, utcnow
-from acme.om.events.storage.impl.postgres import EventStoragePostgresImpl
+from acme.om.change_events.storage.impl.postgres import ChangeEventStoragePostgresImpl
 from acme.om.outbox.impl.relay import OutboxOptions, OutboxRelayImpl
 from acme.om.outbox.storage.impl.postgres import OutboxStoragePostgresImpl
 from acme.om.outbox.types.row import OutboxRow
 from acme.om.storage.impl.pg_base import LoginSessions
 from acme.om.tenancy.storage.impl.postgres import TenancyStoragePostgresImpl
+
+from contracts.outbox_storage import a_user, claim_all, make_row
 
 pytestmark = pytest.mark.integration
 
@@ -141,7 +142,7 @@ async def test_a_refused_publish_stays_pending_and_the_sweep_sends_it_once_valke
 ) -> None:
     bus, heard = up
     outbox = OutboxStoragePostgresImpl(pg_sessions)
-    events = EventStoragePostgresImpl(pg_sessions)
+    events = ChangeEventStoragePostgresImpl(pg_sessions)
     org = new_id()
     rows = await landed(pg_sessions, org, 2)
     counted = publish_failures()
@@ -171,7 +172,7 @@ async def test_a_batch_marks_the_rows_valkey_took_and_leaves_the_refused_one(
 ) -> None:
     bus, heard = up
     outbox = OutboxStoragePostgresImpl(pg_sessions)
-    events = EventStoragePostgresImpl(pg_sessions)
+    events = ChangeEventStoragePostgresImpl(pg_sessions)
     org = new_id()
     rows = await landed(pg_sessions, org, 3)
     refused = rows[1]

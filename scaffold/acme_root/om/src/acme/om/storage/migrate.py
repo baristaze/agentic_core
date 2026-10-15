@@ -22,11 +22,11 @@ any database that is not local.
 
 import argparse
 import asyncio
-import functools
 import importlib
 import os
 import re
 import sys
+import warnings
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
@@ -42,7 +42,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from acme.om.storage.logins import ensure_logins
-from acme.om.storage.roles import TABLE_ROLES, DatabaseRole, role_for
+from acme.om.storage.roles import DROPPED_TABLE_ROLES, TABLE_ROLES, DatabaseRole, role_for
 from acme.om.storage.settings import MIGRATION_LOCK_TIMEOUT_SECONDS, MigrationSettings
 from acme.om.storage.tables.base import Base
 
@@ -52,12 +52,6 @@ _SCHEMA_REF = re.compile(r"\b(core|activity|queue|admin)\.([a-z_][a-z0-9_]*)")
 _INDEX_REF = re.compile(
     r"\b(?:DROP|ALTER) INDEX\s+(?:IF EXISTS\s+)?(core|activity|queue|admin)\.([a-z_][a-z0-9_]*)"
     r"|\bFUNCTION\s+(?:IF EXISTS\s+)?(core|activity|queue|admin)\.([a-z_][a-z0-9_]*)",
-    re.IGNORECASE,
-)
-_TABLE_LEFT = re.compile(
-    r"\bDROP TABLE\s+(?:IF EXISTS\s+)?(core|activity|queue|admin)\.([a-z_][a-z0-9_]*)"
-    r"|\bALTER TABLE\s+(?:IF EXISTS\s+)?(core|activity|queue|admin)\.([a-z_][a-z0-9_]*)"
-    r"\s+RENAME TO\b",
     re.IGNORECASE,
 )
 LOCK_NOT_AVAILABLE = "55P03"
@@ -77,13 +71,38 @@ def alembic_config(role: DatabaseRole, migrations_dir: Path = MIGRATIONS_DIR) ->
     return config
 
 
-def head(role: DatabaseRole, migrations_dir: Path = MIGRATIONS_DIR) -> str | None:
-    """The single head of a role's chain, this checkout's or the one under
-    `migrations_dir`; more than one is a real conflict."""
-    heads = ScriptDirectory.from_config(alembic_config(role, migrations_dir)).get_heads()
+def chain(role: DatabaseRole, migrations_dir: Path = MIGRATIONS_DIR) -> list[str]:
+    """A role's revisions in the order they apply, this checkout's or the ones
+    under `migrations_dir`: each after the parent its wrapper names, its
+    `down_revision`, never by its stamp. A stamp names a migration and orders
+    nothing, so a base's migration and a tree's own keep their names whatever
+    minute each was written in (ADR 0102). More than one head, more than one
+    first revision, or a parent the chain does not hold is refused: each is a
+    chain no one wrote."""
+    script = ScriptDirectory.from_config(alembic_config(role, migrations_dir))
+    with warnings.catch_warnings():
+        # Alembic warns of a missing parent, then fails on it with a KeyError,
+        # which the refusal below names.
+        warnings.filterwarnings("ignore", "Revision .* is not present", UserWarning)
+        try:
+            heads, bases = script.get_heads(), script.get_bases()
+            walked = [revision.revision for revision in script.walk_revisions()]
+        except KeyError as missing:
+            raise RuntimeError(
+                f"role {role.value} names a parent its chain does not hold: {missing}"
+            ) from None
     if len(heads) > 1:
         raise RuntimeError(f"role {role.value} has {len(heads)} heads: {heads}")
-    return heads[0] if heads else None
+    if len(bases) > 1:
+        raise RuntimeError(f"role {role.value} has {len(bases)} first revisions: {bases}")
+    return walked[::-1]
+
+
+def head(role: DatabaseRole, migrations_dir: Path = MIGRATIONS_DIR) -> str | None:
+    """The last revision of a role's chain (`chain`), or None for a role
+    with no revision."""
+    revisions = chain(role, migrations_dir)
+    return revisions[-1] if revisions else None
 
 
 def migrations_of(checkout: Path) -> Path:
@@ -112,24 +131,6 @@ def split_statements(sql: str) -> list[str]:
     return [statement.strip() for statement in statements if statement.strip()]
 
 
-@functools.cache
-def dropped_tables(role: DatabaseRole) -> frozenset[str]:
-    """Tables the role's chain made and later dropped: each one an up file of
-    the chain drops, or renames away, and the role map does not hold. No
-    process reaches them, so `role_for` does not know them; the chain names
-    them, so the role check reads them off the chain."""
-    left = (
-        (drop_schema or rename_schema, drop_table or rename_table)
-        for path in (MIGRATIONS_DIR / "sql" / role.value).glob("*.up.sql")
-        for drop_schema, drop_table, rename_schema, rename_table in _TABLE_LEFT.findall(
-            path.read_text()
-        )
-    )
-    return frozenset(
-        table for schema, table in left if schema == role.value and table not in TABLE_ROLES
-    )
-
-
 def check_role_of_sql(role: DatabaseRole, sql: str) -> None:
     """Refuses a file that names a table of another role, by schema or by the role map.
     A dropped or altered index, and a function, are schema-qualified too; only
@@ -141,9 +142,9 @@ def check_role_of_sql(role: DatabaseRole, sql: str) -> None:
     for schema, table in _SCHEMA_REF.findall(_INDEX_REF.sub("", sql)):
         if schema != role.value:
             raise RuntimeError(f"{role.value} migration references {schema}.{table}")
-        if table == VERSION_TABLE or table in dropped_tables(role):
+        if table == VERSION_TABLE:
             continue
-        owner = role_for(table)
+        owner = DROPPED_TABLE_ROLES.get(table) or role_for(table)
         if owner is not role:
             raise RuntimeError(f"table {table} belongs to role {owner.value}")
 
@@ -182,9 +183,37 @@ def backfill(
     return touched
 
 
-def run_backfill(role: DatabaseRole, table: str, count_sql: str, update_sql: str) -> int:
-    """Called by a wrapper under versions/<role>/ for a data migration; see `backfill`."""
-    return backfill(op.get_bind(), role, table, count_sql, update_sql)
+def backfill_statements(
+    role: DatabaseRole, filename: str, migrations_dir: Path = MIGRATIONS_DIR
+) -> tuple[str, str]:
+    """The two statements of a data migration's file, sql/<role>/<filename>:
+    the count of the rows it means to touch, then the update that touches
+    them. Any other number of statements is refused."""
+    statements = split_statements((migrations_dir / "sql" / role.value / filename).read_text())
+    if len(statements) != 2:
+        raise RuntimeError(
+            f"{filename} holds {len(statements)} statements; a backfill is a count, then an update"
+        )
+    return statements[0], statements[1]
+
+
+def run_backfill(role: DatabaseRole, filename: str, table: str) -> int:
+    """A data migration. Its wrapper calls this as the one call of
+    `upgrade()`, in place of `run_sql`, with the role, its own SQL file, and
+    the table the update fills:
+
+        def upgrade() -> None:
+            run_backfill(DatabaseRole.CORE, "<stem>.up.sql", "<table>")
+
+
+        def downgrade() -> None:
+            run_sql(DatabaseRole.CORE, "<stem>.down.sql")
+
+    The up file holds a count and an update (`backfill_statements`), so a
+    column it fills comes in the migration before it. The down file undoes
+    the update through `run_backfill` as well, or holds only a comment when
+    the migration before drops what it filled. See `backfill`."""
+    return backfill(op.get_bind(), role, table, *backfill_statements(role, filename))
 
 
 def load_tables() -> None:

@@ -13,7 +13,10 @@ manager checks, and clearing it wakes the session: a message answers a
 question, a decision an approval, a moved deadline the deadline, an
 assignment a principal who no longer holds, a giving back the hand-over
 its holder holds, a job's completion its job, and an unlock the step
-guard, a spender, a lost workspace, and a key or a price fixed outside."""
+guard, a spender, a lost workspace, and a key or a price fixed outside.
+
+On the operator plane (`routers/tenancy.py`), an operator token that may
+read reads what one session's model calls used and cost."""
 
 from typing import Annotated
 from uuid import UUID
@@ -21,10 +24,12 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Query, Response
 
 from acme.om.agent_sessions.types.agent_session import AgentSessionStatus, Among
+from acme.services.api.gateway.admin import OperatorCtx
 from acme.services.api.gateway.auth import Ctx
 from acme.services.api.gateway.idempotency import Idem
 from acme.services.api.gateway.resolve import AgentSessionsService
 from acme.services.api.types.agent_sessions import (
+    AgentSessionUsageView,
     AgentSessionPageView,
     AgentSessionView,
     AgentStepPageView,
@@ -43,6 +48,7 @@ from acme.services.api.types.agent_sessions import (
 from acme.services.api.types.common import LIMIT_DEFAULT
 
 router = APIRouter(prefix="/agent-sessions", tags=["agent_sessions"])
+operator = APIRouter(prefix="/admin", tags=["agent_sessions"])
 
 
 @router.post("", response_model=AgentSessionView, status_code=201)
@@ -245,3 +251,39 @@ async def get_tool_output(
     character at `start`: a tool output is written once, so no character's
     place moves between pages. The policy's page bounds `limit`."""
     return await sessions.get_tool_output(ctx, agent_session_id, tool_output_id, start, limit)
+
+
+@operator.get(
+    "/orgs/{org_id}/agent-sessions/{agent_session_id}/usage", response_model=AgentSessionUsageView
+)
+async def get_agent_session_usage(
+    admin: OperatorCtx,
+    service: AgentSessionsService,
+    org_id: UUID,
+    agent_session_id: UUID,
+    cursor: str | None = None,
+    limit: int = LIMIT_DEFAULT,
+) -> AgentSessionUsageView:
+    """What one session's model calls used and cost, in every storage mode
+    (ADR 1014). Requires the read permission.
+
+    The answer is a `AgentSessionUsageView`: `agent_session_id`; `items`, a page of the
+    session's usage records, oldest first, each with `id`, `created_at`,
+    `spend_hold_id`, `agent_session_id`, `tree_id`, `loop_id`, `agent_step_id` (the call's
+    response step), `agent_kind`, `kind_version`, `role`, `provider`, `model`, `input_tokens`,
+    `cache_read_tokens`, `cache_write_tokens`, `output_tokens`,
+    `thinking_tokens`, `cost_micros` (reference cost in millionths, null when
+    no price applied), `latency_ms`, and `settled_whole` (a call whose usage
+    was never reported whole, counted at its whole hold, its tokens partial
+    at most); `next_cursor`, the next page's `cursor`, or null; `loops`, one
+    `{loop_id, rollup}` per loop in the order it first called;
+    `has_more_loops`; and `total`, the session's rollup. A rollup holds
+    `calls`, the five token classes, `cost_micros`, `unpriced` (calls no
+    price applied to, whose cost no figure holds), `settled_whole` (calls
+    counted at their whole hold), and `latency_ms`. The rollups cover every
+    record, whatever the page.
+
+    A record holds ids, counts, money, a duration, and labels, and no
+    content. `404 not_found` for an unknown org, and for a session the org
+    holds no record of, which is how another tenant's session reads."""
+    return await service.get_agent_session_usage(admin, org_id, agent_session_id, cursor, limit)

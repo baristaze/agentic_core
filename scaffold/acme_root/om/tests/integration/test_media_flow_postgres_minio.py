@@ -11,8 +11,6 @@ from typing import Any
 import aioboto3
 import httpx
 import pytest
-from contracts.doubles import Members, context
-from contracts.factories import make_org
 
 from acme.infra.buckets import Buckets
 from acme.infra.buckets.s3 import BucketsS3Impl
@@ -20,8 +18,8 @@ from acme.infra.flags.defaults import FlagsDefaultsImpl
 from acme.infra.impl.settings import InfraSettings
 from acme.infra.topics.memory import TopicsMemoryImpl
 from acme.om.base import new_id, utcnow
+from acme.om.change_events.storage.impl.postgres import ChangeEventStoragePostgresImpl
 from acme.om.context import Role, TenantContext
-from acme.om.events.storage.impl.postgres import EventStoragePostgresImpl
 from acme.om.exceptions import NotFound, ValidationFailed
 from acme.om.media.impl.manager import MediaManagerImpl, MediaOptions
 from acme.om.media.storage.impl.postgres import MediaStoragePostgresImpl
@@ -29,6 +27,9 @@ from acme.om.media.types.file import File, FilePurpose, FileStatus
 from acme.om.outbox.impl.relay import OutboxRelayImpl
 from acme.om.outbox.storage.impl.postgres import OutboxStoragePostgresImpl
 from acme.om.storage.impl.pg_base import LoginSessions
+
+from contracts.doubles import Members, context
+from contracts.factories import make_org
 
 pytestmark = pytest.mark.integration
 
@@ -89,7 +90,9 @@ def manager(
 ) -> tuple[MediaManagerImpl, MediaStoragePostgresImpl]:
     storage = MediaStoragePostgresImpl(sessions)
     relay = OutboxRelayImpl(
-        OutboxStoragePostgresImpl(sessions), EventStoragePostgresImpl(sessions), TopicsMemoryImpl()
+        OutboxStoragePostgresImpl(sessions),
+        ChangeEventStoragePostgresImpl(sessions),
+        TopicsMemoryImpl(),
     )
     members = Members()  # pyright: ignore[reportAbstractUsage] (a partial double)
     flags = FlagsDefaultsImpl()
