@@ -26,9 +26,11 @@ from acme.om.agent_steps.types.header import (
     ToolRequestHeader,
     ToolResponseHeader,
 )
+from acme.om.agent_steps.types.page import AgentStepPage
 from acme.om.agents.types.request import Handoff, Spawn
 from acme.om.agents.types.run import RunEnd
 from acme.om.base import new_id
+from acme.om.context import TenantContext
 from acme.om.exceptions import Unavailable
 from acme.om.tools.rules import DEFAULT_CEILINGS
 from acme.om.tools.types.policy import Decision, ToolPolicyLayer, ToolPolicyRule
@@ -233,11 +235,13 @@ async def test_a_failed_control_read_leaves_the_running_call_running(
     read = steps.get_agent_steps
     failed = asyncio.Event()
 
-    async def down_once(*args: object, **kwargs: object) -> object:
+    async def down_once(
+        ctx: TenantContext, session: UUID, after_seq: int, limit: int
+    ) -> AgentStepPage:
         if not failed.is_set():
             failed.set()
             raise Unavailable("the database did not answer in time")
-        return await read(*args, **kwargs)
+        return await read(ctx, session, after_seq, limit)
 
     monkeypatch.setattr(steps, "get_agent_steps", down_once)
     await failed.wait()
