@@ -57,6 +57,7 @@ from acme.integrations.model_providers.wire import (
     key_for,
     retry_after,
     sse_events,
+    transport_failed,
 )
 from acme.integrations.model_providers.wire import (
     field as get,
@@ -568,11 +569,7 @@ class ModelProviderAnthropicImpl(ModelProviderInterface):
                     for part in folded.feed(event, data):
                         yield part
         except httpx.HTTPError as error:
-            raise ModelCallFailed(
-                ErrorKind.TRANSIENT,
-                f"Anthropic did not answer: {type(error).__name__}",
-                partial=folded.partial(),
-            ) from None
+            raise transport_failed("Anthropic", error, folded.partial()) from None
         yield Finished(reply=folded.reply())
 
     def describe(self) -> str:
