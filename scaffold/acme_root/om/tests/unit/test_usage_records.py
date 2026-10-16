@@ -6,9 +6,12 @@ from datetime import timedelta
 from pathlib import Path
 from uuid import UUID
 
+import httpx
 import pytest
+from pydantic import SecretStr
 from sqlalchemy import BigInteger, Boolean, DateTime, Integer, Text, Uuid
 
+from acme.integrations.model_providers.anthropic import ModelProviderAnthropicImpl
 from acme.integrations.model_providers.calls import ModelCall
 from acme.integrations.model_providers.scripted import ScriptedFailure
 from acme.integrations.model_providers.types import ErrorKind, ProviderName, Usage
@@ -328,6 +331,38 @@ async def test_a_call_settled_whole_leaves_a_marked_record_at_its_hold(
     total = await ledger.read_usage_total(org, session)
     assert (total.calls, total.cost_micros, total.settled_whole) == (2, spent, 1)
     assert spent > 0 and total.unpriced == 0
+
+
+async def test_a_call_that_never_reached_the_provider_is_released_with_no_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The provider's adapter cannot connect: each attempt's hold is
+    released as not billed, the ledger counts no call, and no usage record
+    is written."""
+    loop = loop_over(tmp_path)
+
+    def refused(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    adapter = ModelProviderAnthropicImpl(
+        http=httpx.AsyncClient(transport=httpx.MockTransport(refused)),
+        api_key=SecretStr("test-key-not-a-secret"),
+        base_url="https://provider.test",
+        timeout=timedelta(seconds=5),
+    )
+    monkeypatch.setattr(loop.anthropic, "stream", adapter.stream)
+    session = await started(loop)
+    await loop.say(session, "What is the total?")
+
+    await loop.loops.run(loop.owner, session)
+
+    history = await loop.history(session)
+    settled = [await spend_settlement_of(loop, s) for s in history if is_request(s)]
+    assert settled and [s.bill.kind for s in settled] == ["not_billed"] * len(settled)
+    assert not any(s.spent.cost_micros for s in settled)
+    assert await records_of(loop, loop.owner, session) == []
+    total = await loop.storage.get_ledger_storage().read_usage_total(loop.owner.org_id, session)
+    assert (total.calls, total.cost_micros, total.settled_whole) == (0, 0, 0)
 
 
 async def test_a_record_that_fails_to_land_never_fails_its_call(
