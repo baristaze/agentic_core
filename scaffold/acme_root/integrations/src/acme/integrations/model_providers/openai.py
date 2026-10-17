@@ -59,6 +59,7 @@ from acme.integrations.model_providers.wire import (
     key_for,
     retry_after,
     sse_events,
+    transport_failed,
 )
 
 INCOMPLETE: dict[str, StopReason] = {
@@ -558,11 +559,7 @@ class ModelProviderOpenAIImpl(ModelProviderInterface):
                     for part in folded.feed(event, data):
                         yield part
         except httpx.HTTPError as error:
-            raise ModelCallFailed(
-                ErrorKind.TRANSIENT,
-                f"OpenAI did not answer: {type(error).__name__}",
-                partial=folded.partial(),
-            ) from None
+            raise transport_failed("OpenAI", error, folded.partial()) from None
         yield Finished(reply=folded.reply())
 
     def describe(self) -> str:

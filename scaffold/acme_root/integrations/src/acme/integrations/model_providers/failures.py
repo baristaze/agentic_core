@@ -11,7 +11,9 @@ class ModelCallFailed(InfraException):
     (`ErrorKind.answer`). `retry_after` is the provider's own wait, in
     seconds, which no retry comes sooner than. `partial` holds what a broken
     stream delivered before it broke, truncated, for the engine to record;
-    it is never a complete reply. `authentication` says the provider did
+    it is never a complete reply, and it is None when the provider
+    processed nothing: it refused the call, or the request never left.
+    `authentication` says the provider did
     not authenticate the call's key at all, by its own error type; a 401
     says so too. The message is the provider's, for the log, and never
     carries a key. `credential` names the key the call went out on, once the

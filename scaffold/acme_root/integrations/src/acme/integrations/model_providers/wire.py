@@ -1,6 +1,7 @@
 """What the adapters share on the wire: the server-sent events a streamed
-response arrives as, the provider's own wait before a retry, and a body
-read as JSON without trusting it to be any."""
+response arrives as, the provider's own wait before a retry, a body read
+as JSON without trusting it to be any, and a transport failure read as a
+request that left or one that never did."""
 
 import json
 from collections.abc import AsyncIterator, Mapping
@@ -11,11 +12,23 @@ from typing import Any
 import httpx
 from pydantic import SecretStr
 
+from acme.integrations.model_providers.calls import ModelReply
 from acme.integrations.model_providers.failures import ModelCallFailed
 from acme.integrations.model_providers.types import ErrorKind
 
 MAX_MESSAGE = 500
 """The longest provider message a failure carries, for the log."""
+
+UNSENT = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.PoolTimeout,
+    httpx.WriteError,
+    httpx.WriteTimeout,
+)
+"""The transport failures raised before the provider held the whole request:
+no connection opened, none came free from the pool, or the request's write
+did not complete."""
 
 
 async def sse_events(lines: AsyncIterator[str]) -> AsyncIterator[tuple[str, str]]:
@@ -103,3 +116,15 @@ def key_for(provider: str, credential: SecretStr | None, platform: SecretStr | N
 
 def clipped(message: str) -> str:
     return message if len(message) <= MAX_MESSAGE else message[:MAX_MESSAGE] + "..."
+
+
+def transport_failed(provider: str, error: httpx.HTTPError, arrived: ModelReply) -> ModelCallFailed:
+    """A call the transport broke off, as `transient`. A request that never
+    left carries no partial: the provider processed nothing, and the hold is
+    released. One that left carries what arrived, however little, and counts
+    as billed, since the provider may have processed it."""
+    return ModelCallFailed(
+        ErrorKind.TRANSIENT,
+        f"{provider} did not answer: {type(error).__name__}",
+        partial=None if isinstance(error, UNSENT) else arrived,
+    )

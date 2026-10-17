@@ -7,6 +7,8 @@ import asyncio
 from pathlib import Path
 from uuid import UUID
 
+import pytest
+
 from acme.infra.agent_workspaces import (
     EgressMode,
     EgressPolicy,
@@ -24,9 +26,12 @@ from acme.om.agent_steps.types.header import (
     ToolRequestHeader,
     ToolResponseHeader,
 )
+from acme.om.agent_steps.types.page import AgentStepPage
 from acme.om.agents.types.request import Handoff, Spawn
 from acme.om.agents.types.run import RunEnd
 from acme.om.base import new_id
+from acme.om.context import TenantContext
+from acme.om.exceptions import Unavailable
 from acme.om.tools.rules import DEFAULT_CEILINGS
 from acme.om.tools.types.policy import Decision, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import ToolClass
@@ -214,6 +219,44 @@ async def test_an_interrupt_stops_the_call_it_names_and_no_other(tmp_path: Path)
     assert loop.tools["lookup"].ran_as == [loop.owner.user_id]
     others = [a for a in of_type(steps, AgentStepType.TOOL_RESPONSE) if a.responds_to != request.id]
     assert [getattr(a.header, "failure", None) for a in others] == [None]
+
+
+async def test_a_failed_control_read_leaves_the_running_call_running(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loop = loop_over(tmp_path)
+    agent_session_id = await loop.start()
+    await loop.say(agent_session_id, "Find it.")
+    loop.anthropic.add(reply(use("slow", "the total")), reply(said("Found.")))
+    slow = loop.tools["slow"]
+    running = asyncio.ensure_future(loop.loops.run(loop.owner, agent_session_id))
+    await slow.started.wait()
+    steps = loop.managers.agent_steps
+    read = steps.get_agent_steps
+    failed = asyncio.Event()
+
+    async def down_once(
+        ctx: TenantContext, session: UUID, after_seq: int, limit: int
+    ) -> AgentStepPage:
+        if not failed.is_set():
+            failed.set()
+            raise Unavailable("the database did not answer in time")
+        return await read(ctx, session, after_seq, limit)
+
+    monkeypatch.setattr(steps, "get_agent_steps", down_once)
+    await failed.wait()
+    assert not running.done(), "the call runs on past the failed read"
+    slow.release.set()
+
+    run = await running
+
+    assert run.outcome is LoopOutcome.SUCCEEDED
+    history = await loop.history(agent_session_id)
+    (request,) = of_type(history, AgentStepType.TOOL_REQUEST)
+    answered = answer_to(history, request)
+    assert isinstance(answered.header, ToolResponseHeader) and answered.header.failure is None
+    assert "slow found the total" in text_of(loop.anthropic.calls[-1])
+    assert len(slow.ran_as) == 1, "the tool ran once"
 
 
 async def test_an_accepted_result_ends_the_loop_from_the_history_after_a_park(

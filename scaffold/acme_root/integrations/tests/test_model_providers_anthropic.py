@@ -51,7 +51,7 @@ from acme.integrations.model_providers.types import (
     StopReason,
     Usage,
 )
-from acme.integrations.model_providers.wire import sse_events
+from acme.integrations.model_providers.wire import UNSENT, sse_events
 
 FIXTURES = Path(__file__).parent / "fixtures" / "model_providers"
 RECORDED = (FIXTURES / "anthropic_tool_use.sse").read_text()
@@ -573,6 +573,59 @@ async def test_a_provider_that_does_not_answer_is_transient() -> None:
     with pytest.raises(ModelCallFailed) as failed:
         await reply_of(adapter(handler).stream(CALL))
     assert failed.value.kind is ErrorKind.TRANSIENT
+
+
+class _BrokenOff(httpx.AsyncByteStream):
+    """A response body that delivers its first events, then loses the
+    connection."""
+
+    def __init__(self, head: str) -> None:
+        self._head = head.encode()
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        yield self._head
+        raise httpx.ReadError("connection reset")
+
+
+@pytest.mark.parametrize("unsent", UNSENT, ids=lambda error: error.__name__)
+async def test_a_request_that_never_left_fails_with_nothing_arrived(
+    unsent: type[httpx.TransportError],
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise unsent("no connection", request=request)
+
+    with pytest.raises(ModelCallFailed) as failed:
+        await reply_of(adapter(handler).stream(CALL))
+    assert failed.value.kind is ErrorKind.TRANSIENT and failed.value.partial is None
+
+
+@pytest.mark.parametrize(
+    "broken",
+    [httpx.ReadTimeout, httpx.ReadError, httpx.RemoteProtocolError],
+    ids=lambda error: error.__name__,
+)
+async def test_a_request_that_left_keeps_what_arrived_however_little(
+    broken: type[httpx.TransportError],
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise broken("no answer", request=request)
+
+    with pytest.raises(ModelCallFailed) as failed:
+        await reply_of(adapter(handler).stream(CALL))
+    assert failed.value.kind is ErrorKind.TRANSIENT and failed.value.partial is not None
+
+
+async def test_a_stream_broken_after_it_began_keeps_what_arrived() -> None:
+    head = RECORDED[: len(RECORDED) // 2].rpartition("\n\n")[0] + "\n\n"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, stream=_BrokenOff(head))
+
+    with pytest.raises(ModelCallFailed) as failed:
+        await reply_of(adapter(handler).stream(CALL))
+    partial = failed.value.partial
+    assert failed.value.kind is ErrorKind.TRANSIENT
+    assert partial is not None and partial.truncated and partial.response_id is not None
 
 
 # A turn whose thinking sits between its blocks.

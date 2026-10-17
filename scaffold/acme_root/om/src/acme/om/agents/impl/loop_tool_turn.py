@@ -269,7 +269,7 @@ class LoopToolTurn(LoopCore):
     ) -> AgentStep | ControlCommand:
         """Runs a call while its controls are read: a cancel, or an interrupt
         of a tool that may be stopped, ends it, and answers the control that
-        did."""
+        did. A read that fails leaves the call running, to be read again."""
         assert run.workspace is not None
         task = asyncio.ensure_future(
             self._tools.execute(
@@ -293,7 +293,18 @@ class LoopToolTurn(LoopCore):
                 waiter.cancel()
                 if task in done:
                     return task.result()
-                later = await self._since(run, seen)
+                try:
+                    later = await self._since(run, seen)
+                except Exception:
+                    # A read that fails costs one poll, never the call: the
+                    # next poll reads again, and the item's lease bounds a
+                    # history that stays unreadable.
+                    log.warning(
+                        "session %s: a control read failed while a tool ran",
+                        run.agent_session_id,
+                        exc_info=True,
+                    )
+                    continue
                 if later:
                     seen = later[-1].seq
                 command = rules.stops_call(later, request, tool.spec.interruptible)
