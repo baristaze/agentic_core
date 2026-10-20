@@ -1,4 +1,4 @@
-# Tool configuration for the checkers under scripts/ and their tests.
+# Tool configuration for the checkers under scripts/, their tests, and demo/.
 # This repository is not a Python package: nothing here is built or
 # published, and uv does not manage it as a project. The engine's
 # agentic-check is a member of the scaffold's workspace, which its own
@@ -15,19 +15,19 @@ managed = false
 
 [tool.ruff]
 line-length = 130
-src = ["scripts", "tests"]
-include = ["scripts/**/*.py", "tests/**/*.py"]
+src = ["scripts", "tests", "demo"]
+include = ["scripts/**/*.py", "tests/**/*.py", "demo/**/*.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["_common", "check_skills", "conftest", "acme"]
+known-first-party = ["_common", "check_skills", "conftest", "acme", "dreamcatcher"]
 
 [tool.mypy]
 python_version = "3.10"
-files = ["scripts", "tests"]
-mypy_path = ["scripts", "tests"]
+files = ["scripts", "tests", "demo"]
+mypy_path = ["scripts", "tests", "demo"]
 explicit_package_bases = true
 check_untyped_defs = true
 warn_unused_ignores = true

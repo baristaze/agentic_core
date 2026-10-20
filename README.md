@@ -1,5 +1,7 @@
 # agentic_core
 
+![A scripted run of the engine, drawn as it records it](demo/dreamcatcher.gif)
+
 The engine under an agent: a tool-call loop with a model as its
 decision-maker, made durable, bounded, steerable, private, and
 auditable.
@@ -23,6 +25,9 @@ that tells the story, and tools that hold the detail.
   guideline's scaffold. A platform renders it under its own name. It
   carries [`checkers/`](scaffold/acme_root/checkers/), the checker for the lenses a program can decide,
   so every copy runs it.
+- **[`demo/`](demo/)**: the engine in process, its run scripted end to
+  end and drawn on one terminal screen, the run above. It sits outside
+  the scaffold, so no copy carries it.
 
 [The Repository](agentic_core_spec.md#the-repository) in the spec says
 what each part holds. A part's folder appears with the change that
@@ -61,6 +66,7 @@ add the marketplace.
 make check       # everything CI runs
 make gen-toc     # regenerate the spec's Contents from its headings
 make gen-skills  # regenerate the review skills from the template and the lenses
+make demo        # the engine in process, on one screen of 120 by 36
 ```
 
 [`CONTRIBUTING.md`](CONTRIBUTING.md) says what `make check` needs and
