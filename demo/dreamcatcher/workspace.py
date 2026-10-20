@@ -14,7 +14,6 @@ import ast
 import asyncio
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import Dict, List, Optional
 
 from acme.om.agent_steps.types.header import ToolFailure
 from acme.om.base import OmBase
@@ -42,12 +41,12 @@ class Cue:
 
 @dataclass
 class Workspace:
-    files: Dict[str, str] = field(default_factory=lambda: dict(FILES))
-    applied: Dict[str, "Edited"] = field(default_factory=dict)
+    files: dict[str, str] = field(default_factory=lambda: dict(FILES))
+    applied: dict[str, "Edited"] = field(default_factory=dict)
     """Each edit applied, by the key of the call that applied it."""
-    attempts: List[str] = field(default_factory=list)
+    attempts: list[str] = field(default_factory=list)
     """The key of every edit call, each time it ran."""
-    cues: Dict[str, Cue] = field(default_factory=dict)
+    cues: dict[str, Cue] = field(default_factory=dict)
     pause: float = 0.0
     """Seconds each call takes, so a person can follow the run."""
 
@@ -66,7 +65,7 @@ class Workspace:
 
     def check(self) -> "Checked":
         """`sum(SIZES.values()) == TOTAL`, read from the source by `ast`."""
-        values: Dict[str, object] = {}
+        values: dict[str, object] = {}
         tree = ast.parse(self.files.get("sizes.py", ""))
         for node in tree.body:
             if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name):
@@ -169,7 +168,7 @@ class EditFile(_Tool):
         assert isinstance(call_input, Edit)
         key = str(runtime.key)
         self._workspace.attempts.append(key)
-        done: Optional[Edited] = self._workspace.applied.get(key)
+        done: Edited | None = self._workspace.applied.get(key)
         if done is not None:
             await self._workspace.wait(self._spec.name)
             return done.model_copy(update={"replayed": True})

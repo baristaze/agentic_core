@@ -12,16 +12,15 @@ import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 from uuid import UUID
 
+from acme.infra.impl.local import InfraLocalImpl
 from acme.integrations.identity.absent import IdentityProviderAbsentImpl
 from acme.integrations.impl.configured import IntegrationsOverImpl
 from acme.integrations.model_providers.calls import ModelCall, StreamPart
 from acme.integrations.model_providers.registry import ModelProvidersOverImpl
 from acme.integrations.model_providers.scripted import ModelProviderScriptedImpl, Turn
 from acme.integrations.model_providers.types import ProviderName
-from acme.infra.impl.local import InfraLocalImpl
 from acme.om.agent_root import AgentRootOptions
 from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
@@ -59,7 +58,6 @@ from acme.om.tools.native.wait_for_sub_agents import WAIT_FOR_SUB_AGENTS
 from acme.om.tools.native.write_agent_plan import WRITE_AGENT_PLAN
 from acme.om.tools.types.policy import Decision, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import ToolClass
-
 from dreamcatcher.workspace import Workspace, tools
 
 ALLOWED = ToolPolicyLayer(
@@ -106,7 +104,7 @@ class Twin(ModelProviderScriptedImpl):
         super().__init__(provider)
         self.pause = pause
 
-    async def stream(self, call: ModelCall, *, credential: object = None) -> AsyncIterator[StreamPart]:  # type: ignore[override]
+    async def stream(self, call: ModelCall, *, credential: object = None) -> AsyncIterator[StreamPart]:
         async for part in super().stream(call):
             if self.pause:
                 await asyncio.sleep(self.pause)
@@ -132,12 +130,12 @@ class Record:
     its tally, and the writer epoch of the root."""
 
     root: UUID
-    steps: Dict[UUID, List[AgentStep]]
-    children: List[AgentSession]
-    usage: List[UsageRecord]
-    holds: Dict[UUID, int]
-    budget: Optional[SpendBudget]
-    tally: Optional[SpendTally]
+    steps: dict[UUID, list[AgentStep]]
+    children: list[AgentSession]
+    usage: list[UsageRecord]
+    holds: dict[UUID, int]
+    budget: SpendBudget | None
+    tally: SpendTally | None
     epoch: int
 
 
@@ -165,10 +163,11 @@ class Engine:
             permissions=permissions_of(Role.OWNER),
             credential_kind=CredentialKind.AUTH_SESSION_TOKEN,
         )
-        self.budget_id: Optional[UUID] = None
+        self.budget_id: UUID | None = None
 
-    def script(self, turns: List[Turn]) -> None:
-        self.twins[ProviderName.ANTHROPIC].add(*turns)
+    def script(self, turns: dict[ProviderName, list[Turn]]) -> None:
+        for provider, more in turns.items():
+            self.twins[provider].add(*more)
 
     async def start(self, kind: str, title: str) -> UUID:
         session = await self.managers.agents.start_agent_session(self.owner, Start(id=new_id(), kind=kind, title=title))
@@ -221,13 +220,11 @@ class Engine:
         worker would. Returns how many sessions it woke."""
         assert self.budget_id is not None
         budget = await self.managers.spend_budgets.get_spend_budget(self.owner, self.budget_id)
-        await self.managers.spend_budgets.change_amount(
-            self.owner, budget.id, Amount(cost_micros=cost_micros), budget.version
-        )
+        await self.managers.spend_budgets.change_amount(self.owner, budget.id, Amount(cost_micros=cost_micros), budget.version)
         return await self.managers.agent_sessions.wake_parked(self.owner, ParkReason.SPEND_BUDGET)
 
-    async def history(self, agent_session_id: UUID) -> List[AgentStep]:
-        steps: List[AgentStep] = []
+    async def history(self, agent_session_id: UUID) -> list[AgentStep]:
+        steps: list[AgentStep] = []
         while True:
             after = steps[-1].seq if steps else 0
             page = await self.managers.agent_steps.get_agent_steps(self.owner, agent_session_id, after, 200)
@@ -235,13 +232,13 @@ class Engine:
             if not page.has_more or not page.items:
                 return steps
 
-    async def children(self, agent_session_id: UUID) -> List[AgentSession]:
+    async def children(self, agent_session_id: UUID) -> list[AgentSession]:
         page = await self.managers.agent_sessions.get_children(self.owner, agent_session_id, None, 50)
         return list(page.items)
 
-    async def usage(self, agent_session_id: UUID) -> List[UsageRecord]:
+    async def usage(self, agent_session_id: UUID) -> list[UsageRecord]:
         ledger = self.storage.get_ledger_storage()
-        records: List[UsageRecord] = []
+        records: list[UsageRecord] = []
         while True:
             after = records[-1].id if records else None
             page = await ledger.read_usage_records(self.owner.org_id, agent_session_id, after, 200)
@@ -260,7 +257,7 @@ class Engine:
         steps = {sid: await self.history(sid) for sid in sessions}
         usage = [record for sid in sessions for record in await self.usage(sid)]
         ledger = self.storage.get_ledger_storage()
-        holds: Dict[UUID, int] = {}
+        holds: dict[UUID, int] = {}
         for record in usage:
             hold = await ledger.read_hold(self.owner.org_id, record.spend_hold_id)
             if hold is not None:
@@ -274,7 +271,7 @@ class Engine:
         budget, tally = await self._budget()
         return Record(root, steps, children, usage, holds, budget, tally, await self.epoch(root))
 
-    async def _budget(self) -> Tuple[Optional[SpendBudget], Optional[SpendTally]]:
+    async def _budget(self) -> tuple[SpendBudget | None, SpendTally | None]:
         if self.budget_id is None:
             return None, None
         budget = await self.managers.spend_budgets.get_spend_budget(self.owner, self.budget_id)

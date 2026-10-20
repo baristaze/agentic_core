@@ -19,8 +19,16 @@ MYPY := uvx --with pytest==$(call pin,pytest) mypy@$(call pin,mypy)
 # The engine's static checker lives in the scaffold, so every copy
 # carries it; its tests run here too, from the same source.
 CHECKER := scaffold/acme_root/checkers
+# The demo runs the scaffold's engine as it sits, on the Python and the
+# packages the scaffold's lock names.
+DEMO := uv run --project ../scaffold/acme_root --package acme-om --no-dev --locked python -m dreamcatcher
+# A provider's key, as a viewer's shell may hold one, under each name the
+# engine's settings and the providers read: the check holds that the demo
+# builds no provider that would send it.
+DEMO_KEYS := ANTHROPIC_API_KEY=never-sent OPENAI_API_KEY=never-sent ACME_LLM_PROVIDERS=live \
+	ACME_ANTHROPIC_API_KEY=never-sent ACME_OPENAI_API_KEY=never-sent
 
-.PHONY: help check lint ruff mypy lenses links toc version skills agents test plugin gen-skills gen-skills-check gen-toc clean
+.PHONY: help check lint ruff mypy lenses links toc version skills agents test plugin gen-skills gen-skills-check gen-toc demo demo-check clean
 
 help:              ## show targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -30,11 +38,11 @@ check: lint ruff mypy lenses links toc version gen-skills-check skills agents te
 lint:              ## markdownlint over every Markdown file
 	$(MARKDOWNLINT) "**/*.md" "#node_modules"
 
-ruff:              ## lint and format check of scripts/, tests/, and the scaffold, which its own ruff.toml configures
+ruff:              ## lint and format check of scripts/, tests/, demo/, and the scaffold, which its own ruff.toml configures
 	$(RUFF) check
 	$(RUFF) format --check
 
-mypy:              ## type check of scripts/ and tests/
+mypy:              ## type check of scripts/, tests/, and demo/
 	$(MYPY)
 
 lenses:            ## every lens follows the format and cites a real section of the spec
@@ -73,6 +81,12 @@ gen-skills-check:  ## fail when a generated skill is out of date
 
 gen-toc:           ## regenerate the Contents of agentic_core_spec.md
 	$(PYTHON) scripts/gen_toc.py
+
+demo:              ## the engine in process, its run scripted end to end, on one screen of 120 by 36
+	@cd demo && $(DEMO)
+
+demo-check:        ## the demo headless, offline, with a provider's key set: each act and the ledger checked against the record
+	cd demo && env $(DEMO_KEYS) $(DEMO) --check
 
 clean:             ## remove tool caches
 	rm -rf .markdownlint-cli2-cache node_modules .pytest_cache .mypy_cache .ruff_cache
