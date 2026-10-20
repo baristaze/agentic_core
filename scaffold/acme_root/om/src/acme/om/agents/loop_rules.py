@@ -542,9 +542,7 @@ def retry_wait(
     less than the provider's own retry-after, however long. The fixed half
     keeps the growth. A wait past the retry cap parks the run, so the
     retry-after is not cut to a cap here."""
-    policy = RetryPolicy(
-        base=base.total_seconds(), cap=LONGEST_BACKOFF.total_seconds(), jitter=0.5
-    )
+    policy = RetryPolicy(base=base.total_seconds(), cap=LONGEST_BACKOFF.total_seconds(), jitter=0.5)
     backoff = timedelta(seconds=policy.wait(attempt + 1, draw=lambda: jitter))
     if retry_after is None:
         return backoff
