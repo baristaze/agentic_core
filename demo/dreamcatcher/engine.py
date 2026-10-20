@@ -25,7 +25,7 @@ from acme.om.agent_root import AgentRootOptions
 from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
 from acme.om.agent_steps.types.content import Content, TextBlock
-from acme.om.agent_steps.types.header import InputHeader, ParkReason
+from acme.om.agent_steps.types.header import InputHeader, ModelRequestHeader, ParkReason
 from acme.om.agents.types.kind import AgentKind, DoneRule
 from acme.om.agents.types.request import Start
 from acme.om.agents.types.run import LoopRun
@@ -258,14 +258,9 @@ class Engine:
         usage = [record for sid in sessions for record in await self.usage(sid)]
         ledger = self.storage.get_ledger_storage()
         holds: dict[UUID, int] = {}
-        for record in usage:
-            hold = await ledger.read_hold(self.owner.org_id, record.spend_hold_id)
-            if hold is not None:
-                holds[hold.id] = hold.exposure.cost_micros or 0
-        for step in steps[root]:
-            hold_id = getattr(step.header, "spend_hold_id", None)
-            if hold_id is not None and hold_id not in holds:
-                hold = await ledger.read_hold(self.owner.org_id, hold_id)
+        for step in (step for history in steps.values() for step in history):
+            if isinstance(step.header, ModelRequestHeader) and step.header.spend_hold_id is not None:
+                hold = await ledger.read_hold(self.owner.org_id, step.header.spend_hold_id)
                 if hold is not None:
                     holds[hold.id] = hold.exposure.cost_micros or 0
         budget, tally = await self._budget()

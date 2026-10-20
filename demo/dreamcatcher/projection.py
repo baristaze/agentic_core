@@ -19,6 +19,7 @@ from acme.om.agent_steps.types.header import (
     ModelRequestHeader,
     ModelResponseHeader,
     ParkedHeader,
+    ParkReason,
     ToolRequestHeader,
     ToolResponseHeader,
 )
@@ -81,6 +82,8 @@ class Ledger:
     last_latency_ms: int
     wall_s: float
     parks: tuple[tuple[str, int], ...]
+    refused: bool
+    """The gate refused the next call: the loop is parked on its budget."""
     steers: int
     recovered: int
     epoch: int
@@ -176,8 +179,8 @@ def steers(steps: list[AgentStep]) -> int:
 
 
 def said(steps: list[AgentStep]) -> str:
-    """The latest text the model wrote."""
-    for step in reversed(steps):
+    """The latest text a model wrote, in any session of the tree."""
+    for step in sorted(steps, key=lambda s: s.created_at, reverse=True):
         if step.type is AgentStepType.MODEL_RESPONSE and step.as_text().strip():
             return " ".join(step.as_text().split())
     return ""
@@ -214,7 +217,8 @@ def project(record: Record) -> Frame:
     hold = None
     if isinstance(last_request, ModelRequestHeader) and last_request.spend_hold_id is not None:
         hold = record.holds.get(last_request.spend_hold_id)
-    wall = (every[-1].created_at - min(s.created_at for s in every)).total_seconds() if every else 0.0
+    times = [step.created_at for step in every]
+    wall = (max(times) - min(times)).total_seconds() if times else 0.0
     ledger = Ledger(
         steps=tuple((t, types.get(t, 0)) for t in TYPES),
         loops=loops,
@@ -233,6 +237,7 @@ def project(record: Record) -> Frame:
         last_latency_ms=usage[-1].latency_ms if usage else 0,
         wall_s=wall,
         parks=tuple(sorted(parks.items())),
+        refused=state_of(root) == f"parked · {ParkReason.SPEND_BUDGET.value}",
         steers=steers(root),
         recovered=sum(1 for step in every if recovered(step)),
         epoch=record.epoch,

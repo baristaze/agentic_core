@@ -1,6 +1,7 @@
 {
   "budget_micros": 452000,
   "raised_micros": 900000,
+  "ring_slots": 86,
   "acts": [
     {
       "name": "simple",

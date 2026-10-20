@@ -16,7 +16,7 @@ import re
 from dreamcatcher.projection import Frame, Ledger, Ring
 
 WIDTH, HEIGHT = 120, 36
-RING_COLS, RING_ROWS = 72, 32
+RING_COLS, RING_ROWS = 70, 32
 PANEL = WIDTH - RING_COLS
 
 COLORS: dict[str, int] = {
@@ -105,38 +105,42 @@ def polar(cx: float, cy: float, r: float, theta: float) -> tuple[float, float]:
 
 
 def draw_ring(canvas: Canvas, ring: Ring, cx: float, cy: float, outer: float, inner: float, slots: int, web: bool) -> list[float]:
-    """Draws `ring` and returns each slice's angle."""
+    """Draws `ring`, its first slice at the top and each next one a slot
+    clockwise, and returns each slice's angle. Past `slots`, each new step
+    narrows every slice, so the ring always holds the whole history."""
     n = len(ring.slices)
     total = max(n, slots)
     step = 2 * math.pi / total
-    angles = [(i - (n - 1)) * step for i in range(n)]
+    angles = [i * step for i in range(n)]
     if web:
         rim = inner - 2
         for i, piece in enumerate(ring.slices):
+            depth = rim * (0.3 + 0.65 * i / total)
             for j in piece.links:
-                draw_thread(canvas, cx, cy, rim, angles[j], angles[i], THREADS.get(piece.kind, DIM))
+                draw_thread(canvas, cx, cy, rim, depth, angles[j], angles[i], THREADS.get(piece.kind, DIM))
     top = int(cy - outer) - 1
     for y in range(max(top, 0), int(cy + outer) + 2):
         for x in range(int(cx - outer) - 1, int(cx + outer) + 2):
             r = math.hypot(x - cx, y - cy)
             if not inner <= r <= outer:
                 continue
-            theta = math.atan2(x - cx, cy - y)
-            k = round(-theta / step) % total
-            i = n - 1 - k
-            if 0 <= i < n:
+            i = round(math.atan2(x - cx, cy - y) / step) % total
+            if i < n:
                 canvas.dot(x, y, COLORS.get(ring.slices[i].kind, DIM))
             elif r >= outer - 1 and (x + y) % 3 == 0:
                 canvas.dot(x, y, FAINT)
     return angles
 
 
-def draw_thread(canvas: Canvas, cx: float, cy: float, rim: float, a: float, b: float, color: int) -> None:
-    """A thread from the rim at `a` to the rim at `b`, curled toward the
-    center like the web of a dreamcatcher."""
+def draw_thread(canvas: Canvas, cx: float, cy: float, rim: float, depth: float, a: float, b: float, color: int) -> None:
+    """A thread from the rim at `a` to the rim at `b`, its middle pulled in
+    to `depth` from the center. A newer thread stays near the rim and an
+    older one reaches toward the center, so the web spirals in as the
+    ring turns, like the web of a dreamcatcher."""
     x0, y0 = polar(cx, cy, rim, a)
     x2, y2 = polar(cx, cy, rim, b)
-    xc, yc = polar(cx, cy, rim * 0.42, (a + b) / 2 + 1.1)
+    xm, ym = polar(cx, cy, depth, (a + b) / 2)
+    xc, yc = 2 * xm - (x0 + x2) / 2, 2 * ym - (y0 + y2) / 2
     span = math.hypot(xc - x0, yc - y0) + math.hypot(x2 - xc, y2 - yc)
     samples = max(8, int(span * 1.6))
     for s in range(samples + 1):
@@ -157,22 +161,26 @@ def ring_panel(frame: Frame, slots: int) -> list[str]:
     cx, cy = RING_COLS, RING_ROWS * 2
     outer, inner = 58.0, 51.0
     angles = draw_ring(canvas, frame.ring, cx, cy, outer, inner, slots, web=True)
-    spots = ((14.0, 14.0), (2 * RING_COLS - 14.0, 14.0))
+    low = RING_ROWS * 4 - 22.0
+    spots = ((12.0, low), (2 * RING_COLS - 12.0, low))
     for moon, (mx, my) in zip(frame.moons, spots, strict=False):
         for landed in moon.reports:
             if landed < len(angles):
                 tx, ty = polar(cx, cy, outer + 2, angles[landed])
                 draw_line(canvas, mx + (tx - mx) * 0.2, my + (ty - my) * 0.2, tx, ty, COLORS["report"])
-        draw_ring(canvas, moon, mx, my, 10.0, 6.0, 12, web=False)
-        row, col = int(my + 14) // 4, int(mx) // 2
-        canvas.write(row, col - len(moon.title) // 2, moon.title, TEXT)
-        canvas.write(row + 1, col - len(moon.state) // 2, moon.state, DIM)
+        draw_ring(canvas, moon, mx, my, 9.0, 4.5, 8, web=False)
+        left = mx < cx
+        for row, text, color in ((RING_ROWS - 2, moon.title, TEXT), (RING_ROWS - 1, moon.state, DIM)):
+            canvas.write(row, 0 if left else RING_COLS - len(text), text, color)
     middle = RING_ROWS // 2
     state = frame.state
+    count = f" {len(frame.ring.slices)} steps · epoch {frame.ledger.epoch} "
+    hub = max(len(state), len(count)) + 4
+    for row in range(middle - 2, middle + 3):
+        canvas.write(row, (canvas.cols - hub) // 2, " " * hub, TEXT)
     color = COLORS["parked"] if state.startswith("parked") else (ACCENT if "idle" not in state else TEXT)
     canvas.centered(middle - 1, f" {state} ", color, bold=True)
-    led = frame.ledger
-    canvas.centered(middle + 1, f" step {led.total_steps} · epoch {led.epoch} ", DIM)
+    canvas.centered(middle + 1, count, DIM)
     return canvas.lines()
 
 
@@ -203,17 +211,23 @@ def tally(kind: str, count: int) -> str:
     return paint("■ ", COLORS.get(kind, DIM)) + paint(f"{kind:<15}", TEXT) + paint(f"{count:>4}", BRIGHT)
 
 
+def hold_line(led: Ledger) -> str:
+    if led.refused:
+        return paint(f"refused for call {led.hold_call + 1}", COLORS["parked"], bold=True) + paint(": parked before it", TEXT)
+    return paint(money(led.hold_micros), COLORS["parked"]) + paint(f" for call {led.hold_call}", TEXT)
+
+
 def numbers(led: Ledger) -> list[str]:
     """The panel beside the ring: each line one figure of the ledger."""
     lines = [head("STEPS") + paint(f"{led.total_steps:>32}", BRIGHT, bold=True)]
     kinds = list(led.steps)
     for left, right in itertools.zip_longest(kinds[0::2], kinds[1::2]):
         lines.append(" " + fit(tally(*left), 22) + "  " + (tally(*right) if right else ""))
-    parks = " · ".join(f"{reason} {n}" for reason, n in led.parks) or "none"
+    parks = "  ".join(f"{reason} {n}" for reason, n in led.parks) or "none"
     cap, hold = led.cap_micros or 1, led.hold_micros or 0
     spent = min(led.cost_micros / cap, 1.0)
     held = min(hold / cap, 1.0 - spent)
-    over = led.cost_micros + hold > cap
+    over = led.refused
     return [
         *lines,
         "",
@@ -232,9 +246,9 @@ def numbers(led: Ledger) -> list[str]:
         row("latency", paint(f"{led.last_latency_ms / 1000:.1f} s last · {led.latency_ms / 1000:.1f} s all", TEXT)),
         row("wall", paint(f"{led.wall_s:.1f} s", TEXT)),
         "",
-        head("SPEND", "   the gate holds the worst case first"),
-        row("spent", paint(money(led.cost_micros), BRIGHT, bold=True), paint(f" of {money(led.cap_micros)}", TEXT)),
-        row("hold", paint(money(led.hold_micros), COLORS["parked"]), paint(f" before call {led.hold_call}", TEXT)),
+        head("SPEND", "   each call's worst case held first"),
+        row("spent", paint(money(led.cost_micros), BRIGHT, bold=True), paint(f" of a {money(led.cap_micros)} cap", TEXT)),
+        row("hold", hold_line(led)),
         " " + bar([(spent, BRIGHT, "█"), (held, COLORS["parked"] if over else DIM, "▒")], 32) + paint("│ cap", DIM),
     ]
 
@@ -250,4 +264,5 @@ def compose(frame: Frame, slots: int, header: str, caption: str, beat: str) -> s
     rows.append(fit(caption, WIDTH))
     rows.append(fit(beat, WIDTH))
     rows.append(fit(paint("model ▸ ", DIM) + paint(frame.said, TEXT), WIDTH))
-    return "\x1b[H" + "\n".join(row + "\x1b[K" for row in rows)
+    # One synchronized update, so no frame is seen half drawn.
+    return "\x1b[?2026h\x1b[H" + "\n".join(row + "\x1b[K" for row in rows) + "\x1b[?2026l"

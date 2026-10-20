@@ -66,14 +66,16 @@ class Workspace:
     def check(self) -> "Checked":
         """`sum(SIZES.values()) == TOTAL`, read from the source by `ast`."""
         values: dict[str, object] = {}
-        tree = ast.parse(self.files.get("sizes.py", ""))
-        for node in tree.body:
-            if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name):
-                values[node.targets[0].id] = ast.literal_eval(node.value)
+        try:
+            for node in ast.parse(self.files.get("sizes.py", "")).body:
+                if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name):
+                    values[node.targets[0].id] = ast.literal_eval(node.value)
+        except (SyntaxError, ValueError) as unread:
+            return Checked(passed=False, detail=f"sizes.py does not parse: {unread}")
         sizes, total = values.get("SIZES"), values.get("TOTAL")
-        if not isinstance(sizes, dict) or not isinstance(total, int):
-            return Checked(passed=False, detail="sizes.py holds no SIZES dict and TOTAL int")
-        summed = sum(int(v) for v in sizes.values())
+        if not isinstance(sizes, dict) or not isinstance(total, int) or not all(isinstance(v, int) for v in sizes.values()):
+            return Checked(passed=False, detail="sizes.py holds no SIZES of ints and no TOTAL int")
+        summed = sum(sizes.values())
         if summed == total:
             return Checked(passed=True, detail=f"1 passed: sum(SIZES) == TOTAL == {total}")
         return Checked(passed=False, detail=f"1 failed: sum(SIZES) is {summed}, TOTAL is {total}")

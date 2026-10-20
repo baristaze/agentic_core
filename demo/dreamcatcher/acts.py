@@ -34,13 +34,15 @@ class Act:
 class Script:
     budget_micros: int
     raised_micros: int
+    ring_slots: int
+    """The root's ring: one slot for each step the run writes, so it closes whole."""
     acts: list[Act]
 
 
 def read_script(path: Path) -> Script:
     raw: dict[str, Any] = json.loads(path.read_text())
     acts = [Act(a["name"], a["title"], a["about"], dict(a["person"]), SCRIPT.validate_python(a["turns"])) for a in raw["acts"]]
-    return Script(int(raw["budget_micros"]), int(raw["raised_micros"]), acts)
+    return Script(int(raw["budget_micros"]), int(raw["raised_micros"]), int(raw["ring_slots"]), acts)
 
 
 @dataclass
@@ -87,6 +89,8 @@ class Director:
         self.proof = Proof()
 
     async def play(self) -> Proof:
+        self.proof.root = await self.engine.start(FIXER.name, "fix the failing check")
+        await self.engine.cap(self.proof.root, self.script.budget_micros)
         simple, smart, power = self.script.acts
         for act, play in ((simple, self.simple), (smart, self.smart), (power, self.power)):
             await self.announce(act)
@@ -103,10 +107,9 @@ class Director:
         return root
 
     async def simple(self, act: Act) -> None:
-        self.proof.root = await self.engine.start(FIXER.name, "fix the failing check")
-        await self.engine.cap(self.proof.root, self.script.budget_micros)
         root = await self._open(act)
         self.proof.runs["simple"] = await self.engine.run(root)
+        await self.narrate("the loop ends; the session stays, and waits for its next message")
 
     async def smart(self, act: Act) -> None:
         root = await self._open(act)
@@ -125,6 +128,7 @@ class Director:
             self.proof.runs[f"child {n}"] = await self.engine.run(child.id)
         await self.narrate("both reports reached the parent; it reads them")
         self.proof.runs["smart"] = await self.engine.run(root)
+        await self.narrate("the loop ends: the steer, the answer, and both reports are steps of its history")
 
     async def power(self, act: Act) -> None:
         root = await self._open(act)
@@ -138,7 +142,10 @@ class Director:
         lost = asyncio.ensure_future(self.engine.run(root))
         await reached(stall.started, "act 3: the run never reached the edit its runner dies in")
         await self.narrate("runner A dies mid edit_file; runner B takes the session over")
-        self.proof.runs["power"] = await self.engine.run(root)
-        await self.narrate("runner A wakes and writes")
+        self.proof.runs["power"] = power = await self.engine.run(root)
         stall.release.set()
-        self.proof.runs["lost"] = await lost
+        self.proof.runs["lost"] = lost_run = await lost
+        await self.narrate(
+            f"runner A wakes and writes: {lost_run.end.value}, refused at epoch {lost_run.epoch};"
+            f" the session is at epoch {power.epoch}"
+        )

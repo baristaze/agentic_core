@@ -25,8 +25,6 @@ from dreamcatcher.screen import ACCENT, ANSI, BRIGHT, DIM, HEIGHT, TEXT, WIDTH, 
 from dreamcatcher.workspace import Workspace
 
 SCRIPT = Path(__file__).with_name("script.json")
-SLOTS = 72
-"""The ring's slots: past them, each new step narrows every slice."""
 KEYS = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "ACME_ANTHROPIC_API_KEY", "ACME_OPENAI_API_KEY")
 """The names a provider's key goes by in a shell, and in the engine's settings."""
 
@@ -54,6 +52,7 @@ class Show:
         self.engine = engine
         self.pace = pace
         self.director = Director(engine, script, self.narrate, self.announce)
+        self.slots = script.ring_slots
         self.caption = paint("dreamcatcher", ACCENT, bold=True)
         self.beat = ""
         self.act = ""
@@ -85,7 +84,7 @@ class Show:
             root = self.director.proof.root
             if root is not None:
                 frame = project(await self.engine.read(root))
-                self.draw(compose(frame, SLOTS, self.header(), self.caption, self.beat))
+                self.draw(compose(frame, self.slots, self.header(), self.caption, self.beat))
             await asyncio.sleep(1 / 15)
 
     async def run(self) -> None:
@@ -97,11 +96,13 @@ class Show:
         closing = project(record)
         self.caption = paint("The replay", ACCENT, bold=True) + paint("   the same ring, redrawn from the history alone", TEXT)
         self.beat = ""
+        self.act = "replay"
         count = len(record.steps[root])
         for n in range(1, count + 1):
             frame = dataclasses.replace(project(until(record, n)), ledger=closing.ledger)
-            self.draw(compose(frame, SLOTS, self.header(), self.caption, self.beat))
+            self.draw(compose(frame, self.slots, self.header(), self.caption, self.beat))
             await asyncio.sleep(self.pace.replay / count)
+        self.act = "closed"
         self.caption = paint("The ledger closes", ACCENT, bold=True) + paint(
             "   every number above is a query over the history and the usage records", TEXT
         )
@@ -109,7 +110,7 @@ class Show:
         self.beat = paint("▸ ", ACCENT) + paint(
             f"${spent:.4f} at list price for the scripted usage, the sum of its usage records; nothing was billed", TEXT
         )
-        self.draw(compose(closing, SLOTS, self.header(), self.caption, self.beat))
+        self.draw(compose(closing, self.slots, self.header(), self.caption, self.beat))
         await asyncio.sleep(self.pace.close)
 
 
@@ -166,7 +167,7 @@ async def check() -> int:
         assert proof.root is not None
         record = await engine.read(proof.root)
         acted = await checks.acts(engine, script, proof, record)
-        closed = await checks.ledger(engine, record)
+        closed = await checks.ledger(engine, record, script.ring_slots)
         led = project(record).ledger
     ok = report("offline", checks.offline(engine, keyed, probe))
     ok = report("the acts, from the history", acted) and ok

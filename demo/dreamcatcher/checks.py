@@ -210,7 +210,7 @@ async def acts(engine: Engine, script: Script, proof: Proof, record: Record) -> 
     return claims
 
 
-async def ledger(engine: Engine, record: Record) -> list[Claim]:
+async def ledger(engine: Engine, record: Record, slots: int) -> list[Claim]:
     """The closing ledger, as the screen shows it, against the record read
     back by other queries: the steps counted afresh, the tokens from the
     responses' own usage, and the spend from the budget's tally."""
@@ -239,4 +239,5 @@ async def ledger(engine: Engine, record: Record) -> list[Claim]:
             tally is not None and shown.cost_micros == tally.spent_cost_micros and tally.held_cost_micros == 0,
         ),
         ("the ring replayed from the history alone", replayed == project(record)),
+        ("the ring closes whole: one slot for each step of the root", len(record.steps[record.root]) == slots),
     ]
