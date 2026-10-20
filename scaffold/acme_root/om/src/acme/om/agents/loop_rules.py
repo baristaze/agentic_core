@@ -65,6 +65,7 @@ from acme.om.tools.types.call import JobCompletion
 from acme.om.tools.types.toolset import LOAD_TOOLSET
 from acme.om.windows.rules import exchanges
 from acme.om.windows.types.kind import KindPrompts
+from acme.timing import RetryPolicy
 
 NUDGE = (
     "Your turn ended without a tool call. Go on with the work, or submit your "
@@ -126,6 +127,11 @@ SPENDER_UNLOCK = "spender"
 """What a person-park the loop writes waits on: a decision on a call, a
 principal who can pay. A principal who holds the calls is attribution's
 (`PRINCIPAL_PARK`)."""
+
+LONGEST_BACKOFF = timedelta(days=1)
+"""Where the loop's own wait between a provider's errors stops growing. It
+lies past the retry cap, so it moves no wait the loop spends: a wait past
+the cap parks the run, and the retry count stops the growth long before."""
 
 
 OPERATOR = "an operator of the platform"
@@ -530,12 +536,16 @@ def retry_wait(
     retry_after: float | None, attempt: int, base: timedelta, jitter: float
 ) -> timedelta:
     """How long the loop waits before it asks a provider again: a backoff
-    that doubles with each attempt, half of it fixed and half drawn from
-    `jitter`, a number in [0, 1), so sessions that failed together do not
-    ask again together; and never less than the provider's own
-    retry-after. The fixed half keeps the growth."""
-    full = base * (2**attempt)
-    backoff = full / 2 + (full / 2) * jitter
+    from `base` that doubles with each attempt (0 is the first retry), half
+    of it fixed and half drawn from `jitter`, a number in [0, 1), so
+    sessions that failed together do not ask again together; and never
+    less than the provider's own retry-after, however long. The fixed half
+    keeps the growth. A wait past the retry cap parks the run, so the
+    retry-after is not cut to a cap here."""
+    policy = RetryPolicy(
+        base=base.total_seconds(), cap=LONGEST_BACKOFF.total_seconds(), jitter=0.5
+    )
+    backoff = timedelta(seconds=policy.wait(attempt + 1, draw=lambda: jitter))
     if retry_after is None:
         return backoff
     return max(backoff, timedelta(seconds=retry_after))

@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Acme third-party providers: one interface per provider, its real client, and a deterministic twin."
 requires-python = ">=3.14"
 dependencies = [
+    "acme-timing",
     "acme-infra",
     "pydantic>=2.13",
     "pydantic-settings>=2.15",
@@ -19,6 +20,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
+acme-timing = { workspace = true }
 acme-infra = { workspace = true }
 
 [build-system]
