@@ -75,11 +75,14 @@ it.
   `tests/test_agentic_check.py` holds its catalog to `lenses/` and the
   spec, and the scaffold clean under it.
 - `demo/` runs the scaffold's engine in process, on its memory storage
-  with the scripted twin as its model, and draws the run on one terminal
-  screen. It sits outside the scaffold, so no copy carries it. The
-  root's ruff and mypy cover it, and `make demo-check` holds each act
-  and the ledger to the record. `demo/dreamcatcher.gif` is made by
-  `vhs` from `demo/dreamcatcher.tape`.
+  with the scripted twin as its model, and plays the run as a scene in
+  the browser. `demo/scene/` is the page: plain HTML and JavaScript,
+  with no build step and no request, that plays `tape.js`, the run as
+  the engine recorded it. It sits outside the scaffold, so no copy
+  carries it. The root's ruff and mypy cover its Python, and
+  `make demo-check` holds each act, the ledger, and the committed tape
+  to the record. `make demo-gif` records `demo/dreamcatcher.gif` from
+  the page in headless Chromium.
 - `.claude-plugin/` holds the plugin and marketplace manifests; the
   repository root is the plugin, `agentic-core`. `plugin.json` carries
   the one release version, and `scripts/check_version.py` holds every

@@ -28,7 +28,7 @@ DEMO := uv run --project ../scaffold/acme_root --package acme-om --no-dev --lock
 DEMO_KEYS := ANTHROPIC_API_KEY=never-sent OPENAI_API_KEY=never-sent ACME_LLM_PROVIDERS=live \
 	ACME_ANTHROPIC_API_KEY=never-sent ACME_OPENAI_API_KEY=never-sent
 
-.PHONY: help check lint ruff mypy lenses links toc version skills agents test plugin gen-skills gen-skills-check gen-toc demo demo-check clean
+.PHONY: help check lint ruff mypy lenses links toc version skills agents test plugin gen-skills gen-skills-check gen-toc demo demo-check demo-gif clean
 
 help:              ## show targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -82,11 +82,14 @@ gen-skills-check:  ## fail when a generated skill is out of date
 gen-toc:           ## regenerate the Contents of agentic_core_spec.md
 	$(PYTHON) scripts/gen_toc.py
 
-demo:              ## the engine in process, its run scripted end to end, on one screen of 120 by 36
+demo:              ## the engine in process, its run written to the scene's tape, and the scene opened in a browser
 	@cd demo && $(DEMO)
 
-demo-check:        ## the demo headless, offline, with a provider's key set: each act and the ledger checked against the record
+demo-check:        ## the demo headless, offline, with a provider's key set: each act, the ledger, and the tape checked against the record
 	cd demo && env $(DEMO_KEYS) $(DEMO) --check
+
+demo-gif:          ## the scene recorded into demo/dreamcatcher.gif in headless Chromium, frame by frame (needs ffmpeg; CI does not run it)
+	cd demo && $(DEMO) --tape && uv run --no-project --with playwright==$(call pin,playwright) python record.py
 
 clean:             ## remove tool caches
 	rm -rf .markdownlint-cli2-cache node_modules .pytest_cache .mypy_cache .ruff_cache
