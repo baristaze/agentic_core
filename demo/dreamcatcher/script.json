@@ -1,0 +1,60 @@
+{
+  "budget_micros": 452000,
+  "raised_micros": 900000,
+  "acts": [
+    {
+      "name": "simple",
+      "title": "Act 1 · Simple",
+      "about": "One loop: plan, read, run, edit, run, done.",
+      "person": {
+        "ask": "The check fails. Make it pass."
+      },
+      "turns": [
+        {"blocks": [{"kind": "text", "text": "A plan first."}, {"kind": "tool_use", "id": "t01", "name": "write_agent_plan", "input": {"plan": "1. Read sizes.py\n2. Run the check\n3. Fix what it says\n4. Run the check again"}}], "stop_reason": "tool_use", "usage": {"input": 1840, "cache_read": 18200, "output": 96}, "model": "claude-sonnet-5-5"},
+        {"blocks": [{"kind": "text", "text": "Reading the source."}, {"kind": "tool_use", "id": "t02", "name": "read_file", "input": {"path": "sizes.py"}}], "stop_reason": "tool_use", "usage": {"input": 420, "cache_read": 20100, "output": 52}, "model": "claude-sonnet-5-5"},
+        {"blocks": [{"kind": "text", "text": "Running the check."}, {"kind": "tool_use", "id": "t03", "name": "run_check", "input": {}}], "stop_reason": "tool_use", "usage": {"input": 380, "cache_read": 20600, "output": 40}, "model": "claude-sonnet-5-5"},
+        {"blocks": [{"kind": "text", "text": "The sizes sum to 12; TOTAL says 13."}, {"kind": "tool_use", "id": "t04", "name": "edit_file", "input": {"path": "sizes.py", "old": "TOTAL = 13", "new": "TOTAL = 12"}}], "stop_reason": "tool_use", "usage": {"input": 360, "cache_read": 21000, "output": 88}, "model": "claude-sonnet-5-5"},
+        {"blocks": [{"kind": "text", "text": "Running it again."}, {"kind": "tool_use", "id": "t05", "name": "run_check", "input": {}}], "stop_reason": "tool_use", "usage": {"input": 300, "cache_read": 21400, "output": 38}, "model": "claude-sonnet-5-5"},
+        {"blocks": [{"kind": "text", "text": "Fixed: TOTAL is 12, and the check passes."}], "stop_reason": "end_turn", "usage": {"input": 280, "cache_read": 21700, "output": 64}, "model": "claude-sonnet-5-5"}
+      ]
+    },
+    {
+      "name": "smart",
+      "title": "Act 2 · Smart",
+      "about": "A steer mid-flight, a question to the person, two sub-agents.",
+      "person": {
+        "ask": "Add a size xl of 8, and keep the check green.",
+        "steer": "Call it huge, not xl.",
+        "answer": "Set it to 20, and keep it a literal."
+      },
+      "turns": [
+        {"blocks": [{"kind": "text", "text": "Adding xl."}, {"kind": "tool_use", "id": "t06", "name": "edit_file", "input": {"path": "sizes.py", "old": "\"large\": 5}", "new": "\"large\": 5, \"xl\": 8}"}}], "stop_reason": "tool_use", "usage": {"input": 1260, "cache_read": 21900, "output": 92}, "model": "claude-sonnet-5-5"},
+        {"blocks": [{"kind": "tool_use", "id": "t07", "name": "run_check", "input": {}}], "stop_reason": "tool_use", "usage": {"input": 340, "cache_read": 23100, "output": 30}, "model": "claude-sonnet-5-5"},
+        {"blocks": [{"kind": "text", "text": "You said huge, not xl: renaming it."}, {"kind": "tool_use", "id": "t08", "name": "edit_file", "input": {"path": "sizes.py", "old": "\"xl\": 8", "new": "\"huge\": 8"}}], "stop_reason": "tool_use", "usage": {"input": 520, "cache_read": 23400, "output": 84}, "model": "claude-sonnet-5-5"},
+        {"blocks": [{"kind": "text", "text": "TOTAL is a literal, so I ask."}, {"kind": "tool_use", "id": "t09", "name": "ask_person", "input": {"question": "The sizes now sum to 20 and TOTAL says 12. Set TOTAL to 20, or compute it from SIZES?"}}], "stop_reason": "tool_use", "usage": {"input": 310, "cache_read": 23900, "output": 70}, "model": "claude-sonnet-5-5"},
+        {"blocks": [{"kind": "text", "text": "A literal 20, then."}, {"kind": "tool_use", "id": "t10", "name": "edit_file", "input": {"path": "sizes.py", "old": "TOTAL = 12", "new": "TOTAL = 20"}}], "stop_reason": "tool_use", "usage": {"input": 290, "cache_read": 24300, "output": 76}, "model": "claude-sonnet-5-5"},
+        {"blocks": [{"kind": "tool_use", "id": "t11", "name": "run_check", "input": {}}], "stop_reason": "tool_use", "usage": {"input": 260, "cache_read": 24600, "output": 30}, "model": "claude-sonnet-5-5"},
+        {"blocks": [{"kind": "text", "text": "Green. Two reviewers look before I report."}, {"kind": "tool_use", "id": "t12", "name": "spawn_sub_agent", "input": {"kind": "reviewer", "title": "names", "objective": "Read sizes.py and confirm every size is named in words."}}, {"kind": "tool_use", "id": "t13", "name": "spawn_sub_agent", "input": {"kind": "reviewer", "title": "total", "objective": "Run the check and confirm TOTAL matches SIZES."}}], "stop_reason": "tool_use", "usage": {"input": 280, "cache_read": 24900, "output": 132}, "model": "claude-sonnet-5-5"},
+        {"blocks": [{"kind": "tool_use", "id": "t14", "name": "wait_for_sub_agents", "input": {}}], "stop_reason": "tool_use", "usage": {"input": 340, "cache_read": 25300, "output": 24}, "model": "claude-sonnet-5-5"},
+        {"blocks": [{"kind": "tool_use", "id": "c01", "name": "read_file", "input": {"path": "sizes.py"}}], "stop_reason": "tool_use", "usage": {"input": 980, "cache_read": 9800, "output": 36}, "model": "claude-sonnet-5-5"},
+        {"blocks": [{"kind": "text", "text": "Every size is named in words: small, medium, large, huge."}], "stop_reason": "end_turn", "usage": {"input": 220, "cache_read": 10300, "output": 58}, "model": "claude-sonnet-5-5"},
+        {"blocks": [{"kind": "tool_use", "id": "c02", "name": "run_check", "input": {}}], "stop_reason": "tool_use", "usage": {"input": 960, "cache_read": 9800, "output": 28}, "model": "claude-sonnet-5-5"},
+        {"blocks": [{"kind": "text", "text": "The check passes: TOTAL is 20."}], "stop_reason": "end_turn", "usage": {"input": 200, "cache_read": 10200, "output": 46}, "model": "claude-sonnet-5-5"},
+        {"blocks": [{"kind": "text", "text": "Done: xl became huge as you said, TOTAL is 20, and both reviewers agree."}], "stop_reason": "end_turn", "usage": {"input": 620, "cache_read": 25600, "output": 96}, "model": "claude-sonnet-5-5"}
+      ]
+    },
+    {
+      "name": "power",
+      "title": "Act 3 · Power",
+      "about": "The gate parks before the call, a raise wakes it; a runner dies mid call.",
+      "person": {
+        "ask": "Note the change in NOTES.md, and ship it."
+      },
+      "turns": [
+        {"blocks": [{"kind": "text", "text": "Writing the note."}, {"kind": "tool_use", "id": "t15", "name": "edit_file", "input": {"path": "NOTES.md", "old": "# Notes\n", "new": "# Notes\n\n- SIZES gains huge (8); TOTAL is 20.\n"}}], "stop_reason": "tool_use", "usage": {"input": 1180, "cache_read": 26100, "output": 90}, "model": "claude-sonnet-5-5"},
+        {"blocks": [{"kind": "tool_use", "id": "t16", "name": "run_check", "input": {}}], "stop_reason": "tool_use", "usage": {"input": 300, "cache_read": 27000, "output": 30}, "model": "claude-sonnet-5-5"},
+        {"blocks": [{"kind": "text", "text": "Noted once, and green. Shipped."}], "stop_reason": "end_turn", "usage": {"input": 260, "cache_read": 27300, "output": 52}, "model": "claude-sonnet-5-5"}
+      ]
+    }
+  ]
+}
