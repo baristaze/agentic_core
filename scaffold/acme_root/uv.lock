@@ -14,6 +14,7 @@ members = [
     "acme-maintenance",
     "acme-om",
     "acme-ops",
+    "acme-timing",
     "acme-workspace",
 ]
 
@@ -84,6 +85,7 @@ name = "acme-client"
 version = "0.1.0"
 source = { editable = "clients/python" }
 dependencies = [
+    { name = "acme-timing" },
     { name = "httpx" },
     { name = "pydantic" },
     { name = "truststore" },
@@ -92,6 +94,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "acme-timing", editable = "libs/timing" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pydantic", specifier = ">=2.12" },
     { name = "truststore", specifier = ">=0.10" },
@@ -103,6 +106,7 @@ name = "acme-infra"
 version = "0.1.0"
 source = { editable = "infra" }
 dependencies = [
+    { name = "acme-timing" },
     { name = "aioboto3" },
     { name = "cryptography" },
     { name = "launchdarkly-openfeature-server" },
@@ -121,6 +125,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "acme-timing", editable = "libs/timing" },
     { name = "aioboto3", specifier = ">=15.5" },
     { name = "cryptography", specifier = ">=50.0" },
     { name = "launchdarkly-openfeature-server", specifier = ">=0.8.2" },
@@ -170,6 +175,7 @@ dependencies = [
     { name = "acme-infra" },
     { name = "acme-integrations" },
     { name = "acme-om" },
+    { name = "acme-timing" },
     { name = "pydantic-settings" },
 ]
 
@@ -178,6 +184,7 @@ requires-dist = [
     { name = "acme-infra", editable = "infra" },
     { name = "acme-integrations", editable = "integrations" },
     { name = "acme-om", editable = "om" },
+    { name = "acme-timing", editable = "libs/timing" },
     { name = "pydantic-settings", specifier = ">=2.15" },
 ]
 
@@ -188,6 +195,7 @@ source = { editable = "om" }
 dependencies = [
     { name = "acme-infra" },
     { name = "acme-integrations" },
+    { name = "acme-timing" },
     { name = "alembic" },
     { name = "asyncpg" },
     { name = "cryptography" },
@@ -200,6 +208,7 @@ dependencies = [
 requires-dist = [
     { name = "acme-infra", editable = "infra" },
     { name = "acme-integrations", editable = "integrations" },
+    { name = "acme-timing", editable = "libs/timing" },
     { name = "alembic", specifier = ">=1.20" },
     { name = "asyncpg", specifier = ">=0.31" },
     { name = "cryptography", specifier = ">=50.0" },
@@ -230,6 +239,11 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]
+
+[[package]]
+name = "acme-timing"
+version = "0.1.0"
+source = { editable = "libs/timing" }
 
 [[package]]
 name = "acme-workspace"
