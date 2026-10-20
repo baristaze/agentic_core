@@ -39,3 +39,9 @@ warn_redundant_casts = true
 [[tool.mypy.overrides]]
 module = ["acme.*"]
 ignore_missing_imports = true
+
+# The demo's recorder runs with Playwright, which `make demo-gif` brings;
+# the type check runs without it.
+[[tool.mypy.overrides]]
+module = ["playwright.*"]
+ignore_missing_imports = true

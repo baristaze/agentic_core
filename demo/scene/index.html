@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dreamcatcher</title>
+<style>
+  :root {
+    --night: #090e1c;
+    --ink: #c9d3ee;
+  }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--night);
+    color: var(--ink);
+    overflow: hidden;
+  }
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  svg {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    max-width: calc(100vh * 16 / 9);
+    max-height: calc(100vw * 9 / 16);
+  }
+  text {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  .mono {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+</style>
+</head>
+<body>
+<svg id="scene" viewBox="0 0 1280 720" role="img"
+     aria-label="The engine's run, played as a scene: the person, the engine in our cloud, the model in its cloud, and the hands outside, wired, with a light for each step the engine recorded."></svg>
+<script src="tape.js"></script>
+<script src="scene.js"></script>
+</body>
+</html>
