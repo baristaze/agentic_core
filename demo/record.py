@@ -47,7 +47,7 @@ def play(frames: Path) -> tuple[float, list[str]]:
 
     def watch(request: Request) -> None:
         if not inside(request.url):
-            faults.append(f"a request outside the page's folder, aborted: {request.url}")
+            faults.append(f"a request outside the page's folder: {request.url}")
 
     def console(message: ConsoleMessage) -> None:
         if message.type == "error":

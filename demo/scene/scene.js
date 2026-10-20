@@ -30,8 +30,8 @@
     response: "#a48cff",
     tool: "#ffe066",
     result: "#7ee08a",
-    report: "#e2a8ff",
-    task: "#ff9ed8",
+    report: "#ff8fc8",
+    task: "#ff8fc8",
     refused: "#ff5c5c",
     parked: "#ff6bcb",
     good: "#7ee08a",
@@ -295,7 +295,8 @@
     el("circle", { cx: 0, cy: -rr, r: big ? 4.5 : 2.4, fill: C.hoop }, rotor);
     el("circle", { r: big ? 9 : 4, fill: C.night, stroke: C.rotor, "stroke-width": big ? 2.6 : 1.4 }, rotor);
     const pulse = el("circle", { r: big ? 14 : 7, fill: C.rotor, opacity: 0, filter: "url(#glow)" }, g);
-    return { g, halo, feathers, web, rotor, ripples, pulse };
+    const impact = el("circle", { r: c.r, fill: "none", stroke: C.refused, "stroke-width": 4, opacity: 0 }, g);
+    return { g, halo, feathers, web, rotor, ripples, pulse, impact };
   }
 
   const engines = [makeEngine(E, true), makeEngine(P.subs[1], false), makeEngine(P.subs[2], false)];
@@ -566,6 +567,7 @@
             send(handsWire, false, C.tool);
             open[s].tool = p;
             p.typing = t + TRAVEL;
+            p.shows = t + TRAVEL;
             p.dur = TRAVEL;
           } else {
             p.pulse = [s, t];
@@ -647,30 +649,33 @@
 
   // ---------------------------------------------------------------- the screen's lines
 
-  function effectLines(p) {
+  // What the screen beside the hands shows: the call while it runs, from
+  // its input, and then its effect, from its output.
+  function screenOf(p) {
     const e = p.e;
-    const asked = e.input || {};
+    const pending = e.k === "tool_request";
+    const request = pending ? p : plan.slice(0, p.i).reverse().find((q) => q.e.k === "tool_request" && q.e.s === e.s);
+    const input = (request && request.e.input) || {};
     const fx = e.effect || {};
-    const request = plan.slice(0, p.i).reverse().find((q) => q.e.k === "tool_request" && q.e.s === e.s);
-    const input = (request && request.e.input) || asked;
+    const path = fx.path || input.path || "";
     if (e.tool === "read_file") {
+      if (pending) return { title: `read_file  ${path}`, lines: [["reading…", C.dim]] };
       const lines = String(fx.text || "").replace(/\n$/, "").split("\n");
-      return { title: `read_file  ${fx.path || input.path || ""}`, lines: lines.flatMap((l) => wrap(l, 40)).map((l) => [l, C.ink]) };
+      return { title: `read_file  ${path}`, lines: lines.flatMap((l) => wrap(l, 40)).map((l) => [l, C.ink]) };
     }
     if (e.tool === "run_check") {
+      if (pending) return { title: "run_check", lines: [["running the check…", C.dim]] };
       const ok = fx.passed === true;
       return { title: "run_check", lines: wrap((ok ? "✓ " : "✗ ") + (fx.detail || ""), 40).map((w) => [w, ok ? C.good : C.bad]) };
     }
-    if (e.tool === "edit_file") {
-      const out = [];
-      for (const l of String(input.old || "").replace(/\n$/, "").split("\n")) out.push(...hard("- " + l, 40).map((w) => [w, C.bad]));
-      for (const l of String(input.new || "").replace(/\n$/, "").split("\n")) out.push(...hard("+ " + l, 40).map((w) => [w, C.good]));
-      out.push([e.recovered ? "found applied: the edit landed once" : "applied", e.recovered ? C.request : C.dim]);
-      return { title: `edit_file  ${fx.path || input.path || ""}`, lines: out };
-    }
-    return { title: e.tool, lines: [] };
+    const out = [];
+    for (const l of String(input.old || "").replace(/\n$/, "").split("\n")) out.push(...hard("- " + l, 40).map((w) => [w, C.bad]));
+    for (const l of String(input.new || "").replace(/\n$/, "").split("\n")) out.push(...hard("+ " + l, 40).map((w) => [w, C.good]));
+    if (pending) out.push(["applying…", C.dim]);
+    else out.push(e.recovered ? ["found applied: the edit landed once", C.request] : ["applied", C.dim]);
+    return { title: `edit_file  ${path}`, lines: out };
   }
-  for (const p of tools) p.screen = effectLines(p);
+  for (const p of tools) p.screen = screenOf(p);
 
   // ---------------------------------------------------------------- draw(t)
 
@@ -727,9 +732,9 @@
         let f = (t - light.at) / TRAVEL;
         if (plan[k].bounce) {
           if (f < 0) continue;
-          const reach = 0.93;
+          const reach = 0.99;
           const back = (t - light.at - TRAVEL * reach) / 0.3;
-          let pos = f >= reach ? reach - 0.18 * Math.sin(Math.PI * 0.5 * clamp(back, 0, 1)) : f;
+          const pos = f >= reach ? reach - 0.2 * Math.sin(Math.PI * 0.5 * clamp(back, 0, 1)) : f;
           const fade = clamp(1 - (back - 1) / 0.6, 0, 1);
           if (fade <= 0) continue;
           const slot = pool[used++];
@@ -802,7 +807,10 @@
       if (age < 0.55) engineNote.setAttribute("fill", C.refused);
     }
     const refusal = latest(refusals, t);
-    if (refusal) {
+    const hit = refusal ? (t - refusal.t0 - TRAVEL * 0.99) / 0.45 : -1;
+    engines[0].impact.setAttribute("opacity", hit >= 0 && hit <= 1 ? (1 - hit).toFixed(2) : 0);
+    engines[0].impact.setAttribute("r", (E.r + 16 * clamp(hit, 0, 1)).toFixed(1));
+    if (refusal && hit >= 0) {
       engineNote.textContent = `the old runner's late ${refusal.e.tool}: refused, epoch ${refusal.e.epoch}`;
       engineNote.setAttribute("fill", C.refused);
     }
