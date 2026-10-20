@@ -5,8 +5,7 @@ request that left or one that never did."""
 
 import json
 from collections.abc import AsyncIterator, Mapping
-from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -15,6 +14,7 @@ from pydantic import SecretStr
 from acme.integrations.model_providers.calls import ModelReply
 from acme.integrations.model_providers.failures import ModelCallFailed
 from acme.integrations.model_providers.types import ErrorKind
+from acme.timing import retry_after
 
 MAX_MESSAGE = 500
 """The longest provider message a failure carries, for the log."""
@@ -75,29 +75,16 @@ def field(value: Any, *path: str) -> Any:
     return value
 
 
-def retry_after(headers: httpx.Headers, now: datetime | None = None) -> float | None:
+def provider_wait(headers: httpx.Headers, now: datetime | None = None) -> float | None:
     """The provider's own wait before a retry, in seconds: `retry-after-ms`
-    when it sends one, else `retry-after` as seconds or as a date."""
+    when it sends one, else `retry-after`, whole seconds or a date."""
     millis = headers.get("retry-after-ms")
     if millis is not None:
         try:
             return max(0.0, float(millis) / 1000)
         except ValueError:
             pass
-    value = headers.get("retry-after")
-    if value is None:
-        return None
-    try:
-        return max(0.0, float(value))
-    except ValueError:
-        pass
-    try:
-        when = parsedate_to_datetime(value)
-    except TypeError, ValueError:
-        return None
-    if when.tzinfo is None:
-        when = when.replace(tzinfo=UTC)
-    return max(0.0, (when - (now or datetime.now(UTC))).total_seconds())
+    return retry_after(headers.get("retry-after"), now=now)
 
 
 def key_for(provider: str, credential: SecretStr | None, platform: SecretStr | None) -> SecretStr:

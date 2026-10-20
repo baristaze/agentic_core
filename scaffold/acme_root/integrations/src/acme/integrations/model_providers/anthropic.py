@@ -55,7 +55,7 @@ from acme.integrations.model_providers.wire import (
     clipped,
     json_object,
     key_for,
-    retry_after,
+    provider_wait,
     sse_events,
     transport_failed,
 )
@@ -562,7 +562,7 @@ class ModelProviderAnthropicImpl(ModelProviderInterface):
                         kind,
                         message,
                         status=response.status_code,
-                        retry_after=retry_after(response.headers),
+                        retry_after=provider_wait(response.headers),
                         authentication=unauthenticated(raw),
                     )
                 async for event, data in sse_events(response.aiter_lines()):

@@ -148,6 +148,7 @@ version = "0.1.0"
 source = { editable = "integrations" }
 dependencies = [
     { name = "acme-infra" },
+    { name = "acme-timing" },
     { name = "httpx" },
     { name = "httpx2" },
     { name = "mcp" },
@@ -159,6 +160,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "acme-infra", editable = "infra" },
+    { name = "acme-timing", editable = "libs/timing" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "httpx2", specifier = ">=2.10.0" },
     { name = "mcp", specifier = "==2.3.0" },
