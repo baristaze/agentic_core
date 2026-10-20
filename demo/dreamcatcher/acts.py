@@ -3,13 +3,14 @@
 The script holds the words: the model's turns and what the person says.
 This module holds the cues: when a run starts, when the person speaks,
 when a runner is lost and another takes over. Each act leaves its proof
-in `Proof`, the ids a check reads the history by.
+in `Proof`, the ids a check reads the history by, and when each run of
+the root began, so the tape can say at which epoch each step was written.
 """
 
 import asyncio
 import json
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -17,6 +18,8 @@ from uuid import UUID
 from acme.integrations.model_providers.scripted import SCRIPT, Turn
 from acme.integrations.model_providers.types import ProviderName
 from acme.om.agents.types.run import LoopRun
+from acme.om.base import utcnow
+from acme.om.spend_budgets.types.spend_budget import SpendBudget
 from dreamcatcher.engine import FIXER, Engine
 
 
@@ -34,15 +37,13 @@ class Act:
 class Script:
     budget_micros: int
     raised_micros: int
-    ring_slots: int
-    """The root's ring: one slot for each step the run writes, so it closes whole."""
     acts: list[Act]
 
 
 def read_script(path: Path) -> Script:
     raw: dict[str, Any] = json.loads(path.read_text())
     acts = [Act(a["name"], a["title"], a["about"], dict(a["person"]), SCRIPT.validate_python(a["turns"])) for a in raw["acts"]]
-    return Script(int(raw["budget_micros"]), int(raw["raised_micros"]), int(raw["ring_slots"]), acts)
+    return Script(int(raw["budget_micros"]), int(raw["raised_micros"]), acts)
 
 
 @dataclass
@@ -55,6 +56,12 @@ class Proof:
     steer: UUID | None = None
     answer: UUID | None = None
     runs: dict[str, LoopRun] = field(default_factory=dict)
+    begun: dict[str, datetime] = field(default_factory=dict)
+    """When each run of the root began, on the clock the engine stamps its
+    steps with: a step written after it, and before the next run began,
+    is written at the epoch that run holds."""
+    budget: SpendBudget | None = None
+    """The budget as it was set, before any raise."""
 
 
 CUE = 30.0
@@ -73,79 +80,67 @@ async def reached(event: asyncio.Event, cue: str) -> None:
         raise Miscue(cue) from None
 
 
-Say = Callable[[str], Awaitable[None]]
-"""How the director narrates a beat: the screen shows it, and waits."""
-
-Announce = Callable[[Act], Awaitable[None]]
-"""How the director opens an act."""
-
-
 class Director:
-    def __init__(self, engine: Engine, script: Script, narrate: Say, announce: Announce) -> None:
+    def __init__(self, engine: Engine, script: Script) -> None:
         self.engine = engine
         self.script = script
-        self.narrate = narrate
-        self.announce = announce
         self.proof = Proof()
 
     async def play(self) -> Proof:
         self.proof.root = await self.engine.start(FIXER.name, "fix the failing check")
-        await self.engine.cap(self.proof.root, self.script.budget_micros)
+        self.proof.budget = await self.engine.cap(self.proof.root, self.script.budget_micros)
         simple, smart, power = self.script.acts
-        for act, play in ((simple, self.simple), (smart, self.smart), (power, self.power)):
-            await self.announce(act)
-            await play(act)
+        await self.simple(simple)
+        await self.smart(smart)
+        await self.power(power)
         return self.proof
 
-    async def _open(self, act: Act) -> UUID:
-        root = self.proof.root
-        assert root is not None
+    @property
+    def root(self) -> UUID:
+        assert self.proof.root is not None
+        return self.proof.root
+
+    def begin(self, name: str) -> "asyncio.Future[LoopRun]":
+        """A run of the root, begun, and when it began."""
+        self.proof.begun[name] = utcnow()
+        return asyncio.ensure_future(self.engine.run(self.root))
+
+    async def run(self, name: str) -> LoopRun:
+        self.proof.runs[name] = run = await self.begin(name)
+        return run
+
+    async def _open(self, act: Act) -> None:
         self.engine.script(act.turns)
-        await self.narrate(f"the person: “{act.person['ask']}”")
-        asked = await self.engine.say(root, act.person["ask"])
+        asked = await self.engine.say(self.root, act.person["ask"])
         self.proof.acts[act.name] = asked.seq
-        return root
 
     async def simple(self, act: Act) -> None:
-        root = await self._open(act)
-        self.proof.runs["simple"] = await self.engine.run(root)
-        await self.narrate("the loop ends; the session stays, and waits for its next message")
+        await self._open(act)
+        await self.run("simple")
 
     async def smart(self, act: Act) -> None:
-        root = await self._open(act)
+        await self._open(act)
         check = self.engine.workspace.cue("run_check")
-        running = asyncio.ensure_future(self.engine.run(root))
+        running = self.begin("asked")
         await reached(check.started, "act 2: the run never reached the check the steer lands in")
-        await self.narrate(f"mid tool call, the person steers: “{act.person['steer']}”")
-        self.proof.steer = (await self.engine.say(root, act.person["steer"])).id
+        self.proof.steer = (await self.engine.say(self.root, act.person["steer"])).id
         check.release.set()
         self.proof.runs["asked"] = await running
-        await self.narrate(f"parked on person; the person answers: “{act.person['answer']}”")
-        self.proof.answer = (await self.engine.say(root, act.person["answer"])).id
-        self.proof.runs["waiting"] = await self.engine.run(root)
-        for n, child in enumerate(await self.engine.children(root), start=1):
-            await self.narrate(f"sub-agent {n} of 2 runs: {child.title}")
+        self.proof.answer = (await self.engine.say(self.root, act.person["answer"])).id
+        await self.run("waiting")
+        for n, child in enumerate(await self.engine.children(self.root), start=1):
             self.proof.runs[f"child {n}"] = await self.engine.run(child.id)
-        await self.narrate("both reports reached the parent; it reads them")
-        self.proof.runs["smart"] = await self.engine.run(root)
-        await self.narrate("the loop ends: the steer, the answer, and both reports are steps of its history")
+        await self.run("smart")
 
     async def power(self, act: Act) -> None:
-        root = await self._open(act)
-        self.proof.runs["capped"] = capped = await self.engine.run(root)
+        await self._open(act)
+        capped = await self.run("capped")
         if capped.park is None:
             raise Miscue("act 3: the budget no longer parks the act's first call; tune budget_micros")
-        raised = self.script.raised_micros / 1_000_000
-        await self.narrate(f"parked on spend_budget before the call; the owner raises the cap to ${raised:.2f}")
         await self.engine.raise_budget(self.script.raised_micros)
         stall = self.engine.workspace.cue("edit_file")
-        lost = asyncio.ensure_future(self.engine.run(root))
+        lost = self.begin("lost")
         await reached(stall.started, "act 3: the run never reached the edit its runner dies in")
-        await self.narrate("runner A dies mid edit_file; runner B takes the session over")
-        self.proof.runs["power"] = power = await self.engine.run(root)
+        await self.run("power")
         stall.release.set()
-        self.proof.runs["lost"] = lost_run = await lost
-        await self.narrate(
-            f"runner A wakes and writes: {lost_run.end.value}, refused at epoch {lost_run.epoch};"
-            f" the session is at epoch {power.epoch}"
-        )
+        self.proof.runs["lost"] = await lost

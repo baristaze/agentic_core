@@ -3,10 +3,13 @@ recorded: the history of each session, the usage records, the budget's
 tally, and the writer epoch. A claim the run did not exercise fails.
 """
 
+import itertools
 import socket
 import sys
 from collections import Counter
 from collections.abc import Callable
+from pathlib import Path
+from typing import Any
 
 from acme.integrations.model_providers.scripted import ModelProviderScriptedImpl
 from acme.integrations.model_providers.types import ProviderName
@@ -25,7 +28,8 @@ from acme.om.base import new_id
 from acme.om.exceptions import StaleWriter
 from dreamcatcher.acts import Proof, Script
 from dreamcatcher.engine import REVIEWER, Engine, Record
-from dreamcatcher.projection import project, recovered, until
+from dreamcatcher.projection import project, recovered
+from dreamcatcher.tape import render
 
 Claim = tuple[str, bool]
 OUTBOUND = ("socket.connect", "socket.getaddrinfo", "socket.gethostbyname", "socket.gethostbyname_ex")
@@ -210,18 +214,40 @@ async def acts(engine: Engine, script: Script, proof: Proof, record: Record) -> 
     return claims
 
 
-async def ledger(engine: Engine, record: Record, slots: int) -> list[Claim]:
-    """The closing ledger, as the screen shows it, against the record read
-    back by other queries: the steps counted afresh, the tokens from the
-    responses' own usage, and the spend from the budget's tally."""
-    shown = project(record).ledger
+async def read_back(engine: Engine, record: Record) -> dict[str, int | None]:
+    """The closing numbers, read back by other queries than the ledger's:
+    the steps counted afresh, the tokens from the responses' own usage,
+    the spend from the budget's tally, and the epoch from the cursor."""
+    sessions = [record.root, *(c.id for c in record.children)]
+    histories = [await engine.history(sid) for sid in sessions]
+    steps = [step for history in histories for step in history]
+    responses = [s.header for s in steps if isinstance(s.header, ModelResponseHeader) and not s.header.abandoned]
+    usage = [h.usage for h in responses if h.usage is not None]
+    return {
+        "steps": len(steps),
+        "loops": sum(1 for s in histories[0] if s.type is AgentStepType.LOOP_ENDED),
+        "model_calls": len(responses),
+        "tool_calls": sum(1 for s in steps if s.type is AgentStepType.TOOL_REQUEST),
+        "tokens_in": sum(u.input + u.cache_write for u in usage),
+        "tokens_out": sum(u.output + u.thinking for u in usage),
+        "tokens_cache": sum(u.cache_read for u in usage),
+        "cost_micros": record.tally.spent_cost_micros if record.tally is not None else None,
+        "cap_micros": record.budget.cost_micros if record.budget is not None else None,
+        "epoch": await engine.epoch(record.root),
+    }
+
+
+async def ledger(engine: Engine, record: Record) -> list[Claim]:
+    """The closing ledger against the record read back by other queries:
+    the steps counted afresh, the tokens from the responses' own usage,
+    and the spend from the budget's tally."""
+    shown = project(record)
     sessions = [record.root, *(c.id for c in record.children)]
     steps = [step for sid in sessions for step in await engine.history(sid)]
     counted = Counter(step.type.value for step in steps)
     responses = [s.header for s in steps if isinstance(s.header, ModelResponseHeader) and not s.header.abandoned]
     usage = [h.usage for h in responses if h.usage is not None]
     tally = record.tally
-    replayed = project(until(record, len(record.steps[record.root])))
     return [
         ("steps by type", all(counted.get(t, 0) == n for t, n in shown.steps) and shown.total_steps == len(steps)),
         ("model calls", shown.model_calls == len(responses) == len(record.usage)),
@@ -238,6 +264,43 @@ async def ledger(engine: Engine, record: Record, slots: int) -> list[Claim]:
             "cost",
             tally is not None and shown.cost_micros == tally.spent_cost_micros and tally.held_cost_micros == 0,
         ),
-        ("the ring replayed from the history alone", replayed == project(record)),
-        ("the ring closes whole: one slot for each step of the root", len(record.steps[record.root]) == slots),
+    ]
+
+
+MESSAGES = ("message", "steer", "answer", "task", "report")
+"""The tape's kinds of a message step."""
+
+
+async def tape(engine: Engine, record: Record, written: dict[str, Any], committed: Path) -> list[Claim]:
+    """The tape against the record read back: every step of every session
+    once, each session's in its order, each kind its step's type, and the
+    write times never going back; its last numbers equal to the closing
+    numbers read back; each act on it; and the committed tape the one this
+    run writes."""
+    sessions = [record.root, *(c.id for c in record.children)]
+    histories = [await engine.history(sid) for sid in sessions]
+    events: list[dict[str, Any]] = written["events"]
+    placed = [e for e in events if "seq" in e]
+    steps = {(n, step.seq): step for n, history in enumerate(histories) for step in history}
+    each = all([e["seq"] for e in placed if e["s"] == n] == [s.seq for s in history] for n, history in enumerate(histories))
+    typed = all(
+        (e["s"], e["seq"]) in steps and steps[e["s"], e["seq"]].type.value == ("message" if e["k"] in MESSAGES else e["k"])
+        for e in placed
+    )
+    times = [steps[e["s"], e["seq"]].created_at for e in placed if (e["s"], e["seq"]) in steps]
+    onward = all(a <= b for a, b in itertools.pairwise(times))
+    kinds = [e["k"] for e in events]
+    parks = {e.get("reason") for e in events if e["k"] == "parked"}
+    acted = (
+        all(k in kinds for k in ("steer", "answer", "raise", "takeover", "refused"))
+        and kinds.count("report") == 2
+        and {"person", "spend_budget"} <= parks
+    )
+    closing = await read_back(engine, record)
+    fresh = committed.is_file() and committed.read_text() == render(written)
+    return [
+        ("every step of every session, in the order the engine wrote them", each and typed and onward),
+        ("its last numbers equal the closing numbers read back", bool(events) and events[-1]["n"] == closing),
+        ("each act on it: a steer, an answer, two reports, the budget's park and raise, a takeover, a refused write", acted),
+        ("the committed tape is the one this run writes (make demo rewrites it)", fresh),
     ]
