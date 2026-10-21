@@ -61,7 +61,7 @@ class Org:
         for name, role in (("mia", Role.MEMBER), ("noa", Role.MEMBER), ("ada", Role.ADMIN)):
             email = f"{name}@example.test"
             self.ids[name] = (await add_member(self.container, org_id, email, role)).id
-            self.headers[name] = await sign_in_as(self.client, email, org_id)
+            self.headers[name] = await sign_in_as(self.client, self.container, email, org_id)
 
     async def start(self, kind: str, by: str = "ann") -> str:
         made = await self.client.post(

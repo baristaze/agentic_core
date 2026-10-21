@@ -13,6 +13,7 @@ from acme.infra.cache import CacheInterface
 from acme.infra.root import InfraInterface
 from acme.integrations.identity.twin import IdentityProviderTwinImpl
 from acme.integrations.impl.configured import IntegrationsOverImpl
+from acme.integrations.model_providers.registry import absent_model_providers
 from acme.om.base import new_id, utcnow
 from acme.om.context import AppContext, AppType, RequestContext
 from acme.om.outbox.relay import OutboxRelayInterface
@@ -80,7 +81,12 @@ def managers_signing_in(
     """`build_managers` over a twin of its own."""
     twin = IdentityProviderTwinImpl()
     managers = build_managers(
-        storage, infra, tenancy_options, None, IntegrationsOverImpl(twin), **options
+        storage,
+        infra,
+        tenancy_options,
+        None,
+        IntegrationsOverImpl(twin, absent_model_providers()),
+        **options,
     )
     signing_in(managers.tenancy, twin)
     return managers

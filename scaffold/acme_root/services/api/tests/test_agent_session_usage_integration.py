@@ -34,10 +34,10 @@ def settings_over_postgres(tmp_path: Path) -> ApiSettings:
             "buckets_root": tmp_path / "buckets",
             "queues_backend": "memory",
             "secrets_backend": "local",
-            "dev_sign_in_enabled": True,
             "totp_encryption_key": TOTP_KEY,
             "sentry_dsn": None,
             "otel_endpoint": None,
+            "identity_provider": "twin",
         }
     )
     settings.refuse_remote()
@@ -57,7 +57,7 @@ async def over_postgres(
         _, org = await container.managers.tenancy.bootstrap(
             seed_request(), "Ajax", f"ajax-{suffix}", email, OWNER["name"]
         )
-        yield container, client, await sign_in_as(client, email, org.id), org.id
+        yield container, client, await sign_in_as(client, container, email, org.id), org.id
 
 
 def a_record(
