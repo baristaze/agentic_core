@@ -5,44 +5,39 @@ included, stay on its GitHub release. Releases are tagged
 `vMAJOR.MINOR.PATCH`; see `CONTRIBUTING.md` for what bumps which
 number.
 
-## 0.20.0 (2026-10-20)
+## 0.21.0 (2026-10-21)
 
-The engine's base moves to the guideline's v0.62.0, whose retry waits
-and periodic loops come from one shared package, and the engine's own
-retry wait takes its curve from it. A model call that never left
-releases its hold, a failed control read leaves a running tool call
-running, and a demo runs the engine end to end. Minor: the base's
-folder tree names `libs/`.
+The engine's base moves to the guideline's v0.63.0: a person signs in
+through the identity provider alone, on every stack, and nothing keeps
+a password. The demo plays as a scene in the browser. Minor, with one
+reversal: the sign-in by an address alone is gone.
 
 ### Added
 
-- `demo/dreamcatcher` runs the engine in process on the scripted twin,
-  on one terminal screen, through three acts: one loop; a steer, a
-  question, and two sub-agents; a budget park and a runner replaced mid
-  tool call. `make demo` draws it, `make demo-check` checks each act
-  from the record in CI, and its GIF tops the README (#117).
-- From the base: `libs/timing` (`acme-timing`), with `RetryPolicy`,
-  `Retries`, `retry_after`, and `Every`, and the TypeScript client's
-  `RetryPolicy` and `Retries` (#118).
+- `demo/dreamcatcher` plays the run as a scene in the browser: the
+  person, the engine in our cloud, the model in its cloud, and the hands
+  outside every cloud, a light on a wire for each step, the engine's
+  rotor turning for each light it receives, and the numbers rolling like
+  a meter. The page plays a tape `make demo-check` holds to the record,
+  and the GIF is recorded from it (#121).
+- From the base: `acme-api mint-local-login`, the local mint, which
+  prints a sign-in token for each address from the local database and
+  refuses at boot outside `local` and `test`, with no route and no page;
+  the traffic generator mints a run's people with it (#122).
 
 ### Changed
 
-- The base moves to the guideline's v0.62.0: its outbox, work, sign-in,
-  client, and listener waits come from `RetryPolicy`, and the worker's
-  heartbeat, sweep, and tally run on `Every`, start to start. The
-  engine's sweep runs its own pass on `Every`, and the guideline links
-  point at v0.62.0 (#118).
-- The model loop's retry wait comes from `RetryPolicy`, on the same
-  curve, with a provider's Retry-After still its floor, so a long one
-  parks the run. The adapters read `retry-after-ms`, then `retry-after`
-  through `acme.timing.retry_after`; a value that is neither whole
-  seconds nor a date is no ask (#119).
+- The base moves to the guideline's v0.63.0. Every stack signs in
+  through WorkOS, the local one through the Staging application, and
+  answers `503` there without its key. `make seed` makes each seeded
+  person a plus-address of `SEED_EMAIL` in `.env` and refuses a domain
+  that takes no mail; an existing checkout sets it and runs
+  `make reset`. Every test suite signs in through the identity twin, the
+  engine's own included, and the guideline links point at v0.63.0
+  (#122).
 
-### Fixed
+### Removed
 
-- A model call whose request never left fails with no partial reply,
-  so its hold is released (#116).
-- A failed control read leaves a running tool call running (#116).
-- From the base: the sign-in delay caps its doublings, a failed
-  delivery comes back later on each receive, and the storage-bounds
-  tests open their connections under the checkout bound (#118).
+- From the base, the sign-in by an address alone:
+  `POST /v1/auth/dev-sign-in`, `ACME_DEV_SIGN_IN_ENABLED`, the portal's
+  `/login/dev`, and `--dev-email` (reversal) (#122).
