@@ -39,7 +39,9 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from acme.infra.impl.configured import InfraConfiguredImpl
 from acme.infra.transports import StaleCommand
 from acme.infra.transports.records import RecordBook
-from acme.integrations.impl.configured import absent_integrations
+from acme.integrations.identity.twin import IdentityProviderTwinImpl
+from acme.integrations.impl.configured import IntegrationsOverImpl
+from acme.integrations.model_providers.registry import absent_model_providers
 from acme.integrations.model_providers.scripted import SCRIPT, Turn
 from acme.integrations.model_providers.types import ProviderName
 from acme.om.agent_steps.types.header import LoopOutcome
@@ -204,13 +206,13 @@ def emptied() -> None:
 async def stack(emptied: None, tmp_path: Path) -> AsyncIterator[Stack]:
     # The developer's tracker and exporter are left off: an error a case
     # raises on purpose is no report.
-    settings = ApiSettings(dev_sign_in_enabled=True, sentry_dsn=None, otel_endpoint=None)
+    settings = ApiSettings(sentry_dsn=None, otel_endpoint=None)
     settings.refuse_remote()
     container = AppContainer.over(
         settings,
         postgres_storage(settings),
         InfraConfiguredImpl(settings),
-        absent_integrations(),
+        IntegrationsOverImpl(IdentityProviderTwinImpl(), absent_model_providers()),
         agent_kinds=KINDS,
         tool_catalog=TOOLS,
     )
@@ -237,7 +239,7 @@ async def owner_of(stack: Stack) -> Person:
     ctx, org = await stack.container.managers.tenancy.bootstrap(
         seed_request(), "Ajax", "ajax", "ann@example.test", "Ann"
     )
-    return Person(ctx, await sign_in_as(stack.client, "ann@example.test", org.id))
+    return Person(ctx, await sign_in_as(stack.client, stack.container, "ann@example.test", org.id))
 
 
 def created(headers: dict[str, str]) -> dict[str, str]:

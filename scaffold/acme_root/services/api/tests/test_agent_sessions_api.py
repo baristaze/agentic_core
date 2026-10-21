@@ -222,7 +222,7 @@ async def test_a_viewer_reads_a_session_and_sends_it_nothing(
     me = await client.get("/v1/orgs/current", headers=owner)
     org_id = UUID(me.json()["id"])
     await add_member(container, org_id, "vic@example.test", Role.VIEWER)
-    viewer = await sign_in_as(client, "vic@example.test", org_id)
+    viewer = await sign_in_as(client, container, "vic@example.test", org_id)
     opened = await client.put(f"{path}/visibility", headers=owner, json={"visibility": "org_wide"})
     assert opened.status_code == 200, opened.text
 
@@ -262,7 +262,7 @@ async def test_a_member_cannot_steer_a_session_into_an_admins_tool(
     me = await client.get("/v1/orgs/current", headers=owner)
     org_id = UUID(me.json()["id"])
     await add_member(container, org_id, "mia@example.test", Role.MEMBER)
-    member = await sign_in_as(client, "mia@example.test", org_id)
+    member = await sign_in_as(client, container, "mia@example.test", org_id)
     mia = (await client.get("/v1/me", headers=member)).json()["user"]["id"]
     made = await client.post(
         "/v1/agent-sessions", headers=created(owner), json={"kind": "configurer", "title": "t"}
@@ -303,7 +303,7 @@ async def test_no_route_reaches_another_tenants_session(
     _, other = await container.managers.tenancy.bootstrap(
         seed_request(), "Other", "other", "owner@other.test", "Other"
     )
-    stranger = await sign_in_as(client, "owner@other.test", other.id)
+    stranger = await sign_in_as(client, container, "owner@other.test", other.id)
     unknown = f"/v1/agent-sessions/{UUID(int=7)}"
     routes: list[tuple[str, str, dict[str, Any]]] = [
         ("GET", "", {}),
