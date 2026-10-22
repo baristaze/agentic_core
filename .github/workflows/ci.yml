@@ -86,7 +86,9 @@ jobs:
     # A copy of the scaffold, made the way a platform starts, passes its own
     # gates: the fast gate and the integration suite over its compose stack.
     # So the scaffold stays runnable as the engine and the guideline move.
-    name: a copy of the scaffold as ${{ matrix.name }} passes its own gates
+    # Each gate of each copy is a job of its own, and the jobs run side by
+    # side: a run waits on its longest job, not on the gates' sum.
+    name: a copy of the scaffold as ${{ matrix.name }} passes ${{ matrix.gate == 'check' && 'make check' || 'its integration suite' }}
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     strategy:
@@ -95,6 +97,7 @@ jobs:
         # One word, and two words at the longest name new.py takes, whose
         # lines grow the most.
         name: [agentic, agentic_platforms]
+        gate: [check, integration]
     env:
       COPY: ${{ github.workspace }}/../${{ matrix.name }}
       # uv sync and uv run fail instead of rewriting a stale uv.lock.
@@ -126,9 +129,11 @@ jobs:
       # arch-check runs at the guideline release the copy pins, and
       # agentic-check from the copy's own checkers/, so nothing fetches it.
       - name: make check
+        if: matrix.gate == 'check'
         working-directory: ${{ env.COPY }}
         run: make check
       - name: the integration suite over the copy's compose stack
+        if: matrix.gate == 'integration'
         working-directory: ${{ env.COPY }}
         run: |
           cp .env.example .env
@@ -142,7 +147,7 @@ jobs:
       # before holds, so its suite runs only once the stamp works. One name
       # stands for both: the script is the same in each.
       - name: the copy's release before passes on a branch that adds a migration
-        if: matrix.name == 'agentic'
+        if: matrix.gate == 'integration' && matrix.name == 'agentic'
         working-directory: ${{ env.COPY }}
         env:
           GIT_AUTHOR_NAME: ci
@@ -160,6 +165,6 @@ jobs:
           git add om/migrations && git commit -qm "a revision that changes nothing"
           scripts/release_before.sh "$base"
       - name: stop the copy's stack
-        if: always()
+        if: always() && matrix.gate == 'integration'
         working-directory: ${{ env.COPY }}
         run: make infra-down || true
