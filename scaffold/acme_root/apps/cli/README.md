@@ -8,7 +8,7 @@ uv run acme login --org ajax        # confirm the code in the browser, on every 
 uv run acme whoami
 uv run acme orgs                    # * marks the auth session's org
 uv run acme switch fabrikam         # the old auth session ends
-uv run acme upload spec.pdf         # --type, --json
+uv run acme upload spec.pdf         # --type, --json; --resume ID goes on with one that stopped
 uv run acme agent-session start assistant "the dropped object"
 uv run acme agent-session say <id> "Why does it drop the object?"
 uv run acme agent-session control <id> pause     # resume, cancel, compact, unlock
