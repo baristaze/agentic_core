@@ -181,7 +181,9 @@ export interface paths {
         /**
          * Complete Job
          * @description How the job of `key` ended, from the system it ran on: the loop that
-         *     waits on it goes on. 404 for a job the session does not wait on.
+         *     waits on it goes on. 404 for a job the session does not wait on. It is a
+         *     holder's call: the loop closes the job as timed out at its deadline, so a
+         *     completion refused until then loses the job's work.
          */
         post: operations["complete_job"];
         delete?: never;

@@ -2045,7 +2045,7 @@
     },
     "/v1/agent-sessions/{agent_session_id}/jobs/{key}/completion": {
       "post": {
-        "description": "How the job of `key` ended, from the system it ran on: the loop that\nwaits on it goes on. 404 for a job the session does not wait on.",
+        "description": "How the job of `key` ended, from the system it ran on: the loop that\nwaits on it goes on. 404 for a job the session does not wait on. It is a\nholder's call: the loop closes the job as timed out at its deadline, so a\ncompletion refused until then loses the job's work.",
         "operationId": "complete_job",
         "parameters": [
           {

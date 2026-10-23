@@ -1,14 +1,16 @@
 """The relational storage root: one engine and pool per distinct role URL and
-its bounds, under the runtime login, the system login, and, in the
-maintenance worker, the purge login, every namespace impl constructed here."""
+its bounds, under the runtime login and the system login, each with its
+reserve beside it, and, in the maintenance worker, the purge login, every
+namespace impl constructed here."""
 
 import asyncio
 from collections.abc import Mapping
 from dataclasses import replace
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import QueuePool
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.storage.impl.postgres import AgentSessionStoragePostgresImpl
@@ -39,7 +41,7 @@ from acme.om.spend_budgets.storage.impl.postgres import (
     LedgerStoragePostgresImpl,
     SpendBudgetStoragePostgresImpl,
 )
-from acme.om.storage.impl.pg_base import LoginSessions, ScopedConnection, SessionFactory
+from acme.om.storage.impl.pg_base import LoginSessions, Reserve, ScopedConnection, SessionFactory
 from acme.om.storage.roles import DatabaseRole
 from acme.om.storage.root import StorageInterface
 from acme.om.storage.settings import RolePool
@@ -114,39 +116,65 @@ def engine_for(url: str, pool: RolePool) -> AsyncEngine:
     )
 
 
+EngineKey = tuple[str, RolePool, bool]
+"""An engine's URL, the bounds of the role's pool, and whether the engine is
+that pool's reserve rather than the pool."""
+
+
 def login_sessions(
     urls: Mapping[DatabaseRole, str],
     pools: Mapping[DatabaseRole, RolePool],
     *,
     system_urls: Mapping[DatabaseRole, str],
     purge_urls: Mapping[DatabaseRole, str] | None = None,
-) -> tuple[LoginSessions, dict[tuple[str, RolePool], AsyncEngine]]:
+) -> tuple[LoginSessions, dict[EngineKey, AsyncEngine]]:
     """The session factories of every login the caller names, and the engines
     behind them keyed by URL and bounds so the caller can dispose of them.
     This is the one way a pool is opened: the storage root builds its
     sessions here, and so do the integration suites, which then run every
     case under the bounds a deployed process holds and not under a library's
     defaults. `purge_urls` opens the purge login's pools, each of
-    `PURGE_POOL_SIZE` connections under its role's bounds; without it the
-    sessions hold no purge login."""
-    engines: dict[tuple[str, RolePool], AsyncEngine] = {}
+    `PURGE_POOL_SIZE` connections under its role's bounds and with no
+    reserve; without it the sessions hold no purge login.
+
+    A runtime or system pool whose bounds name a reserve gets a second engine
+    beside it, of the reserve's size under the pool's two bounds, which only a
+    holder's call draws on (`pg_base.Reserve`). Roles that share a pool share
+    its reserve."""
+    engines: dict[EngineKey, AsyncEngine] = {}
 
     def factories(
         by_role: Mapping[DatabaseRole, str], bounds: Mapping[DatabaseRole, RolePool]
-    ) -> dict[DatabaseRole, SessionFactory]:
+    ) -> tuple[dict[DatabaseRole, SessionFactory], dict[DatabaseRole, Reserve]]:
         found: dict[DatabaseRole, SessionFactory] = {}
+        reserves: dict[DatabaseRole, Reserve] = {}
         for role in DatabaseRole:
-            key = (by_role[role], bounds[role])
+            url, pool = by_role[role], bounds[role]
+            key = (url, pool, False)
             if key not in engines:
-                engines[key] = engine_for(*key)
+                engines[key] = engine_for(url, pool)
             found[role] = async_sessionmaker(engines[key], expire_on_commit=False)
-        return found
+            if pool.reserve == 0:
+                continue
+            reserve_key = (url, pool, True)
+            if reserve_key not in engines:
+                engines[reserve_key] = engine_for(url, replace(pool, size=pool.reserve, reserve=0))
+            reserves[role] = Reserve(
+                cast(QueuePool, engines[key].pool),
+                async_sessionmaker(engines[reserve_key], expire_on_commit=False),
+            )
+        return found, reserves
 
+    runtime, reserves = factories(urls, pools)
+    system, system_reserves = factories(system_urls, pools)
     purge = None
     if purge_urls is not None:
-        one = {role: replace(pool, size=PURGE_POOL_SIZE) for role, pool in pools.items()}
-        purge = factories(purge_urls, one)
-    return LoginSessions(factories(urls, pools), factories(system_urls, pools), purge), engines
+        one = {role: replace(pool, size=PURGE_POOL_SIZE, reserve=0) for role, pool in pools.items()}
+        purge, _ = factories(purge_urls, one)
+    sessions = LoginSessions(
+        runtime, system, purge, reserves=reserves, system_reserves=system_reserves
+    )
+    return sessions, engines
 
 
 class StoragePostgresImpl(StorageInterface):
@@ -158,18 +186,20 @@ class StoragePostgresImpl(StorageInterface):
         system_urls: Mapping[DatabaseRole, str],
         purge_urls: Mapping[DatabaseRole, str] | None = None,
     ) -> None:
-        """One engine per distinct URL and bounds: roles that share both share a
-        pool, and a role given a size, a checkout bound, or a statement deadline
-        of its own gets a pool of its own, which is what makes the role the
-        bulkhead between two load profiles on one database. Both arguments come
-        from the settings object the composition root read at boot: the impl
-        reads no environment variable of its own.
+        """One engine per distinct URL and bounds, and its reserve's beside it:
+        roles that share both share a pool, and a role given a size, a checkout
+        bound, a statement deadline, or a reserve of its own gets a pool of its
+        own, which is what makes the role the bulkhead between two load
+        profiles on one database. Both arguments come from the settings object
+        the composition root read at boot: the impl reads no environment
+        variable of its own.
 
         `system_urls` are the same roles under the system login. They name
         another login, so they open pools of their own under the same bounds,
-        and only the system scope draws on them. `purge_urls` are the same
-        roles under the purge login, which only the maintenance worker names:
-        a root built without them deletes no step (ADR 1010)."""
+        each with its reserve, and only the system scope draws on them.
+        `purge_urls` are the same roles under the purge login, which only the
+        maintenance worker names: a root built without them deletes no step
+        (ADR 1010)."""
         sessions, engines = login_sessions(
             urls, pools, system_urls=system_urls, purge_urls=purge_urls
         )
@@ -201,9 +231,12 @@ class StoragePostgresImpl(StorageInterface):
         statement at most its deadline, so a saturated or unreachable pool
         answers false instead of holding the caller. The deadline here is the
         sum of the two, the worst a healthy answer can cost, and it is not a
-        knob: the bounds it is made of already are."""
+        knob: the bounds it is made of already are. A reserve is left out: the
+        probe is no holder's call, and it reads the same database as its pool."""
         try:
-            for (_, pool), engine in self._engines.items():
+            for (_, pool, reserve), engine in self._engines.items():
+                if reserve:
+                    continue
                 deadline = pool.checkout_timeout_seconds + pool.statement_timeout_seconds
                 async with asyncio.timeout(deadline):
                     async with engine.connect() as connection:

@@ -25,6 +25,7 @@ from fastapi import APIRouter, Body, Query, Response
 
 from acme.om.agent_sessions.types.agent_session import AgentSessionStatus, Among
 from acme.services.api.gateway.admin import OperatorCtx
+from acme.services.api.gateway.admission import HOLDER_CALL
 from acme.services.api.gateway.auth import Ctx
 from acme.services.api.gateway.idempotency import Idem
 from acme.services.api.gateway.resolve import AgentSessionsService
@@ -210,7 +211,11 @@ async def give_back(
     return await idem.run(200, lambda attempt: sessions.give_back(ctx, agent_session_id, body))
 
 
-@router.post("/{agent_session_id}/jobs/{key}/completion", response_model=AgentSessionView)
+@router.post(
+    "/{agent_session_id}/jobs/{key}/completion",
+    response_model=AgentSessionView,
+    dependencies=[HOLDER_CALL],
+)
 async def complete_job(
     ctx: Ctx,
     sessions: AgentSessionsService,
@@ -220,7 +225,9 @@ async def complete_job(
     idem: Idem,
 ) -> Response:
     """How the job of `key` ended, from the system it ran on: the loop that
-    waits on it goes on. 404 for a job the session does not wait on."""
+    waits on it goes on. 404 for a job the session does not wait on. It is a
+    holder's call: the loop closes the job as timed out at its deadline, so a
+    completion refused until then loses the job's work."""
     return await idem.run(
         200, lambda attempt: sessions.complete_job(ctx, agent_session_id, key, body)
     )
