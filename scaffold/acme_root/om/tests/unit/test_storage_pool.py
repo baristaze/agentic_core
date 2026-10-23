@@ -136,7 +136,9 @@ async def test_only_a_root_that_names_the_purge_login_can_purge_and_never_the_sy
     worker's root opens one pool of `PURGE_POOL_SIZE` per URL beside the
     others, with no reserve, since a purge is never a holder's call, and
     refuses a purge under the system scope as the policies do."""
-    shared = RolePool(size=4, checkout_timeout_seconds=1.0, statement_timeout_seconds=2.0, reserve=2)
+    shared = RolePool(
+        size=4, checkout_timeout_seconds=1.0, statement_timeout_seconds=2.0, reserve=2
+    )
     urls, pools = dict.fromkeys(DatabaseRole, URL), dict.fromkeys(DatabaseRole, shared)
     serving, opened = login_sessions(urls, pools, system_urls=urls)
     assert serving.purge is None and len(opened) == 2
@@ -177,8 +179,9 @@ async def test_each_pool_opens_its_reserve_beside_it_under_the_same_bounds() -> 
     reserve = cast(QueuePool, engines[(URL, reserved, True)].pool)
     assert (reserve.size(), reserve._max_overflow, reserve.timeout()) == (2, 0, 1.0)
     for system in (False, True):
-        assert sessions.factory(DatabaseRole.QUEUE, system=system, holder_call=True) is (
-            (sessions.system if system else sessions)[DatabaseRole.QUEUE]
+        assert (
+            sessions.factory(DatabaseRole.QUEUE, system=system, holder_call=True)
+            is ((sessions.system if system else sessions)[DatabaseRole.QUEUE])
         )
     for engine in engines.values():
         await engine.dispose()

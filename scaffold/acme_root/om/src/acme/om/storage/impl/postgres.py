@@ -169,9 +169,7 @@ def login_sessions(
     system, system_reserves = factories(system_urls, pools)
     purge = None
     if purge_urls is not None:
-        one = {
-            role: replace(pool, size=PURGE_POOL_SIZE, reserve=0) for role, pool in pools.items()
-        }
+        one = {role: replace(pool, size=PURGE_POOL_SIZE, reserve=0) for role, pool in pools.items()}
         purge, _ = factories(purge_urls, one)
     sessions = LoginSessions(
         runtime, system, purge, reserves=reserves, system_reserves=system_reserves
