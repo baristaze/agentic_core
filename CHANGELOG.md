@@ -5,25 +5,45 @@ included, stay on its GitHub release. Releases are tagged
 `vMAJOR.MINOR.PATCH`; see `CONTRIBUTING.md` for what bumps which
 number.
 
-## 0.22.0 (2026-10-22)
+## 0.23.0 (2026-10-23)
 
-The engine's base moves to the guideline's v0.64.0: a copy's gates take
-less time, its suites on every core and side by side. Minor.
+The engine's base moves to the guideline's v0.65.0: a call whose refusal
+costs its caller what it holds goes through under load, and every blob
+crosses by a presigned URL, as a multipart upload that resumes. Minor,
+with the guideline's reversals: the presigned POST and the presign that
+may answer `None` go, and CTX-07 allows a second context variable.
+
+### Added
+
+- A holder's calls, from the guideline's v0.65.0: a route marked
+  `HOLDER_CALL` is counted in a `holds` lane of its own and a
+  per-credential budget of its own, and takes a reserve beside a full
+  database pool (ADRs 0106 and 0108). A job's completion is one, since a
+  job times out at its deadline and a completion shed with the writes
+  loses its work. The storage root keeps the engine's purge login beside
+  the reserves, and the purge pool opens none; the connection budget
+  counts both (#127).
+- Multipart transfers in Buckets, from the guideline's v0.65.0: an upload
+  that stops resumes by its id, sending only the parts it still misses;
+  the Python client, the CLI (`--resume ID`), and the TypeScript client's
+  `uploadFile` send parts straight to the store (ADR 0107) (#127).
 
 ### Changed
 
-- The base moves to the guideline's v0.64.0. A copy's `make test-unit`
-  runs on one worker per core and ends on its ten slowest tests (ADR
-  0105: a unit test holds nothing another can reach, its id fixed at
-  collection); its CI starts the integration, telemetry, and image jobs
-  beside the fast gate; the integration wipe empties only the tables
-  written since the last one; `make openapi` cuts the schema in linear
-  time; and arch-check is pinned at v0.64.0 (#125).
-- This repository's CI runs each copy's `make check`, its integration
-  suite, and the release-before step as jobs of their own, side by side
-  (#124).
+- A blob crosses only by a presigned URL, at any size, as a multipart
+  upload, and arch-check refuses a presign that may answer `None`: both
+  reverse the guideline's earlier contract. CTX-07 allows a second
+  context variable, the holder's call's mark, a reversal in part. The
+  engine's core migration `202610150049` takes the guideline's
+  `202610221532` as its parent. The spec and the lens index link the
+  guideline at v0.65.0 (#127).
+
+### Removed
+
+- `presign_post`, and the media route that served a file's content
+  through the API (#127).
 
 ### Fixed
 
-- The mint test counts the process as booted, so its logging never binds
-  a captured stream that later tests on its worker write to (#125).
+- A copy's first commit and a render hold only what the scaffold's
+  `.gitignore` files keep (#127).
