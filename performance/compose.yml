@@ -1,0 +1,102 @@
+# The performance run's own stack: a Postgres per database role, Valkey, the
+# object store, and a KMS emulator. `make performance` starts it under its
+# own project, PERFORMANCE_PROJECT, and stops what it started. Every host
+# port is a knob, in the 61xxx range, so the run sits beside the local
+# stack without touching it. The Postgres and MinIO services are the local
+# stack's (scaffold/acme_root/deployment/local/docker-compose.yml), on the
+# same images and the same init script.
+name: agentic-performance
+
+x-postgres: &postgres
+  image: postgres:18-alpine
+  environment:
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres
+    POSTGRES_DB: acme
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U acme -d acme"]
+    interval: 2s
+    timeout: 2s
+    retries: 30
+
+services:
+  postgres-core:
+    <<: *postgres
+    ports:
+      - "127.0.0.1:${PERFORMANCE_POSTGRES_CORE_PORT:-61432}:5432"
+    volumes:
+      - postgres-core:/var/lib/postgresql
+      - ../scaffold/acme_root/deployment/local/postgres/initdb:/docker-entrypoint-initdb.d:ro
+
+  postgres-activity:
+    <<: *postgres
+    ports:
+      - "127.0.0.1:${PERFORMANCE_POSTGRES_ACTIVITY_PORT:-61433}:5432"
+    volumes:
+      - postgres-activity:/var/lib/postgresql
+      - ../scaffold/acme_root/deployment/local/postgres/initdb:/docker-entrypoint-initdb.d:ro
+
+  postgres-queue:
+    <<: *postgres
+    ports:
+      - "127.0.0.1:${PERFORMANCE_POSTGRES_QUEUE_PORT:-61434}:5432"
+    volumes:
+      - postgres-queue:/var/lib/postgresql
+      - ../scaffold/acme_root/deployment/local/postgres/initdb:/docker-entrypoint-initdb.d:ro
+
+  postgres-admin:
+    <<: *postgres
+    ports:
+      - "127.0.0.1:${PERFORMANCE_POSTGRES_ADMIN_PORT:-61435}:5432"
+    volumes:
+      - postgres-admin:/var/lib/postgresql
+      - ../scaffold/acme_root/deployment/local/postgres/initdb:/docker-entrypoint-initdb.d:ro
+
+  # The cache and the topics, as a deployment runs them: each model turn
+  # reads the outage signal here.
+  valkey:
+    image: valkey/valkey:9.1-alpine
+    ports:
+      - "127.0.0.1:${PERFORMANCE_VALKEY_PORT:-61379}:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  minio:
+    image: docker.io/pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: acme
+      MINIO_ROOT_PASSWORD: acme-minio-local
+    ports:
+      - "127.0.0.1:${PERFORMANCE_MINIO_PORT:-61900}:9000"
+      - "127.0.0.1:${PERFORMANCE_MINIO_CONSOLE_PORT:-61901}:9001"
+    volumes:
+      - minio:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9000/minio/health/live || exit 1"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  # The key service: a KMS emulator that answers the KMS API the engine's
+  # KMS adapter speaks, over HTTP, as a deployment's KMS does over the
+  # network. The run makes its wrapping key and alias at start. Its keys
+  # live in the container alone, so a stopped run keeps none.
+  kms:
+    image: docker.io/nsmithuk/local-kms:3.11.7@sha256:360d7377b6f3687c89a622236791e4fa3f7316366267b437829edbdfa8a5fc60
+    environment:
+      KMS_REGION: us-east-1
+      KMS_DATA_PATH: /tmp/kms
+      PORT: "8080"
+    ports:
+      - "127.0.0.1:${PERFORMANCE_KMS_PORT:-61800}:8080"
+
+volumes:
+  postgres-core:
+  postgres-activity:
+  postgres-queue:
+  postgres-admin:
+  minio:
