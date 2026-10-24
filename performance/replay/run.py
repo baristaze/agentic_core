@@ -10,10 +10,12 @@ import json
 import statistics
 import time
 from collections import deque
-from dataclasses import dataclass
+from collections.abc import Callable, Coroutine
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
+from acme.om.agent_sessions.types.agent_session import Among
 from acme.om.agent_steps.types.agent_step import AgentStep
 from acme.om.agent_steps.types.header import LoopOutcome
 from acme.om.agents.types.run import RunEnd
@@ -54,6 +56,11 @@ def for_a_session(task: asyncio.Task[Any]) -> bool:
     return context.get(SESSION) is not None
 
 
+READER = UUID(int=0)
+"""What the read passes set the session to, so the sampler counts their
+task as working; no session has it."""
+
+
 class RunRefused(RuntimeError):
     """A run of the loop that did not end as the session's did."""
 
@@ -76,6 +83,46 @@ async def replay(engine: Engine, runs: list[Run]) -> UUID:
     return agent_session_id
 
 
+HISTORY_PAGE = 50
+"""A history page as the API's route reads it by default (`LIMIT_DEFAULT`)."""
+LIST_PAGE = 50
+"""A page of the session list, as the API's list route reads it."""
+LIST_PASSES = 20
+"""The session list read whole this many times, so its pages make a
+distribution."""
+
+
+def quantiles_ms(seconds: list[float]) -> dict[str, float]:
+    cuts = statistics.quantiles(seconds, n=100) if len(seconds) > 1 else [seconds[0] if seconds else 0.0] * 99
+    return {"p50": round(cuts[49] * 1000, 2), "p95": round(cuts[94] * 1000, 2), "p99": round(cuts[98] * 1000, 2)}
+
+
+@dataclass
+class Read:
+    """One read pass: its pages, their items, each page's latency, the key
+    service's calls, and where its time went."""
+
+    pages: int = 0
+    items: int = 0
+    seconds: float = 0.0
+    latencies: list[float] = field(default_factory=list)
+    key_calls: int = 0
+    profile: Profile | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "pages": self.pages,
+            "items": self.items,
+            "items_per_page": round(self.items / max(1, self.pages), 1),
+            "seconds": round(self.seconds, 3),
+            "pages_per_second": round(self.pages / self.seconds, 1) if self.seconds else 0.0,
+            "page_ms": quantiles_ms(self.latencies),
+            "key_calls": self.key_calls,
+            "key_calls_per_page": round(self.key_calls / max(1, self.pages), 3),
+            "profile": None if self.profile is None else self.profile.as_dict(),
+        }
+
+
 @dataclass
 class Point:
     sessions: int
@@ -85,17 +132,14 @@ class Point:
     appends: list[float]
     key_calls: int
     keys: dict[str, int]
-    read_steps: int
-    read_key_calls: int
-    read_seconds: float
+    history: Read
+    listing: Read
     said_bytes: int
     kept_chars: int
     summaries: int
     profile: Profile | None
-    harness_seconds: float
 
     def as_dict(self) -> dict[str, Any]:
-        cuts = statistics.quantiles(self.appends, n=100) if len(self.appends) > 1 else [0.0] * 99
         return {
             "sessions": self.sessions,
             "turns_per_session": self.turns,
@@ -103,19 +147,14 @@ class Point:
             "steps_written": self.steps_written,
             "steps_per_second": round(self.steps_written / self.seconds, 1),
             "appends": len(self.appends),
-            "append_ms": {
-                "p50": round(cuts[49] * 1000, 2),
-                "p95": round(cuts[94] * 1000, 2),
-                "p99": round(cuts[98] * 1000, 2),
-            },
+            "append_ms": quantiles_ms(self.appends),
             "key_calls": self.key_calls,
             "key_calls_per_step_written": round(self.key_calls / max(1, self.steps_written), 3),
             "key_calls_by_asker": dict(sorted(self.keys.items(), key=lambda kv: -kv[1])),
-            "read_back": {
-                "steps": self.read_steps,
-                "seconds": round(self.read_seconds, 3),
-                "key_calls": self.read_key_calls,
-                "key_calls_per_step_read": round(self.read_key_calls / max(1, self.read_steps), 4),
+            "read": {
+                "history": self.history.as_dict(),
+                "list": self.listing.as_dict(),
+                "key_calls_per_step_read": round(self.history.key_calls / max(1, self.history.items), 4),
             },
             "said_bytes": self.said_bytes,
             "kept_chars": self.kept_chars,
@@ -124,9 +163,68 @@ class Point:
         }
 
 
+async def read_history(engine: Engine, sessions: list[UUID], into: Read, steps: list[AgentStep]) -> None:
+    """Each session's history from its start, a page at a time, as the API's
+    route reads it: the session, then the page."""
+    ctx = engine.ctx()
+    for agent_session_id in sessions:
+        after = 0
+        while True:
+            started = time.perf_counter()
+            await engine.managers.agent_sessions.get_agent_session(ctx, agent_session_id)
+            page = await engine.managers.agent_steps.get_agent_steps(ctx, agent_session_id, after, HISTORY_PAGE)
+            into.latencies.append(time.perf_counter() - started)
+            into.pages += 1
+            into.items += len(page.items)
+            steps.extend(page.items)
+            if not page.has_more or not page.items:
+                break
+            after = page.items[-1].seq
+
+
+async def read_list(engine: Engine, into: Read) -> None:
+    """The tenant's session list, a page at a time, as the API's list route
+    reads it, whole, `LIST_PASSES` times."""
+    ctx = engine.ctx()
+    for _ in range(LIST_PASSES):
+        after: UUID | None = None
+        while True:
+            started = time.perf_counter()
+            page = await engine.managers.agent_sessions.get_agent_sessions(ctx, None, after, LIST_PAGE, Among.VISIBLE)
+            into.latencies.append(time.perf_counter() - started)
+            into.pages += 1
+            into.items += len(page.items)
+            if not page.has_more or not page.items:
+                break
+            after = page.items[-1].id
+
+
+async def measured_read(engine: Engine, work: Callable[[Read], Coroutine[Any, Any, None]], *, profiled: bool) -> Read:
+    """One read pass, timed, its key calls counted, and sampled. It runs as a
+    task of a reader's own, in a context the sampler counts as working."""
+    found = Read()
+    engine.counts.keys.clear()
+    token = SESSION.set(READER)
+    try:
+        task: asyncio.Task[None] = asyncio.create_task(work(found))
+    finally:
+        SESSION.reset(token)
+    sampler = Sampler(RENDERING, for_a_session) if profiled else None
+    if sampler is not None:
+        sampler.start()
+    started = time.perf_counter()
+    await task
+    found.seconds = time.perf_counter() - started
+    if sampler is not None:
+        found.profile = sampler.stop()
+    found.key_calls = engine.counts.key_calls()
+    return found
+
+
 async def point(engine: Engine, scripts: list[list[Run]], *, profiled: bool) -> tuple[Point, list[UUID]]:
-    """Every script replayed as one session, all at once, and then each
-    session's history read back whole."""
+    """Every script replayed as one session, all at once; then each
+    session's history read from its start and the session list read whole,
+    as the API reads them."""
     counts = engine.counts
     counts.keys.clear()
     counts.appends.clear()
@@ -141,16 +239,9 @@ async def point(engine: Engine, scripts: list[list[Run]], *, profiled: bool) -> 
     seconds = time.perf_counter() - started
     profile = sampler.stop() if sampler is not None else None
     key_calls, keys = counts.key_calls(), dict(counts.keys)
-    counts.keys.clear()
-    started = time.perf_counter()
-    read = said = kept = 0
-    for agent_session_id in sessions:
-        history = await engine.history(agent_session_id)
-        read += len(history)
-        said += sum(said_bytes(step) for step in history)
-        kept += sum(kept_chars(step) for step in history)
-    read_seconds = time.perf_counter() - started
-    harness = 0.0 if profile is None else profile.seconds.get("harness", 0.0)
+    read: list[AgentStep] = []
+    history = await measured_read(engine, lambda into: read_history(engine, sessions, into, read), profiled=profiled)
+    listing = await measured_read(engine, lambda into: read_list(engine, into), profiled=profiled)
     return (
         Point(
             sessions=len(scripts),
@@ -160,14 +251,12 @@ async def point(engine: Engine, scripts: list[list[Run]], *, profiled: bool) -> 
             appends=list(counts.appends),
             key_calls=key_calls,
             keys=keys,
-            read_steps=read,
-            read_key_calls=counts.key_calls(),
-            read_seconds=read_seconds,
-            said_bytes=said,
-            kept_chars=kept,
+            history=history,
+            listing=listing,
+            said_bytes=sum(said_bytes(step) for step in read),
+            kept_chars=sum(kept_chars(step) for step in read),
             summaries=engine.twin.summaries - summaries,
             profile=profile,
-            harness_seconds=harness,
         ),
         sessions,
     )

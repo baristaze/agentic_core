@@ -226,12 +226,12 @@ async def calibrate(engine: Engine) -> dict[str, float]:
     """What one round trip costs on this stack, so a reader can scale the
     run to another: a query that does nothing, and one unwrap of a data key
     by the key service the engine was built with."""
-    rounds = 200
+    trips = 200
     database = create_async_engine(reader()[DatabaseRole.ACTIVITY])
     took: list[float] = []
     try:
         async with database.connect() as connection:
-            for _ in range(rounds):
+            for _ in range(trips):
                 started = time.perf_counter()
                 await connection.execute(text("SELECT 1"))
                 took.append(time.perf_counter() - started)
@@ -242,7 +242,7 @@ async def calibrate(engine: Engine) -> dict[str, float]:
     org_id, key_id = engine.ctx().org_id, uuid4()
     made = await service.generate(org_id, key_id, 1)
     unwraps: list[float] = []
-    for _ in range(rounds):
+    for _ in range(trips):
         started = time.perf_counter()
         await service.unwrap(org_id, key_id, 1, made.wrapped)
         unwraps.append(time.perf_counter() - started)

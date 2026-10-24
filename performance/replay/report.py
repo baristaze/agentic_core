@@ -52,7 +52,7 @@ def _runs(results: dict[str, Any]) -> list[str]:
         lines.append(
             f"| {KEYS[run['keys']]} | {run['name']} | {run['sessions']} | {run['turns_per_session']} "
             f"| {run['steps_written']} | {run['steps_per_second']} | {ms['p50']} ms | {ms['p95']} ms | {ms['p99']} ms "
-            f"| {run['key_calls_per_step_written']} | {run['read_back']['key_calls_per_step_read']} "
+            f"| {run['key_calls_per_step_written']} | {run['read']['key_calls_per_step_read']} "
             f"| {run['transactions_per_step_written']} | {waiting} |"
         )
     return lines
@@ -69,6 +69,31 @@ def _wall(results: dict[str, Any]) -> list[str]:
         shares = _shares(run)
         cells = " | ".join(_pct(shares.get(category, 0.0)) for category in CATEGORIES)
         lines.append(f"| {KEYS[run['keys']]} | {run['name']} | {cells} |")
+    return lines
+
+
+READS = (("history", "history, 50 steps a page"), ("list", "session list, 50 a page"))
+
+
+def _reads(results: dict[str, Any]) -> list[str]:
+    lines = [
+        "| keys | run | read | pages | items / page | pages/s | page p50 | p95 | p99 | key calls / page "
+        "| open | key service | database | rest |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for run in results["runs"]:
+        for key, name in READS:
+            read = run["read"][key]
+            ms = read["page_ms"]
+            shares = _shares(read) if read["profile"] else {}
+            cells = " | ".join(
+                _pct(shares.get(c, 0.0)) if shares else "" for c in ("seal and open", "key service", "database", "rest")
+            )
+            lines.append(
+                f"| {KEYS[run['keys']]} | {run['name']} | {name} | {read['pages']} | {read['items_per_page']} "
+                f"| {read['pages_per_second']} | {ms['p50']} ms | {ms['p95']} ms | {ms['p99']} ms "
+                f"| {read['key_calls_per_page']} | {cells} |"
+            )
     return lines
 
 
@@ -136,6 +161,12 @@ def render(results: dict[str, Any], cited: str) -> str:
         "### Where the wall time goes",
         "",
         *_wall(results),
+        "",
+        "### The reads, as the API pages them",
+        "",
+        "Open is the seal and open category: AES-GCM, the JSON, and the step's model, less its Python validators.",
+        "",
+        *_reads(results),
         "",
     ]
     for keys in ("kms", "memory"):
