@@ -98,46 +98,25 @@ async def scan(settings: AgentSessionRunnerSettings, org_id: UUID, sessions: lis
     ids = [str(s) for s in sessions]
     try:
         async with engine.connect() as connection:
-            found.rows = int(
-                await connection.scalar(
-                    text("SELECT count(*) FROM activity.agent_steps WHERE agent_session_id = ANY(CAST(:ids AS uuid[]))"),
-                    {"ids": ids},
-                )
-                or 0
-            )
-            # The control: each row's text holds its own session's id, so the
-            # same match over the same text finds every row.
-            found.rows_read_as_text = int(
-                await connection.scalar(
-                    text(
-                        "SELECT count(*) FROM activity.agent_steps s WHERE agent_session_id = ANY(CAST(:ids AS uuid[])) "
-                        "AND s::text LIKE '%' || agent_session_id::text || '%'"
-                    ),
-                    {"ids": ids},
-                )
-                or 0
-            )
-            sized = (
+            # One statement, so every count reads one snapshot while the
+            # point writes. The control: each row's text holds its own
+            # session's id, so the same match over the same text finds every
+            # row it reads.
+            counted = (
                 await connection.execute(
                     text(
-                        "SELECT coalesce(sum(octet_length(content::text)), 0), coalesce(sum(pg_column_size(content)), 0) "
-                        "FROM activity.agent_steps WHERE agent_session_id = ANY(CAST(:ids AS uuid[])) "
-                        "AND content->>'state' = 'sealed'"
-                    ),
-                    {"ids": ids},
-                )
-            ).one()
-            found.content_bytes, found.content_stored_bytes = int(sized[0]), int(sized[1])
-            found.rows_with_marker = int(
-                await connection.scalar(
-                    text(
-                        "SELECT count(*) FROM activity.agent_steps s WHERE agent_session_id = ANY(CAST(:ids AS uuid[])) "
-                        "AND s::text LIKE ANY(CAST(:patterns AS text[]))"
+                        "SELECT count(*), "
+                        "count(*) FILTER (WHERE s::text LIKE '%' || agent_session_id::text || '%'), "
+                        "count(*) FILTER (WHERE s::text LIKE ANY(CAST(:patterns AS text[]))), "
+                        "coalesce(sum(octet_length(content::text)) FILTER (WHERE content->>'state' = 'sealed'), 0), "
+                        "coalesce(sum(pg_column_size(content)) FILTER (WHERE content->>'state' = 'sealed'), 0) "
+                        "FROM activity.agent_steps s WHERE agent_session_id = ANY(CAST(:ids AS uuid[]))"
                     ),
                     {"ids": ids, "patterns": patterns},
                 )
-                or 0
-            )
+            ).one()
+            found.rows, found.rows_read_as_text, found.rows_with_marker = (int(v) for v in counted[:3])
+            found.content_bytes, found.content_stored_bytes = int(counted[3]), int(counted[4])
     finally:
         await engine.dispose()
     async with _aws(settings).client("s3", endpoint_url=settings.s3_endpoint_url) as s3:

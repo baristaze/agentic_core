@@ -33,7 +33,7 @@ PERFORMANCE_RUN := uv run --project ../scaffold/acme_root --package acme-agent-s
 # Its stack is a compose project of its own; `make performance` starts it,
 # and stops what it started. Each port is a knob of performance/compose.yml.
 PERFORMANCE_PROJECT ?= agentic-performance
-PERFORMANCE_COMPOSE := docker compose -p $(PERFORMANCE_PROJECT) -f performance/compose.yml
+PERFORMANCE_COMPOSE := docker compose -p $(PERFORMANCE_PROJECT) -f $(CURDIR)/performance/compose.yml
 PERFORMANCE_RESULTS ?= results/$(shell date -u +%Y-%m-%dT%H%MZ).json
 PERFORMANCE_ARGS ?=
 

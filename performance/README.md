@@ -38,6 +38,10 @@ goes.
   cost of a key call over the network shows.
 - **The load.** One session of 1,500 turns. Then a sweep of 1 to 32
   sessions at once in one process, 150 turns each.
+- **The reads.** After each replay, each session's history is read from
+  its start, 50 steps a page, as the API's route reads it: the session,
+  then the page. Then the tenant's session list is read whole, 50 a
+  page, twenty times over.
 - **The reading.** A sampler reads the event loop's thread every 2 ms.
   It shortens the interpreter's switch interval to 0.1 ms while it
   runs, so a sample lands where the loop is, not where it next gives up
@@ -52,7 +56,7 @@ goes.
 From the repository's root:
 
 ```bash
-make performance        # the whole run on its own stack, about half an hour
+make performance        # the whole run on its own stack, about 35 minutes
 make performance-check  # a short replay on memory storage, checked; CI runs it
 ```
 

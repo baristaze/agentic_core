@@ -99,7 +99,7 @@ class Profile:
     samples: int = 0
     wall: float = 0.0
 
-    def as_dict(self, top: int = 25) -> dict[str, Any]:
+    def as_dict(self, top: int = 40) -> dict[str, Any]:
         total = sum(self.seconds.values()) or 1.0
         return {
             "samples": self.samples,
