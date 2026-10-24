@@ -343,6 +343,9 @@ async def full(shape: tuple[Turn, ...], name: str, results: Path, turns: int, sw
                 {"name": f"sweep-{sessions}", **await one_point(shape, keys, sessions, sweep_turns, profiled=True)}
             )
             results.write_text(json.dumps(report, indent=1) + "\n", encoding="utf-8")
+    # The sampler's own cost: the sweep's first point again, with no sampler.
+    print(f"kms: 1 session of {sweep_turns} turns, unprofiled", flush=True)
+    report["runs"].append({"name": "sweep-1-unprofiled", **await one_point(shape, "kms", 1, sweep_turns, profiled=False)})
     report["finished"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     results.write_text(json.dumps(report, indent=1) + "\n", encoding="utf-8")
     unread = [

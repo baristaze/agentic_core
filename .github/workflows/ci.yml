@@ -82,6 +82,29 @@ jobs:
       - name: make demo-check
         run: make demo-check
 
+  performance:
+    # A short replay of the performance run's shape, on memory storage and
+    # the key twin, with a provider's key set: every step reads back as
+    # what was said, and is sealed at rest. So the harness keeps running as
+    # the engine moves, and keeps measuring a path where content is sealed.
+    name: make performance-check
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: read the tool pins
+        id: pins
+        run: echo "uv=$(sed -n 's|^uv==||p' .github/pins/requirements.txt)" >> "$GITHUB_OUTPUT"
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ steps.pins.outputs.uv }}
+          enable-cache: true
+          cache-dependency-glob: scaffold/acme_root/uv.lock
+      - name: make performance-check
+        run: make performance-check
+
   scaffold:
     # A copy of the scaffold, made the way a platform starts, passes its own
     # gates: the fast gate and the integration suite over its compose stack.
