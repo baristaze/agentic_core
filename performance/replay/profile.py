@@ -11,9 +11,10 @@ before it, so the shares add up to the wall time measured.
 A sample is given the category of the first frame, from the innermost out,
 that a rule matches, or that is the engine's or the harness's: a key
 service's call made to seal a step is the key service's, a key ring read is
-the database's, and the engine's own code that no rule names is the rest. Each sample also counts
-toward every engine function on its stack, for the inclusive table, and
-toward the innermost engine function, for the self table."""
+the database's, and the engine's own code that no rule names is the rest.
+Each sample also counts toward every engine function on its stack, for
+the inclusive table, and toward the innermost engine function, for the
+self table."""
 
 from __future__ import annotations
 
@@ -68,6 +69,8 @@ history into a model call."""
 
 
 IDLE_FILES = ("/selectors.py", "/asyncio/base_events.py")
+SWITCH = 0.0001
+"""Seconds the loop's thread may hold the GIL past the sampler's turn."""
 ENGINE = "/acme/"
 
 
@@ -131,12 +134,21 @@ class Sampler:
         self.profile = Profile()
 
     def start(self) -> None:
+        # The sampler reads the loop's thread only when it holds the GIL. With
+        # the default switch interval, the loop's thread keeps it up to 5 ms
+        # past the sampler's turn, and gives it up early only in a call that
+        # releases it, so samples would land on sockets and ciphers and miss
+        # short bursts of Python. A short interval puts each sample within
+        # SWITCH of where the loop is.
+        self._switch = sys.getswitchinterval()
+        sys.setswitchinterval(SWITCH)
         self._started = time.perf_counter()
         self._thread.start()
 
     def stop(self) -> Profile:
         self._stop.set()
         self._thread.join()
+        sys.setswitchinterval(self._switch)
         self.profile.wall = time.perf_counter() - self._started
         return self.profile
 

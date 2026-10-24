@@ -39,7 +39,9 @@ goes.
 - **The load.** One session of 1,500 turns. Then a sweep of 1 to 32
   sessions at once in one process, 150 turns each.
 - **The reading.** A sampler reads the event loop's thread every 2 ms.
-  When the loop runs code, the sample is that code's. When it waits, the
+  It shortens the interpreter's switch interval to 0.1 ms while it
+  runs, so a sample lands where the loop is, not where it next gives up
+  the lock. When the loop runs code, the sample is that code's. When it waits, the
   sample is split between the sessions' tasks, each by what it waits on.
   Each sample goes to the first category its frames match, from the
   innermost out. The harness's own time, the twin's and the tools', is
