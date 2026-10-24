@@ -97,6 +97,16 @@ def _reads(results: dict[str, Any]) -> list[str]:
     return lines
 
 
+DRIVER = "performance/replay/__main__.py:main"
+"""The bottom of every stack. A sample whose innermost engine frame is the
+driver's is the event loop's own work: its scheduling, or a driver's
+callback that no engine function is above, such as a socket's read."""
+
+
+def _spender(name: str) -> str:
+    return "the loop's own callbacks" if name == DRIVER else f"`{name}`"
+
+
 def _ranked(run: dict[str, Any]) -> list[str]:
     shares = _shares(run)
     waited = run["profile"]["waiting_shares"]
@@ -108,7 +118,7 @@ def _ranked(run: dict[str, Any]) -> list[str]:
     ranked = sorted((c for c in shares if c in CATEGORIES and shares[c] > 0), key=lambda c: -shares[c])
     for rank, category in enumerate(ranked, start=1):
         spenders = by.get(category, []) + (by.get("idle", []) if category == "rest" else [])
-        named = "<br>".join(f"`{name}` {_pct(share)}" for name, share in spenders[:3])
+        named = "<br>".join(f"{_spender(name)} {_pct(share)}" for name, share in spenders[:3])
         wait = waited.get(category, 0.0) + (waited.get("idle", 0.0) if category == "rest" else 0.0)
         lines.append(f"| {rank} | {category} | {_pct(shares[category])} | {_pct(wait)} | {named} |")
     return lines
