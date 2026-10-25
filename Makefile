@@ -27,8 +27,17 @@ DEMO := uv run --project ../scaffold/acme_root --package acme-om --no-dev --lock
 # builds no provider that would send it.
 DEMO_KEYS := ANTHROPIC_API_KEY=never-sent OPENAI_API_KEY=never-sent ACME_LLM_PROVIDERS=live \
 	ACME_ANTHROPIC_API_KEY=never-sent ACME_OPENAI_API_KEY=never-sent
+# The performance run builds the engine as the session runner does, so it
+# runs on the runner's package and the scaffold's lock.
+PERFORMANCE_RUN := uv run --project ../scaffold/acme_root --package acme-agent-session-runner --no-dev --locked python
+# Its stack is a compose project of its own; `make performance` starts it,
+# and stops what it started. Each port is a knob of performance/compose.yml.
+PERFORMANCE_PROJECT ?= agentic-performance
+PERFORMANCE_COMPOSE := docker compose -p $(PERFORMANCE_PROJECT) -f $(CURDIR)/performance/compose.yml
+PERFORMANCE_RESULTS ?= results/$(shell date -u +%Y-%m-%dT%H%MZ).json
+PERFORMANCE_ARGS ?=
 
-.PHONY: help check lint ruff mypy lenses links toc version skills agents test plugin gen-skills gen-skills-check gen-toc demo demo-check demo-gif clean
+.PHONY: help check lint ruff mypy lenses links toc version skills agents test plugin gen-skills gen-skills-check gen-toc demo demo-check demo-gif performance performance-check clean
 
 help:              ## show targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -90,6 +99,19 @@ demo-check:        ## the demo headless, offline, with a provider's key set: eac
 
 demo-gif:          ## the scene recorded into demo/dreamcatcher.gif in headless Chromium, frame by frame (needs ffmpeg; CI does not run it)
 	cd demo && $(DEMO) --tape && uv run --no-project --with playwright==$(call pin,playwright) python record.py
+
+performance:       ## the replay on its own stack (Postgres per role, Valkey, MinIO, a KMS emulator), alone and in a sweep; writes performance/$(PERFORMANCE_RESULTS)
+	@if [ -n "$$($(PERFORMANCE_COMPOSE) ps -q --status running 2>/dev/null)" ]; then \
+	  echo "performance: the project $(PERFORMANCE_PROJECT) is running; its owner stops it first"; exit 1; fi
+	@trap '$(PERFORMANCE_COMPOSE) stop' EXIT; \
+	$(PERFORMANCE_COMPOSE) up -d --wait \
+	&& cd performance && set -a && . ./stack.env && set +a \
+	&& $(PERFORMANCE_RUN) -m acme.om.storage.migrate ensure-logins --local \
+	&& $(PERFORMANCE_RUN) -m acme.om.storage.migrate upgrade --all --local \
+	&& env $(DEMO_KEYS) $(PERFORMANCE_RUN) -m replay --full $(PERFORMANCE_RESULTS) $(PERFORMANCE_ARGS)
+
+performance-check: ## a short replay on memory storage and the key twin, with a provider's key set: each step read back equal to what was said, and sealed at rest
+	cd performance && env $(DEMO_KEYS) $(PERFORMANCE_RUN) -m replay --check
 
 clean:             ## remove tool caches
 	rm -rf .markdownlint-cli2-cache node_modules .pytest_cache .mypy_cache .ruff_cache

@@ -83,6 +83,19 @@ it.
   `make demo-check` holds each act, the ledger, and the committed tape
   to the record. `make demo-gif` records `demo/dreamcatcher.gif` from
   the page in headless Chromium.
+- `performance/` replays a long session's shape through the scaffold's
+  engine, wired as the session runner wires it, on a stack of its own:
+  a Postgres per role, Valkey, MinIO, and a KMS emulator behind the real
+  KMS adapter, or the key twin. `shapes/` holds what `capture.py` keeps
+  of a real session, numbers and tool classes alone, and
+  `tests/test_performance_shapes.py` holds every shape to that schema.
+  `make performance` runs it whole and writes a results file under
+  `results/`; its README's tables are rendered from the file they cite
+  (`python -m replay --report`), and the root tests hold them equal.
+  `make performance-check` replays a short slice on memory storage and
+  the key twin, reads every step back, and holds what is stored sealed.
+  It sits outside the scaffold, so no copy carries it. The root's ruff
+  and mypy cover its Python.
 - `.claude-plugin/` holds the plugin and marketplace manifests; the
   repository root is the plugin, `agentic-core`. `plugin.json` carries
   the one release version, and `scripts/check_version.py` holds every

@@ -28,6 +28,10 @@ that tells the story, and tools that hold the detail.
 - **[`demo/`](demo/)**: the engine in process, its run scripted end to
   end and played as a scene in the browser, the run above. It sits outside
   the scaffold, so no copy carries it.
+- **[`performance/`](performance/)**: the engine under a long session's
+  load, on the path a deployment runs: each step sealed, on Postgres,
+  with a key service over the network. It ranks where the time goes. It
+  sits outside the scaffold too.
 
 [The Repository](agentic_core_spec.md#the-repository) in the spec says
 what each part holds. A part's folder appears with the change that
@@ -67,6 +71,7 @@ make check       # everything CI runs
 make gen-toc     # regenerate the spec's Contents from its headings
 make gen-skills  # regenerate the review skills from the template and the lenses
 make demo        # the engine in process, its run played as a scene in the browser
+make performance # a long session's shape replayed on its own stack, and where the time goes
 ```
 
 [`CONTRIBUTING.md`](CONTRIBUTING.md) says what `make check` needs and
