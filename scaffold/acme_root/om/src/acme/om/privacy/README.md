@@ -61,6 +61,14 @@ of](../../../../README.md).
   too.
 - **Every record and key belongs to one org.** Another org that names a
   session finds nothing of it.
+- **A run holds what it read, for the run alone.** The loop keeps the
+  history it read, opened, and the steps it appended, so it reads back
+  nothing it wrote. None of it outlives the run, so any runner takes any
+  session.
+- **A key is in the clear only inside the call that uses it.** Each use
+  reads the key ring first, so a revocation reaches a run under way at
+  its next use of the key: its next append of content, or its next model
+  request, is refused.
 
 <!-- agents-only
 The sealing layer is `impl/sealed_agent_steps.py`, the memory-only layer
