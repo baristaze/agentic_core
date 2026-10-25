@@ -3,10 +3,11 @@ same interface. Every impl is wired at boot, and a session's policy picks
 one: sealed at rest, memory-only with its shape kept, or memory-only with
 nothing at rest.
 
-A policy is written once, so the first append of a session with none
-writes the default, sealed, and from then on no other can be chosen. A
-policy never changes once written, so the routes this process has read
-are kept, up to a bound. A revocation does change, so a memory-only
+A policy is chosen once, so the first append of a session with none
+chosen fixes the default, sealed, and from then on no other can be chosen.
+The record a session's title writes holds the default, not yet chosen, and
+a read keeps nothing of it. A policy never changes once chosen, so the
+routes this process has read are kept, up to a bound. A revocation does change, so a memory-only
 session's is read on every call: its content is under no key, and its
 revocation is what this process stops answering."""
 
@@ -100,12 +101,12 @@ class AgentStepStorageRoutedImpl(AgentStepStorageInterface):
     ) -> tuple[AgentStepStorageInterface, bool]:
         """The impl the session's policy names, and whether its content lives
         in this process. A write fixes the default policy on a session with
-        none; a read of one with none reads it as sealed and keeps nothing,
-        since its policy may still be chosen."""
+        none chosen; a read of one with none chosen reads it as sealed and
+        keeps nothing, since its policy may still be chosen."""
         policy = self._routes.get((org_id, agent_session_id))
         if policy is None:
             if writing:
-                record = await self._policies.create_privacy(
+                record, _ = await self._policies.choose_policy(
                     org_id,
                     AgentSessionPrivacy(
                         id=new_id(), agent_session_id=agent_session_id, created_at=self._clock()
@@ -113,7 +114,7 @@ class AgentStepStorageRoutedImpl(AgentStepStorageInterface):
                 )
             else:
                 record = await self._policies.read_privacy(org_id, agent_session_id)
-            if record is None:
+            if record is None or not record.chosen:
                 return self._sealed, False
             policy = record.policy
             self._routes[(org_id, agent_session_id)] = policy

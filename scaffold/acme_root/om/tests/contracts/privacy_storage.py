@@ -19,6 +19,8 @@ from acme.om.privacy.types.agent_session_privacy import (
     AgentSessionPrivacy,
     StorageMode,
     StoragePolicy,
+    TenantTitleKey,
+    TitleKeys,
 )
 
 INTERFACE = PrivacyStorageInterface
@@ -27,13 +29,18 @@ INTERFACE = PrivacyStorageInterface
 CROSS_TENANT_CASES: frozenset[str] = frozenset(
     {
         "add_key",
+        "add_tenant_title_key",
+        "add_title_key",
+        "choose_policy",
         "create_privacy",
         "purge_tenant",
         "read_keys",
         "read_keys_wrapped_before",
         "read_privacy",
+        "read_title_keys",
         "revoke",
         "rewrap_key",
+        "rewrap_tenant_title_key",
     }
 )
 """Every method of `PrivacyStorageInterface` that takes a tenant has a case
@@ -66,6 +73,25 @@ def make_key(
     )
 
 
+def titled(agent_session_id: UUID) -> AgentSessionPrivacy:
+    """The record a session's title writes: the default, not yet chosen, and
+    its title key."""
+    return make_record(agent_session_id).model_copy(
+        update={"title_key": os.urandom(60), "chosen": False}
+    )
+
+
+def make_tenant_title_key(wrapped_at_ago: timedelta = timedelta(0)) -> TenantTitleKey:
+    now = utcnow()
+    return TenantTitleKey(
+        id=new_id(),
+        created_at=now,
+        wrapped=os.urandom(48),
+        wrapping="memory:1",
+        wrapped_at=now - wrapped_at_ago,
+    )
+
+
 def revocation(agent_session_id: UUID) -> AgentSessionPrivacy:
     now = utcnow()
     return AgentSessionPrivacy(
@@ -89,6 +115,71 @@ class PrivacyStorageContract:
         assert await storage.create_privacy(org, make_record(session)) == first
         assert await storage.read_privacy(org, session) == first
         assert await storage.read_privacy(org, new_id()) is None
+
+    async def test_a_title_key_is_kept_once_and_goes_with_the_revocation(
+        self, storage: PrivacyStorageInterface
+    ) -> None:
+        """The first title key a session's record takes is its key for good,
+        whether the record came with it or before it; the revocation clears
+        it in the commit that destroys the versions, and none lands after."""
+        org, session, other, plain = new_id(), new_id(), new_id(), new_id()
+        assert await storage.read_title_keys(org, [session]) == TitleKeys()
+        tenant = await storage.add_tenant_title_key(org, make_tenant_title_key())
+        first = titled(session)
+        assert await storage.add_title_key(org, first) == first
+        assert await storage.add_title_key(org, titled(session)) == first
+        await storage.create_privacy(org, make_record(plain))
+        took = await storage.add_title_key(org, titled(plain))
+        assert took.title_key is not None and took.policy == StoragePolicy()
+        kept = await storage.add_title_key(org, titled(other))
+        await storage.add_key(org, make_key(session, 1))
+        found = await storage.read_title_keys(org, [session, plain, new_id()])
+        assert found.tenant == tenant
+        assert found.by_session() == {session: first.title_key, plain: took.title_key}
+        revoked = await storage.revoke(org, revocation(session))
+        assert revoked.title_key is None and revoked.revoked_at is not None
+        assert all(key.wrapped is None for key in (await storage.read_keys(org, session)).keys)
+        assert (await storage.add_title_key(org, titled(session))).title_key is None
+        found = await storage.read_title_keys(org, [session, other])
+        assert found.by_session() == {other: kept.title_key}
+
+    async def test_a_policy_is_chosen_once_over_the_record_its_title_wrote(
+        self, storage: PrivacyStorageInterface
+    ) -> None:
+        """A choice lands on a session with no record, or takes the record its
+        title wrote, keeping its title key; once chosen, by a choice or by
+        the default the history's first write fixes, no other lands, and a
+        revoked record takes none."""
+        org, fresh, titled_once, fixed, gone = (new_id() for _ in range(5))
+        record = make_record(fresh, MEMORY_ONLY)
+        assert await storage.choose_policy(org, record) == (record, True)
+        stored = await storage.add_title_key(org, titled(titled_once))
+        assert not stored.chosen
+        taken, landed = await storage.choose_policy(org, make_record(titled_once, MEMORY_ONLY))
+        assert landed and taken.chosen and taken.policy == MEMORY_ONLY
+        assert (taken.id, taken.title_key) == (stored.id, stored.title_key)
+        kept, landed = await storage.choose_policy(org, make_record(titled_once))
+        assert not landed and kept == taken
+        await storage.add_title_key(org, titled(fixed))
+        default, landed = await storage.choose_policy(org, make_record(fixed))
+        assert landed and default.chosen and default.policy == StoragePolicy()
+        assert not (await storage.choose_policy(org, make_record(fixed, MEMORY_ONLY)))[1]
+        await storage.add_title_key(org, titled(gone))
+        await storage.revoke(org, revocation(gone))
+        revoked, landed = await storage.choose_policy(org, make_record(gone, MEMORY_ONLY))
+        assert not landed and revoked.policy == StoragePolicy() and not revoked.chosen
+
+    async def test_the_tenants_title_key_is_kept_once_and_rewrapped_over_its_copy(
+        self, storage: PrivacyStorageInterface
+    ) -> None:
+        org = new_id()
+        first = make_tenant_title_key()
+        assert await storage.add_tenant_title_key(org, first) == first
+        assert await storage.add_tenant_title_key(org, make_tenant_title_key()) == first
+        moved = first.model_copy(update={"wrapped": os.urandom(48), "wrapping": "memory:2"})
+        assert await storage.rewrap_tenant_title_key(org, moved, first.wrapped)
+        assert not await storage.rewrap_tenant_title_key(org, moved, first.wrapped)
+        assert (await storage.read_title_keys(org, ())).tenant == moved
 
     async def test_a_version_is_kept_once_in_order_under_its_record(
         self, storage: PrivacyStorageInterface
@@ -194,9 +285,23 @@ class PrivacyStorageContract:
         assert not await storage.rewrap_key(org_b, stolen, key.wrapped)
         assert await storage.read_keys_wrapped_before(org_b, utcnow(), 10) == []
         assert await storage.purge_tenant(org_b, 10) == 0
+        tenant_key = await storage.add_tenant_title_key(org_a, make_tenant_title_key())
+        titled_a = await storage.add_title_key(org_a, titled(session))
+        assert await storage.read_title_keys(org_b, [session]) == TitleKeys()
+        with pytest.raises(TenantMismatch):
+            await storage.add_title_key(org_b, titled_a)
+        with pytest.raises(TenantMismatch):
+            await storage.choose_policy(org_b, record.model_copy(update={"policy": MEMORY_ONLY}))
+        with pytest.raises(TenantMismatch):
+            await storage.add_tenant_title_key(org_b, tenant_key)
+        stolen_key = tenant_key.model_copy(update={"wrapped": os.urandom(48)})
+        assert not await storage.rewrap_tenant_title_key(org_b, stolen_key, tenant_key.wrapped)
         own = await storage.revoke(org_b, revocation(session))
         assert own.revoked_at is not None
-        assert await storage.read_privacy(org_a, session) == record
+        assert await storage.read_privacy(org_a, session) == titled_a
+        found = await storage.read_title_keys(org_a, [session])
+        assert titled_a.title_key is not None
+        assert found == TitleKeys(tenant=tenant_key, sessions=((session, titled_a.title_key),))
         ring = await storage.read_keys(org_a, session)
         assert not ring.revoked and ring.keys == (key,)
 
@@ -214,3 +319,16 @@ class PrivacyStorageContract:
         assert await storage.purge_tenant(org, 3) == 0
         assert await storage.read_keys_wrapped_before(org, utcnow(), 10) == []
         assert len(await storage.read_keys_wrapped_before(other, utcnow(), 10)) == 2
+
+    async def test_a_tenants_purge_takes_its_title_key_after_the_records(
+        self, storage: PrivacyStorageInterface
+    ) -> None:
+        org, other = new_id(), new_id()
+        for tenant in (org, other):
+            await storage.add_tenant_title_key(tenant, make_tenant_title_key())
+            await storage.add_title_key(tenant, titled(new_id()))
+        assert await storage.purge_tenant(org, 1) == 1
+        assert (await storage.read_title_keys(org, ())).tenant is not None
+        assert await storage.purge_tenant(org, 10) == 1
+        assert await storage.read_title_keys(org, ()) == TitleKeys()
+        assert (await storage.read_title_keys(other, ())).tenant is not None

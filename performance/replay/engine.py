@@ -265,6 +265,7 @@ class Engine:
         )
         self.managers: Managers = self.container.managers
         self.owner: TenantContext | None = None
+        self.mark = words.mark
 
     @classmethod
     def on_postgres(cls, keys: str, words: Words) -> Engine:
@@ -298,7 +299,10 @@ class Engine:
         return self.owner
 
     async def new_session(self) -> UUID:
-        session = await self.managers.agents.start_agent_session(self.ctx(), Start(id=new_id(), kind=KIND.name, title="replay"))
+        """A session started as a person starts one, its title opening with
+        the run's marker, which nothing at rest may hold."""
+        start = Start(id=new_id(), kind=KIND.name, title=f"{self.mark} the replay")
+        session = await self.managers.agents.start_agent_session(self.ctx(), start)
         return session.id
 
     async def say(self, agent_session_id: UUID, text: str) -> None:

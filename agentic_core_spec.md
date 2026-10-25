@@ -1785,6 +1785,12 @@ touches no content. The key service creates, wraps, unwraps, and
 destroys a session's data keys; a memory impl serves a process and a
 test, and a cloud key service a fleet.
 
+A session's title is content too, and a list shows a page of them at
+once. So it is sealed under a title key of the session's own, kept
+wrapped under its tenant's title key, which the key service wraps: a page
+of titles costs one call to the key service, whatever its size. Revoking
+the session's key takes its title key in the same commit.
+
 > **Principle:** Content is sealed per session; shape is not. Revoking a
 > key deletes the content and keeps the record.
 
@@ -1792,7 +1798,7 @@ test, and a cloud key service a fleet.
 
 | Sealed: content | Readable: shape |
 |---|---|
-| Messages, events, tool inputs and outputs | Ids, types, `seq`, actors, origins, references |
+| Messages, events, tool inputs and outputs, a session's title | Ids, types, `seq`, actors, origins, references |
 | Thinking, summaries, the plan | Times, sizes, stop reasons, failure classes |
 | Attachments and tool outputs | Usage, cost, budgets; that an approval happened, and who decided |
 | Anything derived: caches, indexes, embeddings | Tool names, classes, effects; keyed hashes |
@@ -1827,15 +1833,18 @@ Some tenants accept no content at rest, sealed or not. A session's
 storage policy is chosen per session, by policy: **sealed** by default,
 or **memory-only**, where content lives only while a runtime holds it and
 the shape may still be persisted, when policy allows, so the audit
-survives. A call's cost survives in every mode, in its [usage
-record](#usage-and-cost). Both impls are wired at boot, and a decorator routes each
-session by its policy. A memory-only session keeps its runtime while it
-is parked, up to a declared time; past it, or on a crash, its loop ends
-`errored` and its shape stays.
+survives. A memory-only session's title is kept at rest, sealed under its
+title key, since it is written when the session is made, before its
+policy is chosen; a revoke makes it absent. A call's cost survives in
+every mode, in its [usage record](#usage-and-cost). Both impls are wired
+at boot, and a decorator routes each session by its policy. A memory-only
+session keeps its runtime while it is parked, up to a declared time; past
+it, or on a crash, its loop ends `errored` and its shape stays.
 
 **Zero data retention** has two halves. On the provider's side, only
 fills eligible for it may be resolved or fallen back to, enforced like a
-tenant's own key. On the engine's side, the session is memory-only.
+tenant's own key. On the engine's side, the session is memory-only: of
+its content, only its title is kept at rest, sealed.
 
 ## Null Objects
 

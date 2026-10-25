@@ -11,7 +11,7 @@ from uuid import UUID
 from worker_support import build_container, request, sign_in
 
 from acme.om.agent_sessions.kinds import AgentSessionWorkKind
-from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus
+from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus, Title
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
 from acme.om.agent_steps.types.content import Content, TextBlock
 from acme.om.agent_steps.types.header import (
@@ -68,7 +68,7 @@ async def parked(container: WorkerContainer, ctx: TenantContext, park: Park) -> 
             updated_at=now,
             created_by=ctx.user_id,
             updated_by=ctx.user_id,
-            title="a session that waits",
+            title=Title(text="a session that waits"),
             kind="delivery",
             kind_version=1,
             root_id=new_id(),

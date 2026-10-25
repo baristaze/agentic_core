@@ -84,16 +84,20 @@ an approval happened and who decided, tool names, classes, effects, and
 keyed hashes. A hash in the shape is keyed by the session. Telemetry,
 logs, and traces carry shape only; redaction is no licence to log
 content. Billing, audit, and tracing keep working on a session whose
-content is gone.
+content is gone. A session's title is content, sealed under a title key
+of its own, and a page of titles opens with one key call.
 
-**Source.** Privacy, Content and Shape.
+**Source.** Privacy, Content and Shape; Privacy, A Key per Session.
 
 **Look for.** Each persisted field and which side it sits on; derived
-stores; hashes and their keys; what logs, metrics, and spans carry.
+stores; hashes and their keys; what logs, metrics, and spans carry;
+where a title is sealed and opened, and the key calls a page of titles
+takes.
 
 **Violation.** A derived index or embedding stored unsealed; an unkeyed
 hash of content; content in a log line or a span, redacted or not;
-billing or audit that reads content.
+billing or audit that reads content; a title in the clear, or a page of
+titles that calls the key service once a session.
 
 **Severity.** medium
 
@@ -136,11 +140,12 @@ cannot be undone.
 policy is chosen per session, by policy: sealed by default, or
 memory-only, where content lives only while a runtime holds it and the
 shape may still be persisted, when policy allows, so the audit survives.
-A call's cost survives in every mode, in its usage record. Both impls
-are wired at boot, and a decorator routes each session by its policy. A
-memory-only session keeps its runtime while it is parked, up to a
-declared time; past it, or on a crash, its loop ends `errored` and its
-shape stays. Zero data retention's engine half is a memory-only session.
+A memory-only session's title is kept at rest, sealed. A call's cost
+survives in every mode, in its usage record. Both impls are wired at
+boot, and a decorator routes each session by its policy. A memory-only
+session keeps its runtime while it is parked, up to a declared time;
+past it, or on a crash, its loop ends `errored` and its shape stays.
+Zero data retention's engine half is a memory-only session.
 
 **Source.** Privacy, Storage Modes and Retention.
 
@@ -149,8 +154,8 @@ decorator; a memory-only session's park and crash paths.
 
 **Violation.** A storage mode fixed for a whole process, so sessions
 under different policies cannot differ; content of a memory-only session
-written to any store; a memory-only session that stays parked past its
-declared time.
+written to any store, but its sealed title; a memory-only session that
+stays parked past its declared time.
 
 **Severity.** medium
 

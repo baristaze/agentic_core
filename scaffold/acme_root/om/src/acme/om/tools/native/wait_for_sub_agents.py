@@ -82,11 +82,14 @@ class WaitForSubAgentsToolImpl(ToolInterface):
 
     async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
         assert isinstance(call_input, WaitForSubAgentsInput)
-        running = [
-            child
-            for child in await self._children(ctx, runtime.agent_session_id)
-            if child.status is not AgentSessionStatus.IDLE
-        ]
+        running = await self._sessions.open_titles(
+            ctx,
+            [
+                child
+                for child in await self._children(ctx, runtime.agent_session_id)
+                if child.status is not AgentSessionStatus.IDLE
+            ],
+        )
         if not running:
             raise ToolFailed(
                 ToolFailure.PERMANENT,
@@ -97,7 +100,7 @@ class WaitForSubAgentsToolImpl(ToolInterface):
             sub_agents=tuple(
                 SubAgent(
                     agent_session_id=child.id,
-                    title=child.title,
+                    title=child.title.said(),
                     kind=child.kind,
                     status=child.status,
                 )

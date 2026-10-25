@@ -6,7 +6,7 @@ from uuid import UUID
 from acme.infra.agent_workspaces import IsolationMode
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.limits import deadline_park
-from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus
+from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus, Title
 from acme.om.agent_steps import AgentStepsManagerInterface
 from acme.om.agent_steps.rules import standing_step
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
@@ -298,6 +298,7 @@ class AgentsManagerImpl(AgentsManagerInterface):
         parent = await self._find(ctx, child.parent_id)
         if parent is None:
             return None
+        (child,) = await self._sessions.open_titles(ctx, [child])
         principal = await self._attribution.call_principal(ctx, child.id)
         if report.outcome is not None:
             # One end a loop: a run that ends it again writes this report once.
@@ -449,7 +450,7 @@ class AgentsManagerImpl(AgentsManagerInterface):
             updated_at=now,
             created_by=ctx.user_id,
             updated_by=ctx.user_id,
-            title=title,
+            title=Title(text=title),
             participants=participants,
             kind=kind.name,
             kind_version=kind.version,

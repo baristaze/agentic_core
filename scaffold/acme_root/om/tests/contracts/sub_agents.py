@@ -149,8 +149,9 @@ def text_of(answer: AgentStep) -> str:
 
 
 async def children_of(loop: Loop, agent_session_id: UUID) -> list[AgentSession]:
+    """The session's children, their titles opened, as their owner reads them."""
     page = await loop.managers.agent_sessions.get_children(loop.owner, agent_session_id, None, 50)
-    return list(page.items)
+    return await loop.managers.agent_sessions.open_titles(loop.owner, page.items)
 
 
 async def a_root(loop: Loop, ask: str) -> UUID:
@@ -179,7 +180,7 @@ async def a_root_holds_ten_sub_agents_and_the_eleventh_is_refused(loop: Loop) ->
     assert "the tree holds its 10 sub-agents" in text_of(eleventh)
     children = await children_of(loop, root)
     assert len(children) == 10
-    assert {child.title for child in children} == {f"hypothesis {n}" for n in range(1, 11)}
+    assert {child.title.said() for child in children} == {f"hypothesis {n}" for n in range(1, 11)}
 
 
 async def a_third_level_starts_and_a_fourth_is_refused(loop: Loop) -> None:
@@ -236,7 +237,7 @@ async def children_together_spend_no_more_than_the_trees_budget(loop: Loop) -> N
     spawned = answers(await loop.history(root), SPAWN_SUB_AGENT)
     assert [failure_of(answer) for answer in spawned] == [None, None, None, ToolFailure.PERMANENT]
     assert "names no share" in text_of(spawned[3])
-    children = sorted(await children_of(loop, root), key=lambda child: child.title)
+    children = sorted(await children_of(loop, root), key=lambda child: child.title.said())
     assert [child.kind for child in children] == [RESEARCH.name] * 3, "the unshared one never made"
     first, second, third = children
     loop.anthropic.add(
@@ -326,7 +327,7 @@ async def a_root_waits_after_each_of_seven_reports_and_reads_them_all(loop: Loop
     assert len(children) == 7
     runs: list[LoopRun] = []
     for n, child in enumerate(children, start=1):
-        loop.anthropic.add(reply(said(f"{child.title} holds.")))
+        loop.anthropic.add(reply(said(f"{child.title.said()} holds.")))
         await loop.loops.run(loop.owner, child.id)
         last = n == len(children)
         loop.anthropic.add(reply(said("All seven hold.") if last else call(WAIT_FOR_SUB_AGENTS)))

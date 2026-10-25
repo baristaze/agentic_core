@@ -22,7 +22,7 @@ from acme.integrations.model_providers.registry import scripted_model_providers
 from acme.integrations.model_providers.scripted import ModelProviderScriptedImpl, ScriptedFailure
 from acme.integrations.model_providers.types import ErrorKind, ProviderName, StopReason, Usage
 from acme.om.agent_root import AgentRootOptions
-from acme.om.agent_sessions.types.agent_session import AgentSession
+from acme.om.agent_sessions.types.agent_session import AgentSession, Title
 from acme.om.agent_steps import AgentStepsManagerInterface
 from acme.om.agent_steps.impl.manager import no_session
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
@@ -939,7 +939,7 @@ async def authorized(managers: Managers, ctx: TenantContext, agent_session_id: U
         updated_at=now,
         created_by=ctx.user_id,
         updated_by=ctx.user_id,
-        title="a render",
+        title=Title(text="a render"),
         kind="investigator",
         kind_version=1,
         root_id=agent_session_id,

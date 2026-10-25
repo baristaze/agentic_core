@@ -8,7 +8,13 @@ from datetime import datetime, timedelta
 import pytest
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
-from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus, Among
+from acme.om.agent_sessions.types.agent_session import (
+    AgentSession,
+    AgentSessionStatus,
+    Among,
+    Title,
+)
+from acme.om.agent_steps.types.content import ContentState
 from acme.om.agent_steps.types.header import Park, ParkReason
 from acme.om.attribution.types.authority import Visibility
 from acme.om.attribution.types.principal import Principal, PrincipalKind
@@ -27,6 +33,7 @@ CROSS_TENANT_CASES: frozenset[str] = frozenset(
         "read_agent_session",
         "read_agent_sessions",
         "read_tenant_agent_sessions",
+        "seal_title",
         "tree_holds_others",
         "write_agent_session",
     }
@@ -47,7 +54,7 @@ def make_agent_session(
         updated_at=now,
         created_by=actor,
         updated_by=actor,
-        title="the weekly report is missing a total",
+        title=Title(text="the weekly report is missing a total"),
         participants=(actor, new_id()),
         kind="delivery",
         kind_version=1,
@@ -57,6 +64,20 @@ def make_agent_session(
         depth=1 if parent is None else parent.depth + 1,
         visibility=visibility,
     )
+
+
+def sealed_title(blob: bytes = b"\x00\x00\x00\x00\x00\x00\x00\x01 a sealed title") -> Title:
+    """A title as storage keeps it: a blob the manager sealed, which storage
+    never opens."""
+    return Title(state=ContentState.SEALED, sealed=blob)
+
+
+def stored_session(
+    *, parent: AgentSession | None = None, visibility: Visibility = Visibility.PRIVATE
+) -> AgentSession:
+    """A session as the manager hands it to storage: its title sealed."""
+    made = make_agent_session(parent=parent, visibility=visibility)
+    return made.model_copy(update={"title": sealed_title()})
 
 
 def parked(session: AgentSession, version: int) -> AgentSession:
@@ -101,8 +122,8 @@ class AgentSessionStorageContract:
 
     async def test_round_trip(self, storage: AgentSessionStorageInterface) -> None:
         org = new_id()
-        root = make_agent_session()
-        child = make_agent_session(parent=root)
+        root = stored_session()
+        child = stored_session(parent=root)
         assert await storage.create_agent_session(org, root, ())
         assert await storage.create_agent_session(org, child, ())
         assert await storage.read_agent_session(org, root.id) == root
@@ -113,7 +134,7 @@ class AgentSessionStorageContract:
         self, storage: AgentSessionStorageInterface
     ) -> None:
         org = new_id()
-        session = make_agent_session().model_copy(
+        session = stored_session().model_copy(
             update={
                 "speaker": Principal(kind=PrincipalKind.SERVICE, id=new_id()),
                 "untrusted": True,
@@ -127,12 +148,12 @@ class AgentSessionStorageContract:
         self, storage: AgentSessionStorageInterface
     ) -> None:
         org, elsewhere = new_id(), new_id()
-        root = make_agent_session()
+        root = stored_session()
         assert await storage.create_agent_session(org, root, ())
-        children = sorted((make_agent_session(parent=root) for _ in range(3)), key=lambda s: s.id)
+        children = sorted((stored_session(parent=root) for _ in range(3)), key=lambda s: s.id)
         for child in children:
             assert await storage.create_agent_session(org, child, ())
-        grandchild = make_agent_session(parent=children[0])
+        grandchild = stored_session(parent=children[0])
         assert await storage.create_agent_session(org, grandchild, ())
         assert await storage.read_children(org, root.id, None, 10) == children
         assert await storage.read_children(org, root.id, children[0].id, 1) == [children[1]]
@@ -140,25 +161,59 @@ class AgentSessionStorageContract:
         assert await storage.read_children(org, grandchild.id, None, 10) == []
         assert await storage.read_children(elsewhere, root.id, None, 10) == []
 
-    async def test_a_title_keeps_what_both_impls_store(
+    async def test_a_sealed_title_keeps_every_byte_and_an_absent_one_stays_absent(
         self, storage: AgentSessionStorageInterface
     ) -> None:
         org = new_id()
-        session = AgentSession.model_validate(
-            {**make_agent_session().model_dump(), "title": f"a\x00b{chr(0xDFFF)}c"}
-        )
-        assert session.title == "a\ufffdb\ufffdc"
+        sealed = stored_session().model_copy(update={"title": sealed_title(bytes(range(256)))})
+        absent = stored_session().model_copy(update={"title": Title(state=ContentState.ABSENT)})
+        for session in (sealed, absent):
+            assert await storage.create_agent_session(org, session, ())
+            assert await storage.read_agent_session(org, session.id) == session
+
+    async def test_a_title_in_the_clear_is_refused_and_nothing_lands(
+        self, storage: AgentSessionStorageInterface
+    ) -> None:
+        org = new_id()
+        session = make_agent_session()
+        with pytest.raises(ValueError, match="never in the clear"):
+            await storage.create_agent_session(org, session, ())
+        assert await storage.read_agent_session(org, session.id) is None
+
+    async def test_a_write_leaves_the_title_as_stored(
+        self, storage: AgentSessionStorageInterface
+    ) -> None:
+        org = new_id()
+        session = stored_session()
         assert await storage.create_agent_session(org, session, ())
+        writes = (Title(text="the clear words"), sealed_title(b"another blob of noise"))
+        for version, title in enumerate(writes, start=2):
+            moved = parked(session, version).model_copy(update={"title": title})
+            await storage.write_agent_session(org, moved, version - 1, ())
+            stored = await storage.read_agent_session(org, session.id)
+            assert stored == moved.model_copy(update={"title": session.title})
+
+    async def test_seal_title_takes_a_title_in_the_clear_alone_and_in_its_tenant(
+        self, storage: AgentSessionStorageInterface
+    ) -> None:
+        """Every title this storage writes is sealed, so the sweep's write
+        finds nothing to take, in the tenant or another."""
+        org, elsewhere = new_id(), new_id()
+        session = stored_session()
+        assert await storage.create_agent_session(org, session, ())
+        resealed = session.model_copy(update={"title": sealed_title(b"x" * 40), "version": 2})
+        assert not await storage.seal_title(org, resealed, 1)
+        assert not await storage.seal_title(elsewhere, resealed, 1)
         assert await storage.read_agent_session(org, session.id) == session
 
     async def test_purge_tenant_deletes_exactly_the_batch_read_and_no_other_tenants(
         self, storage: AgentSessionStorageInterface
     ) -> None:
         gone, kept = new_id(), new_id()
-        made = [make_agent_session() for _ in range(3)]
+        made = [stored_session() for _ in range(3)]
         for session in made:
             assert await storage.create_agent_session(gone, session, ())
-        stays = make_agent_session()
+        stays = stored_session()
         assert await storage.create_agent_session(kept, stays, ())
         batch = await storage.read_tenant_agent_sessions(gone, 2)
         assert len(batch) == 2 and set(batch) <= {s.id for s in made}
@@ -182,12 +237,12 @@ class AgentSessionStorageContract:
         root when it names no person. A sub-agent is on no such page. Who
         sees a session, and who steers it, read back as written."""
         org, person = new_id(), new_id()
-        made = make_agent_session().model_copy(update={"created_by": person})
-        joined = make_agent_session().model_copy(
+        made = stored_session().model_copy(update={"created_by": person})
+        joined = stored_session().model_copy(
             update={"participants": (new_id(), person), "steerer": person}
         )
-        seen, closed = make_agent_session(visibility=Visibility.ORG_WIDE), make_agent_session()
-        child = make_agent_session(parent=made, visibility=Visibility.ORG_WIDE)
+        seen, closed = stored_session(visibility=Visibility.ORG_WIDE), stored_session()
+        child = stored_session(parent=made, visibility=Visibility.ORG_WIDE)
         for session in (made, joined, seen, closed, child):
             assert await storage.create_agent_session(org, session, ())
         mine = await storage.read_agent_sessions(
@@ -212,7 +267,7 @@ class AgentSessionStorageContract:
         it as it is, for the manager to hide, unmark, or find claimed, and
         an unmark puts it back on the page."""
         org = new_id()
-        kept, gone = make_agent_session(), make_agent_session()
+        kept, gone = stored_session(), stored_session()
         for session in (kept, gone):
             assert await storage.create_agent_session(org, session, ())
         deleted = marked(gone, 2, utcnow())
@@ -232,7 +287,7 @@ class AgentSessionStorageContract:
         before the cut, claimed or not, each with its tenant, a batch at most;
         never one marked since the cut, nor one not marked."""
         first, second, now = new_id(), new_id(), utcnow()
-        old, older, claimed, recent, live = (make_agent_session() for _ in range(5))
+        old, older, claimed, recent, live = (stored_session() for _ in range(5))
         for org, session in (
             (first, old),
             (first, recent),
@@ -257,8 +312,8 @@ class AgentSessionStorageContract:
         self, storage: AgentSessionStorageInterface
     ) -> None:
         org, other = new_id(), new_id()
-        root, alone = make_agent_session(), make_agent_session()
-        child = make_agent_session(parent=root)
+        root, alone = stored_session(), stored_session()
+        child = stored_session(parent=root)
         for session in (root, child, alone):
             assert await storage.create_agent_session(org, session, ())
         assert await storage.tree_holds_others(org, root.id, root.id), "its child"
@@ -273,7 +328,7 @@ class AgentSessionStorageContract:
         merely marked deleted stays, and so does a claimed one named under
         another tenant."""
         org, other, now = new_id(), new_id(), utcnow()
-        unclaimed, claimed = make_agent_session(), make_agent_session()
+        unclaimed, claimed = stored_session(), stored_session()
         for session in (unclaimed, claimed):
             assert await storage.create_agent_session(org, session, ())
         await storage.write_agent_session(org, marked(unclaimed, 2, now), 1, ())
@@ -291,10 +346,10 @@ class AgentSessionStorageContract:
         self, storage: AgentSessionStorageInterface
     ) -> None:
         org = new_id()
-        session = make_agent_session()
+        session = stored_session()
         assert await storage.create_agent_session(org, session, ())
         assert not await storage.create_agent_session(
-            org, session.model_copy(update={"title": "x"}), ()
+            org, session.model_copy(update={"title": sealed_title(b"y" * 40)}), ()
         )
         assert await storage.read_agent_session(org, session.id) == session
 
@@ -302,10 +357,10 @@ class AgentSessionStorageContract:
         self, storage: AgentSessionStorageInterface
     ) -> None:
         org_a, org_b = new_id(), new_id()
-        session = make_agent_session()
+        session = stored_session()
         assert await storage.create_agent_session(org_a, session, ())
         assert not await storage.create_agent_session(
-            org_b, session.model_copy(update={"title": "x"}), ()
+            org_b, session.model_copy(update={"title": sealed_title(b"y" * 40)}), ()
         )
         assert await storage.read_agent_session(org_b, session.id) is None
         assert await storage.read_agent_session(org_a, session.id) == session
@@ -314,10 +369,10 @@ class AgentSessionStorageContract:
         self, storage: AgentSessionStorageInterface
     ) -> None:
         org, elsewhere = new_id(), new_id()
-        sessions = sorted((make_agent_session() for _ in range(3)), key=lambda s: s.id)
+        sessions = sorted((stored_session() for _ in range(3)), key=lambda s: s.id)
         for session in sessions:
             assert await storage.create_agent_session(org, session, ())
-        assert await storage.create_agent_session(elsewhere, make_agent_session(), ())
+        assert await storage.create_agent_session(elsewhere, stored_session(), ())
         waiting = parked(sessions[1], version=2)
         await storage.write_agent_session(org, waiting, 1, ())
         assert await storage.read_agent_sessions(org, None, None, 10) == [
@@ -339,7 +394,7 @@ class AgentSessionStorageContract:
         self, storage: AgentSessionStorageInterface
     ) -> None:
         org = new_id()
-        session = make_agent_session()
+        session = stored_session()
         assert await storage.create_agent_session(org, session, ())
         moved = parked(session, version=2)
         await storage.write_agent_session(org, moved, 1, ())
@@ -352,7 +407,7 @@ class AgentSessionStorageContract:
         self, storage: AgentSessionStorageInterface
     ) -> None:
         org_a, org_b = new_id(), new_id()
-        session = make_agent_session()
+        session = stored_session()
         assert await storage.create_agent_session(org_a, session, ())
         with pytest.raises(PreconditionFailed):
             await storage.write_agent_session(org_b, parked(session, version=2), 1, ())

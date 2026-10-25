@@ -41,8 +41,20 @@ class AgentSessionsManagerInterface(ABC):
         it stands (`agent_sessions.rules.lineage`): its mark, and for a child
         the cut of its tools, so no maker grants a child more than its parent
         holds. The root, the depth, the status, and the provenance are the
-        manager's too. An id written already answers the session as
-        stored."""
+        manager's too. Its title is sealed on its way into storage, and the
+        session is answered as stored, as a read answers it. An id written
+        already answers the session as stored."""
+        ...
+
+    @abstractmethod
+    async def open_titles(
+        self, ctx: TenantContext, sessions: Sequence[AgentSession]
+    ) -> list[AgentSession]:
+        """`sessions`, as a read here answered them, in their order, each
+        with its title opened: plain, or absent once its key is revoked. A
+        read answers a title sealed, so what shows one opens it here, a page
+        at once: one read of their title keys and one call to the key
+        service, whatever its size."""
         ...
 
     @abstractmethod
@@ -269,6 +281,19 @@ class AgentSessionsManagerInterface(ABC):
         within its retention, or never marked, is never taken: no purge
         runs on demand. Returns how many sessions it took up, so a whole
         batch says there may be more."""
+        ...
+
+    @abstractmethod
+    @stageless
+    async def seal_titles_across_tenants(self) -> int:
+        """System-internal: the sweep, across tenants, once a pass: a batch
+        at most of the titles stored in the clear, from before titles were
+        sealed, each sealed in place under its session's title key, and
+        dropped as absent for a session whose key is revoked. Each is its own
+        write, conditioned on the version read, so a failure part way keeps
+        what it sealed and leaves the rest readable as they were, for the
+        next pass. Returns how many it took up, so a whole batch says there
+        may be more."""
         ...
 
     @abstractmethod

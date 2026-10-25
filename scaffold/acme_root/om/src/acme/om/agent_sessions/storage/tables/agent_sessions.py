@@ -2,10 +2,14 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import BigInteger, Index, text
+from sqlalchemy import BigInteger, Index, LargeBinary, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from acme.om.storage.tables.base import Base, IdentifiableMixin, SoftDeletableMixin, TrackableMixin
+
+SEALED_TITLE = "(sealed)"
+"""What `title` holds once the title is sealed or absent: a word, never the
+title, for a release that reads that column alone."""
 
 
 class AgentSessions(IdentifiableMixin, TrackableMixin, SoftDeletableMixin, Base):
@@ -29,8 +33,21 @@ class AgentSessions(IdentifiableMixin, TrackableMixin, SoftDeletableMixin, Base)
             "deleted_at",
             postgresql_where=text("deleted_at IS NOT NULL"),
         ),
+        # The sweep's read across tenants: the titles still in the clear,
+        # from before titles were sealed. Once each is sealed it holds none.
+        Index(
+            "ix_agent_sessions_title_clear",
+            "id",
+            postgresql_where=text("title_sealed IS NULL"),
+        ),
     )
+    # A title stored before titles were sealed, in the clear, until the sweep
+    # seals it. Every other row holds `SEALED_TITLE`, so a release that reads
+    # this column alone reads no title and fails no read.
     title: Mapped[str]
+    # The title sealed under the session's key; empty once it is absent, and
+    # NULL while `title` still holds it in the clear.
+    title_sealed: Mapped[bytes | None] = mapped_column(LargeBinary)
     participants: Mapped[list[str]]
     visibility: Mapped[str]
     steerer: Mapped[UUID | None]

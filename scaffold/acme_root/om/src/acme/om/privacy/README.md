@@ -20,31 +20,45 @@ of](../../../../README.md).
 - **Storage policy**: chosen once per session, before its history
   begins. **Sealed** is the default: content is kept, sealed. **Memory
   only** keeps content in the running process alone; the shape is still
-  kept when the policy allows, so the audit survives. A call's cost
-  survives in every mode, in its usage record (`spend_budgets`).
-- **Privacy record**: one per session: its policy, and when its key was
-  revoked and by whom.
+  kept when the policy allows, so the audit survives. A memory-only
+  session's title is kept at rest, sealed under its title key, since it
+  is written when the session is made, before its policy is chosen; a
+  revoke makes it absent. A call's cost survives in every mode, in its
+  usage record (`spend_budgets`).
+- **Title key**: one per session, the key its title is sealed under,
+  kept on its privacy record wrapped under its tenant's title key, which
+  the tenant's key service wraps. A page of titles opens with one call
+  to the key service, whatever its size.
+- **Privacy record**: one per session: its policy, its title key, and
+  when its key was revoked and by whom. The session's title writes it,
+  with the default policy not yet chosen.
 
 ## What can happen
 
-- **Choose a policy.** Once, before anything is written to the history.
+- **Choose a policy.** Once, before anything is written to the history:
+  the history's first write fixes the default.
 - **Seal and open.** Each step that says something is sealed on its way
   into storage and opened on its way out. Nothing else in the engine
   sees it happen. A tool output's text is sealed the same way, under the
   same key, before it reaches the object store, and so is what a command
   printed, in its transport's record of how it ended.
+- **Seal and open a title.** A title is sealed under its title key on
+  its way into storage, and a page of them opens at once where it is
+  shown: one read of their title keys and one unwrap of the tenant's.
 - **Add a version.** What comes after is sealed under it.
-- **Revoke the key.** Every version is destroyed at once. The content
-  becomes unreadable and the shape stays: every step keeps its place,
-  its type, and its cost, and reads as absent. A tool output keeps its
+- **Revoke the key.** Every version is destroyed at once, and the title
+  key with them. The content becomes unreadable and the shape stays:
+  every step keeps its place, its type, and its cost, and reads as
+  absent, and so does the title. A tool output keeps its
   record, and its text is noise. A command's record still says how it
   ended, and what it printed is noise. What the session's snapshots
   keep outside the seal, a VM's disks, is destroyed with the key; a
   fork's copy is its child's, and stays. It cannot be undone, and the
   session takes no content again.
-- **Rotate the tenant's key.** Each version is wrapped again under the
-  new one. No content is read or rewritten.
-- **Purge.** A deleted tenant's records and keys go with the tenant.
+- **Rotate the tenant's key.** Each version, and the tenant's title key,
+  is wrapped again under the new one. No content is read or rewritten.
+- **Purge.** A deleted tenant's records and keys go with the tenant, its
+  title key last.
 
 ## The rules
 
@@ -56,7 +70,8 @@ of](../../../../README.md).
 - **A hash in the shape is keyed by the session**, so once the key is
   revoked a hash confirms nothing about what it stood for.
 - **A memory-only session leaves nothing it said at rest**, sealed or
-  not. Its tool output is sealed like any other and held in the memory of
+  not, but its title, which is written with the session before a policy
+  is chosen, and is kept sealed. Its tool output is sealed like any other and held in the memory of
   the runtime that holds the session, so revoking its key erases it there
   too.
 - **Every record and key belongs to one org.** Another org that names a
@@ -66,24 +81,30 @@ of](../../../../README.md).
   none of what it wrote. None of it outlives the run, so any runner
   takes any session. A session's head, a request's attribution, and the
   status at a run's end still read the run's steps from storage.
+- **Another tenant opens no title.** A title key is read by the tenant
+  that asks, and the tenant's title key is bound to its tenant at the
+  key service.
 - **A key is in the clear only inside the call that uses it.** Each use
   reads the key ring first, so a revocation reaches a run under way at
   its next use of the key: its next append of content, or its next model
   request, is refused.
 
 <!-- agents-only
-The sealing layer is `impl/sealed_agent_steps.py`, the memory-only layer
-`impl/memory_only_agent_steps.py`, and the router `impl/routed_agent_steps.py`;
-`root.private_history` wires all three over the one history. The
-tool outputs' seal is `impl/tool_outputs.py`, which the root wires behind the
-windows' `ToolOutputSealInterface`. A command's record takes the same blob
-form (`impl/blobs.py`) through `impl/records.py`, which the root wires
-behind the tools' `RecordSealInterface`; each call binds it to its session
-and key as the transport's `RecordSeal`. A data key is in the clear only
-inside `impl/keys.py`. Revocation is
-`PrivacyStorageInterface.revoke`, one commit (ADR 1004); the root binds
-the manager's `revoked` to the tools' `erase_snapshots`, which destroys
-what a session's snapshots keep outside the seal.
+The title's seal is `impl/titles.py`, which the root wires behind the
+sessions' `TitleSealInterface`; the title keys are made and opened in
+`impl/keys.py`. The sealing layer is `impl/sealed_agent_steps.py`, the
+memory-only layer `impl/memory_only_agent_steps.py`, and the router
+`impl/routed_agent_steps.py`; `root.private_history` wires all three
+over the one history. The tool outputs' seal is `impl/tool_outputs.py`,
+which the root wires behind the windows' `ToolOutputSealInterface`. A
+command's record takes the same blob form (`impl/blobs.py`) through
+`impl/records.py`, which the root wires behind the tools'
+`RecordSealInterface`; each call binds it to its session and key as the
+transport's `RecordSeal`. A data key is in the clear only inside
+`impl/keys.py`. Revocation is `PrivacyStorageInterface.revoke`, one
+commit (ADR 1004); the root binds the manager's `revoked` to the tools'
+`erase_snapshots`, which destroys what a session's snapshots keep
+outside the seal.
 -->
 
 ## How another namespace composes it

@@ -192,7 +192,7 @@ class Writer:
 
 
 def write(record: Record, proof: Proof, script: Script) -> dict[str, Any]:
-    sessions = [{"kind": FIXER.name}, *({"kind": c.kind, "title": c.title} for c in record.children)]
+    sessions = [{"kind": FIXER.name}, *({"kind": c.kind, "title": c.title.said()} for c in record.children)]
     acts = [{"title": act.title, "about": act.about} for act in script.acts]
     return {"sessions": sessions, "acts": acts, "events": Writer(record, proof, script).write()}
 

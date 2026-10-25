@@ -109,8 +109,9 @@ def report_wakes(report: Report) -> bool:
 
 def report_text(child: AgentSession, report: Report) -> str:
     """What a parent reads of its child's report: which child, how its loop
-    stands, and the last thing it said."""
-    who = f'Sub-agent {child.id} ("{child.title}", {child.kind} v{child.kind_version})'
+    stands, and the last thing it said. The child's title is opened first,
+    and says nothing once the child's key is revoked."""
+    who = f'Sub-agent {child.id} ("{child.title.said()}", {child.kind} v{child.kind_version})'
     if report.outcome is not None:
         text = f"{who} ended {report.outcome.value}."
     else:

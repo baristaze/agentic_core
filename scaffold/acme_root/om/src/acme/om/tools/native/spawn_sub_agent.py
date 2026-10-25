@@ -134,4 +134,6 @@ class SpawnSubAgentToolImpl(ToolInterface):
             if refused.code != SnapshotRefused.code:
                 raise
             raise ToolFailed(ToolFailure.PERMANENT, refused.message) from refused
-        return Spawned(agent_session_id=child.id, title=child.title, kind=child.kind)
+        # The title asked for: the child holds it sealed, and a retry under
+        # the same key asked for the same one.
+        return Spawned(agent_session_id=child.id, title=call_input.title, kind=child.kind)

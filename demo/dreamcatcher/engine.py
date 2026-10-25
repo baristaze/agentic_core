@@ -251,8 +251,9 @@ class Engine:
         return cursor.epoch
 
     async def read(self, root: UUID) -> Record:
-        """What the engine recorded, read back whole."""
-        children = await self.children(root)
+        """What the engine recorded, read back whole, each child's title
+        opened, as the API opens a page of them."""
+        children = await self.managers.agent_sessions.open_titles(self.owner, await self.children(root))
         sessions = [root, *(child.id for child in children)]
         steps = {sid: await self.history(sid) for sid in sessions}
         usage = [record for sid in sessions for record in await self.usage(sid)]

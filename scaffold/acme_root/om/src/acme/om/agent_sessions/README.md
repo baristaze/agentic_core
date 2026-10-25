@@ -13,6 +13,10 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
   the truth; the status is kept for listing and finding, and so are the
   person who spoke last and the untrusted mark
   ([attribution](../attribution/README.md)).
+- **Title**: what a person, or the model that spawned it, named the
+  session. It is content, like what a step says: sealed at rest under a
+  key of the session's own, and opened where it is shown
+  ([privacy](../privacy/README.md)).
 - **Loop**: the steps from what woke the session to how the loop ended.
   It is no record of its own: a loop is a span of steps.
 - **Status**: `pending` while an input waits for the agent, `running`
@@ -76,7 +80,8 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
 - **Archive.** An archived session keeps what arrives and wakes for
   nothing, until a person's message brings it back.
 - **List** the root sessions a person made or takes part in, or every
-  one they see, in a status, a page at a time.
+  one they see, in a status, a page at a time. A page's titles open
+  together, with one call to the key service.
 - **Delete.** A deleted session is hidden from every read and list. Its
   history and everything about it stay as they were. A session with a
   sub-agent at work below it is not deleted, and the refusal names the
@@ -124,6 +129,10 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
 - **A deleted session answers as one that never existed,** until it is
   restored. Its kind alone is still read, for the sub-agents below it,
   whose calls are decided under it.
+- **A title is never kept in the clear.** A database reader sees noise,
+  and once the session's key is revoked the title reads as absent and the
+  session keeps its place. A title stored before titles were sealed is
+  sealed in place by the sweep, never dropped (ADR 1042).
 - **Nothing is purged on demand.** Only the sweep purges, and only what
   was deleted longer ago than the retention, or an org deleted longer ago
   than its own.
