@@ -44,7 +44,7 @@ ignore_missing_imports = true
 # The performance run's own clients come with the scaffold's lock, which
 # the type check does not install.
 [[tool.mypy.overrides]]
-module = ["aioboto3.*", "sqlalchemy.*"]
+module = ["aioboto3.*", "glide.*", "sqlalchemy.*"]
 ignore_missing_imports = true
 
 # The demo's recorder runs with Playwright, which `make demo-gif` brings;

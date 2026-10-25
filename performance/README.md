@@ -315,6 +315,8 @@ Open is the seal and open category: AES-GCM, the JSON, and the step's model, les
   categories.
 - [`replay/full.py`](replay/full.py): the whole run, its scans, and its
   calibration.
+- [`replay/cache.py`](replay/cache.py): the shared cache as each point
+  leaves it: its peak memory, its entries by scope, and their TTLs.
 - [`replay/checks.py`](replay/checks.py): what `--check` holds.
 - [`replay/report.py`](replay/report.py): the tables, from a results
   file.
