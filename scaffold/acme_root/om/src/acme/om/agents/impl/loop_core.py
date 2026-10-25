@@ -131,9 +131,9 @@ class RunState:
     # What the session holds beyond its kind, folded into `kind` already.
     attached: AttachedToolsets = NO_ATTACHED_TOOLSETS
     # The steps the run appended, by seq: its working state, with the
-    # history it holds (ADR 1042). A read of the history joins each where it
-    # falls, so the run reads back nothing it wrote, only what others wrote
-    # between.
+    # history it holds, and gone with the run. A read of the history joins
+    # each where it falls, so the run reads back nothing it wrote, only what
+    # others wrote between.
     own: dict[int, AgentStep] = field(default_factory=lambda: {})
 
     @property
