@@ -4,10 +4,12 @@ privacy manager asks for them behind its permission checks.
 
 A data key is in the clear only inside the call that uses it. What is kept
 is its wrapped copy, in privacy storage, and only the key service unwraps
-it."""
+it. So is a title key, and the tenant's title key that wraps it: a page of
+titles takes one unwrap of the tenant's, and opens each session's under it
+(ADR 1042)."""
 
 from abc import ABC, abstractmethod
-from collections.abc import Set
+from collections.abc import Collection, Set
 from datetime import datetime
 from uuid import UUID
 
@@ -53,10 +55,27 @@ class AgentSessionKeysInterface(ABC):
         ...
 
     @abstractmethod
+    async def title_key(self, org_id: UUID, agent_session_id: UUID) -> bytes:
+        """The key the session's title is sealed under, made with its record
+        when it has none, and the tenant's title key made when the tenant has
+        none. `KeyRevoked` when the session's key is revoked."""
+        ...
+
+    @abstractmethod
+    async def title_keys(
+        self, org_id: UUID, agent_session_ids: Collection[UUID]
+    ) -> dict[UUID, bytes]:
+        """The title key of each of `agent_session_ids` that holds one, from
+        one read and one unwrap of the tenant's title key, whatever their
+        count. A session revoked, or with no title sealed, is left out."""
+        ...
+
+    @abstractmethod
     async def rewrap(self, org_id: UUID, before: datetime, limit: int) -> int:
         """The engine's half of a rotation of the tenant's wrapping key: at
         most `limit` live versions wrapped before `before`, each wrapped
-        again under the current wrapping key, in place. No sealed content is
-        read or written. Returns how many moved; a version destroyed
-        meanwhile stays destroyed."""
+        again under the current wrapping key, in place, and the tenant's
+        title key with them when it was wrapped before too. No sealed content
+        or title key is read or written. Returns how many moved; a version
+        destroyed meanwhile stays destroyed."""
         ...

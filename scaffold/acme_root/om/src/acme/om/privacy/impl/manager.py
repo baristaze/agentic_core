@@ -71,10 +71,11 @@ class PrivacyManagerImpl(PrivacyManagerInterface):
             id=new_id(), agent_session_id=agent_session_id, created_at=self._clock(), policy=policy
         )
         rows = (outbox_row(ctx, CREATED, agent_session_id, {}),)
-        stored = await self._storage.create_privacy(ctx.org_id, record, rows)
-        if stored is record:
+        # The session's title wrote its record with the default, which this
+        # choice takes, as no history began under it.
+        stored, landed = await self._storage.choose_policy(ctx.org_id, record, rows)
+        if landed:
             await self._relay_all(ctx, rows)
-            return stored
         return self._chosen(agent_session_id, stored, policy)
 
     @staticmethod
@@ -82,7 +83,8 @@ class PrivacyManagerImpl(PrivacyManagerInterface):
         agent_session_id: UUID, stored: AgentSessionPrivacy | None, policy: StoragePolicy
     ) -> AgentSessionPrivacy:
         """The stored record, when it holds this policy; otherwise another
-        was chosen, or the history began under the default."""
+        was chosen, or the history began under the default, or the key is
+        revoked."""
         if stored is None or stored.policy != policy:
             raise PolicyFixed(f"the storage policy of session {agent_session_id} is chosen")
         return stored

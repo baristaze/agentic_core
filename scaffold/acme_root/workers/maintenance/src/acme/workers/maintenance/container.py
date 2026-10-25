@@ -43,6 +43,10 @@ AGENT_SESSION_PURGE_BATCH = 100
 its history, and its row, three statements apiece, so the batch is smaller
 than the rows'."""
 
+AGENT_SESSION_TITLE_BATCH = 100
+"""Titles in the clear one pass seals. Each costs a read of its keys, a call
+to the key service, and its row, so the batch is smaller than the rows'."""
+
 LEASE_SWEEP_BATCH = LeasesOptions().sweep_batch
 """Leases and requests one org's lease sweep ends; a sweep that ends as many
 or more may have left some due."""
@@ -98,6 +102,7 @@ def worker_managers(
                 purge_batch=batch,
                 retention=timedelta(days=settings.agent_session_retention_days),
                 purge_sessions=AGENT_SESSION_PURGE_BATCH,
+                seal_titles=AGENT_SESSION_TITLE_BATCH,
             ),
             agents_options=AgentsOptions(purge_batch=batch),
             attribution_options=AttributionOptions(purge_batch=batch),

@@ -363,13 +363,18 @@ async def test_a_rotation_rewraps_every_key_and_rewrites_no_step(
     before = {
         s: (await managers.agent_steps.get_agent_steps(ctx, s, 0, 10)).items for s in sessions
     }
+    stored = [await managers.agent_sessions.get_agent_session(ctx, s) for s in sessions]
+    titles = await managers.agent_sessions.open_titles(ctx, stored)
     service = infra.get_keys()
     assert isinstance(service, KeyServiceMemoryImpl)
     rotated = utcnow()
     service.rotate(ctx.org_id)
-    assert await managers.privacy.rewrap_keys(ctx, rotated) == 3
+    # Each session's one version, and the tenant's title key.
+    assert await managers.privacy.rewrap_keys(ctx, rotated) == 4
     assert await managers.privacy.rewrap_keys(ctx, rotated) == 0
     for session in sessions:
         assert (await managers.agent_steps.get_agent_steps(ctx, session, 0, 10)).items == before[
             session
         ]
+    assert await managers.agent_sessions.open_titles(ctx, stored) == titles
+    assert all(title.title.said() == SAID[0] for title in titles)

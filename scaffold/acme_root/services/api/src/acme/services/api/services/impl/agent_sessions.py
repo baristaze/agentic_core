@@ -64,10 +64,12 @@ def park_view(park: Park | None) -> ParkView | None:
 
 
 def agent_session_view(session: AgentSession) -> AgentSessionView:
+    """A session as the API shows it, its title opened first: a title whose
+    key is revoked says nothing, and the session keeps its place."""
     child = session.parent_id is not None
     return AgentSessionView(
         id=session.id,
-        title=session.title,
+        title=session.title.said(),
         kind=session.kind,
         kind_version=session.kind_version,
         status=session.status,
@@ -176,16 +178,22 @@ class AgentSessionsServiceImpl(AgentSessionsServiceInterface):
         self._loop = loop
         self._spend_budgets_operator = spend_budgets_operator
 
+    async def _viewed(self, ctx: TenantContext, session: AgentSession) -> AgentSessionView:
+        (opened,) = await self._sessions.open_titles(ctx, [session])
+        return agent_session_view(opened)
+
     async def start_agent_session(
         self, ctx: TenantContext, body: StartAgentSessionRequest, agent_session_id: UUID
     ) -> AgentSessionView:
         start = Start(id=agent_session_id, kind=body.kind, title=body.title)
-        return agent_session_view(await self._agents.start_agent_session(ctx, start))
+        return await self._viewed(ctx, await self._agents.start_agent_session(ctx, start))
 
     async def get_agent_session(
         self, ctx: TenantContext, agent_session_id: UUID
     ) -> AgentSessionView:
-        return agent_session_view(await self._sessions.get_agent_session(ctx, agent_session_id))
+        return await self._viewed(
+            ctx, await self._sessions.get_agent_session(ctx, agent_session_id)
+        )
 
     async def list_agent_sessions(
         self,
@@ -198,29 +206,30 @@ class AgentSessionsServiceImpl(AgentSessionsServiceInterface):
         page = await self._sessions.get_agent_sessions(
             ctx, status, after, clamp_limit(limit), among
         )
+        opened = await self._sessions.open_titles(ctx, page.items)
         return AgentSessionPageView(
-            items=[agent_session_view(session) for session in page.items], has_more=page.has_more
+            items=[agent_session_view(session) for session in opened], has_more=page.has_more
         )
 
     async def add_participant(
         self, ctx: TenantContext, agent_session_id: UUID, user_id: UUID
     ) -> AgentSessionView:
-        return agent_session_view(
-            await self._sessions.add_participant(ctx, agent_session_id, user_id)
+        return await self._viewed(
+            ctx, await self._sessions.add_participant(ctx, agent_session_id, user_id)
         )
 
     async def remove_participant(
         self, ctx: TenantContext, agent_session_id: UUID, user_id: UUID
     ) -> AgentSessionView:
-        return agent_session_view(
-            await self._sessions.remove_participant(ctx, agent_session_id, user_id)
+        return await self._viewed(
+            ctx, await self._sessions.remove_participant(ctx, agent_session_id, user_id)
         )
 
     async def switch_visibility(
         self, ctx: TenantContext, agent_session_id: UUID, body: VisibilityRequest
     ) -> AgentSessionView:
         switched = await self._sessions.switch_visibility(ctx, agent_session_id, body.visibility)
-        return agent_session_view(switched)
+        return await self._viewed(ctx, switched)
 
     async def send_message(
         self, ctx: TenantContext, agent_session_id: UUID, body: MessageRequest, agent_step_id: UUID
@@ -278,22 +287,28 @@ class AgentSessionsServiceImpl(AgentSessionsServiceInterface):
         self, ctx: TenantContext, agent_session_id: UUID, body: DeadlineRequest
     ) -> AgentSessionView:
         await self._agents.set_deadline(ctx, agent_session_id, body.deadline)
-        return agent_session_view(await self._sessions.get_agent_session(ctx, agent_session_id))
+        return await self._viewed(
+            ctx, await self._sessions.get_agent_session(ctx, agent_session_id)
+        )
 
     async def assign_principal(
         self, ctx: TenantContext, agent_session_id: UUID, body: PrincipalRequest | None
     ) -> AgentSessionView:
         steerer = None if body is None else body.steerer
         await self._attribution.assign_principal(ctx, agent_session_id, steerer)
-        return agent_session_view(await self._sessions.get_agent_session(ctx, agent_session_id))
+        return await self._viewed(
+            ctx, await self._sessions.get_agent_session(ctx, agent_session_id)
+        )
 
     async def take_over(self, ctx: TenantContext, agent_session_id: UUID) -> AgentSessionView:
-        return agent_session_view(await self._loop.take_over(ctx, agent_session_id))
+        return await self._viewed(ctx, await self._loop.take_over(ctx, agent_session_id))
 
     async def give_back(
         self, ctx: TenantContext, agent_session_id: UUID, body: GiveBackRequest
     ) -> AgentSessionView:
-        return agent_session_view(await self._loop.give_back(ctx, agent_session_id, body.summary))
+        return await self._viewed(
+            ctx, await self._loop.give_back(ctx, agent_session_id, body.summary)
+        )
 
     async def complete_job(
         self, ctx: TenantContext, agent_session_id: UUID, key: UUID, body: JobCompletionRequest
@@ -301,7 +316,9 @@ class AgentSessionsServiceImpl(AgentSessionsServiceInterface):
         completion = JobCompletion(
             key=key, handle=body.handle, text=body.text, failure=body.failure
         )
-        return agent_session_view(await self._loop.complete_job(ctx, agent_session_id, completion))
+        return await self._viewed(
+            ctx, await self._loop.complete_job(ctx, agent_session_id, completion)
+        )
 
     async def get_agent_steps(
         self, ctx: TenantContext, agent_session_id: UUID, after_seq: int, limit: int

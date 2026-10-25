@@ -32,6 +32,7 @@ from acme.workers.maintenance.agent_sessions import (
 )
 from acme.workers.maintenance.container import (
     AGENT_SESSION_PURGE_BATCH,
+    AGENT_SESSION_TITLE_BATCH,
     LEASE_SWEEP_BATCH,
     MEDIA_PURGE_BATCH,
     WorkerContainer,
@@ -146,6 +147,9 @@ def build_loop(container: WorkerContainer, lane: str | None = None) -> WorkerLoo
             # A session marked deleted past its retention: claimed, then its
             # history, then its row.
             "agent_sessions": unstaged(managers.agent_sessions.purge_across_tenants),
+            # Not a purge: a title stored in the clear before titles were
+            # sealed, sealed in place. Once every one is, a pass finds none.
+            "agent_session_titles": unstaged(managers.agent_sessions.seal_titles_across_tenants),
         },
         # The lease sweep's batch is its own: the leases and requests one
         # org's pass ends. So is the media purge's: a whole one says there
@@ -156,6 +160,7 @@ def build_loop(container: WorkerContainer, lane: str | None = None) -> WorkerLoo
             # A copy adds its entries below this line.
             # The session purge's batch is its own too.
             "agent_sessions": AGENT_SESSION_PURGE_BATCH,
+            "agent_session_titles": AGENT_SESSION_TITLE_BATCH,
         },
         # Per tenant, and only in the tenants one read across tenants names as
         # due: the standing chores. The scaffold keeps no record per period,

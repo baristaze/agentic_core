@@ -44,7 +44,8 @@ class PrivacyManagerInterface(ABC):
     @abstractmethod
     async def revoke_key(self, ctx: TenantContext, agent_session_id: UUID) -> AgentSessionPrivacy:
         """Erases the session's content: every version of its key is
-        destroyed, and the session takes no content again. What its
+        destroyed, and its title key with them, so its title reads as
+        absent, and the session takes no content again. What its
         snapshots keep outside the seal, such as a VM's disks, is destroyed
         with it; a copy kept for another session, such as a fork's, stays.
         Its steps keep their place, their type, and their shape, and read

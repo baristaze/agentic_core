@@ -4,6 +4,7 @@ from uuid import UUID
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus, Among
+from acme.om.agent_steps.types.content import ContentState
 from acme.om.attribution.types.authority import Visibility
 from acme.om.exceptions import PreconditionFailed
 from acme.om.outbox.storage import OutboxLandingInterface
@@ -19,6 +20,8 @@ class AgentSessionStorageMemoryImpl(MemoryStorageBase, AgentSessionStorageInterf
     async def create_agent_session(
         self, org_id: UUID, session: AgentSession, outbox_rows: tuple[OutboxRow, ...]
     ) -> bool:
+        if session.title.state is ContentState.PLAIN:
+            raise ValueError("a session's title is kept sealed, never in the clear")
         async with self._lock:
             return self._insert(self._sessions, org_id, session, outbox_rows)
 
@@ -72,7 +75,7 @@ class AgentSessionStorageMemoryImpl(MemoryStorageBase, AgentSessionStorageInterf
             # Postgres: a write that read the session before a delete is
             # refused by it, so an unmark is a write like any other.
             self._land(org_id, outbox_rows)
-            self._sessions[session.id] = (org_id, session)
+            self._sessions[session.id] = (org_id, session.model_copy(update={"title": found.title}))
 
     async def read_purgeable(
         self, deleted_before: datetime, limit: int
@@ -82,6 +85,35 @@ class AgentSessionStorageMemoryImpl(MemoryStorageBase, AgentSessionStorageInterf
             for org_id, s in self._rows_across_tenants(self._sessions)
             if s.deleted_at is not None and s.deleted_at < deleted_before
         ][:limit]
+
+    async def read_clear_titles(self, limit: int) -> list[tuple[UUID, AgentSession]]:
+        return [
+            (org_id, s)
+            for org_id, s in self._rows_across_tenants(self._sessions)
+            if s.title.state is ContentState.PLAIN
+        ][:limit]
+
+    async def seal_title(self, org_id: UUID, session: AgentSession, expected_version: int) -> bool:
+        if session.title.state is ContentState.PLAIN:
+            raise ValueError("a session's title is kept sealed, never in the clear")
+        async with self._lock:
+            found = self._get(self._sessions, org_id, session.id)
+            if (
+                found is None
+                or found.version != expected_version
+                or found.title.state is not ContentState.PLAIN
+            ):
+                return False
+            sealed = found.model_copy(
+                update={
+                    "title": session.title,
+                    "version": session.version,
+                    "updated_at": session.updated_at,
+                    "updated_by": session.updated_by,
+                }
+            )
+            self._sessions[session.id] = (org_id, sealed)
+            return True
 
     async def tree_holds_others(self, org_id: UUID, root_id: UUID, agent_session_id: UUID) -> bool:
         return any(

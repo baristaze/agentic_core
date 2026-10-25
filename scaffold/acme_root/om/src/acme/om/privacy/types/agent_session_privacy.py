@@ -5,14 +5,19 @@ A session's content is sealed under its own key, by envelope: a data key
 per version, kept here wrapped by the tenant's key service, never in the
 clear. Revoking the key destroys every version's wrapped copy and keeps the
 row that says the version existed, so the record of what was destroyed, and
-when, outlives what it destroyed."""
+when, outlives what it destroyed.
+
+A session's title is sealed under a key of its own, the title key, kept on
+its record wrapped under the tenant's title key, which the key service wraps.
+So a page of titles opens with one call to the key service, and revoking the
+session's key takes its title key in the same commit (ADR 1042)."""
 
 from datetime import datetime
 from enum import StrEnum
 from typing import Self
 from uuid import UUID
 
-from pydantic import Field, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
 from acme.om.base import Created, Identifiable, OmBase
 
@@ -41,14 +46,52 @@ class StoragePolicy(OmBase):
 
 
 class AgentSessionPrivacy(Identifiable, Created):
-    """One per session of a tenant: its policy, written once and never
-    changed, and the revocation of its key. A session with none is sealed;
-    the first step appended to it writes the default."""
+    """One per session of a tenant: its policy, chosen once before its
+    history begins, the session's title key, and the revocation of its key.
+    A session with none is sealed. Its title writes the record with the
+    default, not yet chosen; the first step appended to it fixes the
+    default."""
+
+    model_config = ConfigDict(
+        frozen=True, extra="forbid", ser_json_bytes="base64", val_json_bytes="base64"
+    )
 
     agent_session_id: UUID
     policy: StoragePolicy = StoragePolicy()
+    # False while the policy is the default the session's title wrote, and
+    # none is chosen yet: a choice, or the history's first write, fixes it.
+    chosen: bool = True
+    # The key the session's title is sealed under, wrapped under its tenant's
+    # title key: written with the title, and gone in the commit that revokes
+    # the session's key (ADR 1042).
+    title_key: bytes | None = Field(default=None, repr=False)
     revoked_at: datetime | None = None
     revoked_by: UUID | None = None
+
+    @model_validator(mode="after")
+    def _revoked_holds_no_title_key(self) -> Self:
+        if self.revoked_at is not None and self.title_key is not None:
+            raise ValueError("a revoked session holds no title key")
+        return self
+
+
+class TenantTitleKey(Identifiable, Created):
+    """One per tenant: the key each of its sessions' title keys is wrapped
+    under, a data key the tenant's key service wraps, never kept in the
+    clear. A page of titles opens with one unwrap of it, whatever its size
+    (ADR 1042). A rotation wraps it again; it goes with the tenant."""
+
+    wrapped: bytes = Field(repr=False)
+    wrapping: str  # the wrapping key, as the key service names it
+    wrapped_at: datetime
+
+
+class TitleKeys(OmBase):
+    """What one read finds for a page of titles: the tenant's title key, and
+    the wrapped title key of each session that holds one."""
+
+    tenant: TenantTitleKey | None = None
+    sessions: dict[UUID, bytes] = Field(default_factory=dict, repr=False)
 
 
 class AgentSessionKey(Identifiable, Created):

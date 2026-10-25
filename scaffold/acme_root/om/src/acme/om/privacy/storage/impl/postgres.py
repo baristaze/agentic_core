@@ -1,3 +1,4 @@
+from collections.abc import Collection
 from datetime import datetime
 from typing import Any, cast
 from uuid import UUID
@@ -12,10 +13,13 @@ from acme.om.outbox.types.row import OutboxRow
 from acme.om.privacy.storage import PrivacyStorageInterface
 from acme.om.privacy.storage.tables.agent_session_keys import AgentSessionKeys
 from acme.om.privacy.storage.tables.agent_session_privacy import AgentSessionPrivacyRows
+from acme.om.privacy.storage.tables.tenant_title_keys import TenantTitleKeys
 from acme.om.privacy.types.agent_session_privacy import (
     AgentSessionKey,
     AgentSessionPrivacy,
     KeyRing,
+    TenantTitleKey,
+    TitleKeys,
 )
 from acme.om.storage.impl.pg_base import PgStorageBase, delete_batch, deleted, violated_constraint
 from acme.om.storage.utils.translation import to_model, to_row, to_values
@@ -60,6 +64,159 @@ class PrivacyStoragePostgresImpl(PgStorageBase, PrivacyStorageInterface):
             except IntegrityError as error:
                 await session.rollback()
                 raise TenantMismatch(f"session privacy {record.id} is not in {org_id}") from error
+
+    async def choose_policy(
+        self, org_id: UUID, record: AgentSessionPrivacy, outbox_rows: tuple[OutboxRow, ...] = ()
+    ) -> tuple[AgentSessionPrivacy, bool]:
+        """The insert, or else the take of a record none chose: its WHERE
+        holds no choice and no revocation, so a revocation or another choice
+        that landed first keeps the record as it is."""
+        insert = (
+            pg_insert(AgentSessionPrivacyRows)
+            .values(org_id=org_id, **to_values(record, AgentSessionPrivacyRows))
+            .on_conflict_do_nothing(
+                index_elements=[
+                    AgentSessionPrivacyRows.org_id,
+                    AgentSessionPrivacyRows.agent_session_id,
+                ]
+            )
+            .returning(AgentSessionPrivacyRows.id)
+        )
+        take = (
+            update(AgentSessionPrivacyRows)
+            .where(
+                AgentSessionPrivacyRows.org_id == org_id,
+                AgentSessionPrivacyRows.agent_session_id == record.agent_session_id,
+                AgentSessionPrivacyRows.revoked_at.is_(None),
+                AgentSessionPrivacyRows.chosen.is_(False),
+            )
+            .values(policy=record.policy.model_dump(mode="json"), chosen=True)
+        )
+        async with self._session_for(AgentSessionPrivacyRows, org_id=org_id) as session:
+            try:
+                landed = (await session.execute(insert)).scalar_one_or_none() is not None
+            except IntegrityError as error:
+                await session.rollback()
+                raise TenantMismatch(f"session privacy {record.id} is not in {org_id}") from error
+            if not landed:
+                landed = rowcount(await session.execute(take)) == 1
+            if landed:
+                for outbox_row in outbox_rows:
+                    session.add(to_row(outbox_row, OutboxRows, org_id=org_id))
+            row = (
+                await session.execute(self._record(org_id, record.agent_session_id))
+            ).scalar_one()
+            stored = to_model(row, AgentSessionPrivacy)
+            await session.commit()
+            return stored, landed
+
+    async def add_title_key(self, org_id: UUID, record: AgentSessionPrivacy) -> AgentSessionPrivacy:
+        """The insert, or else the record's row lock, as the revocation takes
+        it, and the key set when it holds none and is not revoked: a key and
+        a revocation of one session queue on the row, and a key never lands
+        after the revocation."""
+        if record.title_key is None:
+            raise ValueError("a title key is given to be added")
+        insert = (
+            pg_insert(AgentSessionPrivacyRows)
+            .values(org_id=org_id, **to_values(record, AgentSessionPrivacyRows))
+            .on_conflict_do_nothing(
+                index_elements=[
+                    AgentSessionPrivacyRows.org_id,
+                    AgentSessionPrivacyRows.agent_session_id,
+                ]
+            )
+            .returning(AgentSessionPrivacyRows.id)
+        )
+        locked = self._record(org_id, record.agent_session_id).with_for_update()
+        async with self._session_for(AgentSessionPrivacyRows, org_id=org_id) as session:
+            try:
+                landed = (await session.execute(insert)).scalar_one_or_none() is not None
+            except IntegrityError as error:
+                await session.rollback()
+                raise TenantMismatch(f"session privacy {record.id} is not in {org_id}") from error
+            if landed:
+                await session.commit()
+                return record
+            row = (await session.execute(locked)).scalar_one()
+            if row.revoked_at is None and row.title_key is None:
+                row.title_key = record.title_key
+                await session.flush()
+            stored = to_model(row, AgentSessionPrivacy)
+            await session.commit()
+            return stored
+
+    async def read_title_keys(self, org_id: UUID, agent_session_ids: Collection[UUID]) -> TitleKeys:
+        """The tenant's key, joined to each named record that holds a title
+        key: no key, no row, and no title opens."""
+        stmt = (
+            select(
+                TenantTitleKeys,
+                AgentSessionPrivacyRows.agent_session_id,
+                AgentSessionPrivacyRows.title_key,
+            )
+            .select_from(TenantTitleKeys)
+            .outerjoin(
+                AgentSessionPrivacyRows,
+                and_(
+                    AgentSessionPrivacyRows.org_id == TenantTitleKeys.org_id,
+                    AgentSessionPrivacyRows.agent_session_id.in_(list(agent_session_ids)),
+                    AgentSessionPrivacyRows.title_key.is_not(None),
+                ),
+            )
+            .where(TenantTitleKeys.org_id == org_id)
+        )
+        async with self._session_for(TenantTitleKeys, org_id=org_id) as session:
+            rows = (await session.execute(stmt)).all()
+        if not rows:
+            return TitleKeys()
+        return TitleKeys(
+            tenant=to_model(rows[0].TenantTitleKeys, TenantTitleKey),
+            sessions={
+                row.agent_session_id: row.title_key for row in rows if row.title_key is not None
+            },
+        )
+
+    async def add_tenant_title_key(self, org_id: UUID, key: TenantTitleKey) -> TenantTitleKey:
+        insert = (
+            pg_insert(TenantTitleKeys)
+            .values(org_id=org_id, **to_values(key, TenantTitleKeys))
+            .on_conflict_do_nothing(index_elements=[TenantTitleKeys.org_id])
+            .returning(TenantTitleKeys.id)
+        )
+        async with self._session_for(TenantTitleKeys, org_id=org_id) as session:
+            try:
+                landed = (await session.execute(insert)).scalar_one_or_none() is not None
+            except IntegrityError as error:
+                await session.rollback()
+                raise TenantMismatch(f"tenant title key {key.id} is not in {org_id}") from error
+            if landed:
+                await session.commit()
+                return key
+            row = (
+                await session.execute(
+                    select(TenantTitleKeys).where(TenantTitleKeys.org_id == org_id)
+                )
+            ).scalar_one()
+            await session.commit()
+            return to_model(row, TenantTitleKey)
+
+    async def rewrap_tenant_title_key(
+        self, org_id: UUID, key: TenantTitleKey, expected: bytes
+    ) -> bool:
+        stmt = (
+            update(TenantTitleKeys)
+            .where(
+                TenantTitleKeys.org_id == org_id,
+                TenantTitleKeys.id == key.id,
+                TenantTitleKeys.wrapped == expected,
+            )
+            .values(wrapped=key.wrapped, wrapping=key.wrapping, wrapped_at=key.wrapped_at)
+        )
+        async with self._session_for(stmt, org_id=org_id) as session:
+            changed = rowcount(await session.execute(stmt))
+            await session.commit()
+            return changed == 1
 
     @staticmethod
     def _record(org_id: UUID, agent_session_id: UUID) -> Select[tuple[AgentSessionPrivacyRows]]:
@@ -187,7 +344,7 @@ class PrivacyStoragePostgresImpl(PgStorageBase, PrivacyStorageInterface):
                 AgentSessionPrivacyRows.agent_session_id == record.agent_session_id,
                 AgentSessionPrivacyRows.revoked_at.is_(None),
             )
-            .values(revoked_at=at, revoked_by=record.revoked_by)
+            .values(revoked_at=at, revoked_by=record.revoked_by, title_key=None)
         )
         destroy = (
             update(AgentSessionKeys)
@@ -252,9 +409,10 @@ class PrivacyStoragePostgresImpl(PgStorageBase, PrivacyStorageInterface):
 
     async def purge_tenant(self, org_id: UUID, limit: int) -> int:
         """The versions first, so a record never goes while a version of its
-        key is left."""
+        key is left, and the tenant's title key last, so it never goes while
+        a title key it wraps is left."""
         gone = 0
-        for table in (AgentSessionKeys, AgentSessionPrivacyRows):
+        for table in (AgentSessionKeys, AgentSessionPrivacyRows, TenantTitleKeys):
             if gone >= limit:
                 break
             stmt = delete_batch(table, table.org_id == org_id, limit=limit - gone)

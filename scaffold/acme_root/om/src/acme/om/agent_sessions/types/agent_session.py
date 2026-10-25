@@ -3,25 +3,27 @@ ends, and an input that wakes the session starts the next one.
 
 The entity holds what no step does: who made it, its title, its
 participants, its agent kind and version and the tools it may call, its
-parent and its root, and the session that handed it over. It also caches
-who sees it, org-wide or private, which its creator's switches set, and
-who steers it, which attribution holds and each recorded move names.
-Its status is a projection of its steps, cached here for queries; the
-steps are the truth, and the cache is rebuilt from them
-(`agent_sessions.rules.projected`). The cache also holds two answers of
-attribution: the speaker its latest model request recorded, and the
-untrusted mark. It also holds whether it holds private data, which it
-takes from where it came as it takes the mark. In code it is
-`AgentSession`, never the sign-in `AuthSession` of the tenancy namespace."""
+parent and its root, and the session that handed it over. Its title is
+content, sealed at rest as what a step says is; the rest is shape. It
+also caches who sees it, org-wide or private, which its creator's
+switches set, and who steers it, which attribution holds and each
+recorded move names. Its status is a projection of its steps, cached
+here for queries; the steps are the truth, and the cache is rebuilt from
+them (`agent_sessions.rules.projected`). The cache also holds two
+answers of attribution: the speaker its latest model request recorded,
+and the untrusted mark. It also holds whether it holds private data,
+which it takes from where it came as it takes the mark. In code it is
+`AgentSession`, never the sign-in `AuthSession` of the tenancy
+namespace."""
 
 from datetime import datetime
 from enum import StrEnum
 from typing import ClassVar, Self
 from uuid import UUID
 
-from pydantic import Field, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
-from acme.om.agent_steps.types.content import Stored
+from acme.om.agent_steps.types.content import ContentState, Stored
 from acme.om.agent_steps.types.header import Park
 from acme.om.attribution.types.authority import Visibility
 from acme.om.attribution.types.principal import MAX_KIND, Principal
@@ -41,6 +43,43 @@ class Among(StrEnum):
 
     MINE = "mine"  # the ones they made or take part in
     VISIBLE = "visible"  # every one they see: the org-wide ones and theirs
+
+
+MAX_TITLE = 200
+"""The most characters of a session's title."""
+
+
+class Title(OmBase):
+    """What a person or a model named a session. It is content, as what a
+    step says is (ADR 1042): plain in hand, sealed at rest under the
+    session's key, and absent once that key is revoked. A read answers it
+    sealed, and the manager opens it where it is shown (`open_titles`). A
+    title stored before titles were sealed reads plain until the sweep
+    seals it in place."""
+
+    model_config = ConfigDict(
+        frozen=True, extra="forbid", ser_json_bytes="base64", val_json_bytes="base64"
+    )
+
+    state: ContentState = ContentState.PLAIN
+    text: Stored | None = Field(default=None, min_length=1, max_length=MAX_TITLE)
+    # The blob of `privacy.impl.blobs`: the version of the key at its head.
+    sealed: bytes | None = Field(default=None, repr=False)
+
+    @model_validator(mode="after")
+    def _one_place(self) -> Self:
+        if (self.state is ContentState.PLAIN) != (self.text is not None):
+            raise ValueError("a plain title holds its text, and no other does")
+        if (self.state is ContentState.SEALED) != (self.sealed is not None):
+            raise ValueError("a sealed title holds its seal, and no other does")
+        return self
+
+    def said(self) -> str:
+        """The title as a reader takes it: its text, or nothing once it is
+        absent. A sealed one is opened before it is read."""
+        if self.state is ContentState.SEALED:
+            raise ValueError("a sealed title is opened before it is read")
+        return self.text or ""
 
 
 class AgentSession(Identifiable, Trackable, SoftDeletable):
@@ -67,7 +106,9 @@ class AgentSession(Identifiable, Trackable, SoftDeletable):
     who sees it from where it came and, for a child, the cut of its tools
     (`agent_sessions.rules.lineage`)."""
 
-    title: Stored = Field(min_length=1, max_length=200)
+    # Sealed at rest, and written once, by the create; the sweep seals in
+    # place one stored before titles were sealed.
+    title: Title
     # The members who take part in it: each sees it whatever its
     # visibility, and speaks in it as data while another steers it. One
     # joins an org-wide session, and its creator adds them to a private one;

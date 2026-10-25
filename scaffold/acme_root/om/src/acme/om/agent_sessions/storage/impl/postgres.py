@@ -1,26 +1,63 @@
 from collections.abc import Sequence
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Update, delete, exists, or_, select, update
 
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
-from acme.om.agent_sessions.storage.tables.agent_sessions import AgentSessions
-from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus, Among
+from acme.om.agent_sessions.storage.tables.agent_sessions import SEALED_TITLE, AgentSessions
+from acme.om.agent_sessions.types.agent_session import (
+    AgentSession,
+    AgentSessionStatus,
+    Among,
+    Title,
+)
+from acme.om.agent_steps.types.content import ContentState
 from acme.om.attribution.types.authority import Visibility
 from acme.om.base import EMPTY_UUID
 from acme.om.exceptions import PreconditionFailed
 from acme.om.outbox.storage.tables.outbox_rows import OutboxRows
 from acme.om.outbox.types.row import OutboxRow
 from acme.om.storage.impl.pg_base import PLAN_WITH_VALUES, PgStorageBase, deleted
-from acme.om.storage.utils.translation import to_model, to_row, to_values
+from acme.om.storage.utils.translation import to_row, to_values
+
+TITLE_COLUMNS = ("title", "title_sealed")
+"""Written by the create and by the sweep's seal alone."""
+
+
+def title_values(title: Title) -> dict[str, Any]:
+    """The title columns of a title sealed or absent; a plain one is refused,
+    since only the manager seals it."""
+    if title.state is ContentState.PLAIN:
+        raise ValueError("a session's title is kept sealed, never in the clear")
+    return {"title": SEALED_TITLE, "title_sealed": title.sealed or b""}
+
+
+def stored_title(row: AgentSessions) -> Title:
+    """The title a row holds: sealed, absent once emptied, or in the clear
+    while it is from before titles were sealed."""
+    if row.title_sealed is None:
+        return Title(text=row.title)
+    if not row.title_sealed:
+        return Title(state=ContentState.ABSENT)
+    return Title(state=ContentState.SEALED, sealed=row.title_sealed)
+
+
+def to_session(row: AgentSessions) -> AgentSession:
+    fields = {name: getattr(row, name) for name in AgentSession.model_fields if name != "title"}
+    return AgentSession.model_validate({**fields, "title": stored_title(row)})
 
 
 def cas_statement(org_id: UUID, session: AgentSession, expected_version: int) -> Update:
     """The compare-and-set of one session: the version is in the WHERE, so
     two writers from one snapshot cannot both land. Returns the id when it
-    hit."""
-    values = {k: v for k, v in to_values(session, AgentSessions).items() if k != "id"}
+    hit. The title is left as it is stored."""
+    values = {
+        k: v
+        for k, v in to_values(session, AgentSessions).items()
+        if k != "id" and k not in TITLE_COLUMNS
+    }
     return (
         update(AgentSessions)
         .where(
@@ -37,7 +74,9 @@ class AgentSessionStoragePostgresImpl(PgStorageBase, AgentSessionStorageInterfac
     async def create_agent_session(
         self, org_id: UUID, session: AgentSession, outbox_rows: tuple[OutboxRow, ...]
     ) -> bool:
-        return await self._insert(AgentSessions, org_id, session, outbox_rows)
+        return await self._insert(
+            AgentSessions, org_id, session, outbox_rows, **title_values(session.title)
+        )
 
     async def read_agent_session(self, org_id: UUID, agent_session_id: UUID) -> AgentSession | None:
         stmt = select(AgentSessions).where(
@@ -45,7 +84,7 @@ class AgentSessionStoragePostgresImpl(PgStorageBase, AgentSessionStorageInterfac
         )
         async with self._session_for(stmt, org_id=org_id) as session:
             row = (await session.execute(stmt)).scalar_one_or_none()
-            return None if row is None else to_model(row, AgentSession)
+            return None if row is None else to_session(row)
 
     async def read_children(
         self, org_id: UUID, parent_id: UUID, after: UUID | None, limit: int
@@ -57,7 +96,7 @@ class AgentSessionStoragePostgresImpl(PgStorageBase, AgentSessionStorageInterfac
             stmt = stmt.where(AgentSessions.id > after)
         stmt = stmt.order_by(AgentSessions.id).limit(limit)
         async with self._session_for(stmt, org_id=org_id) as session:
-            return [to_model(row, AgentSession) for row in (await session.execute(stmt)).scalars()]
+            return [to_session(row) for row in (await session.execute(stmt)).scalars()]
 
     async def read_agent_sessions(
         self,
@@ -88,7 +127,7 @@ class AgentSessionStoragePostgresImpl(PgStorageBase, AgentSessionStorageInterfac
             stmt = stmt.where(AgentSessions.id > after)
         stmt = stmt.order_by(AgentSessions.id).limit(limit)
         async with self._session_for(stmt, org_id=org_id) as session:
-            return [to_model(row, AgentSession) for row in (await session.execute(stmt)).scalars()]
+            return [to_session(row) for row in (await session.execute(stmt)).scalars()]
 
     async def write_agent_session(
         self,
@@ -120,10 +159,41 @@ class AgentSessionStoragePostgresImpl(PgStorageBase, AgentSessionStorageInterfac
         # here, planned with its values (ADR 0056).
         async with self._session_for(stmt, org_id=EMPTY_UUID) as session:
             await session.execute(PLAN_WITH_VALUES)
-            return [
-                (row.org_id, to_model(row, AgentSession))
-                for row in (await session.execute(stmt)).scalars()
-            ]
+            rows = (await session.execute(stmt)).scalars()
+            return [(row.org_id, to_session(row)) for row in rows]
+
+    async def read_clear_titles(self, limit: int) -> list[tuple[UUID, AgentSession]]:
+        # Any `limit` of the rows the partial index holds; once every title
+        # is sealed it holds none, so a pass costs one probe of it.
+        stmt = select(AgentSessions).where(AgentSessions.title_sealed.is_(None)).limit(limit)
+        # Every tenant's sessions, so the system scope, spelled here, planned
+        # with its values (ADR 0056).
+        async with self._session_for(stmt, org_id=EMPTY_UUID) as session:
+            await session.execute(PLAN_WITH_VALUES)
+            rows = (await session.execute(stmt)).scalars()
+            return [(row.org_id, to_session(row)) for row in rows]
+
+    async def seal_title(self, org_id: UUID, session: AgentSession, expected_version: int) -> bool:
+        stmt = (
+            update(AgentSessions)
+            .where(
+                AgentSessions.id == session.id,
+                AgentSessions.org_id == org_id,
+                AgentSessions.version == expected_version,
+                AgentSessions.title_sealed.is_(None),
+            )
+            .values(
+                **title_values(session.title),
+                version=session.version,
+                updated_at=session.updated_at,
+                updated_by=session.updated_by,
+            )
+            .returning(AgentSessions.id)
+        )
+        async with self._session_for(stmt, org_id=org_id) as db:
+            landed = (await db.execute(stmt)).scalar_one_or_none() is not None
+            await db.commit()
+            return landed
 
     async def tree_holds_others(self, org_id: UUID, root_id: UUID, agent_session_id: UUID) -> bool:
         stmt = select(

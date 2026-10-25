@@ -2,7 +2,11 @@
 first, but the sweep's one read across tenants. A session's every write
 after the create is a compare-and-set on its version, landed with its outbox
 rows in one commit. Its delete, the purge, runs under the purge login, which
-no serving process holds (ADR 1010)."""
+no serving process holds (ADR 1010).
+
+A session's title is kept sealed, never in the clear: the create writes it,
+and no compare-and-set touches it. The one write after is the sweep's, which
+seals in place a title stored before titles were sealed (ADR 1042)."""
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
@@ -20,7 +24,9 @@ class AgentSessionStorageInterface(ABC):
         self, org_id: UUID, session: AgentSession, outbox_rows: tuple[OutboxRow, ...]
     ) -> bool:
         """The create, with the rows that announce it, in one commit; False,
-        with nothing landed, when the id is written already."""
+        with nothing landed, when the id is written already. Its title is
+        sealed or absent: a plain one is refused (`ValueError`), since only
+        the manager seals it."""
         ...
 
     @abstractmethod
@@ -64,7 +70,26 @@ class AgentSessionStorageInterface(ABC):
     ) -> None:
         """The compare-and-set: lands the session and its outbox rows
         together when the stored one is at `expected_version`, and raises
-        `PreconditionFailed` otherwise, landing nothing."""
+        `PreconditionFailed` otherwise, landing nothing. The stored title
+        stays as it is, whatever `session` holds."""
+        ...
+
+    @abstractmethod
+    @tenantless
+    async def read_clear_titles(self, limit: int) -> list[tuple[UUID, AgentSession]]:
+        """Cross-tenant, for the sweep, in the system scope: at most `limit`
+        sessions whose title is stored in the clear, from before titles were
+        sealed, whatever their tenant, each with its tenant, in no order.
+        Once every title is sealed, it finds none."""
+        ...
+
+    @abstractmethod
+    async def seal_title(self, org_id: UUID, session: AgentSession, expected_version: int) -> bool:
+        """The sweep's write of a title stored in the clear: `session`'s
+        title, sealed or absent, lands with its version and its update when
+        the stored one is at `expected_version` and its title is still in
+        the clear. False, landing nothing, otherwise. The version moves, so
+        a writer that read the clear title before cannot write it back."""
         ...
 
     @abstractmethod

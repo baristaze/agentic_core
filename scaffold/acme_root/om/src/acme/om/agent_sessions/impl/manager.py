@@ -19,16 +19,19 @@ from acme.om.agent_sessions.rules import (
     unlock_step,
     wakes_at,
 )
+from acme.om.agent_sessions.seal import TitleSealInterface
 from acme.om.agent_sessions.storage import AgentSessionStorageInterface
 from acme.om.agent_sessions.types.agent_session import (
     AgentSession,
     AgentSessionPage,
     AgentSessionStatus,
     Among,
+    Title,
 )
 from acme.om.agent_steps import AgentStepsManagerInterface
 from acme.om.agent_steps.rules import visibility_step
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep
+from acme.om.agent_steps.types.content import ContentState
 from acme.om.agent_steps.types.header import ControlCommand, ControlHeader, Park, ParkReason
 from acme.om.attribution.rules import fold
 from acme.om.attribution.types.authority import Visibility
@@ -37,6 +40,7 @@ from acme.om.base import EMPTY_UUID, OmBase, new_id, utcnow
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import (
     Conflict,
+    KeyRevoked,
     NotAuthorized,
     NotFound,
     PreconditionFailed,
@@ -57,6 +61,11 @@ UPDATED = "agent_sessions.agent_session.updated"
 DELETED = "agent_sessions.agent_session.deleted"
 
 
+def opened_title(text: str | None) -> Title:
+    """A sealed title once opened: its text, or absent when its key is gone."""
+    return Title(state=ContentState.ABSENT) if text is None else Title(text=text)
+
+
 class AgentSessionsOptions(OmBase):
     max_limit: int = 50  # sessions one page holds at most
     project_batch: int = 200  # steps one read of the projection folds
@@ -70,6 +79,9 @@ class AgentSessionsOptions(OmBase):
     # each brings its workspace and its records along, so far fewer than a
     # batch of rows fit in a sweep's budget.
     purge_sessions: int = 100
+    # Titles in the clear one pass of the sweep seals at most: each takes a
+    # call to the key service.
+    seal_titles: int = 100
 
 
 class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
@@ -83,8 +95,10 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         clock: Callable[[], datetime] = utcnow,
         *,
         purged: AgentSessionPurged,
+        titles: TitleSealInterface,
     ) -> None:
         self._purged = purged
+        self._titles = titles
         self._storage = storage
         self._steps = steps
         self._tenancy = tenancy
@@ -94,6 +108,15 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
 
     async def create_agent_session(self, ctx: TenantContext, session: AgentSession) -> AgentSession:
         ctx.require(Permission.WRITE)
+        if session.title.state is not ContentState.PLAIN:
+            # Only a title in hand is sealed: one sealed already is a retry's,
+            # answered as stored, or no session's.
+            stored = await self._storage.read_agent_session(ctx.org_id, session.id)
+            if stored is None:
+                raise ValidationFailed("a session is made with its title in hand")
+            if stored.deleted_at is not None:
+                raise NotFound(f"agent session {session.id} not found")
+            return stored
         source: AgentSession | None = None
         came_from = session.parent_id or session.handed_off_from
         if came_from is not None:
@@ -121,7 +144,15 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
             }
         )
         rows = (versioned_row(ctx, CREATED, created.id, created.version),)
-        if not await self._storage.create_agent_session(ctx.org_id, created, rows):
+        sealed = created.model_copy(
+            update={
+                "title": Title(
+                    state=ContentState.SEALED,
+                    sealed=await self._titles.seal(ctx.org_id, created.id, created.title.said()),
+                )
+            }
+        )
+        if not await self._storage.create_agent_session(ctx.org_id, sealed, rows):
             # A retry under the same id answers the session as stored.
             existing = await self._storage.read_agent_session(ctx.org_id, created.id)
             if existing is None:
@@ -130,7 +161,26 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
                 raise NotFound(f"agent session {created.id} not found")
             return existing
         await self._relay_all(ctx, rows)
-        return created
+        return sealed
+
+    async def open_titles(
+        self, ctx: TenantContext, sessions: Sequence[AgentSession]
+    ) -> list[AgentSession]:
+        ctx.require(Permission.READ)
+        sealed = {
+            session.id: session.title.sealed
+            for session in sessions
+            if session.title.sealed is not None
+        }
+        if not sealed:
+            return list(sessions)
+        opened = await self._titles.open(ctx.org_id, sealed)
+        return [
+            session
+            if session.id not in sealed
+            else session.model_copy(update={"title": opened_title(opened.get(session.id))})
+            for session in sessions
+        ]
 
     async def get_agent_session(self, ctx: TenantContext, agent_session_id: UUID) -> AgentSession:
         ctx.require(Permission.READ)
@@ -498,6 +548,36 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
                 await self._storage.purge_agent_session(org_id, agent_session_id)
             except Exception:
                 log.exception("agent session %s stays claimed: its purge failed", agent_session_id)
+        return len(found)
+
+    async def seal_titles_across_tenants(self) -> int:
+        found = await self._storage.read_clear_titles(self._options.seal_titles)
+        for org_id, session in found:
+            try:
+                title = Title(
+                    state=ContentState.SEALED,
+                    sealed=await self._titles.seal(org_id, session.id, session.title.said()),
+                )
+            except KeyRevoked:
+                # The revocation owed this title its erasure: it goes, and the
+                # session keeps its place.
+                title = Title(state=ContentState.ABSENT)
+            except Exception:
+                log.exception("agent session %s keeps its title in the clear for now", session.id)
+                continue
+            # The platform's write, conditioned on the version read: a write
+            # that landed since is read again by the next pass, and the
+            # version moves, so a writer that read the clear title before
+            # cannot land it again.
+            sealed = session.model_copy(
+                update={
+                    "title": title,
+                    "version": session.version + 1,
+                    "updated_at": self._clock(),
+                    "updated_by": EMPTY_UUID,
+                }
+            )
+            await self._storage.seal_title(org_id, sealed, session.version)
         return len(found)
 
     async def purge_tenant(self, ctx: TenantContext) -> int:

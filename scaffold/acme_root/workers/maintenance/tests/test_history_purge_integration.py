@@ -16,8 +16,9 @@ from sqlalchemy import delete, select
 from worker_support import request
 
 from acme.om.agent_sessions.storage.tables.agent_sessions import AgentSessions
-from acme.om.agent_sessions.types.agent_session import AgentSession
+from acme.om.agent_sessions.types.agent_session import AgentSession, Title
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
+from acme.om.agent_steps.types.content import ContentState
 from acme.om.agent_steps.types.header import InputHeader
 from acme.om.agent_steps.types.page import AgentStepCursor
 from acme.om.attribution.types.principal import Principal, PrincipalKind
@@ -81,7 +82,8 @@ def an_agent_session() -> AgentSession:
         updated_at=now,
         created_by=by,
         updated_by=by,
-        title="the weekly report",
+        # As storage keeps it: sealed by the manager, here a stand-in blob.
+        title=Title(state=ContentState.SEALED, sealed=b"\x00" * 8 + b"the weekly report"),
         kind="delivery",
         kind_version=1,
         root_id=agent_session_id,
