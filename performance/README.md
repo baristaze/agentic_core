@@ -26,7 +26,7 @@ goes.
   with synthetic words of the shape's sizes, from a fixed seed, streamed
   in parts. Synthetic tools, one per class, answer at once with outputs
   of the shape's sizes. Every text opens with a marker for the run,
-  which nothing at rest may hold. The replay ignores the gaps and runs
+  and so does every session's title, which nothing at rest may hold. The replay ignores the gaps and runs
   as fast as the engine goes. It plays the shape in laps: 1,500 turns
   alone is the shape once and 382 turns of it again.
 - **The engine.** [`replay/engine.py`](replay/engine.py) builds the
@@ -40,8 +40,9 @@ goes.
   sessions at once in one process, 150 turns each.
 - **The reads.** After each replay, each session's history is read from
   its start, 50 steps a page, as the API's route reads it: the session,
-  then the page. Then the tenant's session list is read whole, 50 a
-  page, twenty times over.
+  then the page. Then the tenant is topped up to a full page of 50
+  sessions, and its session list is read whole, twenty times over, each
+  page with its titles opened, as the API's list route reads it.
 - **The reading.** A sampler reads the event loop's thread every 2 ms.
   It shortens the interpreter's switch interval to 0.1 ms while it
   runs, so a sample lands where the loop is, not where it next gives up
@@ -70,21 +71,23 @@ run from this folder, renders the tables below from that file, and the
 root tests hold them equal to the file they cite.
 
 While each point writes, and once it is done, a scan reads its steps'
-rows as the database's superuser and every tool output object it kept.
-It counts the run's marker in them, as it is and in base64. Each scan
+rows and its tenant's sessions' rows as the database's superuser, and
+every tool output object it kept. It counts the run's marker in them, as
+it is and in base64. Each scan
 also counts what it read, so a scan that reads nothing fails the run.
 
 `make performance-check` replays 40 turns on memory storage and the key
 twin, with a provider's key set. Every model response reads back as the
 reply the twin streamed, every tool response as its tool's output, a
 kept one whole, and every message as what was said. Below the sealing
-layer, every step that says something is sealed, and nothing stored
-holds the marker.
+layer, every step that says something is sealed, every title of the
+list's page is sealed and opens as given, and nothing stored holds the
+marker.
 
 ## What the numbers say
 
-One session of 1,500 turns writes 23 steps a second on the KMS
-emulator, and 24 on the key twin. A step takes 43 ms. The loop reads
+One session of 1,500 turns writes 24 steps a second on the KMS
+emulator, and 25 on the key twin. A step takes 42 ms. The loop reads
 its whole history once, at its start, and from then on only what others
 wrote: what the run appends joins the history it holds unread, and an
 append opens nothing it stored. A session's head, a request's
@@ -94,47 +97,50 @@ steps back.
 **Where one session's time goes**, on the KMS emulator, by share of
 wall time:
 
-1. **The database, 39%.** Each step written costs 9.8 transactions,
+1. **The database, 39%.** Each step written costs 9.9 transactions,
    and each one is a BEGIN, its statements, and a COMMIT. The first
    round trip of each transaction
-   (`storage/impl/pg_base.py:ScopedConnection.execute`, 7.4%), the
+   (`storage/impl/pg_base.py:ScopedConnection.execute`, 7.5%), the
    history's pages (`agent_steps/storage/impl/postgres.py:read_agent_steps`,
    6.8%), and the session's key ring
-   (`privacy/storage/impl/postgres.py:read_keys`, 5.8%), read in one
+   (`privacy/storage/impl/postgres.py:read_keys`, 5.7%), read in one
    statement for every use of a key.
 2. **Request rendering, 25%.** `windows/rules.py:prompt_bytes` turns the
    whole request into bytes each turn, to hash it (12%), and
    `exchanges` walks the whole history (5.2%).
 3. **The rest, 21%.** Mostly a step's own validators, run on every step
-   read (`agent_steps/types/agent_step.py:shape_refusal`, 2.1%, and the
-   content's `storable`, 1.8%), and `infra/base.py:thaw_mapping` (2.5%).
-4. **The key service, 5.9%.** 2.9 unwraps for each step written, each a
+   read (`agent_steps/types/agent_step.py:shape_refusal`, 2.0%, and the
+   content's `storable`, 2.1%), and `infra/base.py:thaw_mapping` (2.3%).
+4. **The key service, 5.8%.** 2.9 unwraps for each step written, each a
    KMS call: 0.7 to hash tool inputs, which each call hashes twice; 0.7
    to open the pages a run's start reads; 0.8 to open what a session
    wrote since its status, read again to find its head
    (`agent_sessions/impl/manager.py:_at_head`, attribution's `_range`);
    0.2 for the request's hash; and half of one to seal.
-5. **The event loop's own work, 3.8%,** seal and open, 3.3%, and the
+5. **The event loop's own work, 3.8%,** seal and open, 3.2%, and the
    harness, 1.6%.
 
 Across those lines, a quarter of the wall time is a read of the history
 (`agent_steps/impl/manager.py:get_agent_steps`, 25% inclusive). Most of
-it is a run's start, which reads the history whole: 383 ms at the
-median, and 730 ms for the last run, on the longest history.
+it is a run's start, which reads the history whole: 374 ms at the
+median, and 729 ms for the last run, on the longest history.
 
-**Where throughput stops.** Sessions at once scale to 97 steps a second
-at four, and to 101 at eight, where the loop waits 2.9% of its time: the
+**Where throughput stops.** Sessions at once scale to 99 steps a second
+at four, and to 103 at eight, where the loop waits 2.8% of its time: the
 process is bound by its one core. Past that, more sessions only queue.
-The append's p99 goes from 6 ms with one session to 228 ms with 32. On
-the key twin the ceiling is 115 steps a second, so the KMS client's own
+The append's p99 goes from 6 ms with one session to 226 ms with 32. On
+the key twin the ceiling is 117 steps a second, so the KMS client's own
 work costs 12% of it. At 32 sessions, a session's head is read by
 replaying its steps since its status
 (`agent_sessions/impl/manager.py:_at_head`, 14% inclusive).
 
 **The reads.** A page of 50 steps, read as the API reads it, takes
-7.4 ms: the session, the key ring, one KMS call, and the page. A page of
-the session list takes 1.3 ms with one session in it and 2.8 ms with 32,
-with no key call: nothing on it is sealed yet.
+7.2 ms: the session, the key ring, one KMS call, and the page. A full
+page of the session list, 50 sessions with their titles opened, takes
+4.9 ms at the median and 7.1 ms at the 95th percentile: the page, one
+read of its title keys, one KMS call for the tenant's title key, and
+the 50 titles opened under it. A page takes that one call whatever its
+size; one call per title would take 50.
 
 **At rest.** Sealed content takes 1.39 bytes for each byte said:
 base64's 4/3, the nonce, and the tag. A tool output object takes 1.001,
@@ -164,46 +170,46 @@ turns writes 52.3 steps a second sampled and 53.1 without.
 ## The numbers
 
 <!-- results: begin -->
-From [`results/2026-10-25T0145Z.json`](results/2026-10-25T0145Z.json), started 2026-10-25T01:45:24Z: the shape `long-session.json` (1118 turns) replayed for 1500 turns alone, and for 150 turns in each session of the sweep, on Apple M4 Max (16 cores, 128 GB), macOS-26.6.2, Python 3.14.7.
+From [`results/2026-10-25T0447Z.json`](results/2026-10-25T0447Z.json), started 2026-10-25T04:47:21Z: the shape `long-session.json` (1118 turns) replayed for 1500 turns alone, and for 150 turns in each session of the sweep, on Apple M4 Max (16 cores, 128 GB), macOS-26.6.2, Python 3.14.7.
 
 ### The runs
 
 | keys | run | sessions | turns each | steps written | steps/s | append p50 | p95 | p99 | key calls / step written | key calls / step read | transactions / step | waiting |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| KMS emulator | alone | 1 | 1500 | 6809 | 23.2 | 3.8 ms | 5.09 ms | 6.1 ms | 2.855 | 0.0201 | 9.77 | 32.3% |
-| KMS emulator | sweep-1 | 1 | 150 | 658 | 52.3 | 3.77 ms | 5.23 ms | 7.17 ms | 2.281 | 0.0213 | 8.4 | 57.7% |
-| KMS emulator | sweep-2 | 2 | 150 | 1316 | 82.3 | 3.97 ms | 5.71 ms | 8.04 ms | 2.281 | 0.0213 | 8.43 | 32.8% |
-| KMS emulator | sweep-4 | 4 | 150 | 2632 | 96.7 | 6.31 ms | 15.12 ms | 26.1 ms | 2.281 | 0.0213 | 8.4 | 11.0% |
-| KMS emulator | sweep-8 | 8 | 150 | 5264 | 101.3 | 10.67 ms | 25.44 ms | 44.85 ms | 2.281 | 0.0213 | 8.44 | 2.9% |
-| KMS emulator | sweep-16 | 16 | 150 | 10528 | 99.6 | 21.7 ms | 54.81 ms | 100.68 ms | 2.281 | 0.0213 | 8.45 | 0.7% |
-| KMS emulator | sweep-32 | 32 | 150 | 21056 | 92.8 | 46.39 ms | 113.95 ms | 228.36 ms | 2.281 | 0.0213 | 8.46 | 0.6% |
-| key twin | alone | 1 | 1500 | 6809 | 24.3 | 2.83 ms | 4.06 ms | 4.73 ms | 2.855 | 0.0201 | 9.78 | 29.8% |
-| key twin | sweep-1 | 1 | 150 | 658 | 60.6 | 2.67 ms | 3.98 ms | 5.64 ms | 2.281 | 0.0213 | 8.22 | 57.0% |
-| key twin | sweep-2 | 2 | 150 | 1316 | 92.4 | 2.95 ms | 4.36 ms | 5.52 ms | 2.281 | 0.0213 | 8.32 | 34.7% |
-| key twin | sweep-4 | 4 | 150 | 2632 | 111.2 | 4.51 ms | 11.29 ms | 16.71 ms | 2.281 | 0.0213 | 8.32 | 12.6% |
-| key twin | sweep-8 | 8 | 150 | 5264 | 115.2 | 8.36 ms | 21.75 ms | 34.68 ms | 2.281 | 0.0213 | 8.41 | 2.9% |
-| key twin | sweep-16 | 16 | 150 | 10528 | 113.5 | 17.96 ms | 48.72 ms | 88.25 ms | 2.281 | 0.0213 | 8.45 | 0.7% |
-| key twin | sweep-32 | 32 | 150 | 21056 | 105.0 | 36.25 ms | 98.83 ms | 212.03 ms | 2.281 | 0.0213 | 8.45 | 0.6% |
-| KMS emulator | sweep-1-unprofiled | 1 | 150 | 658 | 53.1 | 3.67 ms | 5.01 ms | 6.05 ms | 2.281 | 0.0213 | 8.14 |  |
+| KMS emulator | alone | 1 | 1500 | 6809 | 23.8 | 3.74 ms | 4.98 ms | 5.87 ms | 2.855 | 0.0201 | 9.87 | 32.7% |
+| KMS emulator | sweep-1 | 1 | 150 | 658 | 53.6 | 3.67 ms | 4.99 ms | 6.17 ms | 2.283 | 0.0213 | 8.92 | 57.9% |
+| KMS emulator | sweep-2 | 2 | 150 | 1316 | 84.1 | 3.94 ms | 5.4 ms | 6.72 ms | 2.283 | 0.0213 | 8.92 | 32.7% |
+| KMS emulator | sweep-4 | 4 | 150 | 2632 | 98.5 | 5.84 ms | 13.58 ms | 20.29 ms | 2.284 | 0.0213 | 8.64 | 12.0% |
+| KMS emulator | sweep-8 | 8 | 150 | 5264 | 103.0 | 10.5 ms | 25.75 ms | 41.06 ms | 2.284 | 0.0213 | 8.53 | 2.8% |
+| KMS emulator | sweep-16 | 16 | 150 | 10528 | 100.9 | 21.69 ms | 49.87 ms | 99.43 ms | 2.284 | 0.0213 | 8.5 | 0.7% |
+| KMS emulator | sweep-32 | 32 | 150 | 21056 | 94.0 | 45.42 ms | 109.93 ms | 226.33 ms | 2.283 | 0.0213 | 8.47 | 0.6% |
+| key twin | alone | 1 | 1500 | 6809 | 24.7 | 2.8 ms | 4.02 ms | 4.74 ms | 2.855 | 0.0201 | 9.87 | 29.9% |
+| key twin | sweep-1 | 1 | 150 | 658 | 62.0 | 2.66 ms | 3.87 ms | 6.1 ms | 2.283 | 0.0213 | 8.7 | 57.8% |
+| key twin | sweep-2 | 2 | 150 | 1316 | 92.8 | 2.93 ms | 4.53 ms | 6.95 ms | 2.283 | 0.0213 | 8.79 | 35.6% |
+| key twin | sweep-4 | 4 | 150 | 2632 | 112.1 | 4.25 ms | 10.88 ms | 19.54 ms | 2.284 | 0.0213 | 8.58 | 13.0% |
+| key twin | sweep-8 | 8 | 150 | 5264 | 117.0 | 8.59 ms | 23.13 ms | 38.68 ms | 2.283 | 0.0213 | 8.53 | 2.9% |
+| key twin | sweep-16 | 16 | 150 | 10528 | 114.7 | 18.03 ms | 45.85 ms | 104.54 ms | 2.283 | 0.0213 | 8.48 | 0.8% |
+| key twin | sweep-32 | 32 | 150 | 21056 | 106.4 | 35.81 ms | 99.93 ms | 216.23 ms | 2.283 | 0.0213 | 8.46 | 0.6% |
+| KMS emulator | sweep-1-unprofiled | 1 | 150 | 658 | 53.0 | 3.64 ms | 4.91 ms | 6.49 ms | 2.283 | 0.0213 | 9.46 |  |
 
 ### Where the wall time goes
 
 | keys | run | seal and open | key service | database | object store | request rendering | harness | event loop | rest |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| KMS emulator | alone | 3.3% | 5.9% | 38.9% | 0.0% | 25.4% | 1.6% | 3.8% | 21.1% |
-| KMS emulator | sweep-1 | 3.1% | 9.2% | 64.5% | 0.1% | 7.6% | 0.3% | 6.0% | 9.3% |
-| KMS emulator | sweep-2 | 4.3% | 6.9% | 58.4% | 0.0% | 10.8% | 0.4% | 5.9% | 13.2% |
-| KMS emulator | sweep-4 | 5.8% | 8.2% | 49.8% | 0.0% | 13.9% | 0.8% | 6.6% | 15.0% |
-| KMS emulator | sweep-8 | 5.7% | 8.3% | 43.8% | 0.0% | 16.2% | 1.1% | 8.0% | 17.0% |
-| KMS emulator | sweep-16 | 5.5% | 8.8% | 42.6% | 0.0% | 16.7% | 1.0% | 7.6% | 17.8% |
-| KMS emulator | sweep-32 | 5.8% | 8.5% | 41.9% | 0.0% | 15.9% | 1.3% | 6.6% | 20.0% |
-| key twin | alone | 3.5% | 0.0% | 41.4% | 0.0% | 27.7% | 1.8% | 3.7% | 21.8% |
-| key twin | sweep-1 | 2.9% | 0.0% | 71.6% | 0.1% | 8.6% | 0.5% | 7.4% | 9.0% |
-| key twin | sweep-2 | 3.6% | 0.0% | 63.2% | 0.1% | 12.3% | 0.5% | 5.9% | 14.5% |
-| key twin | sweep-4 | 5.3% | 0.0% | 53.5% | 0.0% | 16.0% | 1.1% | 7.0% | 17.0% |
-| key twin | sweep-8 | 5.9% | 0.0% | 47.1% | 0.0% | 18.4% | 1.2% | 8.1% | 19.3% |
-| key twin | sweep-16 | 5.9% | 0.0% | 47.1% | 0.0% | 18.3% | 1.2% | 7.7% | 19.7% |
-| key twin | sweep-32 | 6.2% | 0.1% | 46.8% | 0.0% | 18.8% | 1.2% | 6.7% | 20.3% |
+| KMS emulator | alone | 3.2% | 5.8% | 39.0% | 0.0% | 25.2% | 1.6% | 3.8% | 21.3% |
+| KMS emulator | sweep-1 | 2.8% | 9.6% | 64.0% | 0.1% | 7.8% | 0.4% | 6.4% | 9.0% |
+| KMS emulator | sweep-2 | 4.5% | 7.5% | 57.9% | 0.0% | 10.9% | 0.5% | 5.7% | 13.0% |
+| KMS emulator | sweep-4 | 5.3% | 7.4% | 50.1% | 0.0% | 14.2% | 0.9% | 6.7% | 15.2% |
+| KMS emulator | sweep-8 | 5.3% | 8.6% | 42.9% | 0.0% | 16.7% | 0.9% | 8.5% | 17.2% |
+| KMS emulator | sweep-16 | 5.5% | 8.7% | 43.0% | 0.0% | 16.8% | 0.9% | 7.4% | 17.7% |
+| KMS emulator | sweep-32 | 5.8% | 8.3% | 41.9% | 0.0% | 16.8% | 1.2% | 6.8% | 19.2% |
+| key twin | alone | 3.4% | 0.0% | 41.5% | 0.0% | 26.9% | 1.8% | 3.8% | 22.7% |
+| key twin | sweep-1 | 3.1% | 0.0% | 70.5% | 0.1% | 9.3% | 0.4% | 7.2% | 9.4% |
+| key twin | sweep-2 | 3.5% | 0.0% | 64.5% | 0.1% | 12.3% | 0.5% | 6.3% | 12.7% |
+| key twin | sweep-4 | 4.7% | 0.0% | 54.3% | 0.0% | 16.1% | 0.7% | 7.2% | 16.9% |
+| key twin | sweep-8 | 5.6% | 0.0% | 47.2% | 0.0% | 19.4% | 1.0% | 8.2% | 18.5% |
+| key twin | sweep-16 | 5.8% | 0.0% | 46.5% | 0.0% | 19.1% | 1.0% | 7.5% | 20.1% |
+| key twin | sweep-32 | 6.0% | 0.1% | 45.7% | 0.0% | 18.5% | 1.5% | 6.7% | 21.5% |
 
 ### The reads, as the API pages them
 
@@ -211,47 +217,47 @@ Open is the seal and open category: AES-GCM, the JSON, and the step's model, les
 
 | keys | run | read | pages | items / page | pages/s | page p50 | p95 | p99 | key calls / page | open | key service | database | rest |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| KMS emulator | alone | history, 50 steps a page | 137 | 49.7 | 124.7 | 7.37 ms | 9.33 ms | 44.85 ms | 1.0 | 1.0% | 12.2% | 69.4% | 10.1% |
-| KMS emulator | alone | session list, 50 a page | 20 | 1.0 | 716.5 | 1.31 ms | 2.75 ms | 3.91 ms | 0.0 | 0.0% | 0.0% | 100.0% | 0.0% |
-| KMS emulator | sweep-1 | history, 50 steps a page | 14 | 47.0 | 131.9 | 7.18 ms | 9.95 ms | 10.07 ms | 1.0 | 3.1% | 9.6% | 71.6% | 4.9% |
-| KMS emulator | sweep-1 | session list, 50 a page | 20 | 1.0 | 757.7 | 1.25 ms | 2.33 ms | 3.16 ms | 0.0 | 0.0% | 0.0% | 100.0% | 0.0% |
-| KMS emulator | sweep-2 | history, 50 steps a page | 28 | 47.0 | 132.8 | 7.29 ms | 10.51 ms | 12.27 ms | 1.0 | 2.9% | 8.9% | 64.9% | 15.0% |
-| KMS emulator | sweep-2 | session list, 50 a page | 20 | 2.0 | 737.0 | 1.25 ms | 2.59 ms | 3.1 ms | 0.0 | 0.0% | 0.0% | 100.0% | 0.0% |
-| KMS emulator | sweep-4 | history, 50 steps a page | 56 | 47.0 | 127.4 | 7.78 ms | 9.42 ms | 11.22 ms | 1.0 | 6.1% | 10.4% | 59.1% | 12.9% |
-| KMS emulator | sweep-4 | session list, 50 a page | 20 | 4.0 | 660.7 | 1.38 ms | 2.57 ms | 3.1 ms | 0.0 | 0.0% | 0.0% | 83.0% | 0.0% |
-| KMS emulator | sweep-8 | history, 50 steps a page | 112 | 47.0 | 115.8 | 7.95 ms | 9.69 ms | 70.76 ms | 1.0 | 3.9% | 9.9% | 67.3% | 9.6% |
-| KMS emulator | sweep-8 | session list, 50 a page | 20 | 8.0 | 608.9 | 1.46 ms | 2.47 ms | 2.86 ms | 0.0 | 0.0% | 0.0% | 93.0% | 0.0% |
-| KMS emulator | sweep-16 | history, 50 steps a page | 224 | 47.0 | 118.4 | 7.96 ms | 9.81 ms | 12.91 ms | 1.0 | 3.5% | 9.0% | 61.9% | 15.7% |
-| KMS emulator | sweep-16 | session list, 50 a page | 20 | 16.0 | 533.1 | 1.97 ms | 2.71 ms | 3.13 ms | 0.0 | 0.0% | 0.0% | 93.7% | 0.0% |
-| KMS emulator | sweep-32 | history, 50 steps a page | 448 | 47.0 | 111.8 | 7.95 ms | 10.04 ms | 29.06 ms | 1.0 | 3.9% | 9.8% | 65.2% | 12.6% |
-| KMS emulator | sweep-32 | session list, 50 a page | 20 | 32.0 | 355.3 | 2.79 ms | 4.61 ms | 5.18 ms | 0.0 | 0.0% | 0.0% | 94.4% | 0.0% |
-| key twin | alone | history, 50 steps a page | 137 | 49.7 | 140.7 | 6.32 ms | 9.33 ms | 47.89 ms | 1.0 | 3.0% | 0.0% | 68.5% | 17.6% |
-| key twin | alone | session list, 50 a page | 20 | 1.0 | 752.4 | 1.25 ms | 2.23 ms | 2.93 ms | 0.0 | 0.0% | 0.0% | 100.0% | 0.0% |
-| key twin | sweep-1 | history, 50 steps a page | 14 | 47.0 | 148.9 | 6.79 ms | 8.19 ms | 8.49 ms | 1.0 | 0.0% | 0.0% | 69.9% | 20.4% |
-| key twin | sweep-1 | session list, 50 a page | 20 | 1.0 | 535.4 | 1.47 ms | 3.94 ms | 4.64 ms | 0.0 | 0.0% | 0.0% | 93.8% | 0.0% |
-| key twin | sweep-2 | history, 50 steps a page | 28 | 47.0 | 157.4 | 6.36 ms | 7.79 ms | 8.15 ms | 1.0 | 9.9% | 0.0% | 74.0% | 6.8% |
-| key twin | sweep-2 | session list, 50 a page | 20 | 2.0 | 734.3 | 1.3 ms | 2.31 ms | 2.7 ms | 0.0 | 0.0% | 0.0% | 80.8% | 0.0% |
-| key twin | sweep-4 | history, 50 steps a page | 56 | 47.0 | 155.2 | 6.41 ms | 7.66 ms | 8.21 ms | 1.0 | 2.3% | 0.0% | 76.1% | 9.0% |
-| key twin | sweep-4 | session list, 50 a page | 20 | 4.0 | 637.7 | 1.38 ms | 2.69 ms | 3.19 ms | 0.0 | 0.0% | 0.0% | 91.4% | 0.0% |
-| key twin | sweep-8 | history, 50 steps a page | 112 | 47.0 | 134.0 | 6.61 ms | 8.83 ms | 68.14 ms | 1.0 | 3.4% | 0.0% | 75.6% | 9.9% |
-| key twin | sweep-8 | session list, 50 a page | 20 | 8.0 | 595.8 | 1.45 ms | 2.73 ms | 3.18 ms | 0.0 | 0.0% | 0.0% | 79.8% | 0.0% |
-| key twin | sweep-16 | history, 50 steps a page | 224 | 47.0 | 129.6 | 6.78 ms | 8.65 ms | 69.78 ms | 1.0 | 3.9% | 0.0% | 70.0% | 18.2% |
-| key twin | sweep-16 | session list, 50 a page | 20 | 16.0 | 487.4 | 2.22 ms | 2.83 ms | 3.05 ms | 0.0 | 0.0% | 0.0% | 94.7% | 0.0% |
-| key twin | sweep-32 | history, 50 steps a page | 448 | 47.0 | 130.1 | 6.78 ms | 8.86 ms | 12.62 ms | 1.0 | 3.4% | 0.0% | 73.0% | 15.6% |
-| key twin | sweep-32 | session list, 50 a page | 20 | 32.0 | 445.1 | 2.4 ms | 3.1 ms | 3.41 ms | 0.0 | 0.0% | 0.0% | 88.3% | 6.0% |
-| KMS emulator | sweep-1-unprofiled | history, 50 steps a page | 14 | 47.0 | 128.0 | 7.67 ms | 8.87 ms | 8.95 ms | 1.0 |  |  |  |  |
-| KMS emulator | sweep-1-unprofiled | session list, 50 a page | 20 | 1.0 | 613.1 | 1.29 ms | 4.15 ms | 5.01 ms | 0.0 |  |  |  |  |
+| KMS emulator | alone | history, 50 steps a page | 137 | 49.7 | 126.4 | 7.18 ms | 9.28 ms | 49.06 ms | 1.0 | 4.1% | 14.3% | 57.9% | 17.3% |
+| KMS emulator | alone | session list, 50 a page | 20 | 50.0 | 185.6 | 4.94 ms | 7.08 ms | 7.22 ms | 1.0 | 2.6% | 16.7% | 64.2% | 6.9% |
+| KMS emulator | sweep-1 | history, 50 steps a page | 14 | 47.0 | 135.7 | 7.44 ms | 9.18 ms | 9.68 ms | 1.0 | 9.5% | 15.2% | 58.1% | 7.8% |
+| KMS emulator | sweep-1 | session list, 50 a page | 20 | 50.0 | 181.6 | 5.04 ms | 9.25 ms | 11.2 ms | 1.0 | 4.9% | 16.6% | 70.9% | 5.2% |
+| KMS emulator | sweep-2 | history, 50 steps a page | 28 | 47.0 | 104.0 | 7.5 ms | 40.33 ms | 106.84 ms | 1.0 | 3.5% | 9.3% | 73.6% | 9.0% |
+| KMS emulator | sweep-2 | session list, 50 a page | 20 | 50.0 | 148.8 | 6.01 ms | 10.55 ms | 11.76 ms | 1.0 | 0.0% | 10.3% | 80.8% | 8.9% |
+| KMS emulator | sweep-4 | history, 50 steps a page | 56 | 47.0 | 123.1 | 7.88 ms | 10.85 ms | 12.26 ms | 1.0 | 4.3% | 15.1% | 62.4% | 13.4% |
+| KMS emulator | sweep-4 | session list, 50 a page | 20 | 50.0 | 163.2 | 5.25 ms | 12.75 ms | 16.36 ms | 1.0 | 7.0% | 19.6% | 58.4% | 7.4% |
+| KMS emulator | sweep-8 | history, 50 steps a page | 112 | 47.0 | 118.1 | 7.8 ms | 9.71 ms | 67.1 ms | 1.0 | 4.3% | 10.9% | 58.3% | 18.1% |
+| KMS emulator | sweep-8 | session list, 50 a page | 20 | 50.0 | 155.1 | 5.91 ms | 10.36 ms | 11.38 ms | 1.0 | 1.9% | 19.1% | 71.5% | 4.0% |
+| KMS emulator | sweep-16 | history, 50 steps a page | 224 | 47.0 | 119.4 | 7.8 ms | 10.3 ms | 13.07 ms | 1.0 | 4.0% | 11.5% | 62.6% | 15.9% |
+| KMS emulator | sweep-16 | session list, 50 a page | 20 | 50.0 | 131.8 | 7.09 ms | 13.38 ms | 13.73 ms | 1.0 | 5.9% | 13.8% | 69.1% | 3.4% |
+| KMS emulator | sweep-32 | history, 50 steps a page | 448 | 47.0 | 115.3 | 7.84 ms | 10.11 ms | 16.01 ms | 1.0 | 3.7% | 9.4% | 65.5% | 14.0% |
+| KMS emulator | sweep-32 | session list, 50 a page | 20 | 50.0 | 147.0 | 6.46 ms | 11.61 ms | 14.32 ms | 1.0 | 0.0% | 17.4% | 69.9% | 7.2% |
+| key twin | alone | history, 50 steps a page | 137 | 49.7 | 145.1 | 6.24 ms | 7.83 ms | 45.96 ms | 1.0 | 2.1% | 0.0% | 77.3% | 10.8% |
+| key twin | alone | session list, 50 a page | 20 | 50.0 | 111.5 | 4.18 ms | 90.92 ms | 165.01 ms | 1.0 | 0.0% | 0.0% | 94.7% | 4.1% |
+| key twin | sweep-1 | history, 50 steps a page | 14 | 47.0 | 159.4 | 6.22 ms | 7.77 ms | 8.03 ms | 1.0 | 7.4% | 0.0% | 71.9% | 14.7% |
+| key twin | sweep-1 | session list, 50 a page | 20 | 50.0 | 213.7 | 4.32 ms | 6.45 ms | 6.46 ms | 1.0 | 0.0% | 0.0% | 85.8% | 3.5% |
+| key twin | sweep-2 | history, 50 steps a page | 28 | 47.0 | 158.9 | 6.25 ms | 7.59 ms | 7.7 ms | 1.0 | 1.8% | 0.0% | 65.5% | 21.2% |
+| key twin | sweep-2 | session list, 50 a page | 20 | 50.0 | 217.1 | 4.24 ms | 7.45 ms | 7.71 ms | 1.0 | 0.0% | 0.0% | 81.6% | 2.8% |
+| key twin | sweep-4 | history, 50 steps a page | 56 | 47.0 | 154.1 | 6.41 ms | 7.94 ms | 9.39 ms | 1.0 | 4.1% | 0.0% | 70.8% | 14.8% |
+| key twin | sweep-4 | session list, 50 a page | 20 | 50.0 | 218.4 | 4.13 ms | 7.34 ms | 7.99 ms | 1.0 | 2.5% | 0.0% | 87.4% | 2.5% |
+| key twin | sweep-8 | history, 50 steps a page | 112 | 47.0 | 135.4 | 6.49 ms | 9.11 ms | 76.13 ms | 1.0 | 4.5% | 0.0% | 65.6% | 19.4% |
+| key twin | sweep-8 | session list, 50 a page | 20 | 50.0 | 175.4 | 5.25 ms | 10.04 ms | 11.76 ms | 1.0 | 2.7% | 0.0% | 75.9% | 7.4% |
+| key twin | sweep-16 | history, 50 steps a page | 224 | 47.0 | 132.3 | 7.02 ms | 9.34 ms | 10.25 ms | 1.0 | 4.0% | 0.0% | 70.0% | 18.1% |
+| key twin | sweep-16 | session list, 50 a page | 20 | 50.0 | 206.4 | 4.33 ms | 9.37 ms | 11.96 ms | 1.0 | 0.0% | 0.0% | 85.3% | 4.8% |
+| key twin | sweep-32 | history, 50 steps a page | 448 | 47.0 | 131.9 | 6.73 ms | 8.59 ms | 11.21 ms | 1.0 | 3.1% | 0.0% | 72.6% | 15.7% |
+| key twin | sweep-32 | session list, 50 a page | 20 | 50.0 | 201.5 | 4.73 ms | 6.35 ms | 6.92 ms | 1.0 | 7.7% | 0.0% | 84.7% | 5.0% |
+| KMS emulator | sweep-1-unprofiled | history, 50 steps a page | 14 | 47.0 | 126.8 | 7.46 ms | 10.99 ms | 11.74 ms | 1.0 |  |  |  |  |
+| KMS emulator | sweep-1-unprofiled | session list, 50 a page | 20 | 50.0 | 173.8 | 5.3 ms | 9.24 ms | 10.13 ms | 1.0 |  |  |  |  |
 
 ### Ranked: one session, KMS emulator
 
 | rank | where | share of wall time | of it, waiting | the code that spends it |
 | ---: | --- | ---: | ---: | --- |
-| 1 | database | 38.9% | 27.0% | `acme/om/storage/impl/pg_base.py:ScopedConnection.execute` 7.4%<br>`acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps` 6.8%<br>`acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys` 5.8% |
-| 2 | request rendering | 25.4% | 0.0% | `acme/om/windows/rules.py:prompt_bytes` 12.2%<br>`acme/om/windows/rules.py:exchanges` 5.2%<br>`acme/om/windows/rules.py:_call.<locals>.<genexpr>` 1.7% |
-| 3 | rest | 21.1% | 1.2% | `acme/infra/base.py:thaw_mapping` 2.5%<br>`acme/om/agent_steps/types/agent_step.py:shape_refusal` 2.1%<br>`acme/integrations/model_providers/content.py:storable` 1.8% |
-| 4 | key service | 5.9% | 4.1% | `acme/infra/keys/kms.py:KeyServiceKmsImpl.unwrap` 5.9% |
+| 1 | database | 39.0% | 27.4% | `acme/om/storage/impl/pg_base.py:ScopedConnection.execute` 7.5%<br>`acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps` 6.8%<br>`acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys` 5.7% |
+| 2 | request rendering | 25.2% | 0.0% | `acme/om/windows/rules.py:prompt_bytes` 12.2%<br>`acme/om/windows/rules.py:exchanges` 5.2%<br>`acme/om/windows/rules.py:_conversation` 1.6% |
+| 3 | rest | 21.3% | 1.2% | `acme/infra/base.py:thaw_mapping` 2.3%<br>`acme/integrations/model_providers/content.py:storable` 2.1%<br>`acme/om/agent_steps/types/agent_step.py:shape_refusal` 2.0% |
+| 4 | key service | 5.8% | 4.1% | `acme/infra/keys/kms.py:KeyServiceKmsImpl.unwrap` 5.8% |
 | 5 | event loop | 3.8% | 0.0% | the loop's own callbacks 3.7%<br>`acme/om/agents/impl/loop_model_turn.py:LoopModelTurn._stream` 0.1%<br>`acme/om/storage/impl/pg_base.py:ScopedConnection.execute` 0.0% |
-| 6 | seal and open | 3.3% | 0.0% | `acme/om/privacy/impl/sealed_agent_steps.py:opened` 2.7%<br>`acme/om/privacy/impl/manager.py:PrivacyManagerImpl.keyed_hash` 0.4%<br>`acme/om/privacy/impl/sealed_agent_steps.py:bound_to` 0.1% |
+| 6 | seal and open | 3.2% | 0.0% | `acme/om/privacy/impl/sealed_agent_steps.py:opened` 2.5%<br>`acme/om/privacy/impl/manager.py:PrivacyManagerImpl.keyed_hash` 0.4%<br>`acme/om/privacy/impl/sealed_agent_steps.py:sealed` 0.1% |
 | 7 | harness | 1.6% | 0.0% | `performance/replay/engine.py:request_chars` 1.0%<br>`performance/replay/engine.py:Engine.run` 0.4%<br>`performance/replay/engine.py:request_chars.<locals>.<genexpr>` 0.2% |
 | 8 | object store | 0.0% | 0.0% | `acme/infra/buckets/s3.py:BucketsS3Impl.put` 0.0% |
 
@@ -259,11 +265,11 @@ Open is the seal and open category: AES-GCM, the JSON, and the step's model, les
 
 | rank | where | share of wall time | of it, waiting | the code that spends it |
 | ---: | --- | ---: | ---: | --- |
-| 1 | database | 41.4% | 28.9% | `acme/om/storage/impl/pg_base.py:ScopedConnection.execute` 7.8%<br>`acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps` 7.5%<br>`acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys` 5.9% |
-| 2 | request rendering | 27.7% | 0.0% | `acme/om/windows/rules.py:prompt_bytes` 13.2%<br>`acme/om/windows/rules.py:exchanges` 5.9%<br>`acme/om/windows/rules.py:_conversation` 1.7% |
-| 3 | rest | 21.8% | 0.9% | `acme/infra/base.py:thaw_mapping` 2.5%<br>`acme/om/agent_steps/types/agent_step.py:shape_refusal` 2.2%<br>`acme/integrations/model_providers/content.py:storable` 2.0% |
-| 4 | event loop | 3.7% | 0.0% | the loop's own callbacks 3.6%<br>`acme/om/agents/impl/loop_model_turn.py:LoopModelTurn._stream` 0.1%<br>`acme/om/storage/impl/pg_base.py:ScopedConnection.execute` 0.0% |
-| 5 | seal and open | 3.5% | 0.0% | `acme/om/privacy/impl/sealed_agent_steps.py:opened` 2.9%<br>`acme/om/privacy/impl/manager.py:PrivacyManagerImpl.keyed_hash` 0.4%<br>`acme/om/privacy/impl/sealed_agent_steps.py:bound_to` 0.1% |
+| 1 | database | 41.5% | 29.0% | `acme/om/storage/impl/pg_base.py:ScopedConnection.execute` 7.8%<br>`acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps` 7.3%<br>`acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys` 6.1% |
+| 2 | request rendering | 26.9% | 0.0% | `acme/om/windows/rules.py:prompt_bytes` 13.0%<br>`acme/om/windows/rules.py:exchanges` 5.8%<br>`acme/om/windows/rules.py:_conversation` 1.6% |
+| 3 | rest | 22.7% | 1.0% | `acme/infra/base.py:thaw_mapping` 2.5%<br>`acme/om/agent_steps/types/agent_step.py:shape_refusal` 2.5%<br>`acme/integrations/model_providers/content.py:storable` 2.1% |
+| 4 | event loop | 3.8% | 0.0% | the loop's own callbacks 3.6%<br>`acme/om/agents/impl/loop_model_turn.py:LoopModelTurn._stream` 0.1%<br>`acme/om/storage/impl/pg_base.py:ScopedConnection.execute` 0.0% |
+| 5 | seal and open | 3.4% | 0.0% | `acme/om/privacy/impl/sealed_agent_steps.py:opened` 2.8%<br>`acme/om/privacy/impl/manager.py:PrivacyManagerImpl.keyed_hash` 0.4%<br>`acme/om/privacy/impl/sealed_agent_steps.py:bound_to` 0.1% |
 | 6 | harness | 1.8% | 0.0% | `performance/replay/engine.py:request_chars` 1.1%<br>`performance/replay/engine.py:Engine.run` 0.4%<br>`performance/replay/engine.py:request_chars.<locals>.<genexpr>` 0.2% |
 | 7 | object store | 0.0% | 0.0% | `acme/infra/buckets/s3.py:BucketsS3Impl.put` 0.0% |
 
@@ -271,13 +277,13 @@ Open is the seal and open category: AES-GCM, the JSON, and the step's model, les
 
 | rank | where | share of wall time | of it, waiting | the code that spends it |
 | ---: | --- | ---: | ---: | --- |
-| 1 | database | 41.9% | 0.5% | `acme/om/storage/impl/pg_base.py:ScopedConnection.execute` 12.9%<br>`acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys` 3.3%<br>the loop's own callbacks 2.8% |
-| 2 | rest | 20.0% | 0.0% | `acme/om/agent_steps/types/agent_step.py:shape_refusal` 3.2%<br>`acme/integrations/model_providers/content.py:storable` 1.7%<br>`acme/infra/base.py:_plain` 1.6% |
-| 3 | request rendering | 15.9% | 0.0% | `acme/om/windows/rules.py:prompt_bytes` 9.9%<br>`acme/om/windows/rules.py:exchanges` 2.1%<br>`acme/om/windows/rules.py:_call.<locals>.<genexpr>` 1.3% |
-| 4 | key service | 8.5% | 0.0% | `acme/infra/keys/kms.py:KeyServiceKmsImpl.unwrap` 8.5%<br>`acme/infra/keys/kms.py:KeyServiceKmsImpl.generate` 0.0%<br>`acme/infra/keys/kms.py:encryption_context` 0.0% |
-| 5 | event loop | 6.6% | 0.0% | the loop's own callbacks 6.0%<br>`acme/om/storage/impl/pg_base.py:scoped_session` 0.1%<br>`acme/om/agents/impl/loop_model_turn.py:LoopModelTurn._stream` 0.1% |
+| 1 | database | 41.9% | 0.5% | `acme/om/storage/impl/pg_base.py:ScopedConnection.execute` 13.0%<br>`acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys` 3.3%<br>the loop's own callbacks 2.9% |
+| 2 | rest | 19.2% | 0.1% | `acme/om/agent_steps/types/agent_step.py:shape_refusal` 3.4%<br>`acme/om/tools/registry.py:ToolRegistry.render.<locals>.<genexpr>` 1.5%<br>`acme/integrations/model_providers/content.py:storable` 1.4% |
+| 3 | request rendering | 16.8% | 0.0% | `acme/om/windows/rules.py:prompt_bytes` 10.2%<br>`acme/om/windows/rules.py:exchanges` 2.1%<br>`acme/om/windows/rules.py:_call.<locals>.<genexpr>` 1.9% |
+| 4 | key service | 8.3% | 0.0% | `acme/infra/keys/kms.py:KeyServiceKmsImpl.unwrap` 8.3%<br>`acme/infra/keys/kms.py:KeyServiceKmsImpl.generate` 0.0%<br>`acme/infra/keys/kms.py:encryption_context` 0.0% |
+| 5 | event loop | 6.8% | 0.0% | the loop's own callbacks 6.1%<br>`acme/om/storage/impl/pg_base.py:scoped_session` 0.2%<br>`acme/om/storage/impl/pg_base.py:ScopedConnection.execute` 0.1% |
 | 6 | seal and open | 5.8% | 0.0% | `acme/om/privacy/impl/sealed_agent_steps.py:opened` 4.5%<br>`acme/om/privacy/impl/manager.py:PrivacyManagerImpl.keyed_hash` 0.7%<br>`acme/om/privacy/impl/sealed_agent_steps.py:sealed` 0.5% |
-| 7 | harness | 1.3% | 0.0% | `performance/replay/engine.py:request_chars` 0.5%<br>`acme/integrations/model_providers/scripted.py:parts_of.<locals>.<genexpr>` 0.4%<br>`performance/replay/engine.py:Engine.run` 0.1% |
+| 7 | harness | 1.2% | 0.0% | `performance/replay/engine.py:request_chars` 0.5%<br>`acme/integrations/model_providers/scripted.py:parts_of.<locals>.<genexpr>` 0.4%<br>`performance/replay/engine.py:Engine.run` 0.2% |
 | 8 | object store | 0.0% | 0.0% | `acme/infra/buckets/s3.py:BucketsS3Impl.put` 0.0% |
 
 ### Bytes at rest
@@ -293,28 +299,28 @@ From the loop's run to its first model call, over every run of the point. The la
 
 | keys | run | runs | run start p50 | p95 | p99 | the last |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| KMS emulator | alone | 249 | 383.06 ms | 687.6 ms | 746.93 ms | 730.1 ms |
-| KMS emulator | sweep-1 | 14 | 89.39 ms | 111.95 ms | 115.12 ms | 110.63 ms |
-| KMS emulator | sweep-2 | 28 | 130.88 ms | 215.35 ms | 217.97 ms | 216.37 ms |
-| KMS emulator | sweep-4 | 56 | 201.5 ms | 320.07 ms | 320.92 ms | 200.2 ms |
-| KMS emulator | sweep-8 | 112 | 452.81 ms | 630.47 ms | 649.75 ms | 479.94 ms |
-| KMS emulator | sweep-16 | 224 | 1014.91 ms | 1374.59 ms | 1386.87 ms | 1385.2 ms |
-| KMS emulator | sweep-32 | 448 | 1532.41 ms | 2158.73 ms | 2369.07 ms | 1517.59 ms |
-| key twin | alone | 249 | 367.76 ms | 683.87 ms | 722.07 ms | 669.58 ms |
-| key twin | sweep-1 | 14 | 79.51 ms | 155.95 ms | 181.44 ms | 100.79 ms |
-| key twin | sweep-2 | 28 | 118.2 ms | 178.55 ms | 181.7 ms | 152.84 ms |
-| key twin | sweep-4 | 56 | 217.04 ms | 328.58 ms | 330.9 ms | 330.43 ms |
-| key twin | sweep-8 | 112 | 439.64 ms | 622.64 ms | 644.92 ms | 424.16 ms |
-| key twin | sweep-16 | 224 | 940.2 ms | 1232.96 ms | 1255.34 ms | 1098.49 ms |
-| key twin | sweep-32 | 448 | 1406.79 ms | 1916.07 ms | 2050.6 ms | 1434.05 ms |
-| KMS emulator | sweep-1-unprofiled | 14 | 90.57 ms | 151.96 ms | 173.71 ms | 106.66 ms |
+| KMS emulator | alone | 249 | 373.57 ms | 672.1 ms | 728.02 ms | 728.84 ms |
+| KMS emulator | sweep-1 | 14 | 89.42 ms | 152.0 ms | 157.89 ms | 106.29 ms |
+| KMS emulator | sweep-2 | 28 | 128.98 ms | 209.56 ms | 209.81 ms | 155.02 ms |
+| KMS emulator | sweep-4 | 56 | 203.64 ms | 325.86 ms | 329.79 ms | 185.24 ms |
+| KMS emulator | sweep-8 | 112 | 467.41 ms | 620.31 ms | 646.76 ms | 549.26 ms |
+| KMS emulator | sweep-16 | 224 | 956.58 ms | 1314.74 ms | 1343.87 ms | 1263.75 ms |
+| KMS emulator | sweep-32 | 448 | 1524.62 ms | 2098.21 ms | 2305.87 ms | 1570.39 ms |
+| key twin | alone | 249 | 365.94 ms | 666.37 ms | 711.54 ms | 633.86 ms |
+| key twin | sweep-1 | 14 | 79.99 ms | 161.5 ms | 192.98 ms | 95.93 ms |
+| key twin | sweep-2 | 28 | 113.72 ms | 185.25 ms | 188.6 ms | 141.74 ms |
+| key twin | sweep-4 | 56 | 199.57 ms | 297.18 ms | 325.72 ms | 176.37 ms |
+| key twin | sweep-8 | 112 | 428.52 ms | 582.31 ms | 592.04 ms | 528.98 ms |
+| key twin | sweep-16 | 224 | 908.71 ms | 1267.53 ms | 1299.86 ms | 1211.31 ms |
+| key twin | sweep-32 | 448 | 1427.47 ms | 2054.71 ms | 2333.03 ms | 1227.0 ms |
+| KMS emulator | sweep-1-unprofiled | 14 | 88.06 ms | 183.39 ms | 194.51 ms | 178.76 ms |
 
 ### One round trip on this stack
 
 | keys | a database round trip | an unwrap |
 | --- | ---: | ---: |
-| KMS emulator | 0.314 ms | 0.639 ms |
-| key twin | 0.302 ms | 0.007 ms |
+| KMS emulator | 0.298 ms | 0.609 ms |
+| key twin | 0.302 ms | 0.006 ms |
 <!-- results: end -->
 
 ## What it leaves out
