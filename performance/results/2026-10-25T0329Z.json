@@ -1,0 +1,4383 @@
+{
+ "shape": "long-session.json",
+ "shape_turns": 1118,
+ "turns": 1500,
+ "sweep_turns": 150,
+ "machine": {
+  "platform": "macOS-26.6.2",
+  "processor": "Apple M4 Max",
+  "cores": 16,
+  "memory_gb": 128,
+  "python": "3.14.7"
+ },
+ "started": "2026-10-25T03:30:04Z",
+ "runs": [
+  {
+   "name": "alone",
+   "keys": "kms",
+   "sessions": 1,
+   "turns_per_session": 1500,
+   "wall_seconds": 380.555,
+   "steps_written": 6809,
+   "steps_per_second": 17.9,
+   "appends": 6406,
+   "append_ms": {
+    "p50": 6.3,
+    "p95": 8.01,
+    "p99": 9.46
+   },
+   "key_calls": 30006,
+   "key_calls_per_step_written": 4.407,
+   "key_calls_by_asker": {
+    "unwrap for acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._opened": 20139,
+    "unwrap for acme/om/privacy/impl/manager.py:PrivacyManagerImpl.keyed_hash": 6456,
+    "unwrap for acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._sealed": 3402,
+    "unwrap for acme/om/privacy/impl/tool_outputs.py:ToolOutputSealKeysImpl.seal": 8,
+    "generate for acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._sealed": 1
+   },
+   "read": {
+    "history": {
+     "pages": 137,
+     "items": 6809,
+     "items_per_page": 49.7,
+     "seconds": 1.129,
+     "pages_per_second": 121.3,
+     "page_ms": {
+      "p50": 7.53,
+      "p95": 9.91,
+      "p99": 47.0
+     },
+     "key_calls": 137,
+     "key_calls_per_page": 1.0,
+     "profile": {
+      "samples": 420,
+      "wall_seconds": 1.129,
+      "waiting_share": 0.5703,
+      "shares": {
+       "database": 0.595,
+       "rest": 0.1589,
+       "key service": 0.1271,
+       "event loop": 0.0851,
+       "seal and open": 0.0339
+      },
+      "waiting_shares": {
+       "database": 0.4746,
+       "rest": 0.0,
+       "key service": 0.0957,
+       "event loop": 0.0,
+       "seal and open": 0.0
+      },
+      "self": [
+       [
+        "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+        0.1744
+       ],
+       [
+        "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+        0.1289
+       ],
+       [
+        "acme/infra/keys/kms.py:KeyServiceKmsImpl.unwrap",
+        0.1271
+       ],
+       [
+        "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_session",
+        0.1255
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+        0.0975
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:shape_refusal",
+        0.0908
+       ],
+       [
+        "performance/replay/__main__.py:main",
+        0.0851
+       ],
+       [
+        "acme/om/storage/utils/translation.py:to_model",
+        0.0346
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:opened",
+        0.0339
+       ],
+       [
+        "acme/om/agent_steps/types/content.py:Content.is_plain",
+        0.016
+       ],
+       [
+        "acme/integrations/model_providers/content.py:storable",
+        0.012
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStep._fits_its_type",
+        0.0118
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:role_of",
+        0.0078
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:scoped_session",
+        0.0078
+       ],
+       [
+        "acme/integrations/model_providers/content.py:_storable_input",
+        0.0076
+       ],
+       [
+        "performance/replay/run.py:read_history",
+        0.0049
+       ],
+       [
+        "acme/om/agent_steps/impl/manager.py:AgentStepsManagerImpl.get_agent_steps",
+        0.0026
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStepType.is_response",
+        0.0026
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._opened",
+        0.0024
+       ]
+      ],
+      "by_category": {
+       "database": [
+        [
+         "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+         0.1744
+        ],
+        [
+         "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+         0.1289
+        ],
+        [
+         "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_session",
+         0.1255
+        ],
+        [
+         "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+         0.0975
+        ],
+        [
+         "acme/om/storage/utils/translation.py:to_model",
+         0.0266
+        ],
+        [
+         "acme/om/storage/impl/pg_base.py:role_of",
+         0.0078
+        ],
+        [
+         "acme/om/storage/impl/pg_base.py:scoped_session",
+         0.0078
+        ]
+       ],
+       "rest": [
+        [
+         "acme/om/agent_steps/types/agent_step.py:shape_refusal",
+         0.0908
+        ],
+        [
+         "acme/om/agent_steps/types/content.py:Content.is_plain",
+         0.016
+        ],
+        [
+         "acme/integrations/model_providers/content.py:storable",
+         0.012
+        ],
+        [
+         "acme/om/agent_steps/types/agent_step.py:AgentStep._fits_its_type",
+         0.0118
+        ],
+        [
+         "acme/om/storage/utils/translation.py:to_model",
+         0.008
+        ],
+        [
+         "acme/integrations/model_providers/content.py:_storable_input",
+         0.0076
+        ],
+        [
+         "performance/replay/run.py:read_history",
+         0.0049
+        ],
+        [
+         "acme/om/agent_steps/impl/manager.py:AgentStepsManagerImpl.get_agent_steps",
+         0.0026
+        ]
+       ],
+       "key service": [
+        [
+         "acme/infra/keys/kms.py:KeyServiceKmsImpl.unwrap",
+         0.1271
+        ]
+       ],
+       "event loop": [
+        [
+         "performance/replay/__main__.py:main",
+         0.0851
+        ]
+       ],
+       "seal and open": [
+        [
+         "acme/om/privacy/impl/sealed_agent_steps.py:opened",
+         0.0339
+        ]
+       ]
+      },
+      "inclusive": [
+       [
+        "performance/replay/run.py:read_history",
+        0.8121
+       ],
+       [
+        "acme/om/agent_steps/impl/manager.py:AgentStepsManagerImpl.get_agent_steps",
+        0.6551
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl.read_agent_steps",
+        0.6135
+       ],
+       [
+        "acme/om/privacy/impl/routed_agent_steps.py:AgentStepStorageRoutedImpl.read_agent_steps",
+        0.6135
+       ],
+       [
+        "performance/replay/__main__.py:main",
+        0.427
+       ],
+       [
+        "performance/replay/__main__.py:<module>",
+        0.427
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._opened",
+        0.3148
+       ],
+       [
+        "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+        0.2987
+       ],
+       [
+        "acme/om/privacy/impl/keys.py:AgentSessionKeysImpl.opened",
+        0.2662
+       ],
+       [
+        "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_session",
+        0.152
+       ],
+       [
+        "acme/om/agent_sessions/impl/manager.py:AgentSessionsManagerImpl._read",
+        0.152
+       ],
+       [
+        "acme/om/agent_sessions/impl/manager.py:AgentSessionsManagerImpl.get_agent_session",
+        0.152
+       ],
+       [
+        "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+        0.1392
+       ],
+       [
+        "acme/infra/keys/kms.py:KeyServiceKmsImpl.unwrap",
+        0.1271
+       ],
+       [
+        "performance/replay/engine.py:CountedKeys.unwrap",
+        0.1271
+       ],
+       [
+        "acme/om/privacy/impl/keys.py:AgentSessionKeysImpl._unwrap",
+        0.1271
+       ],
+       [
+        "acme/om/storage/utils/translation.py:to_model",
+        0.1244
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStep._fits_its_type",
+        0.1213
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:shape_refusal",
+        0.1095
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+        0.0975
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:opened",
+        0.0461
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:PgStorageBase._session_for",
+        0.0367
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:scoped_session",
+        0.0289
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:PgStorageBase._scoped",
+        0.0289
+       ],
+       [
+        "acme/integrations/model_providers/content.py:_storable_input",
+        0.0172
+       ],
+       [
+        "acme/om/agent_steps/types/content.py:Content.is_plain",
+        0.016
+       ],
+       [
+        "acme/integrations/model_providers/content.py:storable",
+        0.012
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:role_of",
+        0.0078
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStepType.is_response",
+        0.0026
+       ],
+       [
+        "acme/integrations/model_providers/content.py:storable_value",
+        0.0024
+       ]
+      ]
+     }
+    },
+    "list": {
+     "pages": 20,
+     "items": 20,
+     "items_per_page": 1.0,
+     "seconds": 0.025,
+     "pages_per_second": 812.5,
+     "page_ms": {
+      "p50": 1.12,
+      "p95": 2.31,
+      "p99": 3.04
+     },
+     "key_calls": 0,
+     "key_calls_per_page": 0.0,
+     "profile": {
+      "samples": 9,
+      "wall_seconds": 0.025,
+      "waiting_share": 0.7917,
+      "shares": {
+       "database": 1.0
+      },
+      "waiting_shares": {
+       "database": 0.7917
+      },
+      "self": [
+       [
+        "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_sessions",
+        0.8769
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+        0.0559
+       ]
+      ],
+      "by_category": {
+       "database": [
+        [
+         "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_sessions",
+         0.8769
+        ],
+        [
+         "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+         0.0559
+        ]
+       ]
+      },
+      "inclusive": [
+       [
+        "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_sessions",
+        0.8769
+       ],
+       [
+        "acme/om/agent_sessions/impl/manager.py:AgentSessionsManagerImpl.get_agent_sessions",
+        0.8769
+       ],
+       [
+        "performance/replay/run.py:read_list",
+        0.8769
+       ],
+       [
+        "performance/replay/__main__.py:main",
+        0.2083
+       ],
+       [
+        "performance/replay/__main__.py:<module>",
+        0.2083
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+        0.0559
+       ]
+      ]
+     }
+    },
+    "key_calls_per_step_read": 0.0201
+   },
+   "said_bytes": 7249235,
+   "kept_chars": 297654,
+   "summaries": 3,
+   "profile": {
+    "samples": 118615,
+    "wall_seconds": 380.555,
+    "waiting_share": 0.3349,
+    "shares": {
+     "database": 0.4297,
+     "rest": 0.2214,
+     "request rendering": 0.1832,
+     "key service": 0.0652,
+     "seal and open": 0.0454,
+     "event loop": 0.0452,
+     "harness": 0.0097,
+     "idle": 0.0001,
+     "object store": 0.0001
+    },
+    "waiting_shares": {
+     "database": 0.282,
+     "rest": 0.0099,
+     "request rendering": 0.0,
+     "key service": 0.0429,
+     "seal and open": 0.0,
+     "event loop": 0.0,
+     "harness": 0.0,
+     "idle": 0.0001,
+     "object store": 0.0001
+    },
+    "self": [
+     [
+      "acme/om/windows/rules.py:prompt_bytes",
+      0.0962
+     ],
+     [
+      "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+      0.0948
+     ],
+     [
+      "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+      0.0774
+     ],
+     [
+      "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+      0.0717
+     ],
+     [
+      "acme/infra/keys/kms.py:KeyServiceKmsImpl.unwrap",
+      0.0653
+     ],
+     [
+      "performance/replay/__main__.py:main",
+      0.0598
+     ],
+     [
+      "acme/om/privacy/impl/sealed_agent_steps.py:opened",
+      0.0397
+     ],
+     [
+      "acme/om/agent_steps/types/agent_step.py:shape_refusal",
+      0.0357
+     ],
+     [
+      "acme/om/windows/rules.py:exchanges",
+      0.0326
+     ],
+     [
+      "acme/om/storage/utils/translation.py:to_model",
+      0.0265
+     ],
+     [
+      "acme/integrations/model_providers/content.py:storable",
+      0.0224
+     ],
+     [
+      "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl._append",
+      0.0212
+     ],
+     [
+      "acme/infra/base.py:thaw_mapping",
+      0.0178
+     ],
+     [
+      "acme/om/attribution/storage/impl/postgres.py:AttributionStoragePostgresImpl.read_authority",
+      0.0154
+     ],
+     [
+      "acme/om/agent_steps/types/agent_step.py:AgentStep._fits_its_type",
+      0.0133
+     ],
+     [
+      "acme/infra/base.py:_plain",
+      0.0125
+     ],
+     [
+      "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_session",
+      0.0121
+     ],
+     [
+      "acme/om/windows/rules.py:_conversation",
+      0.0121
+     ],
+     [
+      "acme/om/language_models/storage/impl/postgres.py:FillSetStoragePostgresImpl.read_fill_set",
+      0.0118
+     ],
+     [
+      "acme/integrations/model_providers/content.py:_storable_input",
+      0.0113
+     ],
+     [
+      "acme/om/windows/rules.py:_call.<locals>.<genexpr>",
+      0.0109
+     ],
+     [
+      "acme/om/agent_steps/types/content.py:Content.is_plain",
+      0.0083
+     ],
+     [
+      "performance/replay/engine.py:request_chars",
+      0.008
+     ],
+     [
+      "acme/integrations/model_providers/content.py:storable_value",
+      0.0074
+     ],
+     [
+      "acme/om/agent_steps/types/content.py:Content._one_place",
+      0.0059
+     ],
+     [
+      "acme/om/agents/loop_rules.py:answered_call",
+      0.0059
+     ],
+     [
+      "acme/om/windows/rules.py:exchanges.<locals>.<genexpr>",
+      0.0055
+     ],
+     [
+      "acme/om/tenancy/storage/impl/postgres.py:TenancyStoragePostgresImpl.read_principal",
+      0.0047
+     ],
+     [
+      "acme/om/agents/loop_rules.py:pause_waits",
+      0.0046
+     ],
+     [
+      "acme/om/spend_budgets/storage/impl/postgres.py:LedgerStoragePostgresImpl.read_hold",
+      0.0045
+     ],
+     [
+      "acme/om/windows/rules.py:_attempts",
+      0.0044
+     ],
+     [
+      "acme/om/agents/loop_rules.py:open_calls",
+      0.0041
+     ],
+     [
+      "acme/om/tools/native/write_agent_plan.py:current_agent_plan",
+      0.004
+     ],
+     [
+      "acme/infra/base.py:_frozen",
+      0.004
+     ],
+     [
+      "acme/om/agent_steps/types/agent_step.py:AgentStep._a_file_marks_its_input",
+      0.0039
+     ],
+     [
+      "acme/om/spend_budgets/storage/impl/postgres.py:LedgerStoragePostgresImpl.open_spend_hold",
+      0.0037
+     ],
+     [
+      "acme/om/windows/rules.py:_Walk.result",
+      0.0037
+     ],
+     [
+      "acme/om/spend_budgets/storage/impl/postgres.py:LedgerStoragePostgresImpl.append_usage_record",
+      0.0035
+     ],
+     [
+      "acme/om/privacy/impl/manager.py:PrivacyManagerImpl.keyed_hash",
+      0.0035
+     ],
+     [
+      "performance/replay/run.py:replay",
+      0.0033
+     ]
+    ],
+    "by_category": {
+     "database": [
+      [
+       "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+       0.0948
+      ],
+      [
+       "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+       0.0774
+      ],
+      [
+       "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+       0.0715
+      ],
+      [
+       "acme/om/storage/utils/translation.py:to_model",
+       0.0234
+      ],
+      [
+       "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl._append",
+       0.0212
+      ],
+      [
+       "performance/replay/__main__.py:main",
+       0.0155
+      ],
+      [
+       "acme/om/attribution/storage/impl/postgres.py:AttributionStoragePostgresImpl.read_authority",
+       0.0153
+      ],
+      [
+       "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_session",
+       0.0121
+      ]
+     ],
+     "rest": [
+      [
+       "acme/om/agent_steps/types/agent_step.py:shape_refusal",
+       0.0357
+      ],
+      [
+       "acme/integrations/model_providers/content.py:storable",
+       0.0224
+      ],
+      [
+       "acme/infra/base.py:thaw_mapping",
+       0.0176
+      ],
+      [
+       "acme/om/agent_steps/types/agent_step.py:AgentStep._fits_its_type",
+       0.0133
+      ],
+      [
+       "acme/infra/base.py:_plain",
+       0.0125
+      ],
+      [
+       "acme/integrations/model_providers/content.py:_storable_input",
+       0.0113
+      ],
+      [
+       "acme/om/agent_steps/types/content.py:Content.is_plain",
+       0.0083
+      ],
+      [
+       "acme/integrations/model_providers/content.py:storable_value",
+       0.0074
+      ]
+     ],
+     "request rendering": [
+      [
+       "acme/om/windows/rules.py:prompt_bytes",
+       0.0962
+      ],
+      [
+       "acme/om/windows/rules.py:exchanges",
+       0.0326
+      ],
+      [
+       "acme/om/windows/rules.py:_conversation",
+       0.0121
+      ],
+      [
+       "acme/om/windows/rules.py:_call.<locals>.<genexpr>",
+       0.0109
+      ],
+      [
+       "acme/om/windows/rules.py:exchanges.<locals>.<genexpr>",
+       0.0055
+      ],
+      [
+       "acme/om/windows/rules.py:_attempts",
+       0.0044
+      ],
+      [
+       "acme/om/windows/rules.py:_Walk.result",
+       0.0037
+      ],
+      [
+       "acme/om/windows/rules.py:_canonical",
+       0.0031
+      ]
+     ],
+     "key service": [
+      [
+       "acme/infra/keys/kms.py:KeyServiceKmsImpl.unwrap",
+       0.0652
+      ]
+     ],
+     "seal and open": [
+      [
+       "acme/om/privacy/impl/sealed_agent_steps.py:opened",
+       0.0397
+      ],
+      [
+       "acme/om/privacy/impl/manager.py:PrivacyManagerImpl.keyed_hash",
+       0.0035
+      ],
+      [
+       "acme/om/privacy/impl/sealed_agent_steps.py:bound_to",
+       0.0015
+      ],
+      [
+       "acme/om/privacy/impl/sealed_agent_steps.py:sealed",
+       0.0007
+      ]
+     ],
+     "event loop": [
+      [
+       "performance/replay/__main__.py:main",
+       0.0443
+      ],
+      [
+       "acme/om/agents/impl/loop_model_turn.py:LoopModelTurn._stream",
+       0.0004
+      ],
+      [
+       "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+       0.0002
+      ],
+      [
+       "acme/infra/keys/kms.py:KeyServiceKmsImpl.unwrap",
+       0.0001
+      ],
+      [
+       "acme/om/storage/impl/pg_base.py:PgStorageBase._scoped",
+       0.0001
+      ],
+      [
+       "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+       0.0
+      ],
+      [
+       "acme/om/spend_budgets/storage/impl/postgres.py:SpendBudgetStoragePostgresImpl.read_spend_budgets_for",
+       0.0
+      ],
+      [
+       "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+       0.0
+      ]
+     ],
+     "harness": [
+      [
+       "performance/replay/engine.py:request_chars",
+       0.008
+      ],
+      [
+       "performance/replay/engine.py:request_chars.<locals>.<genexpr>",
+       0.0014
+      ],
+      [
+       "acme/integrations/model_providers/scripted.py:parts_of.<locals>.<genexpr>",
+       0.0002
+      ],
+      [
+       "performance/replay/engine.py:Twin.stream",
+       0.0001
+      ],
+      [
+       "acme/integrations/model_providers/scripted.py:_chunks",
+       0.0
+      ],
+      [
+       "performance/replay/tools.py:SyntheticTool.spec",
+       0.0
+      ],
+      [
+       "acme/integrations/model_providers/scripted.py:parts_of",
+       0.0
+      ],
+      [
+       "performance/replay/engine.py:timed_appends.<locals>.timing.<locals>.append",
+       0.0
+      ]
+     ],
+     "object store": [
+      [
+       "acme/infra/buckets/s3.py:BucketsS3Impl.put",
+       0.0001
+      ]
+     ]
+    },
+    "inclusive": [
+     [
+      "performance/replay/run.py:replay",
+      0.8557
+     ],
+     [
+      "acme/om/agents/impl/loop.py:LoopManagerImpl.run",
+      0.8463
+     ],
+     [
+      "performance/replay/engine.py:Engine.run",
+      0.8463
+     ],
+     [
+      "acme/om/agents/impl/loop.py:LoopManagerImpl._run",
+      0.8454
+     ],
+     [
+      "acme/om/agents/impl/loop.py:LoopManagerImpl._drive",
+      0.698
+     ],
+     [
+      "performance/replay/__main__.py:main",
+      0.6306
+     ],
+     [
+      "performance/replay/__main__.py:<module>",
+      0.6306
+     ],
+     [
+      "acme/om/agents/impl/loop_model_turn.py:LoopModelTurn._model_turn",
+      0.3587
+     ],
+     [
+      "acme/om/agent_steps/impl/manager.py:AgentStepsManagerImpl.get_agent_steps",
+      0.3523
+     ],
+     [
+      "acme/om/privacy/impl/routed_agent_steps.py:AgentStepStorageRoutedImpl.read_agent_steps",
+      0.3437
+     ],
+     [
+      "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl.read_agent_steps",
+      0.3436
+     ],
+     [
+      "acme/om/agents/impl/loop_core.py:LoopCore._history",
+      0.299
+     ],
+     [
+      "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._opened",
+      0.2055
+     ],
+     [
+      "acme/om/windows/impl/manager.py:WindowsManagerImpl.render_request",
+      0.1964
+     ],
+     [
+      "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+      0.1565
+     ],
+     [
+      "acme/om/windows/impl/manager.py:_drafted",
+      0.1457
+     ],
+     [
+      "acme/om/windows/rules.py:render_main",
+      0.1456
+     ],
+     [
+      "acme/om/windows/impl/manager.py:WindowsManagerImpl._main.<locals>.render",
+      0.1456
+     ],
+     [
+      "acme/om/windows/impl/manager.py:WindowsManagerImpl._main",
+      0.1456
+     ],
+     [
+      "acme/om/agents/impl/loop_recovery.py:LoopRecovery._recover_calls",
+      0.1431
+     ],
+     [
+      "acme/om/agents/impl/loop_model_turn.py:LoopModelTurn._call",
+      0.1397
+     ],
+     [
+      "acme/om/windows/rules.py:prompt_bytes",
+      0.1201
+     ],
+     [
+      "acme/om/privacy/impl/keys.py:AgentSessionKeysImpl.opened",
+      0.1149
+     ],
+     [
+      "acme/om/agents/impl/loop_tool_turn.py:LoopToolTurn._tool_turn",
+      0.1107
+     ],
+     [
+      "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+      0.1006
+     ],
+     [
+      "acme/om/privacy/impl/sealed_agent_steps.py:opened",
+      0.089
+     ],
+     [
+      "acme/om/windows/impl/gate.py:CallGateSpendBudgetImpl.authorize",
+      0.0768
+     ],
+     [
+      "acme/om/agents/impl/loop_tool_turn.py:LoopToolTurn._settle_call",
+      0.0723
+     ],
+     [
+      "performance/replay/engine.py:timed_appends.<locals>.timing.<locals>.append",
+      0.0719
+     ],
+     [
+      "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+      0.0717
+     ],
+     [
+      "acme/om/storage/utils/translation.py:to_model",
+      0.0711
+     ],
+     [
+      "acme/om/privacy/impl/routed_agent_steps.py:AgentStepStorageRoutedImpl.append_agent_steps",
+      0.0673
+     ],
+     [
+      "acme/om/agent_steps/impl/manager.py:AgentStepsManagerImpl.append_agent_steps",
+      0.0673
+     ],
+     [
+      "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl.append_agent_steps",
+      0.0673
+     ],
+     [
+      "acme/infra/keys/kms.py:KeyServiceKmsImpl.unwrap",
+      0.0653
+     ],
+     [
+      "performance/replay/engine.py:CountedKeys.unwrap",
+      0.0653
+     ],
+     [
+      "acme/om/privacy/impl/keys.py:AgentSessionKeysImpl._unwrap",
+      0.0653
+     ],
+     [
+      "acme/om/windows/rules.py:call_shape",
+      0.0601
+     ],
+     [
+      "acme/om/agent_steps/types/agent_step.py:AgentStep._fits_its_type",
+      0.0591
+     ],
+     [
+      "acme/om/windows/rules.py:_conversation",
+      0.0575
+     ]
+    ]
+   },
+   "calibration": {
+    "database_round_trip_ms": 0.298,
+    "key_unwrap_ms": 0.617
+   },
+   "transactions": {
+    "core": 50212,
+    "activity": 30602,
+    "queue": 465,
+    "admin": 207
+   },
+   "transactions_per_step_written": 11.97,
+   "scan_while_writing": {
+    "rows": 3399,
+    "rows_read_as_text": 3399,
+    "rows_with_marker": 0,
+    "objects": 4,
+    "objects_with_marker": 0,
+    "content_bytes": 4992172,
+    "content_stored_bytes": 5041444,
+    "object_bytes": 118802,
+    "seconds": 0.241
+   },
+   "scan_after": {
+    "rows": 6809,
+    "rows_read_as_text": 6809,
+    "rows_with_marker": 0,
+    "objects": 8,
+    "objects_with_marker": 0,
+    "content_bytes": 10059051,
+    "content_stored_bytes": 10157888,
+    "object_bytes": 297942,
+    "seconds": 0.312
+   }
+  },
+  {
+   "name": "sweep-32",
+   "keys": "kms",
+   "sessions": 32,
+   "turns_per_session": 150,
+   "wall_seconds": 270.973,
+   "steps_written": 21056,
+   "steps_per_second": 77.7,
+   "appends": 20128,
+   "append_ms": {
+    "p50": 67.67,
+    "p95": 209.15,
+    "p99": 338.9
+   },
+   "key_calls": 68800,
+   "key_calls_per_step_written": 3.267,
+   "key_calls_by_asker": {
+    "unwrap for acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._opened": 37600,
+    "unwrap for acme/om/privacy/impl/manager.py:PrivacyManagerImpl.keyed_hash": 20640,
+    "unwrap for acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._sealed": 10496,
+    "generate for acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._sealed": 32,
+    "unwrap for acme/om/privacy/impl/tool_outputs.py:ToolOutputSealKeysImpl.seal": 32
+   },
+   "read": {
+    "history": {
+     "pages": 448,
+     "items": 21056,
+     "items_per_page": 47.0,
+     "seconds": 4.05,
+     "pages_per_second": 110.6,
+     "page_ms": {
+      "p50": 8.2,
+      "p95": 10.26,
+      "p99": 12.72
+     },
+     "key_calls": 448,
+     "key_calls_per_page": 1.0,
+     "profile": {
+      "samples": 1458,
+      "wall_seconds": 4.05,
+      "waiting_share": 0.5547,
+      "shares": {
+       "database": 0.6403,
+       "rest": 0.1466,
+       "key service": 0.106,
+       "event loop": 0.079,
+       "seal and open": 0.0281
+      },
+      "waiting_shares": {
+       "database": 0.4716,
+       "rest": 0.0,
+       "key service": 0.0831,
+       "event loop": 0.0,
+       "seal and open": 0.0
+      },
+      "self": [
+       [
+        "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+        0.19
+       ],
+       [
+        "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+        0.1524
+       ],
+       [
+        "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_session",
+        0.1194
+       ],
+       [
+        "acme/infra/keys/kms.py:KeyServiceKmsImpl.unwrap",
+        0.106
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+        0.0982
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:shape_refusal",
+        0.0833
+       ],
+       [
+        "performance/replay/__main__.py:main",
+        0.0777
+       ],
+       [
+        "acme/om/storage/utils/translation.py:to_model",
+        0.0496
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:opened",
+        0.0281
+       ],
+       [
+        "acme/om/agent_steps/types/content.py:Content.is_plain",
+        0.0219
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStep._fits_its_type",
+        0.0095
+       ],
+       [
+        "acme/integrations/model_providers/content.py:_storable_input",
+        0.0067
+       ],
+       [
+        "acme/integrations/model_providers/content.py:storable",
+        0.0066
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:scoped_session",
+        0.0058
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:role_of",
+        0.0049
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStepType.is_response",
+        0.0043
+       ],
+       [
+        "performance/replay/run.py:read_history",
+        0.0026
+       ],
+       [
+        "acme/om/agent_steps/types/content.py:Content._one_place",
+        0.0026
+       ],
+       [
+        "acme/om/agent_steps/impl/manager.py:AgentStepsManagerImpl.get_agent_steps",
+        0.0018
+       ],
+       [
+        "acme/om/context.py:TenantContext.org_id",
+        0.0014
+       ],
+       [
+        "acme/om/agent_steps/types/header.py:ToolResponseHeader._a_failure_accepts_nothing",
+        0.0011
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:scope_statement",
+        0.0008
+       ],
+       [
+        "acme/om/agent_sessions/impl/manager.py:AgentSessionsManagerImpl._read",
+        0.0008
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:PgStorageBase._session_for",
+        0.0008
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._opened",
+        0.0008
+       ],
+       [
+        "acme/infra/base.py:freeze_mapping",
+        0.0007
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStep._a_file_marks_its_input",
+        0.0006
+       ],
+       [
+        "acme/integrations/model_providers/content.py:storable_value",
+        0.0006
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStep._an_input_wakes_by_its_type",
+        0.0006
+       ]
+      ],
+      "by_category": {
+       "database": [
+        [
+         "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+         0.19
+        ],
+        [
+         "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+         0.1524
+        ],
+        [
+         "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_session",
+         0.1194
+        ],
+        [
+         "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+         0.0982
+        ],
+        [
+         "acme/om/storage/utils/translation.py:to_model",
+         0.049
+        ],
+        [
+         "acme/om/storage/impl/pg_base.py:role_of",
+         0.0049
+        ],
+        [
+         "acme/om/storage/impl/pg_base.py:scoped_session",
+         0.0044
+        ],
+        [
+         "acme/om/storage/impl/pg_base.py:scope_statement",
+         0.0008
+        ]
+       ],
+       "rest": [
+        [
+         "acme/om/agent_steps/types/agent_step.py:shape_refusal",
+         0.0833
+        ],
+        [
+         "acme/om/agent_steps/types/content.py:Content.is_plain",
+         0.0219
+        ],
+        [
+         "acme/om/agent_steps/types/agent_step.py:AgentStep._fits_its_type",
+         0.0095
+        ],
+        [
+         "acme/integrations/model_providers/content.py:_storable_input",
+         0.0067
+        ],
+        [
+         "acme/integrations/model_providers/content.py:storable",
+         0.0066
+        ],
+        [
+         "acme/om/agent_steps/types/agent_step.py:AgentStepType.is_response",
+         0.0043
+        ],
+        [
+         "performance/replay/run.py:read_history",
+         0.0026
+        ],
+        [
+         "acme/om/agent_steps/types/content.py:Content._one_place",
+         0.0026
+        ]
+       ],
+       "key service": [
+        [
+         "acme/infra/keys/kms.py:KeyServiceKmsImpl.unwrap",
+         0.106
+        ]
+       ],
+       "event loop": [
+        [
+         "performance/replay/__main__.py:main",
+         0.0777
+        ],
+        [
+         "acme/om/storage/impl/pg_base.py:scoped_session",
+         0.0014
+        ]
+       ],
+       "seal and open": [
+        [
+         "acme/om/privacy/impl/sealed_agent_steps.py:opened",
+         0.0281
+        ]
+       ]
+      },
+      "inclusive": [
+       [
+        "performance/replay/run.py:read_history",
+        0.8377
+       ],
+       [
+        "acme/om/agent_steps/impl/manager.py:AgentStepsManagerImpl.get_agent_steps",
+        0.6848
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl.read_agent_steps",
+        0.627
+       ],
+       [
+        "acme/om/privacy/impl/routed_agent_steps.py:AgentStepStorageRoutedImpl.read_agent_steps",
+        0.627
+       ],
+       [
+        "performance/replay/__main__.py:main",
+        0.4387
+       ],
+       [
+        "performance/replay/__main__.py:<module>",
+        0.4387
+       ],
+       [
+        "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+        0.314
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._opened",
+        0.313
+       ],
+       [
+        "acme/om/privacy/impl/keys.py:AgentSessionKeysImpl.opened",
+        0.2697
+       ],
+       [
+        "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+        0.1637
+       ],
+       [
+        "acme/om/agent_sessions/impl/manager.py:AgentSessionsManagerImpl._read",
+        0.1503
+       ],
+       [
+        "acme/om/agent_sessions/impl/manager.py:AgentSessionsManagerImpl.get_agent_session",
+        0.1503
+       ],
+       [
+        "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_session",
+        0.1481
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStep._fits_its_type",
+        0.119
+       ],
+       [
+        "acme/om/storage/utils/translation.py:to_model",
+        0.1178
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:shape_refusal",
+        0.1095
+       ],
+       [
+        "acme/infra/keys/kms.py:KeyServiceKmsImpl.unwrap",
+        0.106
+       ],
+       [
+        "performance/replay/engine.py:CountedKeys.unwrap",
+        0.106
+       ],
+       [
+        "acme/om/privacy/impl/keys.py:AgentSessionKeysImpl._unwrap",
+        0.106
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+        0.0982
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:PgStorageBase._session_for",
+        0.0462
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:opened",
+        0.0425
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:scoped_session",
+        0.0405
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:PgStorageBase._scoped",
+        0.0405
+       ],
+       [
+        "acme/om/agent_steps/types/content.py:Content.is_plain",
+        0.0219
+       ],
+       [
+        "acme/integrations/model_providers/content.py:_storable_input",
+        0.0119
+       ],
+       [
+        "acme/integrations/model_providers/content.py:storable",
+        0.0066
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:role_of",
+        0.0049
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStepType.is_response",
+        0.0043
+       ],
+       [
+        "acme/om/agent_steps/types/content.py:Content._one_place",
+        0.0026
+       ],
+       [
+        "acme/integrations/model_providers/content.py:storable_value",
+        0.002
+       ],
+       [
+        "acme/om/context.py:TenantContext.org_id",
+        0.0014
+       ],
+       [
+        "acme/om/agent_steps/types/header.py:ToolResponseHeader._a_failure_accepts_nothing",
+        0.0011
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:scope_statement",
+        0.0008
+       ],
+       [
+        "acme/infra/base.py:freeze_mapping",
+        0.0007
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStep._a_file_marks_its_input",
+        0.0006
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStep._an_input_wakes_by_its_type",
+        0.0006
+       ],
+       [
+        "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys.<locals>.<genexpr>",
+        0.0005
+       ]
+      ]
+     }
+    },
+    "list": {
+     "pages": 20,
+     "items": 640,
+     "items_per_page": 32.0,
+     "seconds": 0.042,
+     "pages_per_second": 471.1,
+     "page_ms": {
+      "p50": 2.19,
+      "p95": 2.74,
+      "p99": 2.95
+     },
+     "key_calls": 0,
+     "key_calls_per_page": 0.0,
+     "profile": {
+      "samples": 17,
+      "wall_seconds": 0.043,
+      "waiting_share": 0.7037,
+      "shares": {
+       "database": 0.9439,
+       "event loop": 0.0561
+      },
+      "waiting_shares": {
+       "database": 0.7037,
+       "event loop": 0.0
+      },
+      "self": [
+       [
+        "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_sessions",
+        0.4813
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+        0.2502
+       ],
+       [
+        "acme/om/storage/utils/translation.py:to_model",
+        0.1303
+       ],
+       [
+        "performance/replay/__main__.py:main",
+        0.0561
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:PgStorageBase._scoped",
+        0.0555
+       ]
+      ],
+      "by_category": {
+       "database": [
+        [
+         "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_sessions",
+         0.4813
+        ],
+        [
+         "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+         0.2502
+        ],
+        [
+         "acme/om/storage/utils/translation.py:to_model",
+         0.1303
+        ],
+        [
+         "acme/om/storage/impl/pg_base.py:PgStorageBase._scoped",
+         0.0555
+        ]
+       ],
+       "event loop": [
+        [
+         "performance/replay/__main__.py:main",
+         0.0561
+        ]
+       ]
+      },
+      "inclusive": [
+       [
+        "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_sessions",
+        0.6672
+       ],
+       [
+        "acme/om/agent_sessions/impl/manager.py:AgentSessionsManagerImpl.get_agent_sessions",
+        0.6672
+       ],
+       [
+        "performance/replay/run.py:read_list",
+        0.6672
+       ],
+       [
+        "performance/replay/__main__.py:main",
+        0.2963
+       ],
+       [
+        "performance/replay/__main__.py:<module>",
+        0.2963
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+        0.2502
+       ],
+       [
+        "acme/om/storage/utils/translation.py:to_model",
+        0.1303
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:PgStorageBase._scoped",
+        0.0555
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:PgStorageBase._session_for",
+        0.0555
+       ]
+      ]
+     }
+    },
+    "key_calls_per_step_read": 0.0213
+   },
+   "said_bytes": 34814496,
+   "kept_chars": 927872,
+   "summaries": 0,
+   "profile": {
+    "samples": 87025,
+    "wall_seconds": 270.973,
+    "waiting_share": 0.0059,
+    "shares": {
+     "database": 0.4378,
+     "rest": 0.1949,
+     "request rendering": 0.134,
+     "key service": 0.0967,
+     "event loop": 0.0664,
+     "seal and open": 0.0611,
+     "harness": 0.009,
+     "idle": 0.0001,
+     "object store": 0.0
+    },
+    "waiting_shares": {
+     "database": 0.0053,
+     "rest": 0.0004,
+     "request rendering": 0.0,
+     "key service": 0.0002,
+     "event loop": 0.0,
+     "seal and open": 0.0,
+     "harness": 0.0,
+     "idle": 0.0001,
+     "object store": 0.0
+    },
+    "self": [
+     [
+      "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+      0.1173
+     ],
+     [
+      "acme/infra/keys/kms.py:KeyServiceKmsImpl.unwrap",
+      0.0971
+     ],
+     [
+      "performance/replay/__main__.py:main",
+      0.0909
+     ],
+     [
+      "acme/om/windows/rules.py:prompt_bytes",
+      0.0868
+     ],
+     [
+      "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+      0.0687
+     ],
+     [
+      "acme/om/privacy/impl/sealed_agent_steps.py:opened",
+      0.0496
+     ],
+     [
+      "acme/om/agent_steps/types/agent_step.py:shape_refusal",
+      0.0352
+     ],
+     [
+      "acme/om/storage/utils/translation.py:to_model",
+      0.0262
+     ],
+     [
+      "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+      0.0183
+     ],
+     [
+      "acme/integrations/model_providers/content.py:storable",
+      0.016
+     ],
+     [
+      "acme/om/windows/rules.py:exchanges",
+      0.0149
+     ],
+     [
+      "acme/infra/base.py:_plain",
+      0.0133
+     ],
+     [
+      "acme/om/tools/registry.py:ToolRegistry.render.<locals>.<genexpr>",
+      0.0126
+     ],
+     [
+      "acme/om/storage/impl/pg_base.py:scoped_session",
+      0.0125
+     ],
+     [
+      "acme/infra/base.py:thaw_mapping",
+      0.0122
+     ],
+     [
+      "acme/om/agent_steps/types/agent_step.py:AgentStep._fits_its_type",
+      0.0113
+     ],
+     [
+      "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl._append",
+      0.0108
+     ],
+     [
+      "acme/om/windows/rules.py:_call.<locals>.<genexpr>",
+      0.0103
+     ],
+     [
+      "acme/om/agent_steps/types/content.py:Content.is_plain",
+      0.009
+     ],
+     [
+      "acme/om/attribution/storage/impl/postgres.py:AttributionStoragePostgresImpl.read_authority",
+      0.0085
+     ],
+     [
+      "acme/om/language_models/storage/impl/postgres.py:FillSetStoragePostgresImpl.read_fill_set",
+      0.0075
+     ],
+     [
+      "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_session",
+      0.0074
+     ],
+     [
+      "acme/integrations/model_providers/content.py:_storable_input",
+      0.007
+     ],
+     [
+      "acme/om/storage/impl/pg_base.py:role_of",
+      0.0063
+     ],
+     [
+      "acme/om/privacy/impl/manager.py:PrivacyManagerImpl.keyed_hash",
+      0.0058
+     ],
+     [
+      "acme/om/windows/rules.py:_conversation",
+      0.0058
+     ],
+     [
+      "acme/om/tenancy/storage/impl/postgres.py:TenancyStoragePostgresImpl.read_principal",
+      0.0055
+     ],
+     [
+      "acme/om/spend_budgets/storage/impl/postgres.py:SpendBudgetStoragePostgresImpl.read_spend_budgets_for",
+      0.0053
+     ],
+     [
+      "acme/om/base.py:new_id",
+      0.0048
+     ],
+     [
+      "acme/om/privacy/impl/sealed_agent_steps.py:sealed",
+      0.0048
+     ],
+     [
+      "acme/om/spend_budgets/storage/impl/postgres.py:_hold_row",
+      0.0047
+     ],
+     [
+      "acme/om/agent_steps/types/content.py:Content._one_place",
+      0.0043
+     ],
+     [
+      "acme/om/agents/loop_rules.py:asked",
+      0.0041
+     ],
+     [
+      "acme/om/spend_budgets/storage/impl/postgres.py:LedgerStoragePostgresImpl.append_usage_record",
+      0.0041
+     ],
+     [
+      "acme/infra/base.py:_frozen",
+      0.0037
+     ],
+     [
+      "performance/replay/engine.py:request_chars",
+      0.0036
+     ],
+     [
+      "acme/integrations/model_providers/scripted.py:parts_of.<locals>.<genexpr>",
+      0.0034
+     ],
+     [
+      "acme/om/spend_budgets/storage/impl/postgres.py:LedgerStoragePostgresImpl.close_spend_hold",
+      0.0033
+     ],
+     [
+      "acme/integrations/model_providers/content.py:storable_value",
+      0.0033
+     ],
+     [
+      "acme/infra/cache/valkey.py:CacheValkeyImpl.invalidate",
+      0.0031
+     ]
+    ],
+    "by_category": {
+     "database": [
+      [
+       "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+       0.1166
+      ],
+      [
+       "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+       0.0685
+      ],
+      [
+       "performance/replay/__main__.py:main",
+       0.0302
+      ],
+      [
+       "acme/om/storage/utils/translation.py:to_model",
+       0.0234
+      ],
+      [
+       "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+       0.0182
+      ],
+      [
+       "acme/om/storage/impl/pg_base.py:scoped_session",
+       0.0113
+      ],
+      [
+       "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl._append",
+       0.0108
+      ],
+      [
+       "acme/om/attribution/storage/impl/postgres.py:AttributionStoragePostgresImpl.read_authority",
+       0.0085
+      ]
+     ],
+     "rest": [
+      [
+       "acme/om/agent_steps/types/agent_step.py:shape_refusal",
+       0.0352
+      ],
+      [
+       "acme/integrations/model_providers/content.py:storable",
+       0.016
+      ],
+      [
+       "acme/infra/base.py:_plain",
+       0.0133
+      ],
+      [
+       "acme/om/tools/registry.py:ToolRegistry.render.<locals>.<genexpr>",
+       0.0126
+      ],
+      [
+       "acme/infra/base.py:thaw_mapping",
+       0.0122
+      ],
+      [
+       "acme/om/agent_steps/types/agent_step.py:AgentStep._fits_its_type",
+       0.0113
+      ],
+      [
+       "acme/om/agent_steps/types/content.py:Content.is_plain",
+       0.009
+      ],
+      [
+       "acme/integrations/model_providers/content.py:_storable_input",
+       0.007
+      ]
+     ],
+     "request rendering": [
+      [
+       "acme/om/windows/rules.py:prompt_bytes",
+       0.0868
+      ],
+      [
+       "acme/om/windows/rules.py:exchanges",
+       0.0149
+      ],
+      [
+       "acme/om/windows/rules.py:_call.<locals>.<genexpr>",
+       0.0103
+      ],
+      [
+       "acme/om/windows/rules.py:_conversation",
+       0.0058
+      ],
+      [
+       "acme/om/windows/rules.py:exchanges.<locals>.<genexpr>",
+       0.0023
+      ],
+      [
+       "acme/om/windows/rules.py:_Walk.result",
+       0.002
+      ],
+      [
+       "acme/om/windows/rules.py:_Walk.files_of",
+       0.0019
+      ],
+      [
+       "acme/om/windows/rules.py:_attempts",
+       0.0017
+      ]
+     ],
+     "key service": [
+      [
+       "acme/infra/keys/kms.py:KeyServiceKmsImpl.unwrap",
+       0.0966
+      ],
+      [
+       "acme/infra/keys/kms.py:KeyServiceKmsImpl.generate",
+       0.0001
+      ],
+      [
+       "acme/infra/keys/kms.py:encryption_context",
+       0.0
+      ]
+     ],
+     "event loop": [
+      [
+       "performance/replay/__main__.py:main",
+       0.0608
+      ],
+      [
+       "acme/om/storage/impl/pg_base.py:scoped_session",
+       0.0013
+      ],
+      [
+       "acme/om/agents/impl/loop_model_turn.py:LoopModelTurn._stream",
+       0.001
+      ],
+      [
+       "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+       0.0006
+      ],
+      [
+       "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.write_agent_session",
+       0.0006
+      ],
+      [
+       "acme/infra/keys/kms.py:KeyServiceKmsImpl.unwrap",
+       0.0005
+      ],
+      [
+       "acme/om/storage/impl/pg_base.py:PgStorageBase._scoped",
+       0.0005
+      ],
+      [
+       "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+       0.0002
+      ]
+     ],
+     "seal and open": [
+      [
+       "acme/om/privacy/impl/sealed_agent_steps.py:opened",
+       0.0496
+      ],
+      [
+       "acme/om/privacy/impl/manager.py:PrivacyManagerImpl.keyed_hash",
+       0.0058
+      ],
+      [
+       "acme/om/privacy/impl/sealed_agent_steps.py:sealed",
+       0.0048
+      ],
+      [
+       "acme/om/privacy/impl/sealed_agent_steps.py:bound_to",
+       0.0009
+      ],
+      [
+       "acme/om/privacy/impl/blobs.py:seal_blob",
+       0.0
+      ],
+      [
+       "acme/om/privacy/impl/sealed_agent_steps.py:says_something",
+       0.0
+      ]
+     ],
+     "harness": [
+      [
+       "performance/replay/engine.py:request_chars",
+       0.0036
+      ],
+      [
+       "acme/integrations/model_providers/scripted.py:parts_of.<locals>.<genexpr>",
+       0.0034
+      ],
+      [
+       "performance/replay/engine.py:request_chars.<locals>.<genexpr>",
+       0.001
+      ],
+      [
+       "performance/replay/engine.py:Twin.stream",
+       0.0003
+      ],
+      [
+       "acme/integrations/model_providers/scripted.py:_chunks",
+       0.0001
+      ],
+      [
+       "performance/replay/engine.py:timed_appends.<locals>.timing.<locals>.append",
+       0.0001
+      ],
+      [
+       "acme/integrations/model_providers/scripted.py:parts_of",
+       0.0001
+      ],
+      [
+       "performance/replay/tools.py:SyntheticTool.run",
+       0.0001
+      ]
+     ],
+     "object store": [
+      [
+       "acme/infra/buckets/s3.py:BucketsS3Impl.put",
+       0.0
+      ]
+     ]
+    },
+    "inclusive": [
+     [
+      "performance/replay/__main__.py:main",
+      0.9002
+     ],
+     [
+      "performance/replay/__main__.py:<module>",
+      0.9002
+     ],
+     [
+      "performance/replay/run.py:replay",
+      0.773
+     ],
+     [
+      "acme/om/agents/impl/loop.py:LoopManagerImpl.run",
+      0.7659
+     ],
+     [
+      "performance/replay/engine.py:Engine.run",
+      0.7659
+     ],
+     [
+      "acme/om/agents/impl/loop.py:LoopManagerImpl._run",
+      0.7651
+     ],
+     [
+      "acme/om/agents/impl/loop.py:LoopManagerImpl._drive",
+      0.7175
+     ],
+     [
+      "acme/om/agents/impl/loop_model_turn.py:LoopModelTurn._model_turn",
+      0.355
+     ],
+     [
+      "acme/om/agent_steps/impl/manager.py:AgentStepsManagerImpl.get_agent_steps",
+      0.2743
+     ],
+     [
+      "acme/om/privacy/impl/routed_agent_steps.py:AgentStepStorageRoutedImpl.read_agent_steps",
+      0.2564
+     ],
+     [
+      "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl.read_agent_steps",
+      0.2563
+     ],
+     [
+      "acme/om/agents/impl/loop_tool_turn.py:LoopToolTurn._tool_turn",
+      0.2404
+     ],
+     [
+      "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._opened",
+      0.1864
+     ],
+     [
+      "acme/om/windows/impl/manager.py:WindowsManagerImpl.render_request",
+      0.1621
+     ],
+     [
+      "acme/om/agents/impl/loop_model_turn.py:LoopModelTurn._call",
+      0.162
+     ],
+     [
+      "acme/om/agents/impl/loop_tool_turn.py:LoopToolTurn._settle_call",
+      0.1484
+     ],
+     [
+      "acme/om/attribution/impl/manager.py:AttributionManagerImpl._at_head",
+      0.1324
+     ],
+     [
+      "acme/om/agent_sessions/impl/manager.py:AgentSessionsManagerImpl.get_agent_session_at_head",
+      0.1324
+     ],
+     [
+      "acme/om/agent_sessions/impl/manager.py:AgentSessionsManagerImpl._at_head",
+      0.1243
+     ],
+     [
+      "acme/om/agents/impl/loop_core.py:LoopCore._history",
+      0.1218
+     ],
+     [
+      "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+      0.1173
+     ],
+     [
+      "acme/om/windows/rules.py:prompt_bytes",
+      0.1096
+     ],
+     [
+      "acme/om/tools/impl/manager.py:ToolsManagerImpl.gate",
+      0.1052
+     ],
+     [
+      "acme/om/privacy/impl/keys.py:AgentSessionKeysImpl.opened",
+      0.1041
+     ],
+     [
+      "acme/om/windows/impl/manager.py:WindowsManagerImpl._main",
+      0.1038
+     ],
+     [
+      "acme/om/windows/rules.py:render_main",
+      0.1038
+     ],
+     [
+      "acme/om/windows/impl/manager.py:WindowsManagerImpl._main.<locals>.render",
+      0.1038
+     ],
+     [
+      "acme/om/windows/impl/manager.py:_drafted",
+      0.1038
+     ],
+     [
+      "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+      0.1024
+     ],
+     [
+      "performance/replay/engine.py:timed_appends.<locals>.timing.<locals>.append",
+      0.1
+     ],
+     [
+      "acme/om/privacy/impl/keys.py:AgentSessionKeysImpl._unwrap",
+      0.0973
+     ],
+     [
+      "performance/replay/engine.py:CountedKeys.unwrap",
+      0.0973
+     ],
+     [
+      "acme/infra/keys/kms.py:KeyServiceKmsImpl.unwrap",
+      0.0972
+     ],
+     [
+      "acme/om/agent_steps/impl/manager.py:AgentStepsManagerImpl.append_agent_steps",
+      0.0963
+     ],
+     [
+      "acme/om/storage/impl/pg_base.py:PgStorageBase._session_for",
+      0.0963
+     ],
+     [
+      "acme/om/privacy/impl/routed_agent_steps.py:AgentStepStorageRoutedImpl.append_agent_steps",
+      0.0962
+     ],
+     [
+      "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl.append_agent_steps",
+      0.0961
+     ],
+     [
+      "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+      0.0961
+     ],
+     [
+      "acme/om/agents/impl/loop_tool_turn.py:LoopToolTurn._requests",
+      0.0919
+     ],
+     [
+      "acme/om/storage/impl/pg_base.py:PgStorageBase._scoped",
+      0.0885
+     ]
+    ]
+   },
+   "calibration": {
+    "database_round_trip_ms": 0.313,
+    "key_unwrap_ms": 0.619
+   },
+   "transactions": {
+    "core": 129802,
+    "activity": 68957,
+    "queue": 607,
+    "admin": 148
+   },
+   "transactions_per_step_written": 9.48,
+   "scan_while_writing": {
+    "rows": 10120,
+    "rows_read_as_text": 10120,
+    "rows_with_marker": 0,
+    "objects": 32,
+    "objects_with_marker": 0,
+    "content_bytes": 28392959,
+    "content_stored_bytes": 28536116,
+    "object_bytes": 929024,
+    "seconds": 1.459
+   },
+   "scan_after": {
+    "rows": 21056,
+    "rows_read_as_text": 21056,
+    "rows_with_marker": 0,
+    "objects": 32,
+    "objects_with_marker": 0,
+    "content_bytes": 47636128,
+    "content_stored_bytes": 47935872,
+    "object_bytes": 929024,
+    "seconds": 1.058
+   }
+  },
+  {
+   "name": "alone",
+   "keys": "memory",
+   "sessions": 1,
+   "turns_per_session": 1500,
+   "wall_seconds": 355.311,
+   "steps_written": 6809,
+   "steps_per_second": 19.2,
+   "appends": 6406,
+   "append_ms": {
+    "p50": 4.58,
+    "p95": 6.01,
+    "p99": 7.31
+   },
+   "key_calls": 30006,
+   "key_calls_per_step_written": 4.407,
+   "key_calls_by_asker": {
+    "unwrap for acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._opened": 20139,
+    "unwrap for acme/om/privacy/impl/manager.py:PrivacyManagerImpl.keyed_hash": 6456,
+    "unwrap for acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._sealed": 3402,
+    "unwrap for acme/om/privacy/impl/tool_outputs.py:ToolOutputSealKeysImpl.seal": 8,
+    "generate for acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._sealed": 1
+   },
+   "read": {
+    "history": {
+     "pages": 137,
+     "items": 6809,
+     "items_per_page": 49.7,
+     "seconds": 0.99,
+     "pages_per_second": 138.4,
+     "page_ms": {
+      "p50": 6.42,
+      "p95": 8.4,
+      "p99": 56.31
+     },
+     "key_calls": 137,
+     "key_calls_per_page": 1.0,
+     "profile": {
+      "samples": 359,
+      "wall_seconds": 0.99,
+      "waiting_share": 0.517,
+      "shares": {
+       "database": 0.7357,
+       "event loop": 0.1185,
+       "rest": 0.1011,
+       "seal and open": 0.0448
+      },
+      "waiting_shares": {
+       "database": 0.517,
+       "event loop": 0.0,
+       "rest": 0.0,
+       "seal and open": 0.0
+      },
+      "self": [
+       [
+        "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_session",
+        0.1629
+       ],
+       [
+        "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+        0.1615
+       ],
+       [
+        "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+        0.1541
+       ],
+       [
+        "performance/replay/__main__.py:main",
+        0.1185
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+        0.1141
+       ],
+       [
+        "acme/om/storage/utils/translation.py:to_model",
+        0.1066
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:opened",
+        0.0408
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:shape_refusal",
+        0.0335
+       ],
+       [
+        "acme/integrations/model_providers/content.py:storable",
+        0.0114
+       ],
+       [
+        "acme/om/agent_steps/types/content.py:Content.is_plain",
+        0.0106
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStep._an_input_wakes_by_its_type",
+        0.0091
+       ],
+       [
+        "acme/om/agent_steps/types/content.py:Content._one_place",
+        0.0083
+       ],
+       [
+        "acme/integrations/model_providers/content.py:_storable_input",
+        0.0076
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStep._fits_its_type",
+        0.0071
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:role_of",
+        0.0062
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:scoped_session",
+        0.0045
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:bound_to",
+        0.0039
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._opened",
+        0.0034
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStep._a_file_marks_its_input",
+        0.0028
+       ],
+       [
+        "performance/replay/run.py:read_history",
+        0.0026
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:PgStorageBase._session_for",
+        0.0026
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStepType.is_response",
+        0.0024
+       ],
+       [
+        "acme/om/agent_steps/impl/manager.py:AgentStepsManagerImpl.get_agent_steps",
+        0.0023
+       ]
+      ],
+      "by_category": {
+       "database": [
+        [
+         "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_session",
+         0.1629
+        ],
+        [
+         "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+         0.1615
+        ],
+        [
+         "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+         0.1541
+        ],
+        [
+         "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+         0.1141
+        ],
+        [
+         "acme/om/storage/utils/translation.py:to_model",
+         0.1066
+        ],
+        [
+         "acme/om/storage/impl/pg_base.py:role_of",
+         0.0062
+        ],
+        [
+         "acme/om/storage/impl/pg_base.py:scoped_session",
+         0.0045
+        ],
+        [
+         "acme/om/storage/impl/pg_base.py:PgStorageBase._session_for",
+         0.0026
+        ]
+       ],
+       "event loop": [
+        [
+         "performance/replay/__main__.py:main",
+         0.1185
+        ]
+       ],
+       "rest": [
+        [
+         "acme/om/agent_steps/types/agent_step.py:shape_refusal",
+         0.0335
+        ],
+        [
+         "acme/integrations/model_providers/content.py:storable",
+         0.0114
+        ],
+        [
+         "acme/om/agent_steps/types/content.py:Content.is_plain",
+         0.0106
+        ],
+        [
+         "acme/om/agent_steps/types/agent_step.py:AgentStep._an_input_wakes_by_its_type",
+         0.0091
+        ],
+        [
+         "acme/om/agent_steps/types/content.py:Content._one_place",
+         0.0083
+        ],
+        [
+         "acme/integrations/model_providers/content.py:_storable_input",
+         0.0076
+        ],
+        [
+         "acme/om/agent_steps/types/agent_step.py:AgentStep._fits_its_type",
+         0.0071
+        ],
+        [
+         "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._opened",
+         0.0034
+        ]
+       ],
+       "seal and open": [
+        [
+         "acme/om/privacy/impl/sealed_agent_steps.py:opened",
+         0.0408
+        ],
+        [
+         "acme/om/privacy/impl/sealed_agent_steps.py:bound_to",
+         0.0039
+        ]
+       ]
+      },
+      "inclusive": [
+       [
+        "performance/replay/run.py:read_history",
+        0.7742
+       ],
+       [
+        "acme/om/agent_steps/impl/manager.py:AgentStepsManagerImpl.get_agent_steps",
+        0.5741
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl.read_agent_steps",
+        0.5278
+       ],
+       [
+        "acme/om/privacy/impl/routed_agent_steps.py:AgentStepStorageRoutedImpl.read_agent_steps",
+        0.5278
+       ],
+       [
+        "performance/replay/__main__.py:main",
+        0.483
+       ],
+       [
+        "performance/replay/__main__.py:<module>",
+        0.483
+       ],
+       [
+        "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+        0.3093
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._opened",
+        0.2186
+       ],
+       [
+        "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_session",
+        0.1975
+       ],
+       [
+        "acme/om/agent_sessions/impl/manager.py:AgentSessionsManagerImpl._read",
+        0.1975
+       ],
+       [
+        "acme/om/agent_sessions/impl/manager.py:AgentSessionsManagerImpl.get_agent_session",
+        0.1975
+       ],
+       [
+        "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+        0.1573
+       ],
+       [
+        "acme/om/privacy/impl/keys.py:AgentSessionKeysImpl.opened",
+        0.1573
+       ],
+       [
+        "acme/om/storage/utils/translation.py:to_model",
+        0.1423
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+        0.1141
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:opened",
+        0.0578
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStep._fits_its_type",
+        0.0536
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:shape_refusal",
+        0.0465
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:PgStorageBase._session_for",
+        0.0434
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:scoped_session",
+        0.0346
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:PgStorageBase._scoped",
+        0.0346
+       ],
+       [
+        "acme/integrations/model_providers/content.py:_storable_input",
+        0.0155
+       ],
+       [
+        "acme/integrations/model_providers/content.py:storable",
+        0.0114
+       ],
+       [
+        "acme/om/agent_steps/types/content.py:Content.is_plain",
+        0.0106
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStep._an_input_wakes_by_its_type",
+        0.0091
+       ],
+       [
+        "acme/om/agent_steps/types/content.py:Content._one_place",
+        0.0083
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:role_of",
+        0.0062
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:bound_to",
+        0.0039
+       ],
+       [
+        "acme/integrations/model_providers/content.py:storable_value",
+        0.0035
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStep._a_file_marks_its_input",
+        0.0028
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStepType.is_response",
+        0.0024
+       ]
+      ]
+     }
+    },
+    "list": {
+     "pages": 20,
+     "items": 20,
+     "items_per_page": 1.0,
+     "seconds": 0.03,
+     "pages_per_second": 674.4,
+     "page_ms": {
+      "p50": 1.35,
+      "p95": 2.46,
+      "p99": 2.89
+     },
+     "key_calls": 0,
+     "key_calls_per_page": 0.0,
+     "profile": {
+      "samples": 12,
+      "wall_seconds": 0.03,
+      "waiting_share": 0.5802,
+      "shares": {
+       "database": 0.8293,
+       "event loop": 0.1707
+      },
+      "waiting_shares": {
+       "database": 0.5802,
+       "event loop": 0.0
+      },
+      "self": [
+       [
+        "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_sessions",
+        0.6241
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+        0.2053
+       ],
+       [
+        "performance/replay/__main__.py:main",
+        0.1707
+       ]
+      ],
+      "by_category": {
+       "database": [
+        [
+         "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_sessions",
+         0.6241
+        ],
+        [
+         "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+         0.2053
+        ]
+       ],
+       "event loop": [
+        [
+         "performance/replay/__main__.py:main",
+         0.1707
+        ]
+       ]
+      },
+      "inclusive": [
+       [
+        "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_sessions",
+        0.7931
+       ],
+       [
+        "acme/om/agent_sessions/impl/manager.py:AgentSessionsManagerImpl.get_agent_sessions",
+        0.7931
+       ],
+       [
+        "performance/replay/run.py:read_list",
+        0.7931
+       ],
+       [
+        "performance/replay/__main__.py:main",
+        0.4198
+       ],
+       [
+        "performance/replay/__main__.py:<module>",
+        0.4198
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+        0.2053
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:scoped_session",
+        0.1691
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:PgStorageBase._scoped",
+        0.1691
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:PgStorageBase._session_for",
+        0.1691
+       ]
+      ]
+     }
+    },
+    "key_calls_per_step_read": 0.0201
+   },
+   "said_bytes": 7249235,
+   "kept_chars": 297654,
+   "summaries": 3,
+   "profile": {
+    "samples": 108158,
+    "wall_seconds": 355.311,
+    "waiting_share": 0.3097,
+    "shares": {
+     "database": 0.4597,
+     "rest": 0.2354,
+     "request rendering": 0.1991,
+     "event loop": 0.0479,
+     "seal and open": 0.0473,
+     "harness": 0.0103,
+     "idle": 0.0001,
+     "object store": 0.0001
+    },
+    "waiting_shares": {
+     "database": 0.3015,
+     "rest": 0.0082,
+     "request rendering": 0.0,
+     "event loop": 0.0,
+     "seal and open": 0.0,
+     "harness": 0.0,
+     "idle": 0.0001,
+     "object store": 0.0001
+    },
+    "self": [
+     [
+      "acme/om/windows/rules.py:prompt_bytes",
+      0.1013
+     ],
+     [
+      "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+      0.0973
+     ],
+     [
+      "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+      0.0838
+     ],
+     [
+      "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+      0.0766
+     ],
+     [
+      "performance/replay/__main__.py:main",
+      0.064
+     ],
+     [
+      "acme/om/privacy/impl/sealed_agent_steps.py:opened",
+      0.0421
+     ],
+     [
+      "acme/om/agent_steps/types/agent_step.py:shape_refusal",
+      0.0369
+     ],
+     [
+      "acme/om/windows/rules.py:exchanges",
+      0.0369
+     ],
+     [
+      "acme/om/storage/utils/translation.py:to_model",
+      0.0301
+     ],
+     [
+      "acme/integrations/model_providers/content.py:storable",
+      0.023
+     ],
+     [
+      "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl._append",
+      0.0227
+     ],
+     [
+      "acme/infra/base.py:thaw_mapping",
+      0.0208
+     ],
+     [
+      "acme/om/attribution/storage/impl/postgres.py:AttributionStoragePostgresImpl.read_authority",
+      0.0159
+     ],
+     [
+      "acme/infra/base.py:_plain",
+      0.0147
+     ],
+     [
+      "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_session",
+      0.0139
+     ],
+     [
+      "acme/om/windows/rules.py:_call.<locals>.<genexpr>",
+      0.0137
+     ],
+     [
+      "acme/om/agent_steps/types/agent_step.py:AgentStep._fits_its_type",
+      0.0128
+     ],
+     [
+      "acme/om/language_models/storage/impl/postgres.py:FillSetStoragePostgresImpl.read_fill_set",
+      0.0127
+     ],
+     [
+      "acme/om/windows/rules.py:_conversation",
+      0.0125
+     ],
+     [
+      "acme/integrations/model_providers/content.py:_storable_input",
+      0.0119
+     ],
+     [
+      "acme/om/agent_steps/types/content.py:Content.is_plain",
+      0.0093
+     ],
+     [
+      "acme/integrations/model_providers/content.py:storable_value",
+      0.0083
+     ],
+     [
+      "performance/replay/engine.py:request_chars",
+      0.0082
+     ],
+     [
+      "acme/om/agent_steps/types/content.py:Content._one_place",
+      0.0065
+     ],
+     [
+      "acme/om/agents/loop_rules.py:answered_call",
+      0.006
+     ],
+     [
+      "acme/om/windows/rules.py:exchanges.<locals>.<genexpr>",
+      0.0057
+     ],
+     [
+      "acme/om/tenancy/storage/impl/postgres.py:TenancyStoragePostgresImpl.read_principal",
+      0.0052
+     ],
+     [
+      "acme/om/windows/rules.py:_attempts",
+      0.005
+     ],
+     [
+      "acme/om/agents/loop_rules.py:pause_waits",
+      0.0048
+     ],
+     [
+      "acme/infra/base.py:_frozen",
+      0.0048
+     ],
+     [
+      "acme/om/spend_budgets/storage/impl/postgres.py:LedgerStoragePostgresImpl.read_hold",
+      0.0048
+     ],
+     [
+      "acme/om/agents/loop_rules.py:open_calls",
+      0.0045
+     ],
+     [
+      "acme/om/tools/native/write_agent_plan.py:current_agent_plan",
+      0.0043
+     ],
+     [
+      "acme/om/spend_budgets/storage/impl/postgres.py:LedgerStoragePostgresImpl.open_spend_hold",
+      0.0042
+     ],
+     [
+      "acme/om/agents/loop_rules.py:asked",
+      0.0042
+     ],
+     [
+      "acme/om/agent_steps/types/agent_step.py:AgentStep._a_file_marks_its_input",
+      0.0038
+     ],
+     [
+      "performance/replay/run.py:replay",
+      0.0036
+     ],
+     [
+      "acme/om/spend_budgets/storage/impl/postgres.py:LedgerStoragePostgresImpl.close_spend_hold",
+      0.0035
+     ],
+     [
+      "acme/om/spend_budgets/storage/impl/postgres.py:LedgerStoragePostgresImpl.append_usage_record",
+      0.0035
+     ],
+     [
+      "acme/om/windows/rules.py:_canonical",
+      0.0034
+     ]
+    ],
+    "by_category": {
+     "database": [
+      [
+       "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+       0.0973
+      ],
+      [
+       "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+       0.0837
+      ],
+      [
+       "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+       0.0764
+      ],
+      [
+       "acme/om/storage/utils/translation.py:to_model",
+       0.0265
+      ],
+      [
+       "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl._append",
+       0.0227
+      ],
+      [
+       "performance/replay/__main__.py:main",
+       0.0172
+      ],
+      [
+       "acme/om/attribution/storage/impl/postgres.py:AttributionStoragePostgresImpl.read_authority",
+       0.0159
+      ],
+      [
+       "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_session",
+       0.0139
+      ]
+     ],
+     "rest": [
+      [
+       "acme/om/agent_steps/types/agent_step.py:shape_refusal",
+       0.0369
+      ],
+      [
+       "acme/integrations/model_providers/content.py:storable",
+       0.023
+      ],
+      [
+       "acme/infra/base.py:thaw_mapping",
+       0.0208
+      ],
+      [
+       "acme/infra/base.py:_plain",
+       0.0147
+      ],
+      [
+       "acme/om/agent_steps/types/agent_step.py:AgentStep._fits_its_type",
+       0.0128
+      ],
+      [
+       "acme/integrations/model_providers/content.py:_storable_input",
+       0.0119
+      ],
+      [
+       "acme/om/agent_steps/types/content.py:Content.is_plain",
+       0.0091
+      ],
+      [
+       "acme/integrations/model_providers/content.py:storable_value",
+       0.0083
+      ]
+     ],
+     "request rendering": [
+      [
+       "acme/om/windows/rules.py:prompt_bytes",
+       0.1013
+      ],
+      [
+       "acme/om/windows/rules.py:exchanges",
+       0.0369
+      ],
+      [
+       "acme/om/windows/rules.py:_call.<locals>.<genexpr>",
+       0.0137
+      ],
+      [
+       "acme/om/windows/rules.py:_conversation",
+       0.0125
+      ],
+      [
+       "acme/om/windows/rules.py:exchanges.<locals>.<genexpr>",
+       0.0057
+      ],
+      [
+       "acme/om/windows/rules.py:_attempts",
+       0.005
+      ],
+      [
+       "acme/om/windows/rules.py:_canonical",
+       0.0034
+      ],
+      [
+       "acme/om/windows/rules.py:_Walk.result",
+       0.0034
+      ]
+     ],
+     "event loop": [
+      [
+       "performance/replay/__main__.py:main",
+       0.0469
+      ],
+      [
+       "acme/om/agents/impl/loop_model_turn.py:LoopModelTurn._stream",
+       0.0005
+      ],
+      [
+       "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+       0.0002
+      ],
+      [
+       "acme/om/storage/impl/pg_base.py:PgStorageBase._scoped",
+       0.0001
+      ],
+      [
+       "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+       0.0001
+      ],
+      [
+       "acme/om/language_models/storage/impl/postgres.py:FillSetStoragePostgresImpl.read_fill_set",
+       0.0
+      ],
+      [
+       "acme/om/spend_budgets/storage/impl/postgres.py:SpendBudgetStoragePostgresImpl.read_spend_budgets_for",
+       0.0
+      ],
+      [
+       "acme/om/attribution/storage/impl/postgres.py:AttributionStoragePostgresImpl.read_authority",
+       0.0
+      ]
+     ],
+     "seal and open": [
+      [
+       "acme/om/privacy/impl/sealed_agent_steps.py:opened",
+       0.0421
+      ],
+      [
+       "acme/om/privacy/impl/manager.py:PrivacyManagerImpl.keyed_hash",
+       0.0033
+      ],
+      [
+       "acme/om/privacy/impl/sealed_agent_steps.py:bound_to",
+       0.0016
+      ],
+      [
+       "acme/om/privacy/impl/sealed_agent_steps.py:sealed",
+       0.0003
+      ]
+     ],
+     "harness": [
+      [
+       "performance/replay/engine.py:request_chars",
+       0.0082
+      ],
+      [
+       "performance/replay/engine.py:request_chars.<locals>.<genexpr>",
+       0.0017
+      ],
+      [
+       "acme/integrations/model_providers/scripted.py:parts_of.<locals>.<genexpr>",
+       0.0002
+      ],
+      [
+       "performance/replay/engine.py:Twin.stream",
+       0.0001
+      ],
+      [
+       "performance/replay/tools.py:SyntheticTool.spec",
+       0.0
+      ],
+      [
+       "acme/integrations/model_providers/scripted.py:parts_of",
+       0.0
+      ]
+     ],
+     "object store": [
+      [
+       "acme/infra/buckets/s3.py:BucketsS3Impl.put",
+       0.0001
+      ]
+     ]
+    },
+    "inclusive": [
+     [
+      "performance/replay/run.py:replay",
+      0.8482
+     ],
+     [
+      "acme/om/agents/impl/loop.py:LoopManagerImpl.run",
+      0.8392
+     ],
+     [
+      "performance/replay/engine.py:Engine.run",
+      0.8392
+     ],
+     [
+      "acme/om/agents/impl/loop.py:LoopManagerImpl._run",
+      0.8383
+     ],
+     [
+      "acme/om/agents/impl/loop.py:LoopManagerImpl._drive",
+      0.6949
+     ],
+     [
+      "performance/replay/__main__.py:main",
+      0.6527
+     ],
+     [
+      "performance/replay/__main__.py:<module>",
+      0.6527
+     ],
+     [
+      "acme/om/agents/impl/loop_model_turn.py:LoopModelTurn._model_turn",
+      0.3733
+     ],
+     [
+      "acme/om/agent_steps/impl/manager.py:AgentStepsManagerImpl.get_agent_steps",
+      0.3307
+     ],
+     [
+      "acme/om/privacy/impl/routed_agent_steps.py:AgentStepStorageRoutedImpl.read_agent_steps",
+      0.3197
+     ],
+     [
+      "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl.read_agent_steps",
+      0.3197
+     ],
+     [
+      "acme/om/agents/impl/loop_core.py:LoopCore._history",
+      0.2883
+     ],
+     [
+      "acme/om/windows/impl/manager.py:WindowsManagerImpl.render_request",
+      0.2085
+     ],
+     [
+      "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+      0.1674
+     ],
+     [
+      "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._opened",
+      0.1634
+     ],
+     [
+      "acme/om/windows/impl/manager.py:_drafted",
+      0.1625
+     ],
+     [
+      "acme/om/windows/rules.py:render_main",
+      0.1624
+     ],
+     [
+      "acme/om/windows/impl/manager.py:WindowsManagerImpl._main.<locals>.render",
+      0.1624
+     ],
+     [
+      "acme/om/windows/impl/manager.py:WindowsManagerImpl._main",
+      0.1624
+     ],
+     [
+      "acme/om/agents/impl/loop_recovery.py:LoopRecovery._recover_calls",
+      0.1416
+     ],
+     [
+      "acme/om/agents/impl/loop_model_turn.py:LoopModelTurn._call",
+      0.1403
+     ],
+     [
+      "acme/om/windows/rules.py:prompt_bytes",
+      0.1299
+     ],
+     [
+      "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+      0.1034
+     ],
+     [
+      "acme/om/agents/impl/loop_tool_turn.py:LoopToolTurn._tool_turn",
+      0.093
+     ],
+     [
+      "acme/om/privacy/impl/sealed_agent_steps.py:opened",
+      0.0924
+     ],
+     [
+      "acme/om/windows/impl/gate.py:CallGateSpendBudgetImpl.authorize",
+      0.0817
+     ],
+     [
+      "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+      0.0766
+     ],
+     [
+      "acme/om/storage/utils/translation.py:to_model",
+      0.0741
+     ],
+     [
+      "acme/om/privacy/impl/keys.py:AgentSessionKeysImpl.opened",
+      0.0696
+     ],
+     [
+      "acme/om/windows/rules.py:call_shape",
+      0.0634
+     ],
+     [
+      "acme/om/windows/rules.py:_conversation",
+      0.0631
+     ],
+     [
+      "acme/om/agent_steps/types/agent_step.py:AgentStep._fits_its_type",
+      0.0611
+     ],
+     [
+      "performance/replay/engine.py:timed_appends.<locals>.timing.<locals>.append",
+      0.0591
+     ],
+     [
+      "acme/om/agents/impl/loop_tool_turn.py:LoopToolTurn._settle_call",
+      0.059
+     ],
+     [
+      "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl.append_agent_steps",
+      0.0555
+     ],
+     [
+      "acme/om/privacy/impl/routed_agent_steps.py:AgentStepStorageRoutedImpl.append_agent_steps",
+      0.0555
+     ],
+     [
+      "acme/om/agent_steps/impl/manager.py:AgentStepsManagerImpl.append_agent_steps",
+      0.0555
+     ],
+     [
+      "acme/om/agent_steps/types/agent_step.py:shape_refusal",
+      0.0483
+     ],
+     [
+      "acme/om/windows/rules.py:exchanges",
+      0.0435
+     ],
+     [
+      "acme/om/tools/impl/manager.py:ToolsManagerImpl.gate",
+      0.0369
+     ]
+    ]
+   },
+   "calibration": {
+    "database_round_trip_ms": 0.3,
+    "key_unwrap_ms": 0.006
+   },
+   "transactions": {
+    "core": 50315,
+    "activity": 30545,
+    "queue": 448,
+    "admin": 192
+   },
+   "transactions_per_step_written": 11.97,
+   "scan_while_writing": {
+    "rows": 3399,
+    "rows_read_as_text": 3399,
+    "rows_with_marker": 0,
+    "objects": 4,
+    "objects_with_marker": 0,
+    "content_bytes": 4992172,
+    "content_stored_bytes": 5041444,
+    "object_bytes": 118802,
+    "seconds": 0.236
+   },
+   "scan_after": {
+    "rows": 6809,
+    "rows_read_as_text": 6809,
+    "rows_with_marker": 0,
+    "objects": 8,
+    "objects_with_marker": 0,
+    "content_bytes": 10059051,
+    "content_stored_bytes": 10157888,
+    "object_bytes": 297942,
+    "seconds": 0.303
+   }
+  },
+  {
+   "name": "sweep-32",
+   "keys": "memory",
+   "sessions": 32,
+   "turns_per_session": 150,
+   "wall_seconds": 232.442,
+   "steps_written": 21056,
+   "steps_per_second": 90.6,
+   "appends": 20128,
+   "append_ms": {
+    "p50": 46.23,
+    "p95": 180.76,
+    "p99": 307.18
+   },
+   "key_calls": 68800,
+   "key_calls_per_step_written": 3.267,
+   "key_calls_by_asker": {
+    "unwrap for acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._opened": 37600,
+    "unwrap for acme/om/privacy/impl/manager.py:PrivacyManagerImpl.keyed_hash": 20640,
+    "unwrap for acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._sealed": 10496,
+    "generate for acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._sealed": 32,
+    "unwrap for acme/om/privacy/impl/tool_outputs.py:ToolOutputSealKeysImpl.seal": 32
+   },
+   "read": {
+    "history": {
+     "pages": 448,
+     "items": 21056,
+     "items_per_page": 47.0,
+     "seconds": 3.578,
+     "pages_per_second": 125.2,
+     "page_ms": {
+      "p50": 7.15,
+      "p95": 9.46,
+      "p99": 11.85
+     },
+     "key_calls": 448,
+     "key_calls_per_page": 1.0,
+     "profile": {
+      "samples": 1263,
+      "wall_seconds": 3.578,
+      "waiting_share": 0.5535,
+      "shares": {
+       "database": 0.7278,
+       "rest": 0.1665,
+       "event loop": 0.0656,
+       "seal and open": 0.0401
+      },
+      "waiting_shares": {
+       "database": 0.5535,
+       "rest": 0.0,
+       "event loop": 0.0,
+       "seal and open": 0.0
+      },
+      "self": [
+       [
+        "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+        0.224
+       ],
+       [
+        "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+        0.1672
+       ],
+       [
+        "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_session",
+        0.1458
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+        0.1044
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:shape_refusal",
+        0.0967
+       ],
+       [
+        "performance/replay/__main__.py:main",
+        0.0645
+       ],
+       [
+        "acme/om/storage/utils/translation.py:to_model",
+        0.0481
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:opened",
+        0.0376
+       ],
+       [
+        "acme/om/agent_steps/types/content.py:Content.is_plain",
+        0.0195
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStep._fits_its_type",
+        0.0129
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:role_of",
+        0.0074
+       ],
+       [
+        "acme/integrations/model_providers/content.py:storable",
+        0.0063
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStepType.is_response",
+        0.006
+       ],
+       [
+        "acme/om/agent_steps/types/content.py:Content._one_place",
+        0.005
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStep._a_file_marks_its_input",
+        0.0043
+       ],
+       [
+        "acme/integrations/model_providers/content.py:_storable_input",
+        0.0043
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:scoped_session",
+        0.0043
+       ],
+       [
+        "performance/replay/run.py:read_history",
+        0.0042
+       ],
+       [
+        "acme/om/agent_steps/impl/manager.py:AgentStepsManagerImpl.get_agent_steps",
+        0.0026
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:bound_to",
+        0.0025
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._opened",
+        0.0016
+       ],
+       [
+        "acme/infra/base.py:_frozen",
+        0.0015
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:scope_statement",
+        0.0009
+       ],
+       [
+        "acme/infra/base.py:freeze_mapping",
+        0.0008
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:PgStorageBase._session_for",
+        0.0008
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:PgStorageBase._scoped",
+        0.0007
+       ]
+      ],
+      "by_category": {
+       "database": [
+        [
+         "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+         0.224
+        ],
+        [
+         "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+         0.1672
+        ],
+        [
+         "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_session",
+         0.1458
+        ],
+        [
+         "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+         0.1027
+        ],
+        [
+         "acme/om/storage/utils/translation.py:to_model",
+         0.0474
+        ],
+        [
+         "acme/om/storage/impl/pg_base.py:role_of",
+         0.0074
+        ],
+        [
+         "acme/om/storage/impl/pg_base.py:scoped_session",
+         0.0043
+        ],
+        [
+         "acme/om/storage/impl/pg_base.py:scope_statement",
+         0.0009
+        ]
+       ],
+       "rest": [
+        [
+         "acme/om/agent_steps/types/agent_step.py:shape_refusal",
+         0.0967
+        ],
+        [
+         "acme/om/agent_steps/types/content.py:Content.is_plain",
+         0.0195
+        ],
+        [
+         "acme/om/agent_steps/types/agent_step.py:AgentStep._fits_its_type",
+         0.0129
+        ],
+        [
+         "acme/integrations/model_providers/content.py:storable",
+         0.0063
+        ],
+        [
+         "acme/om/agent_steps/types/agent_step.py:AgentStepType.is_response",
+         0.006
+        ],
+        [
+         "acme/om/agent_steps/types/content.py:Content._one_place",
+         0.005
+        ],
+        [
+         "acme/om/agent_steps/types/agent_step.py:AgentStep._a_file_marks_its_input",
+         0.0043
+        ],
+        [
+         "acme/integrations/model_providers/content.py:_storable_input",
+         0.0043
+        ]
+       ],
+       "event loop": [
+        [
+         "performance/replay/__main__.py:main",
+         0.0638
+        ],
+        [
+         "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+         0.0017
+        ]
+       ],
+       "seal and open": [
+        [
+         "acme/om/privacy/impl/sealed_agent_steps.py:opened",
+         0.0376
+        ],
+        [
+         "acme/om/privacy/impl/sealed_agent_steps.py:bound_to",
+         0.0025
+        ]
+       ]
+      },
+      "inclusive": [
+       [
+        "performance/replay/run.py:read_history",
+        0.837
+       ],
+       [
+        "acme/om/agent_steps/impl/manager.py:AgentStepsManagerImpl.get_agent_steps",
+        0.6573
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl.read_agent_steps",
+        0.5963
+       ],
+       [
+        "acme/om/privacy/impl/routed_agent_steps.py:AgentStepStorageRoutedImpl.read_agent_steps",
+        0.5963
+       ],
+       [
+        "performance/replay/__main__.py:main",
+        0.4385
+       ],
+       [
+        "performance/replay/__main__.py:<module>",
+        0.4385
+       ],
+       [
+        "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+        0.3657
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._opened",
+        0.2306
+       ],
+       [
+        "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_session",
+        0.1755
+       ],
+       [
+        "acme/om/agent_sessions/impl/manager.py:AgentSessionsManagerImpl._read",
+        0.1755
+       ],
+       [
+        "acme/om/agent_sessions/impl/manager.py:AgentSessionsManagerImpl.get_agent_session",
+        0.1755
+       ],
+       [
+        "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+        0.1738
+       ],
+       [
+        "acme/om/privacy/impl/keys.py:AgentSessionKeysImpl.opened",
+        0.1738
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStep._fits_its_type",
+        0.1352
+       ],
+       [
+        "acme/om/storage/utils/translation.py:to_model",
+        0.132
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:shape_refusal",
+        0.1223
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+        0.1044
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:opened",
+        0.0552
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:PgStorageBase._session_for",
+        0.046
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:PgStorageBase._scoped",
+        0.0379
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:scoped_session",
+        0.0372
+       ],
+       [
+        "acme/om/agent_steps/types/content.py:Content.is_plain",
+        0.0195
+       ],
+       [
+        "acme/integrations/model_providers/content.py:_storable_input",
+        0.0098
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:role_of",
+        0.0074
+       ],
+       [
+        "acme/integrations/model_providers/content.py:storable",
+        0.0063
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStepType.is_response",
+        0.006
+       ],
+       [
+        "acme/om/agent_steps/types/content.py:Content._one_place",
+        0.005
+       ],
+       [
+        "acme/om/agent_steps/types/agent_step.py:AgentStep._a_file_marks_its_input",
+        0.0043
+       ],
+       [
+        "acme/om/privacy/impl/sealed_agent_steps.py:bound_to",
+        0.0025
+       ],
+       [
+        "acme/infra/base.py:freeze_mapping",
+        0.0023
+       ],
+       [
+        "acme/infra/base.py:_frozen",
+        0.0015
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:scope_statement",
+        0.0009
+       ],
+       [
+        "acme/integrations/model_providers/content.py:storable_value",
+        0.0009
+       ]
+      ]
+     }
+    },
+    "list": {
+     "pages": 20,
+     "items": 640,
+     "items_per_page": 32.0,
+     "seconds": 0.047,
+     "pages_per_second": 421.8,
+     "page_ms": {
+      "p50": 2.36,
+      "p95": 3.97,
+      "p99": 4.71
+     },
+     "key_calls": 0,
+     "key_calls_per_page": 0.0,
+     "profile": {
+      "samples": 17,
+      "wall_seconds": 0.047,
+      "waiting_share": 0.5895,
+      "shares": {
+       "database": 0.9155,
+       "rest": 0.0845
+      },
+      "waiting_shares": {
+       "database": 0.5895,
+       "rest": 0.0
+      },
+      "self": [
+       [
+        "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_sessions",
+        0.5747
+       ],
+       [
+        "acme/om/storage/utils/translation.py:to_model",
+        0.1952
+       ],
+       [
+        "acme/om/agent_sessions/types/agent_session.py:AgentSession._one_lineage",
+        0.0845
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+        0.0544
+       ]
+      ],
+      "by_category": {
+       "database": [
+        [
+         "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_sessions",
+         0.5747
+        ],
+        [
+         "acme/om/storage/utils/translation.py:to_model",
+         0.1952
+        ],
+        [
+         "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+         0.0544
+        ]
+       ],
+       "rest": [
+        [
+         "acme/om/agent_sessions/types/agent_session.py:AgentSession._one_lineage",
+         0.0845
+        ]
+       ]
+      },
+      "inclusive": [
+       [
+        "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_sessions",
+        0.8544
+       ],
+       [
+        "acme/om/agent_sessions/impl/manager.py:AgentSessionsManagerImpl.get_agent_sessions",
+        0.8544
+       ],
+       [
+        "performance/replay/run.py:read_list",
+        0.8544
+       ],
+       [
+        "performance/replay/__main__.py:main",
+        0.347
+       ],
+       [
+        "performance/replay/__main__.py:<module>",
+        0.347
+       ],
+       [
+        "acme/om/storage/utils/translation.py:to_model",
+        0.2797
+       ],
+       [
+        "acme/om/agent_sessions/types/agent_session.py:AgentSession._one_lineage",
+        0.0845
+       ],
+       [
+        "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+        0.0544
+       ]
+      ]
+     }
+    },
+    "key_calls_per_step_read": 0.0213
+   },
+   "said_bytes": 34814496,
+   "kept_chars": 927872,
+   "summaries": 0,
+   "profile": {
+    "samples": 73091,
+    "wall_seconds": 232.442,
+    "waiting_share": 0.0063,
+    "shares": {
+     "database": 0.488,
+     "rest": 0.2163,
+     "request rendering": 0.1541,
+     "event loop": 0.0651,
+     "seal and open": 0.0647,
+     "harness": 0.0102,
+     "key service": 0.0014,
+     "object store": 0.0001,
+     "idle": 0.0001
+    },
+    "waiting_shares": {
+     "database": 0.0059,
+     "rest": 0.0004,
+     "request rendering": 0.0,
+     "event loop": 0.0,
+     "seal and open": 0.0,
+     "harness": 0.0,
+     "key service": 0.0,
+     "object store": 0.0,
+     "idle": 0.0001
+    },
+    "self": [
+     [
+      "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+      0.1349
+     ],
+     [
+      "acme/om/windows/rules.py:prompt_bytes",
+      0.0967
+     ],
+     [
+      "performance/replay/__main__.py:main",
+      0.0959
+     ],
+     [
+      "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+      0.0757
+     ],
+     [
+      "acme/om/privacy/impl/sealed_agent_steps.py:opened",
+      0.0533
+     ],
+     [
+      "acme/om/agent_steps/types/agent_step.py:shape_refusal",
+      0.0418
+     ],
+     [
+      "acme/om/storage/utils/translation.py:to_model",
+      0.0339
+     ],
+     [
+      "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+      0.02
+     ],
+     [
+      "acme/infra/base.py:_plain",
+      0.0186
+     ],
+     [
+      "acme/om/windows/rules.py:exchanges",
+      0.0172
+     ],
+     [
+      "acme/integrations/model_providers/content.py:storable",
+      0.0159
+     ],
+     [
+      "acme/om/tools/registry.py:ToolRegistry.render.<locals>.<genexpr>",
+      0.0143
+     ],
+     [
+      "acme/om/windows/rules.py:_call.<locals>.<genexpr>",
+      0.0137
+     ],
+     [
+      "acme/om/storage/impl/pg_base.py:scoped_session",
+      0.0125
+     ],
+     [
+      "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl._append",
+      0.0121
+     ],
+     [
+      "acme/om/agent_steps/types/agent_step.py:AgentStep._fits_its_type",
+      0.0112
+     ],
+     [
+      "acme/infra/base.py:thaw_mapping",
+      0.0111
+     ],
+     [
+      "acme/om/agent_steps/types/content.py:Content.is_plain",
+      0.0105
+     ],
+     [
+      "acme/om/attribution/storage/impl/postgres.py:AttributionStoragePostgresImpl.read_authority",
+      0.0092
+     ],
+     [
+      "acme/om/agent_sessions/storage/impl/postgres.py:AgentSessionStoragePostgresImpl.read_agent_session",
+      0.0081
+     ],
+     [
+      "acme/om/language_models/storage/impl/postgres.py:FillSetStoragePostgresImpl.read_fill_set",
+      0.0072
+     ],
+     [
+      "acme/om/windows/rules.py:_conversation",
+      0.007
+     ],
+     [
+      "acme/om/storage/impl/pg_base.py:role_of",
+      0.0068
+     ],
+     [
+      "acme/integrations/model_providers/content.py:_storable_input",
+      0.0068
+     ],
+     [
+      "acme/om/base.py:new_id",
+      0.0062
+     ],
+     [
+      "acme/om/tenancy/storage/impl/postgres.py:TenancyStoragePostgresImpl.read_principal",
+      0.006
+     ],
+     [
+      "acme/om/privacy/impl/manager.py:PrivacyManagerImpl.keyed_hash",
+      0.0059
+     ],
+     [
+      "acme/om/spend_budgets/storage/impl/postgres.py:SpendBudgetStoragePostgresImpl.read_spend_budgets_for",
+      0.0056
+     ],
+     [
+      "acme/om/spend_budgets/storage/impl/postgres.py:_hold_row",
+      0.0055
+     ],
+     [
+      "acme/om/agent_steps/types/content.py:Content._one_place",
+      0.0052
+     ],
+     [
+      "acme/om/privacy/impl/sealed_agent_steps.py:sealed",
+      0.0047
+     ],
+     [
+      "acme/integrations/model_providers/content.py:storable_value",
+      0.0047
+     ],
+     [
+      "performance/replay/engine.py:request_chars",
+      0.0045
+     ],
+     [
+      "acme/om/agents/loop_rules.py:asked",
+      0.004
+     ],
+     [
+      "acme/integrations/model_providers/scripted.py:parts_of.<locals>.<genexpr>",
+      0.0037
+     ],
+     [
+      "acme/om/spend_budgets/storage/impl/postgres.py:LedgerStoragePostgresImpl.append_usage_record",
+      0.0037
+     ],
+     [
+      "acme/infra/cache/valkey.py:CacheValkeyImpl.invalidate",
+      0.0035
+     ],
+     [
+      "acme/om/spend_budgets/storage/impl/postgres.py:LedgerStoragePostgresImpl.open_spend_hold",
+      0.0035
+     ],
+     [
+      "acme/om/spend_budgets/storage/impl/postgres.py:_settlement_row",
+      0.0034
+     ],
+     [
+      "acme/om/spend_budgets/storage/impl/postgres.py:LedgerStoragePostgresImpl.close_spend_hold",
+      0.0031
+     ]
+    ],
+    "by_category": {
+     "database": [
+      [
+       "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+       0.1344
+      ],
+      [
+       "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+       0.0754
+      ],
+      [
+       "performance/replay/__main__.py:main",
+       0.0354
+      ],
+      [
+       "acme/om/storage/utils/translation.py:to_model",
+       0.0309
+      ],
+      [
+       "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+       0.0199
+      ],
+      [
+       "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl._append",
+       0.012
+      ],
+      [
+       "acme/om/storage/impl/pg_base.py:scoped_session",
+       0.0113
+      ],
+      [
+       "acme/om/attribution/storage/impl/postgres.py:AttributionStoragePostgresImpl.read_authority",
+       0.0091
+      ]
+     ],
+     "rest": [
+      [
+       "acme/om/agent_steps/types/agent_step.py:shape_refusal",
+       0.0418
+      ],
+      [
+       "acme/infra/base.py:_plain",
+       0.0186
+      ],
+      [
+       "acme/integrations/model_providers/content.py:storable",
+       0.0159
+      ],
+      [
+       "acme/om/tools/registry.py:ToolRegistry.render.<locals>.<genexpr>",
+       0.0143
+      ],
+      [
+       "acme/om/agent_steps/types/agent_step.py:AgentStep._fits_its_type",
+       0.0112
+      ],
+      [
+       "acme/infra/base.py:thaw_mapping",
+       0.0111
+      ],
+      [
+       "acme/om/agent_steps/types/content.py:Content.is_plain",
+       0.0105
+      ],
+      [
+       "acme/integrations/model_providers/content.py:_storable_input",
+       0.0068
+      ]
+     ],
+     "request rendering": [
+      [
+       "acme/om/windows/rules.py:prompt_bytes",
+       0.0967
+      ],
+      [
+       "acme/om/windows/rules.py:exchanges",
+       0.0172
+      ],
+      [
+       "acme/om/windows/rules.py:_call.<locals>.<genexpr>",
+       0.0137
+      ],
+      [
+       "acme/om/windows/rules.py:_conversation",
+       0.007
+      ],
+      [
+       "acme/om/windows/rules.py:_Walk.files_of",
+       0.0031
+      ],
+      [
+       "acme/om/windows/rules.py:exchanges.<locals>.<genexpr>",
+       0.0024
+      ],
+      [
+       "acme/om/windows/rules.py:_attempts",
+       0.0023
+      ],
+      [
+       "acme/om/windows/rules.py:_Walk.result",
+       0.0023
+      ]
+     ],
+     "event loop": [
+      [
+       "performance/replay/__main__.py:main",
+       0.0605
+      ],
+      [
+       "acme/om/storage/impl/pg_base.py:scoped_session",
+       0.0012
+      ],
+      [
+       "acme/om/agents/impl/loop_model_turn.py:LoopModelTurn._stream",
+       0.0012
+      ],
+      [
+       "acme/om/storage/impl/pg_base.py:PgStorageBase._scoped",
+       0.0005
+      ],
+      [
+       "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+       0.0005
+      ],
+      [
+       "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+       0.0002
+      ],
+      [
+       "acme/om/storage/impl/pg_base.py:PgStorageBase._session_for",
+       0.0001
+      ],
+      [
+       "acme/om/attribution/storage/impl/postgres.py:AttributionStoragePostgresImpl.read_authority",
+       0.0001
+      ]
+     ],
+     "seal and open": [
+      [
+       "acme/om/privacy/impl/sealed_agent_steps.py:opened",
+       0.0533
+      ],
+      [
+       "acme/om/privacy/impl/manager.py:PrivacyManagerImpl.keyed_hash",
+       0.0059
+      ],
+      [
+       "acme/om/privacy/impl/sealed_agent_steps.py:sealed",
+       0.0047
+      ],
+      [
+       "acme/om/privacy/impl/sealed_agent_steps.py:bound_to",
+       0.0007
+      ],
+      [
+       "acme/om/privacy/impl/blobs.py:seal_blob",
+       0.0
+      ]
+     ],
+     "harness": [
+      [
+       "performance/replay/engine.py:request_chars",
+       0.0045
+      ],
+      [
+       "acme/integrations/model_providers/scripted.py:parts_of.<locals>.<genexpr>",
+       0.0037
+      ],
+      [
+       "performance/replay/engine.py:request_chars.<locals>.<genexpr>",
+       0.0011
+      ],
+      [
+       "performance/replay/engine.py:Twin.stream",
+       0.0003
+      ],
+      [
+       "acme/integrations/model_providers/scripted.py:_chunks",
+       0.0002
+      ],
+      [
+       "performance/replay/engine.py:CountedKeys._count",
+       0.0002
+      ],
+      [
+       "acme/integrations/model_providers/scripted.py:parts_of",
+       0.0001
+      ],
+      [
+       "performance/replay/tools.py:SyntheticTool.spec",
+       0.0001
+      ]
+     ],
+     "key service": [
+      [
+       "acme/infra/keys/memory.py:KeyServiceMemoryImpl._wrapping_key",
+       0.0009
+      ],
+      [
+       "acme/infra/keys/memory.py:KeyServiceMemoryImpl.unwrap",
+       0.0004
+      ],
+      [
+       "acme/infra/keys/memory.py:bound_name",
+       0.0001
+      ]
+     ],
+     "object store": [
+      [
+       "acme/infra/buckets/s3.py:BucketsS3Impl.put",
+       0.0001
+      ]
+     ]
+    },
+    "inclusive": [
+     [
+      "performance/replay/__main__.py:main",
+      0.8956
+     ],
+     [
+      "performance/replay/__main__.py:<module>",
+      0.8956
+     ],
+     [
+      "performance/replay/run.py:replay",
+      0.7652
+     ],
+     [
+      "performance/replay/engine.py:Engine.run",
+      0.7586
+     ],
+     [
+      "acme/om/agents/impl/loop.py:LoopManagerImpl.run",
+      0.7586
+     ],
+     [
+      "acme/om/agents/impl/loop.py:LoopManagerImpl._run",
+      0.7574
+     ],
+     [
+      "acme/om/agents/impl/loop.py:LoopManagerImpl._drive",
+      0.7047
+     ],
+     [
+      "acme/om/agents/impl/loop_model_turn.py:LoopModelTurn._model_turn",
+      0.369
+     ],
+     [
+      "acme/om/agent_steps/impl/manager.py:AgentStepsManagerImpl.get_agent_steps",
+      0.2663
+     ],
+     [
+      "acme/om/privacy/impl/routed_agent_steps.py:AgentStepStorageRoutedImpl.read_agent_steps",
+      0.2471
+     ],
+     [
+      "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl.read_agent_steps",
+      0.247
+     ],
+     [
+      "acme/om/agents/impl/loop_tool_turn.py:LoopToolTurn._tool_turn",
+      0.2153
+     ],
+     [
+      "acme/om/windows/impl/manager.py:WindowsManagerImpl.render_request",
+      0.1685
+     ],
+     [
+      "acme/om/agents/impl/loop_model_turn.py:LoopModelTurn._call",
+      0.1657
+     ],
+     [
+      "acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._opened",
+      0.1444
+     ],
+     [
+      "acme/om/storage/impl/pg_base.py:ScopedConnection.execute",
+      0.1349
+     ],
+     [
+      "acme/om/agent_sessions/impl/manager.py:AgentSessionsManagerImpl.get_agent_session_at_head",
+      0.1336
+     ],
+     [
+      "acme/om/attribution/impl/manager.py:AttributionManagerImpl._at_head",
+      0.1336
+     ],
+     [
+      "acme/om/agents/impl/loop_tool_turn.py:LoopToolTurn._settle_call",
+      0.1319
+     ],
+     [
+      "acme/om/agent_sessions/impl/manager.py:AgentSessionsManagerImpl._at_head",
+      0.1249
+     ],
+     [
+      "acme/om/windows/rules.py:prompt_bytes",
+      0.1225
+     ],
+     [
+      "acme/om/windows/rules.py:render_main",
+      0.1215
+     ],
+     [
+      "acme/om/windows/impl/manager.py:WindowsManagerImpl._main.<locals>.render",
+      0.1215
+     ],
+     [
+      "acme/om/windows/impl/manager.py:_drafted",
+      0.1215
+     ],
+     [
+      "acme/om/windows/impl/manager.py:WindowsManagerImpl._main",
+      0.1215
+     ],
+     [
+      "acme/om/agent_steps/storage/impl/postgres.py:AgentStepStoragePostgresImpl.read_agent_steps",
+      0.1207
+     ],
+     [
+      "acme/om/agents/impl/loop_core.py:LoopCore._history",
+      0.1188
+     ],
+     [
+      "acme/om/privacy/storage/impl/postgres.py:PrivacyStoragePostgresImpl.read_keys",
+      0.1068
+     ],
+     [
+      "acme/om/storage/impl/pg_base.py:PgStorageBase._session_for",
+      0.1065
+     ],
+     [
+      "acme/om/tools/impl/manager.py:ToolsManagerImpl.gate",
+      0.1037
+     ],
+     [
+      "acme/om/storage/impl/pg_base.py:PgStorageBase._scoped",
+      0.0983
+     ],
+     [
+      "acme/om/storage/impl/pg_base.py:scoped_session",
+      0.0974
+     ],
+     [
+      "acme/om/attribution/impl/manager.py:AttributionManagerImpl.authorize_call",
+      0.0902
+     ],
+     [
+      "acme/om/privacy/impl/sealed_agent_steps.py:opened",
+      0.085
+     ],
+     [
+      "acme/om/agents/impl/loop_tool_turn.py:LoopToolTurn._requests",
+      0.0834
+     ],
+     [
+      "acme/om/windows/impl/gate.py:CallGateSpendBudgetImpl.authorize",
+      0.0833
+     ],
+     [
+      "acme/om/storage/utils/translation.py:to_model",
+      0.0815
+     ],
+     [
+      "performance/replay/engine.py:timed_appends.<locals>.timing.<locals>.append",
+      0.0744
+     ],
+     [
+      "acme/om/privacy/impl/routed_agent_steps.py:AgentStepStorageRoutedImpl.append_agent_steps",
+      0.0719
+     ],
+     [
+      "acme/om/agent_steps/impl/manager.py:AgentStepsManagerImpl.append_agent_steps",
+      0.0719
+     ]
+    ]
+   },
+   "calibration": {
+    "database_round_trip_ms": 0.298,
+    "key_unwrap_ms": 0.006
+   },
+   "transactions": {
+    "core": 129873,
+    "activity": 68885,
+    "queue": 586,
+    "admin": 129
+   },
+   "transactions_per_step_written": 9.47,
+   "scan_while_writing": {
+    "rows": 10112,
+    "rows_read_as_text": 10112,
+    "rows_with_marker": 0,
+    "objects": 32,
+    "objects_with_marker": 0,
+    "content_bytes": 28402441,
+    "content_stored_bytes": 28545424,
+    "object_bytes": 929024,
+    "seconds": 1.389
+   },
+   "scan_after": {
+    "rows": 21056,
+    "rows_read_as_text": 21056,
+    "rows_with_marker": 0,
+    "objects": 32,
+    "objects_with_marker": 0,
+    "content_bytes": 47636128,
+    "content_stored_bytes": 47935872,
+    "object_bytes": 929024,
+    "seconds": 0.484
+   }
+  },
+  {
+   "name": "sweep-1-unprofiled",
+   "keys": "kms",
+   "sessions": 1,
+   "turns_per_session": 150,
+   "wall_seconds": 14.843,
+   "steps_written": 658,
+   "steps_per_second": 44.3,
+   "appends": 629,
+   "append_ms": {
+    "p50": 6.09,
+    "p95": 8.06,
+    "p99": 10.57
+   },
+   "key_calls": 2150,
+   "key_calls_per_step_written": 3.267,
+   "key_calls_by_asker": {
+    "unwrap for acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._opened": 1175,
+    "unwrap for acme/om/privacy/impl/manager.py:PrivacyManagerImpl.keyed_hash": 645,
+    "unwrap for acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._sealed": 328,
+    "generate for acme/om/privacy/impl/sealed_agent_steps.py:AgentStepStorageSealedImpl._sealed": 1,
+    "unwrap for acme/om/privacy/impl/tool_outputs.py:ToolOutputSealKeysImpl.seal": 1
+   },
+   "read": {
+    "history": {
+     "pages": 14,
+     "items": 658,
+     "items_per_page": 47.0,
+     "seconds": 0.111,
+     "pages_per_second": 126.2,
+     "page_ms": {
+      "p50": 7.86,
+      "p95": 9.16,
+      "p99": 9.33
+     },
+     "key_calls": 14,
+     "key_calls_per_page": 1.0,
+     "profile": null
+    },
+    "list": {
+     "pages": 20,
+     "items": 20,
+     "items_per_page": 1.0,
+     "seconds": 0.027,
+     "pages_per_second": 753.5,
+     "page_ms": {
+      "p50": 1.22,
+      "p95": 2.51,
+      "p99": 3.41
+     },
+     "key_calls": 0,
+     "key_calls_per_page": 0.0,
+     "profile": null
+    },
+    "key_calls_per_step_read": 0.0213
+   },
+   "said_bytes": 1087953,
+   "kept_chars": 28996,
+   "summaries": 0,
+   "profile": null,
+   "calibration": {
+    "database_round_trip_ms": 0.295,
+    "key_unwrap_ms": 0.59
+   },
+   "transactions": {
+    "core": 4026,
+    "activity": 2062,
+    "queue": 28,
+    "admin": 13
+   },
+   "transactions_per_step_written": 9.31,
+   "scan_while_writing": {
+    "rows": 315,
+    "rows_read_as_text": 315,
+    "rows_with_marker": 0,
+    "objects": 1,
+    "objects_with_marker": 0,
+    "content_bytes": 887406,
+    "content_stored_bytes": 891864,
+    "object_bytes": 29032,
+    "seconds": 0.131
+   },
+   "scan_after": {
+    "rows": 658,
+    "rows_read_as_text": 658,
+    "rows_with_marker": 0,
+    "objects": 1,
+    "objects_with_marker": 0,
+    "content_bytes": 1488629,
+    "content_stored_bytes": 1497996,
+    "object_bytes": 29032,
+    "seconds": 0.117
+   }
+  }
+ ],
+ "finished": "2026-10-25T03:51:22Z"
+}
