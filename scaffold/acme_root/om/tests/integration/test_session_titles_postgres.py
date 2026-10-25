@@ -7,11 +7,11 @@ row that moved since its read."""
 
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 import pytest
-from sqlalchemy import Update, text
+from sqlalchemy import CursorResult, Update, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from acme.infra.impl.local import InfraLocalImpl
@@ -71,10 +71,13 @@ def marker() -> str:
 async def query(
     pg_sessions: LoginSessions, org_id: UUID, statement: str, **values: Any
 ) -> list[dict[str, Any]]:
-    """What a reader of the core database sees, under the tenant's scope."""
+    """What a reader of the core database sees, under the tenant's scope; a
+    statement that answers no rows, a write, answers none."""
     async with pg_sessions[DatabaseRole.CORE]() as session:
         await set_scope(session, org_id, None, None)
-        result = await session.execute(text(statement), {"org": org_id, **values})
+        result = cast(
+            CursorResult[Any], await session.execute(text(statement), {"org": org_id, **values})
+        )
         rows = [dict(row) for row in result.mappings()] if result.returns_rows else []
         await session.commit()
         return rows

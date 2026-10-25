@@ -99,7 +99,7 @@ class AgentSessionKeysImpl(AgentSessionKeysInterface):
         tenant = await self._tenant_title_key(org_id, found.tenant)
         bound = title_key_bound(org_id, agent_session_id)
         what = f"the title key of session {agent_session_id}"
-        wrapped = found.sessions.get(agent_session_id)
+        wrapped = found.by_session().get(agent_session_id)
         if wrapped is not None:
             return open_blob(tenant.key, wrapped, bound, what)
         made = os.urandom(TITLE_KEY_BYTES)
@@ -136,7 +136,7 @@ class AgentSessionKeysImpl(AgentSessionKeysInterface):
                 title_key_bound(org_id, agent_session_id),
                 f"the title key of session {agent_session_id}",
             )
-            for agent_session_id, wrapped in found.sessions.items()
+            for agent_session_id, wrapped in found.sessions
         }
 
     async def rewrap(self, org_id: UUID, before: datetime, limit: int) -> int:

@@ -83,10 +83,13 @@ class TenantTitleKey(Identifiable, Created):
 
 class TitleKeys(OmBase):
     """What one read finds for a page of titles: the tenant's title key, and
-    the wrapped title key of each session that holds one."""
+    the wrapped title key of each session that holds one, by its id."""
 
     tenant: TenantTitleKey | None = None
-    sessions: dict[UUID, bytes] = Field(default_factory=dict, repr=False)
+    sessions: tuple[tuple[UUID, bytes], ...] = Field(default=(), repr=False)
+
+    def by_session(self) -> dict[UUID, bytes]:
+        return dict(self.sessions)
 
 
 class AgentSessionKey(Identifiable, Created):

@@ -87,11 +87,11 @@ class PrivacyStorageMemoryImpl(MemoryStorageBase, PrivacyStorageInterface):
         named = set(agent_session_ids)
         return TitleKeys(
             tenant=tenant,
-            sessions={
-                r.agent_session_id: r.title_key
+            sessions=tuple(
+                (r.agent_session_id, r.title_key)
                 for r in self._rows(self._records, org_id)
                 if r.agent_session_id in named and r.title_key is not None and r.revoked_at is None
-            },
+            ),
         )
 
     async def add_tenant_title_key(self, org_id: UUID, key: TenantTitleKey) -> TenantTitleKey:

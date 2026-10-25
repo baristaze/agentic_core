@@ -135,13 +135,13 @@ class PrivacyStorageContract:
         await storage.add_key(org, make_key(session, 1))
         found = await storage.read_title_keys(org, [session, plain, new_id()])
         assert found.tenant == tenant
-        assert found.sessions == {session: first.title_key, plain: took.title_key}
+        assert found.by_session() == {session: first.title_key, plain: took.title_key}
         revoked = await storage.revoke(org, revocation(session))
         assert revoked.title_key is None and revoked.revoked_at is not None
         assert all(key.wrapped is None for key in (await storage.read_keys(org, session)).keys)
         assert (await storage.add_title_key(org, titled(session))).title_key is None
         found = await storage.read_title_keys(org, [session, other])
-        assert found.sessions == {other: kept.title_key}
+        assert found.by_session() == {other: kept.title_key}
 
     async def test_a_policy_is_chosen_once_over_the_record_its_title_wrote(
         self, storage: PrivacyStorageInterface
@@ -301,7 +301,7 @@ class PrivacyStorageContract:
         assert await storage.read_privacy(org_a, session) == titled_a
         found = await storage.read_title_keys(org_a, [session])
         assert titled_a.title_key is not None
-        assert found == TitleKeys(tenant=tenant_key, sessions={session: titled_a.title_key})
+        assert found == TitleKeys(tenant=tenant_key, sessions=((session, titled_a.title_key),))
         ring = await storage.read_keys(org_a, session)
         assert not ring.revoked and ring.keys == (key,)
 

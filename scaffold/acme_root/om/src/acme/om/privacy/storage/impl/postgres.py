@@ -173,9 +173,9 @@ class PrivacyStoragePostgresImpl(PgStorageBase, PrivacyStorageInterface):
             return TitleKeys()
         return TitleKeys(
             tenant=to_model(rows[0].TenantTitleKeys, TenantTitleKey),
-            sessions={
-                row.agent_session_id: row.title_key for row in rows if row.title_key is not None
-            },
+            sessions=tuple(
+                (row.agent_session_id, row.title_key) for row in rows if row.title_key is not None
+            ),
         )
 
     async def add_tenant_title_key(self, org_id: UUID, key: TenantTitleKey) -> TenantTitleKey:
