@@ -5,45 +5,47 @@ included, stay on its GitHub release. Releases are tagged
 `vMAJOR.MINOR.PATCH`; see `CONTRIBUTING.md` for what bumps which
 number.
 
-## 0.23.0 (2026-10-23)
+## 0.24.0 (2026-10-25)
 
-The engine's base moves to the guideline's v0.65.0: a call whose refusal
-costs its caller what it holds goes through under load, and every blob
-crosses by a presigned URL, as a multipart upload that resumes. Minor,
-with the guideline's reversals: the presigned POST and the presign that
-may answer `None` go, and CTX-07 allows a second context variable.
+The engine is measured on the path a deployment runs: `performance/`
+replays a long session's shape with every step sealed. The loop no
+longer opens again what it wrote, and a session's title is sealed like
+the rest of its content. Minor, with one reversal: a read answers a
+session's title sealed, and what shows it opens it.
 
 ### Added
 
-- A holder's calls, from the guideline's v0.65.0: a route marked
-  `HOLDER_CALL` is counted in a `holds` lane of its own and a
-  per-credential budget of its own, and takes a reserve beside a full
-  database pool (ADRs 0106 and 0108). A job's completion is one, since a
-  job times out at its deadline and a completion shed with the writes
-  loses its work. The storage root keeps the engine's purge login beside
-  the reserves, and the purge pool opens none; the connection budget
-  counts both (#127).
-- Multipart transfers in Buckets, from the guideline's v0.65.0: an upload
-  that stops resumes by its id, sending only the parts it still misses;
-  the Python client, the CLI (`--resume ID`), and the TypeScript client's
-  `uploadFile` send parts straight to the store (ADR 0107) (#127).
+- `performance/`, outside the scaffold: a long session's shape, kept as
+  numbers and tool classes, replayed through the engine as the session
+  runner wires it, every step sealed, on a Postgres per role, Valkey,
+  MinIO, and the KMS adapter at a digest-pinned emulator or the key
+  twin. A read pass pages each history and the session list as the API
+  does, and a sampler ranks where the wall time goes. `make performance`
+  runs it on its own compose project, and `make performance-check` runs
+  a short replay in CI (#129).
 
 ### Changed
 
-- A blob crosses only by a presigned URL, at any size, as a multipart
-  upload, and arch-check refuses a presign that may answer `None`: both
-  reverse the guideline's earlier contract. CTX-07 allows a second
-  context variable, the holder's call's mark, a reversal in part. The
-  engine's core migration `202610150049` takes the guideline's
-  `202610221532` as its parent. The spec and the lens index link the
-  guideline at v0.65.0 (#127).
-
-### Removed
-
-- `presign_post`, and the media route that served a file's content
-  through the API (#127).
-
-### Fixed
-
-- A copy's first commit and a render hold only what the scaffold's
-  `.gitignore` files keep (#127).
+- A run holds what it reads and writes, for the run alone: its own
+  appends join its history with no read back, an append opens nothing
+  again, and recovering a lost run's calls reads on from the history
+  read at its start. The key ring's revocation rides the statement that
+  reads its versions. On the 1,500-turn replay with the KMS emulator,
+  steps a second rise from 17.8 to 23.2, key calls for each step
+  written fall from 4.41 to 2.86, and a run's start at its median from
+  662 to 383 ms (#131).
+- A session's title is content, sealed at rest under a title key of its
+  own, wrapped under the tenant's title key, which the key service
+  wraps (ADR 1042). A page of titles opens with one read of its title
+  keys and one unwrap. A revocation clears the title key in its commit,
+  so the title reads absent while the session keeps its place; a
+  rotation rewraps the tenant's key, and a tenant's purge takes it. A
+  memory-only session's title is kept at rest, sealed. This reverses
+  the earlier contract: a read, `create_agent_session` included,
+  answers a title sealed, and what shows one opens it with
+  `open_titles`, as the API, the sub-agent tools, and the demo do
+  (#132).
+- The core migration `202610250340` only adds: a row this release
+  writes holds `(sealed)` in the column the release before reads, and
+  the maintenance sweep seals each existing title in place, never
+  dropping one (#132).
