@@ -331,12 +331,17 @@ class WindowsManagerImpl(WindowsManagerInterface):
         plan: str | None,
     ) -> rules.Draft:
         def render() -> rules.Draft:
+            # The render walks the history once; only a refusal walks it
+            # again, to tell an open tool call, which comes first, from a
+            # refusal of the render's own inputs.
             try:
                 return rules.render_main(steps, kind, fill, fill_set_version, plan, self._policy)
-            except rules.OpenToolCall as open_call:
-                raise PreconditionFailed(
-                    "a tool call is still open; its response comes first"
-                ) from open_call
+            except ValueError as refused:
+                if rules.open_use(steps, rules.exchanges(steps)) is not None:
+                    raise PreconditionFailed(
+                        "a tool call is still open; its response comes first"
+                    ) from refused
+                raise
 
         return _drafted(render)
 

@@ -546,11 +546,6 @@ class Draft:
     prompt: bytes
 
 
-class OpenToolCall(ValueError):
-    """A main request asked for while a tool call is still open: its
-    response comes first, and the caller's to settle."""
-
-
 def _tools(kind: KindPrompts) -> tuple[ToolSpec, ...]:
     """The tool definitions: the kind's sorted by name, then those its
     session's loads added, in the order they were added, so a load leaves
@@ -890,11 +885,11 @@ def render_main(
     """The main model role's request over the whole history: the pinned zone
     and the latest summary, the window since the summary, the inputs no
     request has delivered, and the plan. Every tool call in the window is
-    answered; an open one is the caller's to settle first (`OpenToolCall`).
-    It runs with thinking off while a switch holds it off (`thinking_held`)."""
+    answered; an open one is the caller's to settle first. It runs with
+    thinking off while a switch holds it off (`thinking_held`)."""
     ex = exchanges(steps)
     if open_use(steps, ex) is not None:
-        raise OpenToolCall("a tool call is still open; its response comes before the next request")
+        raise ValueError("a tool call is still open; its response comes before the next request")
     if fill.thinking_budget is not None and thinking_held(steps):
         fill = fill.model_copy(update={"thinking_budget": None})
     summary = latest_summary(steps)
