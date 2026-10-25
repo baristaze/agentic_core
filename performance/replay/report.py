@@ -212,7 +212,8 @@ def render(results: dict[str, Any], cited: str) -> str:
         parts += [
             "### A run's start",
             "",
-            "From the loop's run to its first model call, over every run of the point; the last is the longest history's.",
+            "From the loop's run to its first model call, over every run of the point. The last is the point's last run:"
+            " alone, the one on the longest history.",
             "",
             *_starts(results),
             "",
