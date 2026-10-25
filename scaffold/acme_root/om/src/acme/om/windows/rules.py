@@ -20,6 +20,7 @@ zone quotes principals' messages alone."""
 
 import json
 import math
+import weakref
 from bisect import bisect_right
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -198,14 +199,52 @@ def step_chars(step: AgentStep, policy: CompactionPolicy) -> int:
     return total + sum(len(thought.text) for thought in step.children.thinking)
 
 
+def _encoded(value: object) -> bytes:
+    """JSON with every key in order, in UTF-8. A model's dump is a tree, so
+    the encoder skips its search for cycles."""
+    text = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, check_circular=False
+    )
+    return text.encode()
+
+
+_FRAME = (b'{"attachments":', b',"call":', b"}")
+"""The prompt's two keys, sorted, around their values."""
+_BARE = len(b"".join(_FRAME)) + len(b"[]")
+"""The bytes of a prompt with no placeholder, less its call's."""
+
+
+class _Sizes:
+    """The size of each live call's prompt with no placeholder, by the
+    call's identity, recorded as its prompt's bytes are made, so the gate
+    reads it without making them again. An entry goes with its call."""
+
+    def __init__(self) -> None:
+        self._held: dict[int, tuple[weakref.ref[ModelCall], int]] = {}
+
+    def record(self, call: ModelCall, size: int) -> None:
+        key, held = id(call), self._held
+        held[key] = (weakref.ref(call, lambda _gone: held.pop(key, None)), size)
+
+    def of(self, call: ModelCall) -> int | None:
+        held = self._held.get(id(call))
+        return held[1] if held is not None and held[0]() is call else None
+
+
+_sizes = _Sizes()
+
+
 def prompt_bytes(call: ModelCall, attachments: Sequence[Attachment]) -> bytes:
     """The bytes a prompt's hash is taken of: the call, every key in order,
-    and the placeholders of the files it carries, never their bytes."""
-    payload = {
-        "call": call.model_dump(mode="json", exclude={"files"}),
-        "attachments": [attachment.model_dump(mode="json") for attachment in attachments],
-    }
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    and the placeholders of the files it carries, never their bytes. They
+    are `{"attachments":[...],"call":{...}}` as `json.dumps` writes the two
+    with sorted keys. The call's own JSON is made once, and the size the
+    gate reads of it (`call_shape`) is recorded with it."""
+    placeholders = _encoded([attachment.model_dump(mode="json") for attachment in attachments])
+    body = _encoded(call.model_dump(mode="json", exclude={"files"}))
+    _sizes.record(call, _BARE + len(body))
+    opening, between, closing = _FRAME
+    return b"".join((opening, placeholders, between, body, closing))
 
 
 def call_shape(call: ModelCall, fill: Fill) -> CallShape:
@@ -214,10 +253,14 @@ def call_shape(call: ModelCall, fill: Fill) -> CallShape:
     every text in it included, are at least as many as the tokens a provider
     counts of that text, since a token stands for one byte of it or more and
     the JSON's own keys outnumber the few tokens a provider adds to frame a
-    turn; each file's bytes are added whole. A call with a cache marker
-    writes the provider's short cache. The output bound is the fill's, and
-    thinking is billed inside it."""
-    size = len(prompt_bytes(call, ())) + sum(len(file.data) for file in call.files)
+    turn; each file's bytes are added whole. Those bytes are
+    `prompt_bytes(call, ())`, whose size the call's render recorded when it
+    made its prompt, else made here. A call with a cache marker writes the
+    provider's short cache. The output bound is the fill's, and thinking is
+    billed inside it."""
+    known = _sizes.of(call)
+    bare = len(prompt_bytes(call, ())) if known is None else known
+    size = bare + sum(len(file.data) for file in call.files)
     marked = (
         call.system_cache
         or call.system_break is not None
@@ -492,12 +535,20 @@ def pinned_block(zone: PinnedZone) -> TextBlock:
 @dataclass(frozen=True)
 class Draft:
     """A rendered request before its hash: the call, the window it read, the
-    inputs it delivers, and the placeholders of the files it carries."""
+    inputs it delivers, the placeholders of the files it carries, and its
+    prompt's bytes (`prompt_bytes`), made once for every reader of it: the
+    window's size, the hash, and the gate."""
 
     call: ModelCall
     window: ContextWindow
     delivers: tuple[UUID, ...]
     attachments: tuple[Attachment, ...]
+    prompt: bytes
+
+
+class OpenToolCall(ValueError):
+    """A main request asked for while a tool call is still open: its
+    response comes first, and the caller's to settle."""
 
 
 def _tools(kind: KindPrompts) -> tuple[ToolSpec, ...]:
@@ -774,14 +825,14 @@ def _used(
     ex: Exchanges,
     fill: Fill,
     summary_id: UUID | None,
-    call: ModelCall,
-    attachments: Sequence[Attachment],
+    prompt: bytes,
     plan: str | None,
     policy: CompactionPolicy,
 ) -> int:
     """The window's used tokens: what the provider reported for the latest
     call of this fill over this same window, plus an estimate for the steps
-    since; with no such report, an estimate of the whole request."""
+    since; with no such report, an estimate of the whole request, from its
+    prompt's bytes."""
     for index in range(len(steps) - 1, start - 1, -1):
         response = steps[index]
         if not ex.is_response(response) or response.responds_to is None:
@@ -795,7 +846,7 @@ def _used(
         return (
             usage.prompt + usage.output + usage.thinking + tokens(since + len(plan or ""), policy)
         )
-    return tokens(len(prompt_bytes(call, attachments)), policy)
+    return tokens(len(prompt), policy)
 
 
 def _edge(steps: Sequence[AgentStep], index: int) -> int:
@@ -839,11 +890,11 @@ def render_main(
     """The main model role's request over the whole history: the pinned zone
     and the latest summary, the window since the summary, the inputs no
     request has delivered, and the plan. Every tool call in the window is
-    answered; an open one is the caller's to settle first. It runs with
-    thinking off while a switch holds it off (`thinking_held`)."""
+    answered; an open one is the caller's to settle first (`OpenToolCall`).
+    It runs with thinking off while a switch holds it off (`thinking_held`)."""
     ex = exchanges(steps)
     if open_use(steps, ex) is not None:
-        raise ValueError("a tool call is still open; its response comes before the next request")
+        raise OpenToolCall("a tool call is still open; its response comes before the next request")
     if fill.thinking_budget is not None and thinking_held(steps):
         fill = fill.model_copy(update={"thinking_budget": None})
     summary = latest_summary(steps)
@@ -864,18 +915,19 @@ def render_main(
     stable = _close(messages, plan)
     call = _call(kind, fill, messages, stable)
     attachments = tuple(walk.attachments.values())
+    prompt = prompt_bytes(call, attachments)
     summary_id = None if summary is None else summary.id
     window = ContextWindow(
         role=MAIN,
         fill=fill.name,
         fill_set_version=fill_set_version,
         max_tokens=fill.context_window,
-        used_tokens=_used(steps, start, ex, fill, summary_id, call, attachments, plan, policy),
+        used_tokens=_used(steps, start, ex, fill, summary_id, prompt, plan, policy),
         left_edge=_edge(steps, start),
         right_edge=steps[-1].seq if start < len(steps) else 0,
         summary_id=summary_id,
     )
-    return Draft(call, window, tuple(step.id for step in new), attachments)
+    return Draft(call, window, tuple(step.id for step in new), attachments, prompt)
 
 
 def render_side(
@@ -912,6 +964,7 @@ def render_side(
     stable = _close(messages, None)
     call = _call(kind, fill, messages, stable)
     attachments = tuple(walk.attachments.values())
+    prompt = prompt_bytes(call, attachments)
     return Draft(
         call,
         ContextWindow(
@@ -919,12 +972,13 @@ def render_side(
             fill=fill.name,
             fill_set_version=fill_set_version,
             max_tokens=fill.context_window,
-            used_tokens=tokens(len(prompt_bytes(call, attachments)), policy),
+            used_tokens=tokens(len(prompt), policy),
             left_edge=_edge(steps, start),
             right_edge=window[-1].seq if window else 0,
         ),
         (),
         attachments,
+        prompt,
     )
 
 

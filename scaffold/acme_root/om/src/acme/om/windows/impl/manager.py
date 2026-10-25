@@ -330,11 +330,15 @@ class WindowsManagerImpl(WindowsManagerInterface):
         fill_set_version: int,
         plan: str | None,
     ) -> rules.Draft:
-        if rules.open_use(steps, rules.exchanges(steps)) is not None:
-            raise PreconditionFailed("a tool call is still open; its response comes first")
-        return _drafted(
-            lambda: rules.render_main(steps, kind, fill, fill_set_version, plan, self._policy)
-        )
+        def render() -> rules.Draft:
+            try:
+                return rules.render_main(steps, kind, fill, fill_set_version, plan, self._policy)
+            except rules.OpenToolCall as open_call:
+                raise PreconditionFailed(
+                    "a tool call is still open; its response comes first"
+                ) from open_call
+
+        return _drafted(render)
 
     async def _hashed(
         self,
@@ -346,8 +350,8 @@ class WindowsManagerImpl(WindowsManagerInterface):
         """The request over `read`, the steps it was rendered from, with its
         prompt's keyed hash, and who spoke and who pays, read from exactly
         the inputs it delivers: one read gives both, so an input that lands
-        after it is neither delivered nor credited."""
-        value = rules.prompt_bytes(draft.call, draft.attachments)
+        after it is neither delivered nor credited. The hash is taken of the
+        prompt's bytes the draft made."""
         delivers = set(draft.delivers)
         delivered = {step.id: step.seq for step in read if step.id in delivers}
         said = await self._attribution.attribute_request(
@@ -358,7 +362,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
             window=draft.window,
             delivers=draft.delivers,
             attachments=draft.attachments,
-            prompt_hash=await self._hashes.keyed_hash(ctx, agent_session_id, value),
+            prompt_hash=await self._hashes.keyed_hash(ctx, agent_session_id, draft.prompt),
             attribution=said,
         )
 
@@ -397,17 +401,18 @@ class WindowsManagerImpl(WindowsManagerInterface):
         call = _drafted(lambda: rules.summarizer_call(steps, cut, summarizer, self._policy))
         first, last = rules.fold_range(steps, cut)
         previous = rules.latest_summary(steps)
+        prompt = rules.prompt_bytes(call, ())
         window = ContextWindow(
             role=SUMMARIZER,
             fill=summarizer.name,
             fill_set_version=fill_set.version,
             max_tokens=summarizer.context_window,
-            used_tokens=rules.tokens(len(rules.prompt_bytes(call, ())), self._policy),
+            used_tokens=rules.tokens(len(prompt), self._policy),
             left_edge=steps[rules.window_start(steps, previous)].seq,
             right_edge=last,
             summary_id=None if previous is None else previous.id,
         )
-        draft = rules.Draft(call, window, (), ())
+        draft = rules.Draft(call, window, (), (), prompt)
         rendered = await self._hashed(ctx, agent_session_id, draft, steps)
         # The summarizer delivers nothing: it is paid for by the spender the
         # latest model request named, as attribution answers for it.
