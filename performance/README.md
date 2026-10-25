@@ -84,10 +84,12 @@ holds the marker.
 ## What the numbers say
 
 One session of 1,500 turns writes 23 steps a second on the KMS
-emulator, and 24 on the key twin. A step takes 43 ms. A run reads its
-whole history once, at its start, and from then on only what others
+emulator, and 24 on the key twin. A step takes 43 ms. The loop reads
+its whole history once, at its start, and from then on only what others
 wrote: what the run appends joins the history it holds unread, and an
-append opens nothing it stored.
+append opens nothing it stored. A session's head, a request's
+attribution, and the status at a run's end still read the run's own
+steps back.
 
 **Where one session's time goes**, on the KMS emulator, by share of
 wall time:
