@@ -90,7 +90,7 @@ class PrivacyStorageMemoryImpl(MemoryStorageBase, PrivacyStorageInterface):
             sessions={
                 r.agent_session_id: r.title_key
                 for r in self._rows(self._records, org_id)
-                if r.agent_session_id in named and r.title_key is not None
+                if r.agent_session_id in named and r.title_key is not None and r.revoked_at is None
             },
         )
 
@@ -166,6 +166,9 @@ class PrivacyStorageMemoryImpl(MemoryStorageBase, PrivacyStorageInterface):
             stored = self._created(org_id, record, outbox_rows)
             if stored is not record:
                 if stored.revoked_at is not None:
+                    if stored.title_key is not None:
+                        stored = stored.model_copy(update={"title_key": None})
+                        self._put(self._records, org_id, stored)
                     return stored
                 stored = stored.model_copy(
                     update={"revoked_at": at, "revoked_by": record.revoked_by, "title_key": None}

@@ -114,7 +114,7 @@ class AgentSessionKeysImpl(AgentSessionKeysInterface):
                 title_key=wrapped,
             ),
         )
-        if stored.title_key is None:
+        if stored.revoked_at is not None or stored.title_key is None:
             raise KeyRevoked(f"the key of session {agent_session_id} is revoked")
         if stored.title_key == wrapped:
             return made

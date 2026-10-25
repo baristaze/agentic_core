@@ -63,16 +63,11 @@ class AgentSessionPrivacy(Identifiable, Created):
     chosen: bool = True
     # The key the session's title is sealed under, wrapped under its tenant's
     # title key: written with the title, and gone in the commit that revokes
-    # the session's key (ADR 1042).
+    # the session's key (ADR 1042). A revoked session's is never opened,
+    # whichever release revoked it.
     title_key: bytes | None = Field(default=None, repr=False)
     revoked_at: datetime | None = None
     revoked_by: UUID | None = None
-
-    @model_validator(mode="after")
-    def _revoked_holds_no_title_key(self) -> Self:
-        if self.revoked_at is not None and self.title_key is not None:
-            raise ValueError("a revoked session holds no title key")
-        return self
 
 
 class TenantTitleKey(Identifiable, Created):

@@ -11,7 +11,8 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import Update, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from acme.infra.impl.local import InfraLocalImpl
 from acme.om.agent_root import AgentRootOptions
@@ -26,6 +27,7 @@ from acme.om.storage.roles import DatabaseRole
 from acme.om.storage.settings import MigrationSettings
 
 from contracts.agent_session_storage import make_agent_session
+from contracts.agent_step_storage import make_message
 from contracts.tools import stand_ins
 
 pytestmark = pytest.mark.integration
@@ -206,3 +208,67 @@ async def test_the_sweeps_write_misses_a_row_that_moved_since_its_read(
     assert sealed.version == read.version + 2
     (opened,) = await managers.agent_sessions.open_titles(ctx, [sealed])
     assert opened.title.said() == mark
+
+
+async def test_a_revocation_that_left_the_title_key_still_leaves_the_title_absent(
+    managers: Managers, pg_sessions: LoginSessions
+) -> None:
+    """A release before titles were sealed revokes without clearing the
+    title key: the title reads as absent all the same, nothing seals under
+    that key again, and the next revocation clears it."""
+    ctx = await an_org(managers)
+    made = await managers.agent_sessions.create_agent_session(ctx, titled(ctx, "left behind"))
+    await query(
+        pg_sessions,
+        ctx.org_id,
+        "UPDATE core.agent_session_privacy SET revoked_at = now(), revoked_by = :by"
+        " WHERE org_id = :org AND agent_session_id = :id",
+        id=made.id,
+        by=ctx.user_id,
+    )
+    (shown,) = await managers.agent_sessions.open_titles(ctx, [made])
+    assert shown.title.state is ContentState.ABSENT
+    await managers.privacy.revoke_key(ctx, made.id)
+    (row,) = await query(
+        pg_sessions,
+        ctx.org_id,
+        "SELECT title_key FROM core.agent_session_privacy WHERE org_id = :org AND agent_session_id = :id",
+        id=made.id,
+    )
+    assert row["title_key"] is None
+
+
+async def test_a_revocation_that_fails_part_way_leaves_neither_half_done(
+    managers: Managers, pg_sessions: LoginSessions, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The title key is cleared in the commit that destroys the data keys: a
+    revocation whose destroy fails lands neither, and the next one lands
+    both."""
+    ctx = await an_org(managers)
+    made = await managers.agent_sessions.create_agent_session(ctx, titled(ctx, "kept whole"))
+    await managers.agent_steps.append_inputs(ctx, made.id, [make_message(made.id)])
+    execute = AsyncSession.execute
+
+    async def failing(self: AsyncSession, statement: Any, *args: Any, **kwargs: Any) -> Any:
+        table = getattr(getattr(statement, "table", None), "name", None)
+        if isinstance(statement, Update) and table == "agent_session_keys":
+            raise RuntimeError("the destroy fails")
+        return await execute(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncSession, "execute", failing)
+    with pytest.raises(RuntimeError, match="the destroy fails"):
+        await managers.privacy.revoke_key(ctx, made.id)
+    monkeypatch.setattr(AsyncSession, "execute", execute)
+    state = (
+        "SELECT r.revoked_at, r.title_key IS NOT NULL AS titled,"
+        " (SELECT count(*) FROM core.agent_session_keys k WHERE k.org_id = r.org_id"
+        "  AND k.agent_session_id = r.agent_session_id AND k.wrapped IS NOT NULL) AS live"
+        " FROM core.agent_session_privacy r WHERE r.org_id = :org AND r.agent_session_id = :id"
+    )
+    (before,) = await query(pg_sessions, ctx.org_id, state, id=made.id)
+    assert (before["revoked_at"], before["titled"], before["live"]) == (None, True, 1)
+    (shown,) = await managers.agent_sessions.open_titles(ctx, [made])
+    assert shown.title.said() == "kept whole"
+    await managers.privacy.revoke_key(ctx, made.id)
+    (after,) = await query(pg_sessions, ctx.org_id, state, id=made.id)
+    assert after["revoked_at"] is not None and (after["titled"], after["live"]) == (False, 0)

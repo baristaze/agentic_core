@@ -162,6 +162,7 @@ class PrivacyStoragePostgresImpl(PgStorageBase, PrivacyStorageInterface):
                     AgentSessionPrivacyRows.org_id == TenantTitleKeys.org_id,
                     AgentSessionPrivacyRows.agent_session_id.in_(list(agent_session_ids)),
                     AgentSessionPrivacyRows.title_key.is_not(None),
+                    AgentSessionPrivacyRows.revoked_at.is_(None),
                 ),
             )
             .where(TenantTitleKeys.org_id == org_id)
@@ -344,7 +345,18 @@ class PrivacyStoragePostgresImpl(PgStorageBase, PrivacyStorageInterface):
                 AgentSessionPrivacyRows.agent_session_id == record.agent_session_id,
                 AgentSessionPrivacyRows.revoked_at.is_(None),
             )
-            .values(revoked_at=at, revoked_by=record.revoked_by, title_key=None)
+            .values(revoked_at=at, revoked_by=record.revoked_by)
+        )
+        # On every call, so a revocation a release before titles were sealed
+        # made, which left the title key, is finished by the next.
+        clear = (
+            update(AgentSessionPrivacyRows)
+            .where(
+                AgentSessionPrivacyRows.org_id == org_id,
+                AgentSessionPrivacyRows.agent_session_id == record.agent_session_id,
+                AgentSessionPrivacyRows.title_key.is_not(None),
+            )
+            .values(title_key=None)
         )
         destroy = (
             update(AgentSessionKeys)
@@ -362,6 +374,7 @@ class PrivacyStoragePostgresImpl(PgStorageBase, PrivacyStorageInterface):
                 await session.rollback()
                 raise TenantMismatch(f"session privacy {record.id} is not in {org_id}") from error
             marked = rowcount(await session.execute(mark)) == 1
+            await session.execute(clear)
             row = (
                 await session.execute(self._record(org_id, record.agent_session_id))
             ).scalar_one()
