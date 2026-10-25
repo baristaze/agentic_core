@@ -1,7 +1,9 @@
 """What a run reads of its history: the whole of it once, at its start, and
 from then on only what others wrote. What the run appends joins the
-history it holds, and is never read back."""
+history it holds, and is never read back, also when another writer's step
+falls between two of the run's."""
 
+import asyncio
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -96,3 +98,37 @@ async def test_a_run_reads_its_history_whole_once_and_reads_back_nothing_it_wrot
     )
     read_back = [seq for read in counted.reads for seq in read.seqs if seq > before]
     assert read_back == [], "a step the run appended joins its history unread"
+
+
+async def test_a_step_another_writes_mid_run_is_read_and_the_runs_own_are_not(
+    tmp_path: Path,
+) -> None:
+    storage = StorageMemoryImpl()
+    counted = LoopReads(storage.get_agent_step_storage())
+    storage.get_agent_step_storage = lambda: counted  # type: ignore[method-assign]
+    loop = loop_over(tmp_path, storage=storage)
+    agent_session_id = await loop.start()
+    await loop.say(agent_session_id, "Look it up.")
+    loop.anthropic.add(
+        reply(use("slow", use_id="use_slow")),
+        reply(use("note", use_id="use_note")),
+        reply(said("Looked up, and noted.")),
+    )
+    before = len(await loop.history(agent_session_id))
+    counted.reads.clear()
+    slow = loop.tools["slow"]
+
+    running = asyncio.ensure_future(loop.loops.run(loop.owner, agent_session_id))
+    await slow.started.wait()
+    theirs = await loop.say(agent_session_id, "Note it too.")
+    slow.release.set()
+    run = await running
+
+    assert (run.end, run.outcome) == (RunEnd.ENDED, LoopOutcome.SUCCEEDED)
+    read = [seq for r in counted.reads for seq in r.seqs if seq > before]
+    # A page reads one step past what it answers, to tell whether more follow.
+    assert read in ([theirs.seq], [theirs.seq, theirs.seq + 1]), (
+        "the other writer's step, and of the run's none but the one past it"
+    )
+    seen = [m for call in loop.anthropic.calls[1:] for m in call.messages]
+    assert any("Note it too." in str(m) for m in seen), "the model read it"
