@@ -20,8 +20,11 @@ of](../../../../README.md).
 - **Storage policy**: chosen once per session, before its history
   begins. **Sealed** is the default: content is kept, sealed. **Memory
   only** keeps content in the running process alone; the shape is still
-  kept when the policy allows, so the audit survives. A call's cost
-  survives in every mode, in its usage record (`spend_budgets`).
+  kept when the policy allows, so the audit survives. A memory-only
+  session's title is kept at rest, sealed under its title key, since it
+  is written when the session is made, before its policy is chosen; a
+  revoke makes it absent. A call's cost survives in every mode, in its
+  usage record (`spend_budgets`).
 - **Title key**: one per session, the key its title is sealed under,
   kept on its privacy record wrapped under its tenant's title key, which
   the tenant's key service wraps. A page of titles opens with one call

@@ -1833,15 +1833,18 @@ Some tenants accept no content at rest, sealed or not. A session's
 storage policy is chosen per session, by policy: **sealed** by default,
 or **memory-only**, where content lives only while a runtime holds it and
 the shape may still be persisted, when policy allows, so the audit
-survives. A call's cost survives in every mode, in its [usage
-record](#usage-and-cost). Both impls are wired at boot, and a decorator routes each
-session by its policy. A memory-only session keeps its runtime while it
-is parked, up to a declared time; past it, or on a crash, its loop ends
-`errored` and its shape stays.
+survives. A memory-only session's title is kept at rest, sealed under its
+title key, since it is written when the session is made, before its
+policy is chosen; a revoke makes it absent. A call's cost survives in
+every mode, in its [usage record](#usage-and-cost). Both impls are wired
+at boot, and a decorator routes each session by its policy. A memory-only
+session keeps its runtime while it is parked, up to a declared time; past
+it, or on a crash, its loop ends `errored` and its shape stays.
 
 **Zero data retention** has two halves. On the provider's side, only
 fills eligible for it may be resolved or fallen back to, enforced like a
-tenant's own key. On the engine's side, the session is memory-only.
+tenant's own key. On the engine's side, the session is memory-only: of
+its content, only its title is kept at rest, sealed.
 
 ## Null Objects
 

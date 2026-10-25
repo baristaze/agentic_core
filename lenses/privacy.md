@@ -140,11 +140,12 @@ cannot be undone.
 policy is chosen per session, by policy: sealed by default, or
 memory-only, where content lives only while a runtime holds it and the
 shape may still be persisted, when policy allows, so the audit survives.
-A call's cost survives in every mode, in its usage record. Both impls
-are wired at boot, and a decorator routes each session by its policy. A
-memory-only session keeps its runtime while it is parked, up to a
-declared time; past it, or on a crash, its loop ends `errored` and its
-shape stays. Zero data retention's engine half is a memory-only session.
+A memory-only session's title is kept at rest, sealed. A call's cost
+survives in every mode, in its usage record. Both impls are wired at
+boot, and a decorator routes each session by its policy. A memory-only
+session keeps its runtime while it is parked, up to a declared time;
+past it, or on a crash, its loop ends `errored` and its shape stays.
+Zero data retention's engine half is a memory-only session.
 
 **Source.** Privacy, Storage Modes and Retention.
 
@@ -153,8 +154,8 @@ decorator; a memory-only session's park and crash paths.
 
 **Violation.** A storage mode fixed for a whole process, so sessions
 under different policies cannot differ; content of a memory-only session
-written to any store; a memory-only session that stays parked past its
-declared time.
+written to any store, but its sealed title; a memory-only session that
+stays parked past its declared time.
 
 **Severity.** medium
 
