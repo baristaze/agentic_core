@@ -142,28 +142,18 @@ def _at_rest(results: dict[str, Any]) -> list[str]:
     return lines
 
 
-def _mb(count: int) -> str:
-    return f"{count / 2**20:.1f} MB"
-
-
-def _starts_and_cache(results: dict[str, Any]) -> list[str]:
-    """Each run's start, and what the shared cache held: its peak above the
-    empty server, and its entries by scope, with their bytes."""
+def _starts(results: dict[str, Any]) -> list[str]:
     lines = [
-        "| keys | run | runs | run start p50 | p95 | the last | cache peak | entries by scope | entries with no TTL |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | ---: |",
+        "| keys | run | runs | run start p50 | p95 | p99 | the last |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: |",
     ]
     for run in results["runs"]:
-        starts, cache = run.get("run_start_ms"), run.get("cache")
-        if starts is None or cache is None:
+        starts = run.get("run_start_ms")
+        if starts is None:
             continue
-        scopes = "<br>".join(
-            f"{scope}: {count} ({_mb(cache['key_bytes'].get(scope, 0))})" for scope, count in cache["keys"].items()
-        )
         lines.append(
             f"| {KEYS[run['keys']]} | {run['name']} | {starts['runs']} | {starts['p50']} ms | {starts['p95']} ms "
-            f"| {starts['last']} ms | {_mb(cache['peak_bytes'] - cache['empty_bytes'])} | {scopes or 'none'} "
-            f"| {sum(cache['without_ttl'].values())} |"
+            f"| {starts['p99']} ms | {starts['last']} ms |"
         )
     return lines
 
@@ -218,13 +208,13 @@ def render(results: dict[str, Any], cited: str) -> str:
         *_at_rest(results),
         "",
     ]
-    if any("cache" in run for run in results["runs"]):
+    if any("run_start_ms" in run for run in results["runs"]):
         parts += [
-            "### A run's start, and the shared cache",
+            "### A run's start",
             "",
-            "A run's start runs from the loop's run to its first model call. The cache's peak is above the empty server.",
+            "From the loop's run to its first model call, over every run of the point; the last is the longest history's.",
             "",
-            *_starts_and_cache(results),
+            *_starts(results),
             "",
         ]
     parts += [

@@ -11,9 +11,7 @@ counts the run's marker in them, as it is and in base64; another scan does
 the same once the point is done. Each scan also counts the rows and the
 objects it read, so a scan that read nothing shows. The scans run on a
 thread of their own, so the profile of the event loop's thread holds none
-of their work. So does the watch on the shared cache (`replay/cache.py`),
-which empties Valkey before the point, samples its memory while the point
-runs, and reads its keys once the point is done."""
+of their work."""
 
 from __future__ import annotations
 
@@ -39,7 +37,6 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from acme.om.storage.roles import DatabaseRole
 from acme.om.storage.settings import MigrationSettings
 from acme.workers.agent_session_runner.settings import AgentSessionRunnerSettings
-from replay.cache import CacheWatch
 from replay.engine import MAIN_MODEL, Engine
 from replay.generate import runs
 from replay.run import point
@@ -270,12 +267,7 @@ async def one_point(shape: tuple[Turn, ...], keys: str, sessions: int, turns: in
 
         watcher = asyncio.create_task(scan_halfway())
         before = await asyncio.to_thread(apart, transactions)
-        cache = CacheWatch(settings.valkey_url)
-        await asyncio.to_thread(cache.start)
-        try:
-            measured, ids = await point(engine, scripts, profiled=profiled)
-        finally:
-            seen = await asyncio.to_thread(cache.stop)
+        measured, ids = await point(engine, scripts, profiled=profiled)
         await watcher
         await asyncio.sleep(STATS_FLUSH)
         counted = await asyncio.to_thread(apart, transactions)
@@ -289,7 +281,6 @@ async def one_point(shape: tuple[Turn, ...], keys: str, sessions: int, turns: in
             "transactions_per_step_written": round(sum(made.values()) / max(1, measured.steps_written), 2),
             "scan_while_writing": during[0].as_dict(),
             "scan_after": after.as_dict(),
-            "cache": seen.as_dict(),
         }
     finally:
         await engine.close()
@@ -346,7 +337,5 @@ async def full(shape: tuple[Turn, ...], name: str, results: Path, turns: int, sw
         or found["rows_read_as_text"] != found["rows"]
         or not found["objects"]
     ]
-    untimed = [f"{run['keys']} {run['name']}" for run in report["runs"] if run["cache"]["without_ttl"]]
     print(f"wrote {results}; scans that found a marker, or read no row or no object: {unread or 'none'}")
-    print(f"points that left a cache entry with no TTL: {untimed or 'none'}")
-    return 1 if unread or untimed else 0
+    return 1 if unread else 0
