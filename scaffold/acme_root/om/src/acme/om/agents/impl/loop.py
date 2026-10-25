@@ -190,9 +190,7 @@ class LoopManagerImpl(
             log.warning("session %s resolves no fill: %s", run.agent_session_id, refused.message)
             return await self._end(run, LoopOutcome.ERRORED)
         if steps:
-            await self._steps.append_agent_steps(
-                run.ctx, run.agent_session_id, run.epoch, list(steps)
-            )
+            await self._append(run, list(steps))
         return None
 
     async def _prepare(
@@ -221,9 +219,7 @@ class LoopManagerImpl(
                 lost = rules.lost_step(
                     new_id(), self._clock(), run.agent_session_id, run.loop_id, start
                 )
-                await self._steps.append_agent_steps(
-                    run.ctx, run.agent_session_id, run.epoch, [lost]
-                )
+                await self._append(run, [lost])
                 return await self._prepare(run, None, unlocked=unlocked)
             return await self._unprepared(run, refused, restoring=start is not None)
         if start is not None and start.type is AgentStepType.CONTROL:
@@ -233,7 +229,7 @@ class LoopManagerImpl(
             done = rules.restored_step(
                 new_id(), self._clock(), run.agent_session_id, run.loop_id, start
             )
-            await self._steps.append_agent_steps(run.ctx, run.agent_session_id, run.epoch, [done])
+            await self._append(run, [done])
         return None
 
     async def _unprepared(
@@ -286,13 +282,13 @@ class LoopManagerImpl(
             # A call a lost run may have started is settled by its effect
             # before anything else, a park included: once a run parks with a
             # call open, the call is one it held back and never ran.
-            stopped = await self._recover_calls(run)
+            stopped = await self._recover_calls(run, history)
             if stopped is not None:
                 return stopped
         while True:
             # The run read its history whole once; each turn reads only what
             # was added since, so a long session costs a turn no more.
-            history = await self._history(run.ctx, run.agent_session_id, history)
+            history = await self._history(run.ctx, run.agent_session_id, history, own=run.own)
             loop = rules.OpenLoop(run.loop_id, run.start_seq, None)
             if rules.asked(history, loop, ControlCommand.CANCEL) is not None:
                 return await self._cancelled(run)
@@ -334,7 +330,9 @@ class LoopManagerImpl(
                     # deadline below, and leaves every line there.
                     heard = await self._hear(run, history)
                     if heard.told:
-                        history = await self._history(run.ctx, run.agent_session_id, history)
+                        history = await self._history(
+                            run.ctx, run.agent_session_id, history, own=run.own
+                        )
                     if (
                         heard.waiting
                         and not lines.unheard(history, response)
@@ -377,12 +375,12 @@ class LoopManagerImpl(
             if repeated is not None:
                 # Written before the next request, which reads it.
                 await self._notice(run, repeated)
-                history = await self._history(run.ctx, run.agent_session_id, history)
+                history = await self._history(run.ctx, run.agent_session_id, history, own=run.own)
             if heard is None and (await self._hear(run, history)).told:
                 # A grant, a request's end, or a lease's end that came while
                 # the session ran, or since an earlier loop of it, is told
                 # before the next request, which reads it.
-                history = await self._history(run.ctx, run.agent_session_id, history)
+                history = await self._history(run.ctx, run.agent_session_id, history, own=run.own)
             stopped = await self._model_turn(run, history)
             if stopped is not None:
                 return stopped

@@ -72,9 +72,7 @@ class LoopParks(LoopCore):
                     )
                     for _, request in requests
                 ]
-                await self._steps.append_agent_steps(
-                    run.ctx, run.agent_session_id, run.epoch, answers
-                )
+                await self._append(run, answers)
         return await self._end(run, LoopOutcome.CANCELLED)
 
     def _cancelled_call(self, run: RunState, request: AgentStep) -> AgentStep:
@@ -104,7 +102,7 @@ class LoopParks(LoopCore):
         step = rules.ended_step(
             new_id(), self._clock(), run.agent_session_id, run.loop_id, outcome, cause=cause
         )
-        await self._steps.append_agent_steps(run.ctx, run.agent_session_id, run.epoch, [step])
+        await self._append(run, [step])
         await self._sessions.project_status(run.ctx, run.agent_session_id)
         if outcome is LoopOutcome.CANCELLED:
             await self._agents.cancel_children(run.ctx, run.agent_session_id)
@@ -139,7 +137,7 @@ class LoopParks(LoopCore):
         between, is read the same way: a child that parked on it found no
         park to clear."""
         parked = await self._park(run, CHILDREN_PARK)
-        history = await self._history(run.ctx, run.agent_session_id, history)
+        history = await self._history(run.ctx, run.agent_session_id, history, own=run.own)
         passed = run.deadline is not None and self._clock() >= run.deadline
         if passed or not rules.children_wait(history, response):
             await self._sessions.wake_agent_session(run.ctx, run.agent_session_id, CHILDREN_PARK)
@@ -164,7 +162,7 @@ class LoopParks(LoopCore):
                 )
                 for agent_step_id, text in owed
             ]
-            await self._steps.append_agent_steps(run.ctx, run.agent_session_id, run.epoch, notices)
+            await self._append(run, notices)
         waiting = [
             standing
             for _, standing in standings
@@ -206,7 +204,7 @@ class LoopParks(LoopCore):
         after the park clears it as it lands."""
         park = lines.line_park(waiting)
         parked = await self._park(run, park)
-        history = await self._history(run.ctx, run.agent_session_id, history)
+        history = await self._history(run.ctx, run.agent_session_id, history, own=run.own)
         told = {step.id for step in history}
         for ask, standing in await self._standings(run, history):
             if lines.untold(standing, ask, told):

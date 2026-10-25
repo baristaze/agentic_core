@@ -8,7 +8,12 @@ session, the step, and the version, so a sealed blob copied to another step
 opens nothing. A step that says nothing, a lifecycle mark or a request that
 only references, needs no key and is kept as it is. A read opens each step
 with the version it names; a version destroyed reads as absent, and the
-step keeps its place, its type, and its header."""
+step keeps its place, its type, and its header.
+
+An append answers with the stored steps and what each said, from the batch
+it sealed: nothing it just wrote is opened again, so an append reads the
+key ring once and takes at most one key. A step stored before, which an
+append sent again leaves as it was, opens as a read opens it."""
 
 import base64
 import json
@@ -120,14 +125,14 @@ class AgentStepStorageSealedImpl(AgentStepStorageInterface):
     ) -> tuple[AgentStep, ...]:
         batch = await self._sealed(org_id, agent_session_id, steps)
         stored = await self._inner.append_agent_steps(org_id, agent_session_id, epoch, batch)
-        return tuple(await self._opened(org_id, agent_session_id, stored))
+        return await self._said(org_id, agent_session_id, steps, batch, stored)
 
     async def append_inputs(
         self, org_id: UUID, agent_session_id: UUID, steps: Sequence[AgentStep]
     ) -> tuple[AgentStep, ...]:
         batch = await self._sealed(org_id, agent_session_id, steps)
         stored = await self._inner.append_inputs(org_id, agent_session_id, batch)
-        return tuple(await self._opened(org_id, agent_session_id, stored))
+        return await self._said(org_id, agent_session_id, steps, batch, stored)
 
     async def read_agent_steps(
         self, org_id: UUID, agent_session_id: UUID, after_seq: int, limit: int
@@ -158,6 +163,35 @@ class AgentStepStorageSealedImpl(AgentStepStorageInterface):
             sealed(org_id, step, current.version, current.key) if says_something(step) else step
             for step in steps
         ]
+
+    async def _said(
+        self,
+        org_id: UUID,
+        agent_session_id: UUID,
+        steps: Sequence[AgentStep],
+        batch: Sequence[AgentStep],
+        stored: Sequence[AgentStep],
+    ) -> tuple[AgentStep, ...]:
+        """The stored steps of an append, each with what it said put back
+        from the step it was sealed from, when what is stored is the seal
+        this append made; any other opens as a read opens it."""
+        sent = {seal.id: step for seal, step in zip(batch, steps, strict=True) if seal is not step}
+        seals = {seal.id: seal.content.sealed for seal in batch}
+        said: dict[UUID, AgentStep] = {}
+        rest: list[AgentStep] = []
+        for step in stored:
+            original = sent.get(step.id)
+            if original is not None and step.content.sealed == seals[step.id]:
+                said[step.id] = step.model_copy(
+                    update={"content": original.content, "children": original.children}
+                )
+            elif step.id not in sent and step.content.sealed is None:
+                said[step.id] = step
+            else:
+                rest.append(step)
+        for step in await self._opened(org_id, agent_session_id, rest):
+            said[step.id] = step
+        return tuple(said[step.id] for step in stored)
 
     async def _opened(
         self, org_id: UUID, agent_session_id: UUID, steps: Sequence[AgentStep]
