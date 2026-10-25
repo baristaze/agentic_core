@@ -20,7 +20,6 @@ zone quotes principals' messages alone."""
 
 import json
 import math
-import weakref
 from bisect import bisect_right
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -199,52 +198,14 @@ def step_chars(step: AgentStep, policy: CompactionPolicy) -> int:
     return total + sum(len(thought.text) for thought in step.children.thinking)
 
 
-def _encoded(value: object) -> bytes:
-    """JSON with every key in order, in UTF-8. A model's dump is a tree, so
-    the encoder skips its search for cycles."""
-    text = json.dumps(
-        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, check_circular=False
-    )
-    return text.encode()
-
-
-_FRAME = (b'{"attachments":', b',"call":', b"}")
-"""The prompt's two keys, sorted, around their values."""
-_BARE = len(b"".join(_FRAME)) + len(b"[]")
-"""The bytes of a prompt with no placeholder, less its call's."""
-
-
-class _Sizes:
-    """The size of each live call's prompt with no placeholder, by the
-    call's identity, recorded as its prompt's bytes are made, so the gate
-    reads it without making them again. An entry goes with its call."""
-
-    def __init__(self) -> None:
-        self._held: dict[int, tuple[weakref.ref[ModelCall], int]] = {}
-
-    def record(self, call: ModelCall, size: int) -> None:
-        key, held = id(call), self._held
-        held[key] = (weakref.ref(call, lambda _gone: held.pop(key, None)), size)
-
-    def of(self, call: ModelCall) -> int | None:
-        held = self._held.get(id(call))
-        return held[1] if held is not None and held[0]() is call else None
-
-
-_sizes = _Sizes()
-
-
 def prompt_bytes(call: ModelCall, attachments: Sequence[Attachment]) -> bytes:
     """The bytes a prompt's hash is taken of: the call, every key in order,
-    and the placeholders of the files it carries, never their bytes. They
-    are `{"attachments":[...],"call":{...}}` as `json.dumps` writes the two
-    with sorted keys. The call's own JSON is made once, and the size the
-    gate reads of it (`call_shape`) is recorded with it."""
-    placeholders = _encoded([attachment.model_dump(mode="json") for attachment in attachments])
-    body = _encoded(call.model_dump(mode="json", exclude={"files"}))
-    _sizes.record(call, _BARE + len(body))
-    opening, between, closing = _FRAME
-    return b"".join((opening, placeholders, between, body, closing))
+    and the placeholders of the files it carries, never their bytes."""
+    payload = {
+        "call": call.model_dump(mode="json", exclude={"files"}),
+        "attachments": [attachment.model_dump(mode="json") for attachment in attachments],
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
 
 
 def call_shape(call: ModelCall, fill: Fill) -> CallShape:
@@ -253,14 +214,10 @@ def call_shape(call: ModelCall, fill: Fill) -> CallShape:
     every text in it included, are at least as many as the tokens a provider
     counts of that text, since a token stands for one byte of it or more and
     the JSON's own keys outnumber the few tokens a provider adds to frame a
-    turn; each file's bytes are added whole. Those bytes are
-    `prompt_bytes(call, ())`, whose size the call's render recorded when it
-    made its prompt, else made here. A call with a cache marker writes the
-    provider's short cache. The output bound is the fill's, and thinking is
-    billed inside it."""
-    known = _sizes.of(call)
-    bare = len(prompt_bytes(call, ())) if known is None else known
-    size = bare + sum(len(file.data) for file in call.files)
+    turn; each file's bytes are added whole. A call with a cache marker
+    writes the provider's short cache. The output bound is the fill's, and
+    thinking is billed inside it."""
+    size = len(prompt_bytes(call, ())) + sum(len(file.data) for file in call.files)
     marked = (
         call.system_cache
         or call.system_break is not None
@@ -536,8 +493,8 @@ def pinned_block(zone: PinnedZone) -> TextBlock:
 class Draft:
     """A rendered request before its hash: the call, the window it read, the
     inputs it delivers, the placeholders of the files it carries, and its
-    prompt's bytes (`prompt_bytes`), made once for every reader of it: the
-    window's size, the hash, and the gate."""
+    prompt's bytes (`prompt_bytes`), made once for both readers of them: the
+    window's size and the hash."""
 
     call: ModelCall
     window: ContextWindow

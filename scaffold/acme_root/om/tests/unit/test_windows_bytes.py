@@ -4,9 +4,8 @@ the window's used tokens, and the gate's prompt size that the reference
 below gives. The reference is the prompt's bytes as one `json.dumps` of the
 whole payload, and each size read from bytes made afresh for it."""
 
-import gc
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -297,9 +296,7 @@ async def test_every_request_a_long_replay_drafts_keeps_its_bytes_hash_size_and_
             used = rules.tokens(len(reference_bytes(draft.call, draft.attachments)), POLICY)
         assert draft.window.used_tokens == used, f"a {role} window's used tokens"
         fill = FILLS[draft.window.fill]
-        shape = reference_shape(draft.call, fill)
-        assert rules.call_shape(draft.call, fill) == shape, "the size its render recorded"
-        assert rules.call_shape(draft.call.model_copy(), fill) == shape, "the size made afresh"
+        assert rules.call_shape(draft.call, fill) == reference_shape(draft.call, fill)
     assert sized_afresh >= 30, "many a main window is sized from its bytes alone"
     assert {r.window.role for r in sent} == {MAIN, "triage"}
     for rendered in sent:
@@ -313,33 +310,3 @@ async def test_every_request_a_long_replay_drafts_keeps_its_bytes_hash_size_and_
         assert request.header.prompt_hash == await engine.hashes.keyed_hash(
             engine.ctx, session.id, value
         )
-
-
-def a_draft() -> rules.Draft:
-    history = History()
-    history.message("Find why the checkout drops the order — vite.")
-    return rules.render_main(history.steps, KIND, WIDE, 1, "Read the log.", POLICY)
-
-
-def test_the_gate_reads_the_size_its_render_recorded(monkeypatch: pytest.MonkeyPatch) -> None:
-    draft = a_draft()
-    shape = reference_shape(draft.call, WIDE)
-    made: Callable[[ModelCall, Sequence[Attachment]], bytes] = rules.prompt_bytes
-
-    def never(call: ModelCall, attachments: Sequence[Attachment]) -> bytes:
-        raise AssertionError("the gate made the prompt's bytes again")
-
-    monkeypatch.setattr(rules, "prompt_bytes", never)
-    assert rules.call_shape(draft.call, WIDE) == shape
-    monkeypatch.setattr(rules, "prompt_bytes", made)
-    assert rules.call_shape(draft.call.model_copy(), WIDE) == shape, "a copy is sized afresh"
-
-
-def test_a_recorded_size_goes_with_its_call() -> None:
-    call = a_draft().call.model_copy()
-    rules.prompt_bytes(call, ())
-    key = id(call)
-    assert rules._sizes.of(call) == len(reference_bytes(call, ()))
-    del call
-    gc.collect()
-    assert key not in rules._sizes._held
