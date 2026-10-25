@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import CursorResult, Result, Select, Table, select, update
+from sqlalchemy import CursorResult, Result, Select, Table, and_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 
@@ -131,25 +131,37 @@ class PrivacyStoragePostgresImpl(PgStorageBase, PrivacyStorageInterface):
             return stored
 
     async def read_keys(self, org_id: UUID, agent_session_id: UUID) -> KeyRing:
-        revoked = select(AgentSessionPrivacyRows.revoked_at).where(
-            AgentSessionPrivacyRows.org_id == org_id,
-            AgentSessionPrivacyRows.agent_session_id == agent_session_id,
-        )
-        keys = (
-            select(AgentSessionKeys)
+        """One statement: the record, and each version beside it. A version
+        lands only under its session's record (`add_key`), so a session
+        with no record holds no version."""
+        ring = (
+            select(AgentSessionPrivacyRows.revoked_at, AgentSessionKeys)
+            .select_from(AgentSessionPrivacyRows)
+            .outerjoin(
+                AgentSessionKeys,
+                and_(
+                    AgentSessionKeys.org_id == AgentSessionPrivacyRows.org_id,
+                    AgentSessionKeys.agent_session_id == AgentSessionPrivacyRows.agent_session_id,
+                ),
+            )
             .where(
-                AgentSessionKeys.org_id == org_id,
-                AgentSessionKeys.agent_session_id == agent_session_id,
+                AgentSessionPrivacyRows.org_id == org_id,
+                AgentSessionPrivacyRows.agent_session_id == agent_session_id,
             )
             .order_by(AgentSessionKeys.version)
         )
         async with self._session_for(AgentSessionKeys, org_id=org_id) as session:
-            revoked_at = (await session.execute(revoked)).scalar_one_or_none()
-            rows = (await session.execute(keys)).scalars().all()
-            return KeyRing(
-                revoked=revoked_at is not None,
-                keys=tuple(to_model(row, AgentSessionKey) for row in rows),
-            )
+            rows = (await session.execute(ring)).all()
+        if not rows:
+            return KeyRing()
+        return KeyRing(
+            revoked=rows[0].revoked_at is not None,
+            keys=tuple(
+                to_model(row.AgentSessionKeys, AgentSessionKey)
+                for row in rows
+                if row.AgentSessionKeys is not None
+            ),
+        )
 
     async def revoke(
         self, org_id: UUID, record: AgentSessionPrivacy, outbox_rows: tuple[OutboxRow, ...] = ()

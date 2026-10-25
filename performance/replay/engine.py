@@ -10,9 +10,10 @@ emulator or the in-process twin. On memory, the storage is the memory one
 and the infra the local twins, as the demo runs. The model is the scripted
 twin, on either.
 
-Three things are the harness's and change nothing the engine does: the key
+Four things are the harness's and change nothing the engine does: the key
 service is counted on its way in, each append of the sealing layer is
-timed, and the twin answers each session from that session's script."""
+timed, each run's start is timed to its first model call, and the twin
+answers each session from that session's script."""
 
 from __future__ import annotations
 
@@ -90,11 +91,15 @@ one twin answers each from its own script."""
 @dataclass
 class Counts:
     """What the harness counts as the engine runs: each key service call by
-    the engine function that asked for it, and each append's latency."""
+    the engine function that asked for it, each append's latency, and each
+    run's start: from the loop's run to its first model call, by the time
+    each session's current run began."""
 
     keys: Counter[str] = field(default_factory=Counter)
     appends: list[float] = field(default_factory=list)
     steps_written: int = 0
+    run_starts: list[float] = field(default_factory=list)
+    running: dict[UUID, float] = field(default_factory=dict)
 
     def key_calls(self) -> int:
         return sum(self.keys.values())
@@ -106,9 +111,10 @@ class Twin(ModelProviderScriptedImpl):
     compacts where it would; a summarizer's call is answered with a summary,
     outside every script. It keeps no call it was asked."""
 
-    def __init__(self, provider: ProviderName, words: Words) -> None:
+    def __init__(self, provider: ProviderName, words: Words, counts: Counts) -> None:
         super().__init__(provider)
         self._words = words
+        self._counts = counts
         self.scripts: dict[UUID, deque[ModelReply]] = {}
         self.streamed: dict[UUID, list[ModelReply]] | None = None
         self.summaries = 0
@@ -117,6 +123,9 @@ class Twin(ModelProviderScriptedImpl):
 
     async def stream(self, call: ModelCall, *, credential: object = None) -> AsyncIterator[StreamPart]:
         session = SESSION.get()
+        began = self._counts.running.pop(session, None)
+        if began is not None:
+            self._counts.run_starts.append(time.perf_counter() - began)
         if call.model != MAIN_MODEL:
             self.summaries += 1
             reply = ModelReply(
@@ -249,7 +258,7 @@ class Engine:
         self.counts = Counts()
         self.storage = storage
         self.infra = counted(infra, self.counts)
-        self.twins = {p: Twin(p, words) for p in ProviderName}
+        self.twins = {p: Twin(p, words, self.counts) for p in ProviderName}
         integrations = IntegrationsOverImpl(IdentityProviderAbsentImpl(), ModelProvidersOverImpl(self.twins))
         self.container = RunnerContainer.over(
             settings, storage, self.infra, integrations, agent_kinds=(KIND,), tool_catalog=tools(words)
@@ -310,9 +319,12 @@ class Engine:
 
     async def run(self, agent_session_id: UUID) -> LoopRun:
         """The loop run to its end, as the runner's claims would run it: a run
-        whose time ran out is run again."""
+        whose time ran out is run again. Each run's start is timed to its
+        first model call."""
         while True:
+            self.counts.running[agent_session_id] = time.perf_counter()
             run = await self.managers.loop.run(self.ctx(), agent_session_id)
+            self.counts.running.pop(agent_session_id, None)
             if run.end is not RunEnd.YIELDED:
                 return run
 

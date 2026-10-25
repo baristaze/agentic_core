@@ -209,9 +209,7 @@ class LoopModelTurn(LoopCore):
             spend_hold_id=hold,
         )
         try:
-            (request,) = await self._steps.append_agent_steps(
-                ctx, agent_session_id, run.epoch, [request]
-            )
+            (request,) = await self._append(run, [request])
         except BaseException:
             # Never sent: nothing was billed.
             await self._gate.settle(ctx, hold, None, billed=False, site=None)
@@ -241,7 +239,7 @@ class LoopModelTurn(LoopCore):
                     closing = rules.response_step(
                         response_id, self._clock(), request, failed.partial
                     )
-                await self._steps.append_agent_steps(ctx, agent_session_id, run.epoch, [closing])
+                await self._append(run, [closing])
                 raise
             except BaseException:
                 with contextlib.suppress(Exception):
@@ -249,9 +247,7 @@ class LoopModelTurn(LoopCore):
                 raise
             await self._gate.settle(ctx, hold, reply.usage, billed=True, site=site())
             stored = rules.response_step(response_id, self._clock(), request, reply)
-            (stored,) = await self._steps.append_agent_steps(
-                ctx, agent_session_id, run.epoch, [stored]
-            )
+            (stored,) = await self._append(run, [stored])
             return stored
         finally:
             # Over, whichever way: its step is stored, or its call failed.

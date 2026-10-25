@@ -130,6 +130,11 @@ class RunState:
     jobs: dict[UUID, rules.StartedJob] = field(default_factory=lambda: {})
     # What the session holds beyond its kind, folded into `kind` already.
     attached: AttachedToolsets = NO_ATTACHED_TOOLSETS
+    # The steps the run appended, by seq: its working state, with the
+    # history it holds, and gone with the run. A read of the history joins
+    # each where it falls, so the run reads back nothing it wrote, only what
+    # others wrote between.
+    own: dict[int, AgentStep] = field(default_factory=lambda: {})
 
     @property
     def agent_session_id(self) -> UUID:
@@ -214,19 +219,42 @@ class LoopCore(ABC):
         read: Sequence[AgentStep] = (),
         *,
         since: int = 0,
+        own: dict[int, AgentStep] | None = None,
     ) -> list[AgentStep]:
         """The session's whole history, in `seq` order: `read`, what was read
         of it already, and every step after it; with nothing read, every
-        step after `since`."""
+        step after `since`. `own` holds steps the run appended, by seq: each
+        joins where it falls, and only the steps between them are read. An
+        append takes the next seqs and commits in their order, so the steps
+        between are those others wrote first; a read that finds fewer reads
+        on from storage alone, as if the run had appended nothing."""
         steps = list(read)
+        held = {} if own is None else own
         while True:
             after = steps[-1].seq if steps else since
-            page = await self._steps.get_agent_steps(
-                ctx, agent_session_id, after, self._options.page
+            while after + 1 in held:
+                after += 1
+                steps.append(held[after])
+            ahead = min((seq for seq in held if seq > after), default=None)
+            limit = (
+                self._options.page if ahead is None else min(self._options.page, ahead - after - 1)
             )
+            page = await self._steps.get_agent_steps(ctx, agent_session_id, after, limit)
             steps.extend(page.items)
-            if not page.has_more or not page.items:
-                return steps
+            if ahead is None:
+                if not page.has_more or not page.items:
+                    return steps
+            elif len(page.items) < limit:
+                held = {}
+
+    async def _append(self, run: RunState, steps: Sequence[AgentStep]) -> tuple[AgentStep, ...]:
+        """An append under the run's epoch. What it stored joins the run's
+        history at its next read, with no read back."""
+        stored = await self._steps.append_agent_steps(
+            run.ctx, run.agent_session_id, run.epoch, steps
+        )
+        run.own.update((step.seq, step) for step in stored)
+        return stored
 
     async def _since(self, run: RunState, seq: int) -> list[AgentStep]:
         page = await self._steps.get_agent_steps(
@@ -266,9 +294,7 @@ class LoopCore(ABC):
         run that lost its claim is refused here, whatever it answered."""
         own = answer.model_copy(update={"id": response_id(request, run.epoch)})
         bounded = await self._windows.bound_tool_response(run.ctx, run.agent_session_id, own)
-        return await self._steps.append_agent_steps(
-            run.ctx, run.agent_session_id, run.epoch, [bounded, *after]
-        )
+        return await self._append(run, [bounded, *after])
 
     def _stopped(self, request: AgentStep, text: str, failure: ToolFailure) -> AgentStep:
         return response(
@@ -296,7 +322,7 @@ class LoopCore(ABC):
         step = rules.notice_step(
             new_id(), self._clock(), run.agent_session_id, run.loop_id, principal, text
         )
-        await self._steps.append_agent_steps(run.ctx, run.agent_session_id, run.epoch, [step])
+        await self._append(run, [step])
 
     def _registry(
         self,

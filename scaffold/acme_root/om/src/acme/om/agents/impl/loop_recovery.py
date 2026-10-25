@@ -4,6 +4,7 @@ whole, and each call it may have started is settled by its effect, never
 run as new."""
 
 import contextlib
+from collections.abc import Sequence
 
 from acme.om.agent_steps.types.agent_step import AgentStep
 from acme.om.agent_steps.types.header import (
@@ -29,7 +30,7 @@ class LoopRecovery(LoopCore):
     """What a lost run left: its open calls, each settled by its effect,
     and its unanswered model request, closed."""
 
-    async def _recover_calls(self, run: RunState) -> LoopRun | None:
+    async def _recover_calls(self, run: RunState, history: Sequence[AgentStep]) -> LoopRun | None:
         """The calls a lost run left open, each settled by its effect before
         the loop does anything else: none of them is ever run as new. A call
         that would wait for a person, or whose principal lapsed, is answered
@@ -39,8 +40,9 @@ class LoopRecovery(LoopCore):
         refused one, parks it there once every other call is settled, so
         nothing asks or starts it a second time. A job's call after it is
         left open for the run that resumes, whose start of it attaches to
-        the work under its key."""
-        history = await self._history(run.ctx, run.agent_session_id)
+        the work under its key. `history` is what the run read at its start,
+        and it reads on from there."""
+        history = await self._history(run.ctx, run.agent_session_id, history, own=run.own)
         response = rules.latest_response(history, run.loop_id)
         if response is None:
             return None
@@ -86,4 +88,4 @@ class LoopRecovery(LoopCore):
             )
             with contextlib.suppress(NotFound):
                 await self._gate.settle(run.ctx, header.spend_hold_id, None, billed=True, site=site)
-        await self._steps.append_agent_steps(run.ctx, run.agent_session_id, run.epoch, [closing])
+        await self._append(run, [closing])

@@ -142,6 +142,22 @@ def _at_rest(results: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _starts(results: dict[str, Any]) -> list[str]:
+    lines = [
+        "| keys | run | runs | run start p50 | p95 | p99 | the last |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for run in results["runs"]:
+        starts = run.get("run_start_ms")
+        if starts is None:
+            continue
+        lines.append(
+            f"| {KEYS[run['keys']]} | {run['name']} | {starts['runs']} | {starts['p50']} ms | {starts['p95']} ms "
+            f"| {starts['p99']} ms | {starts['last']} ms |"
+        )
+    return lines
+
+
 def _calibration(results: dict[str, Any]) -> list[str]:
     lines = ["| keys | a database round trip | an unwrap |", "| --- | ---: | ---: |"]
     seen: set[str] = set()
@@ -191,6 +207,18 @@ def render(results: dict[str, Any], cited: str) -> str:
         "",
         *_at_rest(results),
         "",
+    ]
+    if any("run_start_ms" in run for run in results["runs"]):
+        parts += [
+            "### A run's start",
+            "",
+            "From the loop's run to its first model call, over every run of the point. The last is the point's last run:"
+            " alone, the one on the longest history.",
+            "",
+            *_starts(results),
+            "",
+        ]
+    parts += [
         "### One round trip on this stack",
         "",
         *_calibration(results),

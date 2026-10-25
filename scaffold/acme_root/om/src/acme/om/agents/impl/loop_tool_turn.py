@@ -147,9 +147,7 @@ class LoopToolTurn(LoopCore):
             )
             for use, hashed in zip(missing, hashes, strict=True)
         ]
-        stored = await self._steps.append_agent_steps(
-            run.ctx, run.agent_session_id, run.epoch, built
-        )
+        stored = await self._append(run, built)
         by_use = {_use_id(step): step for step in stored}
         run.made.update(step.id for step in stored)
         return [(use, request or by_use[use.id]) for use, request in calls]
@@ -564,7 +562,7 @@ class LoopToolTurn(LoopCore):
         the kind does not defer is the call's invalid input; one whose
         tools the registry holds already answers so, and switches
         nothing."""
-        history = await self._history(run.ctx, run.agent_session_id, history)
+        history = await self._history(run.ctx, run.agent_session_id, history, own=run.own)
         try:
             loaded = load(
                 run.kind.deferred,
