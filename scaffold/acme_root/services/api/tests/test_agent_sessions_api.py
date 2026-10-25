@@ -202,6 +202,41 @@ async def test_a_history_whose_key_is_revoked_reads_as_its_shape_alone(
     assert {step["text"] for step in items} == {""}
 
 
+async def test_a_title_reads_opened_and_as_absent_once_its_key_is_revoked(
+    client: httpx.AsyncClient, owner: dict[str, str], container: AppContainer
+) -> None:
+    """The routes answer a title as it was given, though storage keeps it
+    sealed; once a session's key is revoked its title says nothing, and the
+    list still holds the session in its place, with its kind."""
+    titles = ("why the object drops", "the weekly total")
+    made = []
+    for title in titles:
+        answered = await client.post(
+            "/v1/agent-sessions", headers=created(owner), json={"kind": "assistant", "title": title}
+        )
+        assert answered.status_code == 201, answered.text
+        assert answered.json()["title"] == title
+        made.append(answered.json()["id"])
+    read = await client.get(f"/v1/agent-sessions/{made[0]}", headers=owner)
+    assert read.json()["title"] == titles[0]
+    ctx = await container.managers.tenancy.authenticate(
+        seed_request(), owner["Authorization"].removeprefix("Bearer ")
+    )
+    await container.managers.privacy.revoke_key(ctx, UUID(made[0]))
+
+    listed = await client.get("/v1/agent-sessions", headers=owner)
+
+    assert listed.status_code == 200, listed.text
+    items = {item["id"]: item for item in listed.json()["items"]}
+    assert [item["id"] for item in listed.json()["items"]] == sorted(made)
+    assert {i: (items[i]["title"], items[i]["kind"]) for i in made} == {
+        made[0]: ("", "assistant"),
+        made[1]: (titles[1], "assistant"),
+    }
+    gone = await client.get(f"/v1/agent-sessions/{made[0]}", headers=owner)
+    assert (gone.status_code, gone.json()["title"]) == (200, "")
+
+
 async def test_a_kind_the_product_does_not_run_starts_nothing(
     client: httpx.AsyncClient, owner: dict[str, str]
 ) -> None:

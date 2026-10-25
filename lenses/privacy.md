@@ -84,16 +84,20 @@ an approval happened and who decided, tool names, classes, effects, and
 keyed hashes. A hash in the shape is keyed by the session. Telemetry,
 logs, and traces carry shape only; redaction is no licence to log
 content. Billing, audit, and tracing keep working on a session whose
-content is gone.
+content is gone. A session's title is content, sealed under a title key
+of its own, and a page of titles opens with one key call.
 
-**Source.** Privacy, Content and Shape.
+**Source.** Privacy, Content and Shape; Privacy, A Key per Session.
 
 **Look for.** Each persisted field and which side it sits on; derived
-stores; hashes and their keys; what logs, metrics, and spans carry.
+stores; hashes and their keys; what logs, metrics, and spans carry;
+where a title is sealed and opened, and the key calls a page of titles
+takes.
 
 **Violation.** A derived index or embedding stored unsealed; an unkeyed
 hash of content; content in a log line or a span, redacted or not;
-billing or audit that reads content.
+billing or audit that reads content; a title in the clear, or a page of
+titles that calls the key service once a session.
 
 **Severity.** medium
 

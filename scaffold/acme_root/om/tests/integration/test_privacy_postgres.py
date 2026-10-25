@@ -245,16 +245,27 @@ async def test_a_rotation_rewraps_the_keys_and_rewrites_no_content_row(
     read = {s: (await managers.agent_steps.get_agent_steps(ctx, s, 0, 10)).items for s in sessions}
     keys = await key_rows(pg_sessions, ctx.org_id)
     assert {key["wrapping"] for key in keys} == {"memory:1"}
+    stored = [await managers.agent_sessions.get_agent_session(ctx, s) for s in sessions]
+    titles = await managers.agent_sessions.open_titles(ctx, stored)
 
     rotated = utcnow()
     service = infra.get_keys()
     assert isinstance(service, KeyServiceMemoryImpl)
     service.rotate(ctx.org_id)
-    assert await managers.privacy.rewrap_keys(ctx, rotated) == len(keys) == 3
+    # Every version, and the tenant's title key.
+    assert await managers.privacy.rewrap_keys(ctx, rotated) == len(keys) + 1 == 4
     assert await managers.privacy.rewrap_keys(ctx, rotated) == 0
 
     rewrapped = await key_rows(pg_sessions, ctx.org_id)
     assert {key["wrapping"] for key in rewrapped} == {"memory:2"}
+    (tenant,) = await rows(
+        pg_sessions,
+        DatabaseRole.CORE,
+        "SELECT wrapping FROM core.tenant_title_keys WHERE org_id = :org",
+        ctx.org_id,
+    )
+    assert tenant["wrapping"] == "memory:2"
+    assert await managers.agent_sessions.open_titles(ctx, stored) == titles
     assert all(old["wrapped"] != new["wrapped"] for old, new in zip(keys, rewrapped, strict=True))
     for session in sessions:
         assert await history_rows(pg_sessions, ctx.org_id, session) == history[session]

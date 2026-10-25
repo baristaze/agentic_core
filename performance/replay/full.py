@@ -6,7 +6,8 @@ bucket in MinIO. Each point builds the engine afresh over the stack, with
 a tenant of its own, so no point warms another's caches.
 
 While each point writes, once half its turns are played, a scan reads the
-rows of its sessions' steps and every tool output object they kept, and
+rows of its sessions' steps, every tool output object they kept, and the
+rows of the tenant's sessions, whose titles open with the marker too, and
 counts the run's marker in them, as it is and in base64; another scan does
 the same once the point is done. Each scan also counts the rows and the
 objects it read, so a scan that read nothing shows. The scans run on a
@@ -68,6 +69,8 @@ class Scan:
     rows: int = 0
     rows_read_as_text: int = 0
     rows_with_marker: int = 0
+    session_rows: int = 0
+    session_rows_with_marker: int = 0
     objects: int = 0
     objects_with_marker: int = 0
     content_bytes: int = 0
@@ -119,6 +122,26 @@ async def scan(settings: AgentSessionRunnerSettings, org_id: UUID, sessions: lis
             found.content_bytes, found.content_stored_bytes = int(counted[3]), int(counted[4])
     finally:
         await engine.dispose()
+    # The tenant's sessions, each row whole, its sealed title's bytes too:
+    # a title holds the marker in the clear unless it is sealed.
+    core = create_async_engine(reader()[DatabaseRole.CORE])
+    raw = [piece.decode() for piece in pieces]
+    try:
+        async with core.connect() as connection:
+            titled = (
+                await connection.execute(
+                    text(
+                        "SELECT count(*), count(*) FILTER (WHERE s::text LIKE ANY(CAST(:patterns AS text[]))"
+                        " OR EXISTS (SELECT 1 FROM unnest(CAST(:raw AS text[])) AS p(piece)"
+                        " WHERE position(convert_to(p.piece, 'UTF8') IN coalesce(s.title_sealed, ''::bytea)) > 0))"
+                        " FROM core.agent_sessions s WHERE org_id = :org"
+                    ),
+                    {"org": org_id, "patterns": patterns, "raw": raw},
+                )
+            ).one()
+            found.session_rows, found.session_rows_with_marker = int(titled[0]), int(titled[1])
+    finally:
+        await core.dispose()
     async with _aws(settings).client("s3", endpoint_url=settings.s3_endpoint_url) as s3:
         bucket = f"{settings.s3_bucket_prefix}-{BUCKET}"
         for agent_session_id in sessions:
@@ -333,6 +356,8 @@ async def full(shape: tuple[Turn, ...], name: str, results: Path, turns: int, sw
         for found in (run["scan_while_writing"], run["scan_after"])
         if found["rows_with_marker"]
         or found["objects_with_marker"]
+        or found["session_rows_with_marker"]
+        or not found["session_rows"]
         or not found["rows"]
         or found["rows_read_as_text"] != found["rows"]
         or not found["objects"]

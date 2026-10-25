@@ -189,15 +189,24 @@ async def read_history(engine: Engine, sessions: list[UUID], into: Read, steps: 
             after = page.items[-1].seq
 
 
+async def a_full_page(engine: Engine, sessions: list[UUID]) -> None:
+    """The tenant topped up to a full page of the list: as many more sessions
+    started, titled as the replayed ones are, as the page has room for."""
+    for _ in range(LIST_PAGE - len(sessions)):
+        await engine.new_session()
+
+
 async def read_list(engine: Engine, into: Read) -> None:
     """The tenant's session list, a page at a time, as the API's list route
-    reads it, whole, `LIST_PASSES` times."""
+    reads it, whole, `LIST_PASSES` times: the page, and its titles opened."""
     ctx = engine.ctx()
+    sessions = engine.managers.agent_sessions
     for _ in range(LIST_PASSES):
         after: UUID | None = None
         while True:
             started = time.perf_counter()
-            page = await engine.managers.agent_sessions.get_agent_sessions(ctx, None, after, LIST_PAGE, Among.VISIBLE)
+            page = await sessions.get_agent_sessions(ctx, None, after, LIST_PAGE, Among.VISIBLE)
+            await sessions.open_titles(ctx, page.items)
             into.latencies.append(time.perf_counter() - started)
             into.pages += 1
             into.items += len(page.items)
@@ -230,8 +239,8 @@ async def measured_read(engine: Engine, work: Callable[[Read], Coroutine[Any, An
 
 async def point(engine: Engine, scripts: list[list[Run]], *, profiled: bool) -> tuple[Point, list[UUID]]:
     """Every script replayed as one session, all at once; then each
-    session's history read from its start and the session list read whole,
-    as the API reads them."""
+    session's history read from its start, and the session list, topped up
+    to a full page, read whole, as the API reads them."""
     counts = engine.counts
     counts.keys.clear()
     counts.appends.clear()
@@ -250,6 +259,7 @@ async def point(engine: Engine, scripts: list[list[Run]], *, profiled: bool) -> 
     key_calls, keys = counts.key_calls(), dict(counts.keys)
     read: list[AgentStep] = []
     history = await measured_read(engine, lambda into: read_history(engine, sessions, into, read), profiled=profiled)
+    await a_full_page(engine, sessions)
     listing = await measured_read(engine, lambda into: read_list(engine, into), profiled=profiled)
     return (
         Point(

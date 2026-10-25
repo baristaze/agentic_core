@@ -1785,6 +1785,12 @@ touches no content. The key service creates, wraps, unwraps, and
 destroys a session's data keys; a memory impl serves a process and a
 test, and a cloud key service a fleet.
 
+A session's title is content too, and a list shows a page of them at
+once. So it is sealed under a title key of the session's own, kept
+wrapped under its tenant's title key, which the key service wraps: a page
+of titles costs one call to the key service, whatever its size. Revoking
+the session's key takes its title key in the same commit.
+
 > **Principle:** Content is sealed per session; shape is not. Revoking a
 > key deletes the content and keeps the record.
 
@@ -1792,7 +1798,7 @@ test, and a cloud key service a fleet.
 
 | Sealed: content | Readable: shape |
 |---|---|
-| Messages, events, tool inputs and outputs | Ids, types, `seq`, actors, origins, references |
+| Messages, events, tool inputs and outputs, a session's title | Ids, types, `seq`, actors, origins, references |
 | Thinking, summaries, the plan | Times, sizes, stop reasons, failure classes |
 | Attachments and tool outputs | Usage, cost, budgets; that an approval happened, and who decided |
 | Anything derived: caches, indexes, embeddings | Tool names, classes, effects; keyed hashes |

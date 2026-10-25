@@ -6,7 +6,8 @@ whose stored steps and tool outputs hold sealed content alone.
   block; each tool response as the output its tool returned; each message
   as what the person said.
 - Below the sealing layer, every step that says something is sealed, none
-  holds a block in the clear, and none holds the run's marker. No file the
+  holds a block in the clear, and none holds the run's marker. Each
+  session's title is stored sealed, holds no marker, and opens as given. No file the
   object store keeps holds it either, and at least one tool output was
   kept, so the scan reads something.
 - The harness measures a path where things are sealed: the key service
@@ -20,7 +21,7 @@ from uuid import UUID
 
 from acme.integrations.model_providers.calls import ModelReply
 from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
-from acme.om.agent_steps.types.content import TextBlock, ToolResultBlock
+from acme.om.agent_steps.types.content import ContentState, TextBlock, ToolResultBlock
 from replay.engine import Engine
 from replay.generate import runs
 from replay.run import point
@@ -96,6 +97,14 @@ async def check_memory(shape: tuple[Turn, ...], folder: Path) -> int:
             len(speaking) == sum(1 for step in history if step.content.blocks), "every step that says something is stored sealed"
         )
         expect(not any(mark in step.model_dump_json() for step in stored), "no stored step holds the run's marker")
+        rows = await engine.storage.get_agent_session_storage().read_agent_sessions(engine.ctx().org_id, None, None, 100)
+        expect(
+            len(rows) == 50 and all(row.title.state is ContentState.SEALED for row in rows),
+            "the list's full page of sessions holds each title sealed",
+        )
+        expect(not any(mark in row.model_dump_json() for row in rows), "no stored session holds the run's marker")
+        opened = await engine.managers.agent_sessions.open_titles(engine.ctx(), rows)
+        expect(all(row.title.said() == f"{mark} the replay" for row in opened), "each title opens as it was given")
         kept = [path for path in (folder / "infra").rglob("*") if path.is_file() and "tool-outputs" in path.parts]
         expect(bool(kept), f"tool outputs were kept in the object store ({len(kept)})")
         expect(not any(mark.encode() in path.read_bytes() for path in kept), "no tool output kept holds the run's marker")
