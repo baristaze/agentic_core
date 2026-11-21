@@ -22,7 +22,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from acme.infra.agent_workspaces import AgentWorkspace, IsolationSpec
+from acme.infra.agent_workspaces import AgentWorkspace, EgressMode, IsolationSpec
 from acme.infra.transports import OutputSink
 from acme.om.agent_steps.types.agent_step import AgentStep
 from acme.om.agent_steps.types.header import AgentWorkspaceSnapshot
@@ -166,6 +166,7 @@ class ToolsManagerInterface(ABC):
         call_input: Mapping[str, Any],
         workspace: AgentWorkspace,
         *,
+        egress: EgressMode,
         holds_private: bool = True,
         tree_deadline: datetime | None = None,
         above: Sequence[ToolPolicyLayer] = (),
@@ -173,12 +174,14 @@ class ToolsManagerInterface(ABC):
         """Where a call stands before it runs. A tool the registry does not
         hold, an input its schema refuses, and a preflight that refuses are
         answered at once; the preflight runs by the call's own time, never
-        past `tree_deadline`. Then attribution answers whose authority the
-        call runs under, asked again of the adopter's transition (`denied`
-        for a delegated principal who no longer holds it; `PrincipalLapsed`
-        for a steady one), and the rule of two: whether the session is marked,
-        `holds_private` (its private data or credentials), and whether the
-        call acts outward, read from its target. Then policy decides from the
+        past `tree_deadline`, given `workspace`. Then attribution answers
+        whose authority the call runs under, asked again of the adopter's
+        transition (`denied` for a delegated principal who no longer holds
+        it; `PrincipalLapsed` for a steady one), and the rule of two: whether
+        the session is marked, `holds_private` (its private data or
+        credentials), and whether the call acts outward, read from its
+        target and from `egress`, the session's spec's, whatever workspace
+        the call was given. Then policy decides from the
         tool, its class, its effect, and its target's attributes (`defaults`
         are the agent kind's; `above` are the kinds' above it in its tree,
         and the call is decided under each of them too, the strictest

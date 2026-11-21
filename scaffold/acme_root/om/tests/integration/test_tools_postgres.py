@@ -141,12 +141,24 @@ async def test_a_call_is_approved_run_audited_and_recovered_over_postgres(
         agent_session_id=session,
     )
     gate = await tools.gate(
-        owner, registry, KIND_DEFAULTS, found.request, found.call_input, workspace
+        owner,
+        registry,
+        KIND_DEFAULTS,
+        found.request,
+        found.call_input,
+        workspace,
+        egress=workspace.spec.egress.mode,
     )
     assert gate.outcome is GateOutcome.ASK
     await tools.decide_call(owner, session, found.request.seq, approve=True)
     gate = await tools.gate(
-        owner, registry, KIND_DEFAULTS, found.request, found.call_input, workspace
+        owner,
+        registry,
+        KIND_DEFAULTS,
+        found.request,
+        found.call_input,
+        workspace,
+        egress=workspace.spec.egress.mode,
     )
     assert gate.outcome is GateOutcome.RUN
 

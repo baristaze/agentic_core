@@ -32,7 +32,9 @@ how they are versioned.
 
 **Violation.** A tool with no class, no effect, no timeout, or no mode;
 a tool that says its calls reach no workspace and runs a command or
-touches a file through its runtime; an input schema that accepts unknown
+touches a file through its runtime; a gate that reads that declaration,
+such as a rule of two that reads the egress of the workspace a call was
+given rather than the session's; an input schema that accepts unknown
 fields; a description changed outside the kind's version; a sub-agent or
 an MCP tool registered through a second contract. (An effect declared
 safer than the tool is TOL-02.)

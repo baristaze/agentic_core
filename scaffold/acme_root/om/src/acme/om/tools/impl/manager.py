@@ -12,6 +12,7 @@ from acme.infra.agent_workspaces import (
     AgentWorkspaceLost,
     AgentWorkspaceProviderInterface,
     Durability,
+    EgressMode,
     IsolationMode,
     IsolationRefused,
     IsolationSpec,
@@ -412,6 +413,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         call_input: Mapping[str, Any],
         workspace: AgentWorkspace,
         *,
+        egress: EgressMode,
         holds_private: bool = True,
         tree_deadline: datetime | None = None,
         above: Sequence[ToolPolicyLayer] = (),
@@ -451,9 +453,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         # policy would decide. A delegated principal who no longer holds the
         # call is answered `denied`; a steady one that lapsed raises, and the
         # loop waits for a person to take the session over.
-        reach = CallReach(
-            outward=reaches_outward(asked, workspace.spec.egress.mode), holds_private=holds_private
-        )
+        reach = CallReach(outward=reaches_outward(asked, egress), holds_private=holds_private)
         try:
             authority = await self._attribution.authorize_call(ctx, request.agent_session_id, reach)
         except AuthorityRevoked as revoked:

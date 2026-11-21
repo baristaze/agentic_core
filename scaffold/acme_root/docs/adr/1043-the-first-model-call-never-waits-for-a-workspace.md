@@ -34,7 +34,8 @@ call's input may narrow it, as a spawn reaches the workspace only when
 it forks. The engine's own tools and every tool over MCP reach none. The
 call's request records the answer, and the loop reads it there. A call
 that reaches none is given the absent workspace, which every transport
-refuses, loudly.
+refuses, loudly. It decides nothing of the gate: the rule of two reads
+the session's egress, whatever workspace a call was given.
 
 **A workspace that must wait parks the loop with its call open.** A
 prepare that refuses with `clears` parks the loop on the resource, and a

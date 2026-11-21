@@ -200,6 +200,9 @@ class LoopToolTurn(LoopCore):
                 request,
                 use.input,
                 workspace,
+                # The rule of two reads the session's egress, never the
+                # workspace a call that reaches none was given.
+                egress=run.kind.isolation.egress.mode,
                 holds_private=rules.holds_private(run.session, run.kind, run.registry, history),
                 # A fresh call's preflight keeps the tree's deadline. A call a
                 # lost run may have started is settled by its effect, which

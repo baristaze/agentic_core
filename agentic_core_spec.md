@@ -757,7 +757,7 @@ Tools are where the engine touches the world.
 | effect | `read_only`; `idempotent`, safe to repeat natively or under the idempotency key; or `unsafe`, where a repeat may duplicate a side effect |
 | interruptible | Whether an urgent input may stop it mid-run |
 | mode | `sync`, or `job` for work that outlives a run ([Long-Running Jobs](#long-running-jobs)) |
-| workspace | Whether its calls reach the session's workspace, so a call waits for it to be prepared ([The Runtime](#the-runtime)); a tool that does not say reaches it, and a call's input may narrow it, as a spawn that does not fork |
+| workspace | Whether its calls reach the session's workspace, so a call waits for it to be prepared ([The Runtime](#the-runtime)); a tool that does not say reaches it, and a call's input may narrow it, as a spawn that does not fork. It decides nothing of the gate: the rule of two reads the session's egress either way |
 | preflight | Optional: refuses a call that cannot succeed, before anyone is asked to approve it |
 
 ### The Registry
