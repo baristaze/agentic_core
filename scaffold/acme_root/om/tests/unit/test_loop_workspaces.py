@@ -46,8 +46,6 @@ from acme.om.context import TenantContext
 from acme.om.tools.native.wait_for_sub_agents import WAIT_FOR_SUB_AGENTS
 
 from contracts import sub_agents
-from contracts.sub_agents import failure_of
-from contracts.sub_agents import text_of as said_by
 from contracts.loops import (
     ASSISTANT,
     DELIVERY,
@@ -62,6 +60,8 @@ from contracts.loops import (
     text_of,
     use,
 )
+from contracts.sub_agents import failure_of
+from contracts.sub_agents import text_of as said_by
 
 TWIN = IsolationSpec(mode=IsolationMode.TWIN, egress=EgressPolicy(mode=EgressMode.NONE))
 CONTAINER = IsolationSpec(mode=IsolationMode.CONTAINER, egress=EgressPolicy(mode=EgressMode.NONE))
