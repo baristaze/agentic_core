@@ -270,29 +270,33 @@ async def test_a_directory_past_the_bound_is_refused_by_its_size_before_it_is_pa
 
 
 @pytest.mark.parametrize(
-    ("tar", "why"),
+    ("tar", "within", "why"),
     [
-        ("head -c 5000 /dev/zero; exit 2", "exited 2"),
-        ("exec 2>/dev/null; head -c 5000 /dev/zero; sleep 2", "did not end within 0.5 seconds"),
+        ("head -c 5000 /dev/zero; exit 2", TIMEOUT, "exited 2"),
+        (
+            "exec 2>/dev/null; head -c 5000 /dev/zero; sleep 30",
+            timedelta(seconds=0.5),
+            "did not end within 0.5 seconds",
+        ),
     ],
     ids=["fails", "outlasts its time"],
 )
 async def test_a_pack_that_fails_or_outlasts_its_time_leaves_no_pack_behind(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tar: str, why: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tar: str, within: timedelta, why: str
 ) -> None:
     """The pack's path is named before tar starts, so a tar that fails, or
-    one still writing when the pack's own time runs out, leaves no file."""
+    one still writing when the pack's own time runs out, leaves no file. A
+    tar that fails is given all the time it needs, so a loaded machine's
+    slow measure never reads as a pack that outlasted its time."""
     channel, directory, temporary = shimmed(tmp_path, tar)
     monkeypatch.setattr(packs, "TEMPORARY", str(temporary))
     (directory / "a.bin").write_bytes(bytes(100))
     started = time.monotonic()
 
     with pytest.raises(BackendFailed, match=why):
-        await packs.pack(
-            channel, "workspace", bound=10_000, within=timedelta(seconds=0.5), stall=TIMEOUT
-        )
+        await packs.pack(channel, "workspace", bound=10_000, within=within, stall=TIMEOUT)
 
-    assert time.monotonic() - started < 2, "bounded by its own time"
+    assert time.monotonic() - started < 10, "bounded by its own time, not the tar's"
     assert list(temporary.iterdir()) == [], "no pack left behind"
 
 
