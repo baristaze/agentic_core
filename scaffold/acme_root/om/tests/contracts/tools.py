@@ -316,6 +316,8 @@ def tools_over(
         secrets or SecretsLocalImpl(Path(tempfile.mkdtemp(prefix="secrets-")) / "secrets.env"),
         secret_names,
         options.purge_batch,
+        directory_bound=options.directory_bound,
+        part_bytes=options.snapshot_part_bytes,
     )
     bases = AgentWorkspaceBases(
         buckets,

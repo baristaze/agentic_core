@@ -20,7 +20,7 @@ AgentSessionRevoked = Callable[[TenantContext, UUID], Awaitable[None]]
 """What other namespaces keep of a session outside its seal, destroyed with
 its key's revocation: given the revoking context and the session's id. The
 root binds it to the tools' erasure of what the session's snapshots keep
-outside their archives, such as a VM's disks."""
+outside their sealed archives, where a provider keeps any."""
 
 
 class PrivacyManagerInterface(ABC):
@@ -46,8 +46,9 @@ class PrivacyManagerInterface(ABC):
         """Erases the session's content: every version of its key is
         destroyed, and its title key with them, so its title reads as
         absent, and the session takes no content again. What its
-        snapshots keep outside the seal, such as a VM's disks, is destroyed
-        with it; a copy kept for another session, such as a fork's, stays.
+        snapshots keep outside the seal, where a provider keeps any, is
+        destroyed with it; a copy kept for another session, such as a
+        fork's, stays.
         Its steps keep their place, their type, and their shape, and read
         as absent. Once, and announced; a revoked session is answered as it
         is, and what is kept outside the seal is destroyed again, so a call

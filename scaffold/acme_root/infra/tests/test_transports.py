@@ -38,6 +38,7 @@ import pytest
 
 from acme.infra.agent_workspaces import (
     AgentWorkspace,
+    AgentWorkspaceBase,
     AgentWorkspaceProviderInterface,
     EgressMode,
     EgressPolicy,
@@ -728,19 +729,25 @@ def lima_runs() -> bool:
 LIMA_TIMEOUT = timedelta(seconds=120)
 
 
+LIMA_IMAGE = "template:_images/ubuntu-lts"
+on_base = vm.model_copy(
+    update={"base": AgentWorkspaceBase(image=LIMA_IMAGE, setup=("true",), egress=vm.egress)}
+)
+
+
 def on_lima() -> tuple[VmsLimaImpl, AgentWorkspaceVmImpl]:
     vms = VmsLimaImpl(LIMA_TIMEOUT, timedelta(minutes=15), encrypted=True)
     prefix = os.environ.get("ACME_VM_PREFIX", "acme-test-")
-    return vms, AgentWorkspaceVmImpl(vms, "template:_images/ubuntu-lts", prefix, LIMA_TIMEOUT)
+    return vms, AgentWorkspaceVmImpl(vms, LIMA_IMAGE, prefix, LIMA_TIMEOUT)
 
 
 @pytest.fixture(scope="module")
 def lima_start() -> Iterator[tuple[UUID, bytes]]:
-    """A VM booted once for the module, and the snapshot of it each case
-    starts a VM of its own from. Its calls run in a loop of their own,
+    """A VM booted once for the module, and a base's snapshot of it each
+    case starts a VM of its own on. Its calls run in a loop of their own,
     as each is a process of its own."""
     _, provider = on_lima()
-    workspace = asyncio.run(provider.prepare(new_id(), new_id(), vm))
+    workspace = asyncio.run(provider.prepare(new_id(), new_id(), vm, building=True))
     try:
         snapshot = asyncio.run(provider.snapshot(workspace))
     except BaseException:
@@ -754,8 +761,8 @@ def lima_start() -> Iterator[tuple[UUID, bytes]]:
 @pytest.mark.slow
 @pytest.mark.skipif(not lima_runs(), reason="needs Lima and a hypervisor")
 class TestTransportVmLima(TransportContract):
-    """The VM transport in a VM on Lima: each case its own, a copy of the
-    one the module booted, named under `ACME_VM_PREFIX`, and destroyed
+    """The VM transport in a VM on Lima: each case its own, on a base of
+    the one the module booted, named under `ACME_VM_PREFIX`, and destroyed
     at its end."""
 
     @pytest.fixture
@@ -765,9 +772,9 @@ class TestTransportVmLima(TransportContract):
         vms, provider = on_lima()
         org_id, snapshot = lima_start
         agent_workspace_id = new_id()
-        copy = await provider.keep(snapshot, org_id, agent_workspace_id)
+        base = await provider.keep(snapshot, org_id, agent_workspace_id)
         try:
-            workspace = await provider.prepare(org_id, agent_workspace_id, vm, snapshot=copy)
+            workspace = await provider.prepare(org_id, agent_workspace_id, on_base, base=base)
             yield vms, workspace
         finally:
             await provider.purge(org_id, agent_workspace_id)

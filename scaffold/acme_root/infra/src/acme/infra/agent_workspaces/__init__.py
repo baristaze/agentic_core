@@ -13,9 +13,12 @@ A workspace is a cache. A provider that can also snapshots one: everything
 its commands could write, as one archive its own `prepare` starts a
 workspace from. A spec that asks for a workspace that can be kept so
 (`Durability.SNAPSHOT`) is refused by a provider that cannot, before
-anything is made, and is never met by a cache in its stead. A snapshot too
-large to pass as bytes, such as a VM's disk, stays in the provider's own
-store, and its archive names it by a reference and a digest (ADR 1029).
+anything is made, and is never met by a cache in its stead. A provider
+whose every instance starts from its base, such as a VM's, keeps its
+directory alone (`keeps_directory`): measured and packed where the instance
+runs, read out in parts the caller seals and keeps, and brought back into a
+new instance on the base, so nothing too large ever passes as bytes whole
+(ADR 1045).
 
 A spec may name a base: an image, and the commands that set it up, run once
 with the setup's own egress. A base with setup is a snapshot of a workspace
@@ -28,7 +31,7 @@ checkout tracks. A layer that prepares one then raises `AgentWorkspaceLost`, and
 the loop parks, loudly, for a person."""
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator, Collection
+from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator, Collection
 from enum import StrEnum
 from typing import Self
 from uuid import UUID
@@ -44,12 +47,14 @@ __all__ = [
     "AgentWorkspaceLost",
     "AgentWorkspaceProviderInterface",
     "BaseSetupFailed",
+    "DirectoryPack",
     "Durability",
     "EgressMode",
     "EgressPolicy",
     "IsolationMode",
     "IsolationRefused",
     "IsolationSpec",
+    "KeepsWholeMixin",
     "ResourceLimits",
     "SnapshotRefused",
     "refusal",
@@ -228,6 +233,17 @@ def refusal(
     return None
 
 
+class DirectoryPack(InfraModel):
+    """A workspace's directory packed as one archive where its instance runs,
+    beside the directory: the instance it sits in (`location`), where it
+    sits there (`path`), and its size in bytes, measured before any byte of
+    it leaves."""
+
+    location: str = Field(min_length=1)
+    path: str = Field(min_length=1)
+    size: int = Field(ge=0)
+
+
 class AgentWorkspaceProviderInterface(ABC):
     @abstractmethod
     async def prepare(
@@ -270,6 +286,63 @@ class AgentWorkspaceProviderInterface(ABC):
         no such power. A provider whose instances hold none ignores it, and
         so does one whose wall is the VM, whose commands hold their
         guest whole."""
+        ...
+
+    @abstractmethod
+    def keeps_directory(self) -> bool:
+        """Whether a session's snapshot here keeps the workspace's directory
+        alone (`pack`, `read`, `drop`, `restore`), since every instance this
+        provider starts starts from the workspace's base: what its commands
+        wrote outside the directory comes from the base again. False when
+        `snapshot` keeps a workspace whole; a provider that keeps the
+        directory takes `snapshot` of a base's build alone. What the parts
+        are sealed under, and where they are kept, is the caller's (ADR
+        1045)."""
+        ...
+
+    @abstractmethod
+    async def pack(self, workspace: AgentWorkspace, bound: int) -> DirectoryPack:
+        """The workspace's directory packed as one archive beside it, while
+        nothing of the run runs in it, and measured: nothing of it has left
+        the instance yet. `SnapshotRefused`, before anything is packed, when
+        this provider keeps no directory alone, the workspace holds no
+        instance, or its files hold more than `bound` bytes, naming the
+        size and the bound. A pack that fails, or outlasts the time this
+        provider gives one, leaves no pack in the instance."""
+        ...
+
+    @abstractmethod
+    def read(self, pack: DirectoryPack, part_bytes: int) -> AsyncGenerator[bytes]:
+        """The pack's bytes, in order, in parts of `part_bytes`, the last one
+        shorter. A pack gone, or a channel that stalls, is an error."""
+        ...
+
+    @abstractmethod
+    async def drop(self, pack: DirectoryPack) -> None:
+        """The pack removed from its instance, once it is kept or refused.
+        Dropping one already gone, or whose instance is gone, does nothing."""
+        ...
+
+    @abstractmethod
+    async def restore(
+        self,
+        org_id: UUID,
+        agent_workspace_id: UUID,
+        spec: IsolationSpec,
+        parts: AsyncIterable[bytes],
+        base: bytes | None = None,
+    ) -> AgentWorkspace:
+        """The workspace under `agent_workspace_id` on a new instance started
+        from `base`, the archive this provider's `snapshot` made of the
+        spec's base, or from the spec's image, its directory holding what
+        `parts` hold, a pack's bytes in order: what it held before is
+        replaced whole. Refused (`IsolationRefused`) as `prepare` refuses,
+        before anything is made; a base this provider cannot bring in, or a
+        provider that keeps no directory alone, raises `AgentWorkspaceLost`.
+        The instance the workspace stood on goes only once the new one holds
+        the whole directory. A restore that fails part way, an error `parts`
+        raises included, leaves no instance of its own, never a
+        half-restored one, and the one it would replace as it stood."""
         ...
 
     @abstractmethod
@@ -345,3 +418,34 @@ class AgentWorkspaceProviderInterface(ABC):
     async def close(self) -> None:
         """Closed by the infra root at shutdown, in reverse order of start."""
         ...
+
+
+class KeepsWholeMixin:
+    """What a provider whose snapshot keeps a workspace whole answers for
+    the directory alone: it keeps none, so it packs nothing, and starts no
+    workspace from a directory's parts."""
+
+    def keeps_directory(self) -> bool:
+        return False
+
+    async def pack(self, workspace: AgentWorkspace, bound: int) -> DirectoryPack:
+        raise SnapshotRefused(f"a {workspace.spec.mode.value} workspace keeps no directory alone")
+
+    async def read(self, pack: DirectoryPack, part_bytes: int) -> AsyncGenerator[bytes]:
+        raise SnapshotRefused("this provider keeps no directory alone, so it reads no pack")
+        yield b""  # an async generator, as the interface reads
+
+    async def drop(self, pack: DirectoryPack) -> None:
+        return None
+
+    async def restore(
+        self,
+        org_id: UUID,
+        agent_workspace_id: UUID,
+        spec: IsolationSpec,
+        parts: AsyncIterable[bytes],
+        base: bytes | None = None,
+    ) -> AgentWorkspace:
+        raise AgentWorkspaceLost(
+            f"a {spec.mode.value} workspace starts from no directory's parts, only a whole archive"
+        )

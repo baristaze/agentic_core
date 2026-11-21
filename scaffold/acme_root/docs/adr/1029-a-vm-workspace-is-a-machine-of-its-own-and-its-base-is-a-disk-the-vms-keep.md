@@ -1,4 +1,4 @@
-# ADR 1029: A VM workspace is a machine of its own, and its snapshot is its disk
+# ADR 1029: A VM workspace is a machine of its own, and its base is a disk the VMs keep
 
 **Status**: accepted (2026-10-10)
 
@@ -9,10 +9,10 @@ agent's work often needs a box of its own that runs containers: an
 engineer that builds and tests an image. Containers do not nest safely;
 a virtual machine does.
 
-A snapshot passes as one archive of bytes
-([ADR 1027](1027-a-workspace-is-snapshotted-whole-and-a-restore-a-rewind-or-a-fork-starts-from-it.md)).
-A VM's disk is gigabytes. Held in memory, sealed, and put in a bucket at
-the end of every run, it would cost more than the run.
+A base passes as one archive of bytes
+([ADR 1028](1028-a-workspace-base-is-built-once-for-its-tenant-and-kept-as-a-snapshot.md)).
+A VM's base is what its setup installed, mostly outside the workspace's
+directory, so it is the VM's disk, and a disk is gigabytes.
 
 ## Decision
 
@@ -57,8 +57,8 @@ A release stops the machine and keeps its disk; the next prepare starts
 it again. One found under other cpus or memory is stopped and started to
 the new spec, its disk kept. Before a machine starts, the provider refuses what
 its machines cannot hold: an allowlist, a process limit, part of a cpu,
-an egress they cannot close, and a snapshot or a base with setup where
-their store is not encrypted at rest. Then it probes, and a host with no
+an egress they cannot close, and a base with setup, or a base's build,
+where their store is not encrypted at rest. Then it probes, and a host with no
 hypervisor refuses the workspace, naming why, before any command.
 
 **Egress.** A Lima guest reaches out through a network the host runs
@@ -80,62 +80,51 @@ the deadline the command line ends, then the command's tree inside, by
 that pid. Records and the epoch fence stay on the host, as a
 container's do.
 
-**The snapshot is the disk.** A snapshot stops the machine, so nothing
+**A base is a disk.** A base's build stops its machine, so nothing
 writes, keeps its disk as a snapshot of the machines, and starts the
 machine again. Lima keeps it as a stopped instance cloned from the
 machine, a copy-on-write clone of the disk file where the filesystem
 clones files. Its digest is a SHA-256 of each run of data the disk
 holds, by offset, and of its size, so a sparse disk's holes are never
-read. The archive the history names holds the tenant, the snapshot's
-name, and that digest: a few hundred bytes, sealed and kept as any
-archive is. A restore holds the archive to its hash, then the disk to
-its digest and its tenant, before the machine it replaces goes. A disk
-gone or altered loses the workspace, and the loop parks for a person.
+read. The base's archive holds the tenant, the snapshot's name, and that
+digest: a few hundred bytes, kept as any base is. A start on the base
+holds the disk to its digest and its tenant before anything is made; a
+disk gone or altered is built again. A session's own snapshot keeps the
+workspace's directory alone, sealed in parts in the buckets, and a
+restore starts a new machine on the base
+([ADR 1045](1045-a-vm-workspace-keeps-its-directory-as-sealed-parts-and-starts-again-on-its-base.md)).
 
-**What stands for the seal.** A disk is never sealed under the
-session's key: encrypting gigabytes per session at each run's end is
-the cost this decision avoids. The machines' store stands for the seal.
-It is encrypted at rest: locally, the disk that holds Lima's instances,
-under FileVault or LUKS, which the operator declares
-(`vm_store_encrypted`); in a cloud, its disk snapshots under its
-keys. Revoking a session's key erases every archive, and the disks kept
-for its snapshots go with it: the revocation calls the tools'
-`erase_snapshots`, and the provider destroys every snapshot kept under
-the workspace's name and keeps the machine, a cache. A fork's copy is
-kept under the child's workspace and sealed under the child's key, so
-it stays.
+**What stands for the buckets.** A base is the tenant's, not a
+session's, so no session's key seals it. The machines' store stands for
+the buckets' encryption at rest: locally, the disk that holds Lima's
+instances, under FileVault or LUKS, which the operator declares
+(`vm_store_encrypted`); in a cloud, its disk snapshots under its keys.
 
-**Purge, forks, and bases.** A purge destroys a workspace's machine and
-every snapshot kept under its name. A copy that must outlive the
-workspace it came from is kept under its own: the provider interface's
-`keep` copies a snapshot under another workspace. A fork keeps its copy
-under the child's workspace, so the parent's purge leaves it; a parent
-that is a cache keeps no disk of what the spawn took. A base is
-kept under an id of its own, taken from the tenant and the base's key,
-so the build's purge leaves it; it goes when the base is dropped and
-with the tenant's purge. An archive that holds its own bytes, a
-container's, is its own copy, and `keep` answers it as it is. A snapshot
-that is not kept, refused by the scan or lost by its store, has its disk
-removed at once (`discard`), so no disk outlives an archive that names
-it.
+**Purge and bases.** A purge destroys a workspace's machine and every
+disk kept under its name. A base must outlive the build that made it,
+so it is kept under its own workspace: the provider interface's `keep`
+copies a disk under another workspace, an id taken from the tenant and
+the base's key. The build's purge leaves it; it goes when the base is
+dropped and with the tenant's purge. An archive that holds its own
+bytes, a container's, is its own copy, and `keep` answers it as it is. A
+disk that is not kept has it removed at once (`discard`), so no disk
+outlives an archive that names it.
 
-**No credential.** The provider interface's `held` reads what a
-snapshot holds, for the scan for injected secrets' values: the archive
+**No credential.** The provider interface's `held` reads what a base's
+archive holds, for the scan for injected secrets' values: the archive
 itself for a container, the disk's data for a VM, streamed with a
 holdback across parts. With no secret to look for, nothing is read.
 
 ## Consequences
 
-- A VM's snapshot stops it for seconds: on this kind of host, two to
-  stop, two to digest three gigabytes, and six to start. A process its
-  commands left running ends with the stop; its files and its images
-  stay.
-- A VM's snapshot is restored on the host whose store keeps it. A pool
-  of hosts that restore one another's VM workspaces is the trigger for
-  a shared store, such as a cloud's disk snapshots.
+- A base's build stops its machine for seconds: on this kind of host,
+  two to stop, two to digest three gigabytes, and six to start.
+- A base's disk starts machines on the host whose store keeps it; another
+  host finds it gone and builds the base again. A pool of hosts that
+  build one tenant's base over and over is the trigger for a shared
+  store, such as a cloud's disk snapshots.
 - A machine's image must be a Linux whose packages hold Docker.
 - On Lima, a VM workspace with no egress is refused; a cloud's machines
   may close it.
-- With a secret the catalog may inject, each snapshot's scan reads the
-  disk's data. A run's end that waits more than a minute on the scan is
-  the trigger to scan only what changed since the snapshot before.
+- With a secret the catalog may inject, each base's scan reads the
+  disk's data.

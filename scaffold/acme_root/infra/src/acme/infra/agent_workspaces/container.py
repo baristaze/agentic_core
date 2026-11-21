@@ -17,6 +17,7 @@ from acme.infra.agent_workspaces import (
     IsolationMode,
     IsolationRefused,
     IsolationSpec,
+    KeepsWholeMixin,
     SnapshotRefused,
     refusal,
 )
@@ -94,7 +95,7 @@ def spec_print(spec: IsolationSpec, *, building: bool = False) -> str:
     return hashlib.sha256(started_to.encode()).hexdigest()
 
 
-class AgentWorkspaceContainerImpl(AgentWorkspaceProviderInterface):
+class AgentWorkspaceContainerImpl(KeepsWholeMixin, AgentWorkspaceProviderInterface):
     """A container per workspace on the local Docker, with its files in a
     volume of its own that outlives the container. It meets the container
     mode with no egress or open egress, and every resource limit. A running

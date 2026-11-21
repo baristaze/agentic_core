@@ -54,6 +54,7 @@ from acme.infra.agent_workspaces import (
     IsolationMode,
     IsolationRefused,
     IsolationSpec,
+    KeepsWholeMixin,
     ResourceLimits,
     SnapshotRefused,
     refusal,
@@ -402,7 +403,7 @@ async def end_group_as(switch: Switch, group: int, seconds: float = ENDING_SECON
         await ending.wait()
 
 
-class AgentWorkspaceAccountImpl(AgentWorkspaceProviderInterface):
+class AgentWorkspaceAccountImpl(KeepsWholeMixin, AgentWorkspaceProviderInterface):
     """A directory per workspace under `root`, its commands run as `account`
     by the local transport given the same account. It meets the account
     mode with open egress and a bound on processes, and refuses any spec

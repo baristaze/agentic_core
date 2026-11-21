@@ -18,7 +18,7 @@ from acme.om.agent_sessions.kinds import AGENT_SESSION_WAITER
 from acme.om.agent_sessions.limits import Limit, Trip, tally_loop, tripped
 from acme.om.agent_sessions.rules import QUESTION
 from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus
-from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
+from acme.om.agent_steps.types.agent_step import AgentStep
 from acme.om.agent_steps.types.header import (
     ControlCommand,
     LoopOutcome,
@@ -222,14 +222,15 @@ class LoopManagerImpl(
                 await self._append(run, [lost])
                 return await self._prepare(run, None, unlocked=unlocked)
             return await self._unprepared(run, refused, restoring=start is not None)
-        if start is not None and start.type is AgentStepType.CONTROL:
-            # The record that the restore was done, and the model's notice: it
+        if start is not None:
+            # The record that a restore was done, and the model's notice: it
             # is delivered with the next model request. A run lost before it
             # is written restores again, to the same snapshot.
-            done = rules.restored_step(
+            done = rules.restore_notice(
                 new_id(), self._clock(), run.agent_session_id, run.loop_id, start
             )
-            await self._append(run, [done])
+            if done is not None:
+                await self._append(run, [done])
         return None
 
     async def _unprepared(

@@ -1,10 +1,12 @@
 """A VM workspace's snapshot through the tools, on a VM on Lima, its
-archive kept on the stack's MinIO (ADR 1029). The step names an archive of
-a few hundred bytes, sealed in the bucket; the disk stays with the
-VMs. Prepared from it after its VM is destroyed, the workspace
-answers the same file and the same Docker image. A secret's value a
-command wrote anywhere on the disk refuses the next snapshot, by the
-secret's name, and nothing more is stored.
+directory kept on the stack's MinIO (ADR 1045). The step names a
+directory's archive whose parts sit under the session's names, each
+sealed, so none holds the plain text. Restored after its VM is
+destroyed, the workspace starts on a new VM and answers the same files,
+a root-owned one with its owner, while the Docker image its commands
+built outside the directory is the base's again: gone. A secret's value
+a command wrote into the directory refuses the next snapshot, by the
+secret's name, and nothing more is stored; the purge removes every part.
 
 Skipped, with the reason, where Lima or a hypervisor is missing. The
 VM is named under `ACME_VM_PREFIX` and destroyed at the end."""
@@ -41,10 +43,11 @@ from acme.infra.transports.twin import RecordSealTwin
 from acme.infra.transports.vm import TransportVmImpl
 from acme.infra.vms import VmState
 from acme.infra.vms.lima import VmsLimaImpl, hypervisor
-from acme.om.agent_steps.types.header import SnapshotHeader
+from acme.om.agent_steps.types.header import SnapshotHeader, SnapshotHolds
 from acme.om.base import new_id
 from acme.om.context import Role
-from acme.om.tools.impl.snapshots import session_prefix
+from acme.om.tools.impl.manager import ToolsOptions
+from acme.om.tools.impl.snapshots import part_key, session_prefix
 
 from contracts.doubles import context
 from contracts.factories import make_org
@@ -118,7 +121,11 @@ async def run(transport: TransportVmImpl, workspace: AgentWorkspace, script: str
     return ran.stdout
 
 
-async def test_a_vm_snapshot_is_kept_on_minio_by_name_and_restores_its_whole_disk(
+PART = 64 * 1024
+"""Parts small enough that a few hundred kilobytes are many of them."""
+
+
+async def test_a_vm_directory_is_kept_on_minio_in_sealed_parts_and_comes_back_on_a_new_vm(
     tmp_path: Path, minio: BucketsS3Impl
 ) -> None:
     vms = VmsLimaImpl(TIMEOUT, timedelta(minutes=15), encrypted=True)
@@ -129,6 +136,7 @@ async def test_a_vm_snapshot_is_kept_on_minio_by_name_and_restores_its_whole_dis
     tools = tools_over(
         transport,
         provider,
+        ToolsOptions(snapshot_part_bytes=PART),
         buckets=minio,
         secrets=secrets,
         secret_names=frozenset({"SERVICE_TOKEN"}),
@@ -141,10 +149,12 @@ async def test_a_vm_snapshot_is_kept_on_minio_by_name_and_restores_its_whole_dis
         before = await run(
             transport,
             workspace,
-            "head -c 4096 /dev/urandom > state.bin && mkdir -p ctx && cp state.bin ctx/ && "
+            "head -c 300000 /dev/urandom > state.bin && mkdir -p ctx && cp state.bin ctx/ && "
+            "yes 'the plain words of the notes' | head -c 100000 > notes.txt && "
+            "sudo -n sh -c 'echo root > root.txt' && "
             "printf 'FROM scratch\\nCOPY state.bin /\\n' > ctx/Dockerfile && "
-            "docker build -q -t acme-test-kept ctx >/dev/null && sha256sum state.bin && "
-            "docker image inspect --format '{{.Id}}' acme-test-kept",
+            "docker build -q -t acme-test-kept ctx >/dev/null && "
+            "sha256sum state.bin notes.txt root.txt && stat -c %U root.txt",
         )
         epoch = await tools.steps.begin_run(ctx, agent_session_id)
         step = await tools.manager.snapshot_agent_workspace(
@@ -152,30 +162,41 @@ async def test_a_vm_snapshot_is_kept_on_minio_by_name_and_restores_its_whole_dis
         )
         assert isinstance(step.header, SnapshotHeader)
         snapshot = step.header.snapshot
-        (key,) = await minio.list(
-            ctx.org_id, Buckets.SNAPSHOTS, session_prefix(agent_session_id), 10
+        assert snapshot.holds is SnapshotHolds.DIRECTORY and snapshot.size > 400_000
+        keys = await minio.list(
+            ctx.org_id, Buckets.SNAPSHOTS, session_prefix(agent_session_id), 1000
         )
-        sealed = await minio.get(ctx.org_id, Buckets.SNAPSHOTS, key)
-        assert snapshot.size < 512 and len(sealed) < 1024, "a name and a digest, never the disk"
-        assert workspace.location.encode() not in sealed, "sealed, never in the clear"
+        parts = [key for key in keys if "/workspace/" in key]
+        count = -(-snapshot.size // PART)
+        assert sorted(parts) == [part_key(agent_session_id, snapshot.id, n) for n in range(count)]
+        for key in keys:
+            sealed = await minio.get(ctx.org_id, Buckets.SNAPSHOTS, key)
+            assert b"the plain words" not in sealed, "sealed, never in the clear"
 
+        packs = "ls /var/tmp | grep -c acme-pack || true"
+        assert await run(transport, workspace, packs) == "0\n", "the pack went"
         await vms.destroy(workspace.location)
         assert await vms.state(workspace.location) is VmState.ABSENT
         restored = await tools.manager.prepare_agent_workspace(
             ctx, agent_session_id, KEPT, restore=snapshot
         )
-        check = "sha256sum state.bin && docker image inspect --format '{{.Id}}' acme-test-kept"
+        check = "sha256sum state.bin notes.txt root.txt && stat -c %U root.txt"
         assert await run(transport, restored, check) == before
+        image = "docker image inspect acme-test-kept >/dev/null 2>&1 || echo gone"
+        assert await run(transport, restored, image) == "gone\n", "the base's again"
 
-        await run(transport, restored, "echo tok-vm-0123456789abcdef | sudo tee /etc/leak")
+        await run(transport, restored, "echo tok-vm-0123456789abcdef > leak.txt")
         with pytest.raises(SnapshotRefused, match="SERVICE_TOKEN"):
             await tools.manager.snapshot_agent_workspace(
                 ctx, agent_session_id, restored, epoch=epoch, loop_id=new_id(), tools=()
             )
-        kept = await minio.list(ctx.org_id, Buckets.SNAPSHOTS, session_prefix(agent_session_id), 10)
-        assert kept == [key], "nothing more stored"
-        disks = await vms.names(f"{workspace.location}-")
-        assert len(disks) == 1, "the refused snapshot's disk went; the kept one stays"
+        kept = await minio.list(
+            ctx.org_id, Buckets.SNAPSHOTS, session_prefix(agent_session_id), 1000
+        )
+        assert sorted(kept) == sorted(keys), "nothing more stored"
     finally:
         await tools.manager.purge_agent_workspace(ctx.org_id, agent_session_id)
-    assert await vms.names(workspace.location) == [], "the VM and its disks"
+    assert await vms.names(workspace.location) == [], "the VM"
+    assert (
+        await minio.list(ctx.org_id, Buckets.SNAPSHOTS, session_prefix(agent_session_id), 10) == []
+    )
