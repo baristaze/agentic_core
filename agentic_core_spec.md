@@ -1639,9 +1639,11 @@ must fix it; no retry time means only a person can unblock it. Each park
 a person clears has a route that clears it, held to the permission its
 operation checks, and clearing it wakes the session: no park waits for a
 cancel alone. A gate supplied from outside may name a reason and an unlock
-of its own. A park on the workspace comes before its run has settled a
-lost run's calls, so it says so, and the run that resumes it settles
-them by their effect.
+of its own. A park on the workspace at a call its own run wrote is
+settled, as any park the loop writes is, and the run that resumes it
+runs that call once. One at a call a lost run left open comes before
+its run has settled that run's calls, so it says so, and the run that
+resumes it settles them by their effect.
 When the unlock happens, a `resumed` step starts a new run. Raising a
 budget is the instruction to continue.
 
