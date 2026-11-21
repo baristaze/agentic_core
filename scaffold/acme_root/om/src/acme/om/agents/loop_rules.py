@@ -814,32 +814,46 @@ def pending_restore(steps: Sequence[AgentStep]) -> AgentStep | None:
 def kept_snapshot(steps: Sequence[AgentStep], *, settled: bool) -> AgentStep | None:
     """The `snapshotted` step a workspace kept by snapshots starts from when
     no restore is pending: the latest, when nothing touched the workspace
-    after it. A call that reached the workspace after it, as a run lost
+    after it. A call that ran in the workspace after it, as a run lost
     before its end leaves, or a change a notice records, such as a person's
     work by hand or a restore that was lost, leaves the workspace newer than
-    any snapshot: None, and it is prepared as it stands. A call reached it
-    when its request says it reaches the workspace and it may have run: it
-    was answered, or it is still open and not `settled`. A call that
-    reaches nothing never touched it, so a run that made only such calls
-    leaves the snapshot whole. `settled` when no run may have started a
-    call still open: a park the loop wrote held it back, or the run asking
-    wrote it."""
+    any snapshot: None, and it is prepared as it stands.
+
+    A call ran in it after the snapshot when its request says it reaches
+    the workspace and it may have run there since: it was answered after
+    the snapshot, unless the answer says no run started it (`unstarted`),
+    or its request came after the snapshot and it is still open and not
+    `settled`. A job's call ran where its request was made: its job runs
+    once the instance is released, so its answer, written by whichever run
+    the job's end wakes, touches nothing. A call that reaches nothing never
+    touched it, so a run that made only such calls leaves the snapshot
+    whole. `settled` when no run may have started a call still open: a park
+    the loop wrote held it back, or the run asking wrote it."""
     reaching: set[UUID] = set()
     answered: set[UUID] = set()
+    jobs: set[UUID] = set()
     for step in steps:
         header = step.header
         if isinstance(header, ToolRequestHeader) and header.workspace:
             reaching.add(step.id)
         elif step.type is AgentStepType.TOOL_RESPONSE and step.responds_to is not None:
             answered.add(step.responds_to)
+        elif isinstance(header, ParkedHeader) and header.park.job is not None:
+            jobs.add(header.park.job.key)
     for step in reversed(steps):
         if step.type is AgentStepType.SNAPSHOTTED:
             return step
         if step.type is AgentStepType.ENVIRONMENT_CHANGED:
             return None
-        if step.type is AgentStepType.TOOL_RESPONSE and step.responds_to in reaching:
+        header = step.header
+        if (
+            isinstance(header, ToolResponseHeader)
+            and step.responds_to in reaching
+            and step.responds_to not in jobs
+            and not header.unstarted
+        ):
             return None
-        if step.id in reaching and step.id not in answered and not settled:
+        if step.id in reaching and (step.id in jobs or (step.id not in answered and not settled)):
             return None
     return None
 

@@ -376,12 +376,15 @@ class ToolResponseHeader(OmBase):
     above the size bound, whose head and tail are the first two parts of the
     step's result. `accepted` is the verdict on a result submitted through
     the kind's result tool, kept in the history so the loop ends on it even
-    after a park or a lost run."""
+    after a park or a lost run. `unstarted` marks a call answered before
+    any run started it, as a refused workspace answers one: it touched
+    nothing, so the latest snapshot still holds the workspace."""
 
     kind: Literal["tool_response"] = "tool_response"
     failure: ToolFailure | None = None
     tool_output: ToolOutputRef | None = None
     accepted: AcceptedResult | None = None
+    unstarted: bool = False
 
     @model_validator(mode="after")
     def _a_failure_accepts_nothing(self) -> Self:
