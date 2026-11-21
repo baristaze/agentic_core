@@ -16,6 +16,7 @@ from acme.integrations.model_providers import ModelProvidersInterface
 from acme.integrations.model_providers.registry import scripted_model_providers
 from acme.integrations.model_providers.scripted import ModelProviderScriptedImpl
 from acme.integrations.model_providers.types import ProviderName
+from acme.om.agents.types.kind import AgentKind
 from acme.services.api.assistant import ASSISTANT, LIST_FILES, offered
 from acme.services.api.container import AppContainer
 
@@ -38,16 +39,24 @@ def container(tmp_path: Path, providers: ModelProvidersInterface) -> AppContaine
 
 
 @pytest.mark.parametrize(
-    ("environment", "kinds"),
-    [("local", ("assistant",)), ("staging", ("assistant",)), ("production", ()), ("test", ())],
+    ("environment", "declared", "kinds"),
+    [
+        ("local", (), ("assistant",)),
+        ("staging", (), ("assistant",)),
+        ("production", (), ()),
+        ("test", (), ()),
+        ("local", (ASSISTANT.model_copy(update={"name": "product"}),), ()),
+    ],
 )
 def test_the_assistant_is_offered_in_the_local_and_staging_stacks_alone(
-    environment: str, kinds: tuple[str, ...]
+    environment: str, declared: tuple[AgentKind, ...], kinds: tuple[str, ...]
 ) -> None:
+    """A product that declares its own kinds is offered none of the example."""
+
     def never() -> object:
         raise AssertionError("no tool is built that reads nothing")
 
-    offered_kinds, offered_tools = offered(environment, never)  # pyright: ignore[reportArgumentType]
+    offered_kinds, offered_tools = offered(environment, declared, never)  # pyright: ignore[reportArgumentType]
 
     assert tuple(kind.name for kind in offered_kinds) == kinds
     assert tuple(tool.spec.name for tool in offered_tools) == ((LIST_FILES,) if kinds else ())

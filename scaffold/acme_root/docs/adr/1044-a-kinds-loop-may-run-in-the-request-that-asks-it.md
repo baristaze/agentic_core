@@ -74,5 +74,5 @@ a loop in a request, and the client waits for its answer.
   no outcome to record, and a question asked again is a question of its
   own.
 - The local and the staging stacks offer an example assistant that
-  reads the org's files through one read tool; a copy replaces it with
-  its own kinds.
+  reads the org's files through one read tool, while the product
+  declares no kind of its own.

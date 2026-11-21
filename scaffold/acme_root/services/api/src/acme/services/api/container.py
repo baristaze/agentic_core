@@ -215,7 +215,9 @@ class AppContainer:
         streams = QuestionStreamsImpl()
         # The example assistant, where the environment offers it; its tool
         # reads the media manager the root below builds.
-        example_kinds, example_tools = offered(settings.environment, lambda: managers.media)
+        example_kinds, example_tools = offered(
+            settings.environment, agent_kinds, lambda: managers.media
+        )
         managers = build_managers(
             storage,
             infra,

@@ -1,8 +1,8 @@
 """The example assistant the local and the staging stacks offer: a kind
 whose loop runs in the request that asks it (ADR 1044), answering a
 member's questions about the org's files through one read tool, which no
-person approves. A copy replaces it with its own kinds and tools, which
-its roots declare as this one is declared here."""
+person approves. A product that declares kinds of its own is offered
+none of it."""
 
 from collections.abc import Callable
 from datetime import datetime, timedelta
@@ -105,11 +105,14 @@ ASSISTANT = AgentKind(
 
 
 def offered(
-    environment: str, media: Callable[[], MediaManagerInterface]
+    environment: str,
+    declared: tuple[AgentKind, ...],
+    media: Callable[[], MediaManagerInterface],
 ) -> tuple[tuple[AgentKind, ...], tuple[ToolInterface, ...]]:
-    """The example's kind and its tool where `environment` offers them, and
-    nothing elsewhere. `media` answers the manager the tool reads, once the
-    root that builds it stands."""
-    if environment not in OFFERED_IN:
+    """The example's kind and its tool where `environment` offers them and
+    the product declares no kind of its own, and nothing elsewhere: a
+    product's kinds take the example's place. `media` answers the manager
+    the tool reads, once the root that builds it stands."""
+    if environment not in OFFERED_IN or declared:
         return (), ()
     return (ASSISTANT,), (ListFilesToolImpl(media),)
