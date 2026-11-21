@@ -237,7 +237,11 @@ An adopter extends a run without editing the loop, through the loop's
 hooks, which its root wires beside the rest. Once a run, before anything
 renders, the hooks name the toolsets a session holds beyond its kind,
 which the loop folds into the kind. Before the run calls a model, they
-name the steps to append, and no workspace is prepared by then. Once
+name the steps to append, and no workspace is prepared by then. They
+may refuse the session's workspace there, with its cause. The run then
+stops before any model call, with nothing made, and ends or parks the
+loop as a provider's refusal does ([The Runtime](#the-runtime)), naming
+the cause. Once
 the run's first call that reaches the workspace has prepared it, and
 before that call runs, they are given it and name the steps to append
 about it, such as what changed in it; a run that reaches no workspace

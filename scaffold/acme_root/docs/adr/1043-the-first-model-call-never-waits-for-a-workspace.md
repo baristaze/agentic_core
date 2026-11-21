@@ -23,7 +23,9 @@ moment, and only a prepare learns it.
 made at the first call that reaches it.** Each provider's `check`
 refuses a spec it can never meet, whole, with its cause, and makes
 nothing. A refusal there ends the loop `errored` before any call is
-spent. The instance is prepared as the first call that reaches the
+spent. A layer's hooks may refuse the session's workspace at the same
+point, with its cause, and the run stops as it does on a refused spec
+(ADR 1041). The instance is prepared as the first call that reaches the
 workspace is about to be gated, its preflight included, so only that
 call waits for it.
 
@@ -79,7 +81,7 @@ answer. A run that reaches no workspace never asks.
 - A run's first token waits for no boot, and a run that only reads,
   plans, spawns, or waits makes no instance.
 - A spec the provider can never meet is refused before any call is
-  spent. What only the moment can say, a host to run on, Docker within
+  spent, and so is a workspace a layer's hooks refuse. What only the moment can say, a host to run on, Docker within
   reach, a base's setup, is learned at the first call that reaches the
   workspace, after model calls were spent, and ends or parks the loop
   there.
