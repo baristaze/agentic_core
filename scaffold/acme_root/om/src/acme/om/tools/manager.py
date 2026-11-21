@@ -80,7 +80,10 @@ class ToolsManagerInterface(ABC):
         the store, opened under the session's key, and held to its hash
         first: one that is gone, erased with its key, altered, or of
         another hash loses the workspace (`AgentWorkspaceLost`) before anything
-        starts.
+        starts. One that holds a directory alone starts a new instance on
+        the spec's base, and its parts are each held to their hash as they
+        are read: one that does not match loses the workspace then, and
+        nothing kept is touched.
 
         Without it, a spec whose base has setup starts from the base's
         snapshot, built first when the tenant has none: its setup runs once,
@@ -117,8 +120,11 @@ class ToolsManagerInterface(ABC):
         catalog's tools may have injected, nor one a tool of `tools` may
         have, the session's own beyond the catalog (its attached toolsets'):
         one that does is refused, and nothing is kept. It is sealed under
-        the session's key and stored under its keyed hash.
-        `SnapshotRefused` before anything runs when
+        the session's key and stored under its keyed hash. Where the
+        provider keeps a workspace's directory alone, it is packed,
+        refused past the tools' bound before any of it is read, and kept
+        in parts, each sealed on its own; one that fails part way keeps
+        none of them. `SnapshotRefused` before anything runs when
         the provider cannot snapshot, the workspace holds no instance, as
         once its run let it go, or the session keeps no content at rest."""
         ...
@@ -131,9 +137,10 @@ class ToolsManagerInterface(ABC):
         call took it (`ToolRuntime.snapshot`): sealed under the child's key
         and stored as the child's under `snapshot_id`, with what its
         provider keeps outside the archive, such as a disk, copied under the
-        child's workspace, so neither purge nor revocation of one session
-        reaches the other. What the parent did not keep as its own goes once
-        the copy is kept. It names the parent's workspace as the one it came
+        child's workspace, and a directory's pack kept in the child's own
+        parts, so neither purge nor revocation of one session reaches the
+        other. What the parent did not keep as its own goes once the copy is
+        kept, and a pack goes then whatever the parent keeps. It names the parent's workspace as the one it came
         from. `SnapshotRefused` when the child keeps no content at rest."""
         ...
 
@@ -299,8 +306,8 @@ class ToolsManagerInterface(ABC):
     @abstractmethod
     async def erase_snapshots(self, ctx: TenantContext, agent_session_id: UUID) -> None:
         """What the session's snapshots keep outside their sealed archives,
-        such as a VM's disks, destroyed with the revocation of its key,
-        which leaves every archive noise. A copy kept for another session,
+        where a provider keeps any, destroyed with the revocation of its
+        key, which leaves every archive, and every part, noise. A copy kept for another session,
         such as a fork's, is that session's and stays, and so does the
         workspace itself, a cache. A process with no workspace provider
         keeps none of it."""

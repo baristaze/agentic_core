@@ -15,7 +15,9 @@ A snapshot is a stopped VM's disk, kept in the backend's own store
 under a name, and held to a digest: a disk is gigabytes, so it never passes
 through memory or a bucket whole. A snapshot starts VMs, makes further
 snapshots, and is read back as a stream (`read`), so what it holds can be
-scanned. A VM and a snapshot are destroyed alike, by name."""
+scanned. A VM and a snapshot are destroyed alike, by name. A workspace's
+base is kept this way; a session's snapshot keeps the workspace's directory
+alone, through the channel (ADR 1045)."""
 
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Mapping, Sequence

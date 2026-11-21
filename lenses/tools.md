@@ -444,15 +444,15 @@ environment with no
 ## TOL-15 A snapshot is kept whole, trusted by its hash, and holds no credential
 
 **Principle.** A provider that can snapshots a workspace whole: all its
-commands could write. One that cannot refuses a snapshot, and a spec
-asking for one, before anything runs. The run that holds a `snapshot`
-workspace snapshots it at its end, and lets the instance go only once a
-snapshot holds it. A snapshot, or a VM disk's name, is sealed under its
-session's key, stored under a keyed hash, and named by a `snapshotted`
-step. A restore trusts its bytes only by that hash, and replaces the
-workspace whole; one that cannot load parks the loop once. The broker
-detaches its credentials first; an injected secret's value refuses a
-snapshot. A fork copies its parent's workspace at the spawn.
+commands could write, or a VM's directory, as each VM starts on its base.
+One that cannot refuses a snapshot before anything runs. The run
+that holds a `snapshot` workspace snapshots it at its end, and lets the
+instance go only once a snapshot holds it. A snapshot is sealed under
+its session's key, stored under a keyed hash, and named by a
+`snapshotted` step; a VM's directory is held to a bound, then kept in
+parts, each sealed and hashed. A restore trusts only those hashes and
+replaces the workspace whole; one that cannot load parks the loop once.
+It never holds a credential or an injected secret's value.
 
 **Source.** Workspace Snapshots.
 
@@ -461,8 +461,11 @@ the loop takes one at a run's end and what the next run starts from;
 where the hash is held to the step's and the broker's credentials
 detached; what a restore that cannot load does after a person's unlock;
 where a fork takes its parent's workspace and the copy it makes, and
-what a purge and a key's revocation remove; for a VM, the digest its
-disk is held to, its store's encryption at rest, and what the scan reads.
+what a purge and a key's revocation remove; for a VM, where the bound
+is checked against the directory before it is packed, what a store that
+fails part way removes, where each part is held to its hash on a restore
+and when the VM it replaces goes, and that the pack is dropped however
+the snapshot ends.
 
 **Violation.** A snapshot of part of what the commands wrote, such as a
 host directory kept as if whole, or a released container's volume on a
@@ -475,15 +478,19 @@ unlock; a credential or an injected secret's value in a kept snapshot; a
 fork that starts from a snapshot older than its spawn, or takes a slot
 or makes a child before its snapshot is taken; a cache that keeps a
 fork's snapshot as its own; a copy of a session that keeps no content at
-rest; a child whose writes reach its parent's workspace; or a VM's disk
-the scan never reads, one kept in a store not encrypted at rest, or one
-a revocation of its session's key leaves.
+rest; a child whose writes reach its parent's workspace; or, for a VM,
+a disk kept as a session's snapshot, a directory packed before the bound
+is checked, a pack left in the VM after it fails, a part stored in the
+clear or under another session's key, the parts of a failed archive left
+beside the snapshot before it, a restore that replaces the archive it
+read, one that destroys the VM it replaces before the new one holds the
+whole directory, or one that leaves a half-restored VM.
 
 **Severity.** high
 
 **Shape.**
-`scaffold/acme_root/infra/src/acme/infra/agent_workspaces/container.py`
-and `scaffold/acme_root/om/src/acme/om/tools/impl/snapshots.py`
+`scaffold/acme_root/infra/src/acme/infra/agent_workspaces/vm.py` and
+`scaffold/acme_root/om/src/acme/om/tools/impl/snapshots.py`
 
 **Check.** review
 

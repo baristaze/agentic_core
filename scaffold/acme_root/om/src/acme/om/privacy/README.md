@@ -51,9 +51,10 @@ of](../../../../README.md).
   every step keeps its place, its type, and its cost, and reads as
   absent, and so does the title. A tool output keeps its
   record, and its text is noise. A command's record still says how it
-  ended, and what it printed is noise. What the session's snapshots
-  keep outside the seal, a VM's disks, is destroyed with the key; a
-  fork's copy is its child's, and stays. It cannot be undone, and the
+  ended, and what it printed is noise. So is every snapshot, each part
+  of a VM's directory included; what a provider keeps of one outside the
+  seal is destroyed with the key. A fork's copy is its child's, and
+  stays. It cannot be undone, and the
   session takes no content again.
 - **Rotate the tenant's key.** Each version, and the tenant's title key,
   is wrapped again under the new one. No content is read or rewritten.

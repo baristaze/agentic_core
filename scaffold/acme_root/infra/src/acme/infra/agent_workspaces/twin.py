@@ -8,12 +8,13 @@ from acme.infra.agent_workspaces import (
     IsolationMode,
     IsolationRefused,
     IsolationSpec,
+    KeepsWholeMixin,
     SnapshotRefused,
     refusal,
 )
 
 
-class AgentWorkspaceTwinImpl(AgentWorkspaceProviderInterface):
+class AgentWorkspaceTwinImpl(KeepsWholeMixin, AgentWorkspaceProviderInterface):
     """The workspace provider's twin, for tests: it prepares the twin mode,
     whose transport runs nothing, so every egress and every limit holds by
     default. It refuses every other mode, as the real ones refuse theirs,
@@ -97,7 +98,7 @@ class AgentWorkspaceTwinImpl(AgentWorkspaceProviderInterface):
         return None
 
 
-class AgentWorkspaceNullImpl(AgentWorkspaceProviderInterface):
+class AgentWorkspaceNullImpl(KeepsWholeMixin, AgentWorkspaceProviderInterface):
     """A process that prepares no workspace: every spec is refused, loudly,
     so a session that asks for one learns it before its first model call."""
 

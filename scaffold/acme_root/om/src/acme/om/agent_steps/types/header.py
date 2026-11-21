@@ -195,17 +195,28 @@ session's."""
 SNAPSHOT_HASH = re.compile(rf"^{HASH_SCHEME}[0-9a-f]{{64}}$")
 
 
+class SnapshotHolds(StrEnum):
+    """What a workspace's snapshot holds."""
+
+    WORKSPACE = "workspace"  # everything its commands could write, as one archive
+    DIRECTORY = "directory"  # its directory's files alone, in parts; the rest is its base's
+
+
 class AgentWorkspaceSnapshot(OmBase):
     """A workspace's snapshot as the history names it: its id, the hash of
     its bytes keyed by its session, so once the key is revoked nothing can
-    confirm what it held, its size, and the workspace it was taken from:
-    the session's own, or its parent's when a child started from it. The
-    bytes live in the store, sealed under the session's key."""
+    confirm what it held, its size, the workspace it was taken from (the
+    session's own, or its parent's when a child started from it), and what
+    it holds. The bytes live in the store, sealed under the session's key.
+    One that holds a directory alone is kept in parts, each sealed on its
+    own; its hash is that of the manifest that names them, and its size
+    the directory's archive's."""
 
     id: UUID
     hash: str = Field(pattern=SNAPSHOT_HASH.pattern)
     size: int = Field(ge=0)
     agent_workspace_id: UUID
+    holds: SnapshotHolds = SnapshotHolds.WORKSPACE
 
 
 class InputHeader(OmBase):

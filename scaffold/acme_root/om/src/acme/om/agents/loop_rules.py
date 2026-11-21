@@ -48,6 +48,8 @@ from acme.om.agent_steps.types.header import (
     Park,
     ParkedHeader,
     ParkReason,
+    SnapshotHeader,
+    SnapshotHolds,
     ToolRequestHeader,
     ToolResponseHeader,
     ToolsetSwitch,
@@ -105,6 +107,15 @@ FORKED = (
 )
 """The engine's notice when a child's workspace starts from its parent's
 snapshot."""
+
+FROM_BASE = (
+    "Only your workspace's directory was kept: what you installed or changed "
+    "outside it comes from the workspace's base again. Check that the tools you "
+    "need are still there before you use them."
+)
+"""The engine's notice when a workspace starts from a snapshot of its
+directory alone: its files are as they were kept, and the rest is its
+base's."""
 
 LOST = (
     "Your workspace could not be restored from its snapshot: the snapshot is "
@@ -853,14 +864,45 @@ def lost_step(
     )
 
 
+def restore_notice(
+    agent_step_id: UUID, at: datetime, agent_session_id: UUID, loop_id: UUID, start: AgentStep
+) -> AgentStep | None:
+    """The notice a workspace's prepare from the snapshot `start` names
+    writes, or None: a restore a control asked for is recorded as done
+    (`restored_step`), and a start from a session's own latest snapshot
+    tells the model only when that snapshot held its directory alone, since
+    the rest of the workspace is its base's again."""
+    if start.type is AgentStepType.CONTROL:
+        return restored_step(agent_step_id, at, agent_session_id, loop_id, start)
+    header = start.header
+    if not isinstance(header, SnapshotHeader) or header.snapshot.holds is SnapshotHolds.WORKSPACE:
+        return None
+    return AgentStep(
+        id=agent_step_id,
+        created_at=at,
+        agent_session_id=agent_session_id,
+        loop_id=loop_id,
+        type=AgentStepType.ENVIRONMENT_CHANGED,
+        actor=Actor.ENGINE,
+        origin=Origin.ENGINE,
+        refs=(start.id,),
+        header=MarkHeader(),
+        content=Content(blocks=(TextBlock(text=FROM_BASE),)),
+    )
+
+
 def restored_step(
     agent_step_id: UUID, at: datetime, agent_session_id: UUID, loop_id: UUID, restore: AgentStep
 ) -> AgentStep:
     """The notice that the workspace started from the snapshot `restore`
-    names: the record that the restore was done, which references it."""
+    names: the record that the restore was done, which references it. A
+    snapshot of a directory alone also says the rest is the base's again."""
     header = restore.header
     assert isinstance(header, ControlHeader) and header.snapshot is not None
     forked = header.snapshot.agent_workspace_id != agent_session_id
+    text = FORKED if forked else REWOUND
+    if header.snapshot.holds is SnapshotHolds.DIRECTORY:
+        text = f"{text} {FROM_BASE}"
     return AgentStep(
         id=agent_step_id,
         created_at=at,
@@ -871,7 +913,7 @@ def restored_step(
         origin=Origin.ENGINE,
         refs=(restore.id,),
         header=MarkHeader(),
-        content=Content(blocks=(TextBlock(text=FORKED if forked else REWOUND),)),
+        content=Content(blocks=(TextBlock(text=text),)),
     )
 
 

@@ -148,14 +148,15 @@ class LoopWorkspace(LoopCore):
             return await self._unprepared(
                 run, refused, restoring=start is not None, settled=settled
             )
-        if start is not None and start.type is AgentStepType.CONTROL:
-            # The record that the restore was done, and the model's notice: it
+        if start is not None:
+            # The record that a restore was done, and the model's notice: it
             # is delivered with the next model request. A run lost before it
             # is written restores again, to the same snapshot.
-            done = rules.restored_step(
+            done = rules.restore_notice(
                 new_id(), self._clock(), run.agent_session_id, run.loop_id, start
             )
-            await self._append(run, [done])
+            if done is not None:
+                await self._append(run, [done])
         return None
 
     async def _unprepared(
