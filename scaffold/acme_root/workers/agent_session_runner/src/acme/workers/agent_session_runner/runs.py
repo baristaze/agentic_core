@@ -7,8 +7,9 @@ open calls by their effect (`LoopManagerInterface.run`). The item's lease
 fences the queue row; the epoch fences the history. A run whose time is up
 hands its item back at once, with no attempt spent, and the next claim
 goes on with the loop. A session that is gone has nothing to run, and
-completes its item; any other thing not found, such as a kind this
-process does not declare, fails it, so it is retried and, past its
+completes its item, and so does one whose kind runs its loop in the
+request that asks it: no worker runs that loop. Any other thing not
+found, such as a kind this process does not declare, fails it, so it is retried and, past its
 attempts, dead-lettered where an operator requeues it. Every other end
 completes the item: an ended or parked loop, a session another run
 holds, and one with nothing to run."""
@@ -19,6 +20,8 @@ from typing import ClassVar
 
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agents import LoopManagerInterface
+from acme.om.agents.rules import runs_in_request
+from acme.om.agents.types.kind import AgentKindCatalog
 from acme.om.agents.types.run import RunEnd
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import NotFound
@@ -38,11 +41,24 @@ class LoopHandlerImpl(WorkHandlerInterface):
     nothing reads the session; each tool call asks its principal's own
     permissions again."""
 
-    def __init__(self, loop: LoopManagerInterface, sessions: AgentSessionsManagerInterface) -> None:
+    def __init__(
+        self,
+        loop: LoopManagerInterface,
+        sessions: AgentSessionsManagerInterface,
+        kinds: AgentKindCatalog,
+    ) -> None:
         self._loop = loop
         self._sessions = sessions
+        self._kinds = kinds
 
     async def handle(self, ctx: TenantContext, item: WorkItem) -> None:
+        if await self._in_request(ctx, item):
+            log.info(
+                "session %s runs its loop in the request that asks it; loop %s runs nothing",
+                item.target_id,
+                item.id,
+            )
+            return
         try:
             run = await self._loop.run(ctx, item.target_id)
         except NotFound:
@@ -60,6 +76,16 @@ class LoopHandlerImpl(WorkHandlerInterface):
         )
         if run.end is RunEnd.YIELDED:
             raise WorkParked("the run's time is up; the next run goes on", timedelta(0))
+
+    async def _in_request(self, ctx: TenantContext, item: WorkItem) -> bool:
+        """Whether the item's session is one whose loop runs in the request
+        that asks it, which a second writer here would fence and bill twice.
+        A session not found is left to the run, which knows a gone one."""
+        try:
+            session = await self._sessions.get_agent_session(ctx, item.target_id)
+        except NotFound:
+            return False
+        return runs_in_request(self._kinds, session)
 
     async def _gone(self, ctx: TenantContext, item: WorkItem) -> bool:
         """Whether the session itself is gone: what the run did not find is

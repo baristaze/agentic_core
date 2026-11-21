@@ -1,7 +1,8 @@
 """The runner boots the way every process does: settings, storage, infra,
 the integrations (the model providers), and the managers, with the
 product's agent kinds and tools. The claim loop holds the container
-directly.
+directly, and the loop's handler reads from its kinds where a session's
+loop runs.
 
 The runner holds no purge login: it runs what a model asks for, and the
 one login that deletes a history is the maintenance worker's alone."""
@@ -13,7 +14,7 @@ from acme.infra.root import InfraInterface
 from acme.integrations.impl.configured import IntegrationsConfiguredImpl
 from acme.integrations.root import IntegrationsInterface
 from acme.om.agent_root import AgentRootOptions
-from acme.om.agents.types.kind import AgentKind
+from acme.om.agents.types.kind import AgentKind, AgentKindCatalog
 from acme.om.root import Managers, build_managers
 from acme.om.storage.impl.postgres import StoragePostgresImpl
 from acme.om.storage.root import StorageInterface
@@ -32,12 +33,14 @@ class RunnerContainer:
         infra: InfraInterface,
         integrations: IntegrationsInterface,
         managers: Managers,
+        kinds: AgentKindCatalog,
     ) -> None:
         self.settings = settings
         self.storage = storage
         self.infra = infra
         self.integrations = integrations
         self.managers = managers
+        self.kinds = kinds
 
     @classmethod
     def build(
@@ -99,7 +102,8 @@ class RunnerContainer:
                 domain_classes=domain_classes,
             ),
         )
-        return cls(settings, storage, infra, integrations, managers)
+        kinds = AgentKindCatalog(kinds=agent_kinds)
+        return cls(settings, storage, infra, integrations, managers, kinds)
 
     async def start(self) -> None:
         await self.infra.start()

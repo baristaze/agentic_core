@@ -76,7 +76,9 @@ def build_runner(container: RunnerContainer, lane: str | None = None) -> WorkerL
         purges={},
         kinds=KINDS,
         handlers={
-            AgentSessionWorkKind.LOOP: LoopHandlerImpl(managers.loop, managers.agent_sessions)
+            AgentSessionWorkKind.LOOP: LoopHandlerImpl(
+                managers.loop, managers.agent_sessions, container.kinds
+            )
         },
         topics=container.infra.get_topics(),
         liveness=container.infra.get_cache(CacheScope.WORKER_LIVENESS),

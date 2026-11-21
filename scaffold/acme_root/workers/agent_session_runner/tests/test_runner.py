@@ -113,7 +113,11 @@ def ending(end: RunEnd) -> Callable[[UUID], LoopRun]:
 
 
 def handler_over(container: RunnerContainer, answer: Callable[[UUID], LoopRun]) -> LoopHandlerImpl:
-    return LoopHandlerImpl(Answering(answer), container.managers.agent_sessions)  # pyright: ignore[reportAbstractUsage]
+    return LoopHandlerImpl(
+        Answering(answer),  # pyright: ignore[reportAbstractUsage]
+        container.managers.agent_sessions,
+        container.kinds,
+    )
 
 
 @pytest.mark.parametrize("end", [RunEnd.ENDED, RunEnd.PARKED, RunEnd.STALE, RunEnd.IDLE])
