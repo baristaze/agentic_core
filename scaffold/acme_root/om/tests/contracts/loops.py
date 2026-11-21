@@ -35,7 +35,7 @@ from acme.om.agents.hooks import LoopHooksInterface
 from acme.om.agents.impl.hooks import LoopHooksNullImpl
 from acme.om.agents.impl.loop import LoopManagerImpl, LoopOptions
 from acme.om.agents.impl.sink import StreamSinkMemoryImpl
-from acme.om.agents.types.kind import AgentKind, AgentKindCatalog, DoneRule, TreeLimits
+from acme.om.agents.types.kind import AgentKind, AgentKindCatalog, DoneRule, Starter, TreeLimits
 from acme.om.agents.types.request import Start
 from acme.om.agents.types.result import Claim
 from acme.om.agents.types.run import RunEnd
@@ -207,6 +207,7 @@ ASSISTANT = AgentKind(
     authority=AuthorityMode.DELEGATED,
     tree=TreeLimits(height=2, count=4),
     share=Amount(tokens=1_000_000),
+    started_by=frozenset(Starter),
     prompts=("You answer questions about the records.",),
     policy=ALLOWED,
 )
@@ -269,6 +270,7 @@ WORKER = AgentKind(
     authority=AuthorityMode.DELEGATED,
     tree=TreeLimits(height=2, count=4),
     share=Amount(tokens=1_000_000),
+    started_by=frozenset(Starter),
     prompts=("You do the part you are given, and submit it with its evidence.",),
     policy=ALLOWED,
 )

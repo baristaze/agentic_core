@@ -1,9 +1,10 @@
 """Pure rules of agent kinds and trees: what a turn means under a kind's
-done rule, whether a tree has room for one more child, the tree a root
-starts with, the claim no gate is asked about, what a child's report
-tells its parent, the park a parent waits for it on and what ends it,
-and what a kind whose loop runs in a request may hold and why its loop
-ended. Values in, values out; no clock, no storage."""
+done rule, who may start a kind, whether a tree has room for one more
+child, the tree a root starts with, the claim no gate is asked about,
+what a child's report tells its parent, the park a parent waits for it
+on and what ends it, and what a kind whose loop runs in a request may
+hold and why its loop ended. Values in, values out; no clock, no
+storage."""
 
 from collections.abc import Mapping
 from datetime import datetime, timedelta
@@ -21,6 +22,7 @@ from acme.om.agents.types.kind import (
     AgentKindCatalog,
     DoneRule,
     RunsIn,
+    Starter,
 )
 from acme.om.agents.types.report import Report
 from acme.om.agents.types.result import Claim, Result, Turn
@@ -56,6 +58,25 @@ def after_turn(kind: AgentKind, response: AgentStep, nudges: int) -> Turn:
     if uses:
         return Turn.CALLS
     return Turn.EXHAUSTED if nudges + 1 >= kind.max_nudges else Turn.NUDGE
+
+
+STARTS: dict[Starter, str] = {
+    Starter.PERSON: "a person starts it, or confirms a hand-off to it",
+    Starter.AGENT: "an agent starts it as its sub-agent",
+}
+"""What each starter of a kind is, as a refusal names the one it lacks."""
+
+
+def start_refusal(kind: AgentKind, starter: Starter) -> str | None:
+    """Why `starter` may not start a session of `kind`, or None when it may:
+    a person starts, or confirms a hand-off to, only a kind whose
+    `started_by` names `person`, and a spawn starts only one that names
+    `agent`."""
+    if starter in kind.started_by:
+        return None
+    return f"agent kind {kind.name} is started only when " + " or ".join(
+        STARTS[allowed] for allowed in sorted(kind.started_by)
+    )
 
 
 def tree_refusal(tree: AgentTree, depth: int) -> str | None:
@@ -144,8 +165,8 @@ def request_kind_breaches(
 ) -> tuple[str, ...]:
     """What a kind whose loop runs in a request breaks of what such a kind
     may hold, each named; none for a kind that runs in a worker. A request
-    holds no workspace, starts no sub-agent and no job, and runs no call
-    that waits for a person: each tool it names is one of `specs`, the
+    holds no workspace, starts no sub-agent and no job, is started by no
+    agent as its sub-agent, and runs no call that waits for a person: each tool it names is one of `specs`, the
     catalog's, and its own layer of policy allows it under the platform's
     `ceilings`. It makes at most `REQUEST_STEPS` model calls, within
     `REQUEST_TIME`. A tenant's layer may still hold a call for a person at
@@ -155,6 +176,8 @@ def request_kind_breaches(
     breaches: list[str] = []
     if kind.isolation.mode is not IsolationMode.NONE:
         breaches.append(f"it works in a {kind.isolation.mode.value} workspace")
+    if Starter.AGENT in kind.started_by:
+        breaches.append("an agent may start it as its sub-agent")
     for name in kind.tools:
         spec = specs.get(name)
         if spec is None:

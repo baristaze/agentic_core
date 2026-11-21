@@ -25,6 +25,7 @@ from acme.om.agents.types.kind import (
     AgentKindCatalog,
     DoneRule,
     RunsIn,
+    Starter,
 )
 from acme.om.agents.types.request import Spawn
 from acme.om.agents.types.run import RunEnd
@@ -72,6 +73,7 @@ CONTAINER = IsolationSpec(mode=IsolationMode.CONTAINER, egress=EgressPolicy(mode
             "its run time of 31 seconds is past 30 seconds",
         ),
         ({"tools": ("lookup", "absent")}, "absent is no tool of the catalog"),
+        ({"started_by": frozenset(Starter)}, "an agent may start it as its sub-agent"),
     ],
 )
 def test_publishing_a_request_kind_refuses_what_it_breaks(

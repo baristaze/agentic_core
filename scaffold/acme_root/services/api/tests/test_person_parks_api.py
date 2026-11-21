@@ -33,7 +33,7 @@ from acme.integrations.model_providers.types import ProviderName
 from acme.om.agent_sessions.kinds import AgentSessionWorkKind
 from acme.om.agent_sessions.limits import Limits
 from acme.om.agent_steps.types.header import LoopOutcome, Park, ParkReason
-from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
+from acme.om.agents.types.kind import AgentKind, DoneRule, Starter, TreeLimits
 from acme.om.agents.types.run import RunEnd
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.base import new_id, utcnow
@@ -69,7 +69,13 @@ STEWARD = AgentKind(
 replace; `note` waits for a person's approval, and `build` is a job."""
 GUARDED = STEWARD.model_copy(update={"name": "guarded", "limits": Limits(step_guard=1)})
 """A kind whose step guard trips at its second model call in a loop."""
-HAND = STEWARD.model_copy(update={"name": "hand", "share": Amount(cost_micros=50_000_000)})
+HAND = STEWARD.model_copy(
+    update={
+        "name": "hand",
+        "share": Amount(cost_micros=50_000_000),
+        "started_by": frozenset({Starter.AGENT}),
+    }
+)
 """A steady kind a spawn may start, so it runs under its parent's principal."""
 LEAD = STEWARD.model_copy(
     update={
