@@ -4,13 +4,17 @@ runs a command there (`acme.infra.vms.Channel`). The VM provider keeps a
 VM's directory this way, and a provider of a layer above that reaches its
 instances by a channel of its own keeps theirs the same way (ADR 1045).
 
-A pack is one tar archive of the directory, written beside it in the
-instance's temporary space, so it is taken at one moment and measured
-before any byte of it leaves. It is read out as a stream, in parts, as often
-as its caller asks, then dropped. A restore empties the directory and
-unpacks a stream into it. Each runs as the instance's root where its user
-may become root without a password, as a VM's may, so a file a command
-wrote as root is kept and brought back as it was; elsewhere, as its user.
+A pack is one tar archive of the directory, written in the instance's
+temporary space at a path named before tar starts, so it is taken at one
+moment and measured before any byte of it leaves. The directory is measured
+first, by the bytes its files hold: one past the bound is refused before it
+is packed, with its size and the bound. A pack is bounded by a time of its
+own, and one that fails, outlasts it, or is cancelled is removed, so no pack
+is left behind. It is read out as a stream, in parts, as often as its caller
+asks, then dropped. A restore empties the directory and unpacks a stream
+into it. Each runs as the instance's root where its user may become root
+without a password, as a VM's may, so a file a command wrote as root is kept
+and brought back as it was; elsewhere, as its user.
 
 A stream is bounded by how long it may stall, never by how long it runs: a
 part that does not move within `stall` ends it, and a large directory that
@@ -18,10 +22,12 @@ keeps moving is read whole."""
 
 import asyncio
 import contextlib
+import secrets
 from collections.abc import AsyncGenerator, AsyncIterable, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
 
+from acme.infra.agent_workspaces import SnapshotRefused
 from acme.infra.exceptions import BackendFailed
 from acme.infra.vms import Channel
 
@@ -30,17 +36,30 @@ __all__ = ["drop", "pack", "read", "unpack"]
 AS_ROOT = 'as=; if [ "$(id -u)" != 0 ] && sudo -n true 2>/dev/null; then as="sudo -n"; fi'
 """Root where the instance's user may become it without a password."""
 
+TEMPORARY = "/var/tmp"
+"""Where a pack is written in the instance."""
+
+PAST = 3
+"""The pack script's exit when the directory holds more than the bound."""
+
 PACK = f"""set -u
-pack=$(mktemp /var/tmp/acme-pack.XXXXXXXX) || exit 70
 {AS_ROOT}
-$as tar --numeric-owner -C "$1" -cf - . > "$pack"
+held=$($as find "$1" -type f -exec wc -c {{}} + \\
+  | awk '!(NF == 2 && $2 == "total") {{ s += $1 }} END {{ printf "%.0f\\n", s }}')
+if [ "$held" -gt "$3" ]; then printf '%s\\n' "$held"; exit {PAST}; fi
+set -C
+: > "$2" || exit 70
+set +C
+$as tar --numeric-owner -C "$1" -cf - . > "$2"
 code=$?
-if [ "$code" -gt 1 ]; then rm -f -- "$pack"; exit "$code"; fi
-size=$(wc -c < "$pack") || {{ rm -f -- "$pack"; exit 70; }}
-printf '%s\\n' "$pack" $size
+if [ "$code" -gt 1 ]; then exit "$code"; fi
+size=$(wc -c < "$2") || exit 70
+printf '%s\\n' $size
 """
-"""The directory `$1` packed beside it, and the pack's path and size. Tar's
-exit 1 says a file changed while it was read: the pack holds it as read."""
+"""The directory `$1` measured by the bytes its files hold, and refused past
+the bound `$3`; else packed at `$2`, a path no file stands at, and the
+pack's size. Tar's exit 1 says a file changed while it was read: the pack
+holds it as read."""
 
 UNPACK = f"""set -u
 {AS_ROOT}
@@ -64,17 +83,42 @@ class _Ended:
         return lines[-1] if lines else f"the command exited {self.code}"
 
 
-async def pack(channel: Channel, directory: str, *, stall: timedelta) -> tuple[str, int]:
+async def pack(
+    channel: Channel, directory: str, *, bound: int, within: timedelta, stall: timedelta
+) -> tuple[str, int]:
     """`directory`, from the instance's root, packed beside it: the pack's
-    path there and its size in bytes."""
-    ended = await _run(channel, ("sh", "-c", PACK, "sh", directory), stall=stall)
-    if ended.code != 0:
-        raise BackendFailed("directory", "pack", ended.reason())
+    path there and its size in bytes. One whose files hold more than `bound`
+    bytes is refused (`SnapshotRefused`) before it is packed. A pack that
+    fails, takes longer than `within`, or is cancelled leaves no pack: its
+    path is named before tar starts, and removed however it ends."""
+    path = f"{TEMPORARY}/acme-pack.{secrets.token_hex(8)}"
+    argv = ("sh", "-c", PACK, "sh", directory, path, str(bound))
     try:
-        path, size = ended.stdout.decode().split()
-        return path, int(size)
-    except ValueError as error:
-        raise BackendFailed("directory", "pack", f"the pack is not named: {error}") from error
+        ended = await _run(channel, argv, stall=within)
+        if ended.code == PAST:
+            held = ended.stdout.decode(errors="replace").strip()
+            raise SnapshotRefused(
+                f"the workspace's directory holds {held} bytes, "
+                f"past the bound of {bound}, so no snapshot is kept"
+            )
+        if ended.code is None:
+            raise BackendFailed(
+                "directory", "pack", f"the pack did not end within {_seconds(within):g} seconds"
+            )
+        if ended.code != 0:
+            raise BackendFailed("directory", "pack", ended.reason())
+        try:
+            return path, int(ended.stdout)
+        except ValueError as error:
+            raise BackendFailed(
+                "directory", "pack", f"the pack is not measured: {error}"
+            ) from error
+    except BaseException:
+        # A tar that outlived its command line writes on to a file no path
+        # names, and its space comes back once it ends.
+        with contextlib.suppress(Exception):
+            await drop(channel, path, stall=stall)
+        raise
 
 
 async def read(

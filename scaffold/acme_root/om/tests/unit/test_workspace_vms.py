@@ -4,9 +4,11 @@ workspace's directory alone: packed in the VM, read out in parts, each part
 sealed under the session's key and kept under the session's names, and the
 manifest that names them kept as any snapshot is. The next run's VM starts
 on the base and takes the directory back, each part held to its hash, and
-the model is told the rest is the base's again. An archive past the bound
-is refused before any part is read; one that fails part way keeps nothing,
-and a restore that fails parks the loop and touches nothing kept. A
+the model is told the rest is the base's again. A directory past the bound
+is refused before it is packed; an archive that fails part way keeps
+nothing, and a restore that fails parks the loop and touches nothing kept,
+the VM it would replace included, so the person's unlock goes on from that
+VM's files. A
 session that keeps no content at rest keeps no archive, and a revoked key
 leaves its parts noise. A fork's parts are the child's own. A base's disk
 is kept under the tenant, outlives the build that made it, and goes with
@@ -33,8 +35,9 @@ from acme.infra.agent_workspaces import (
     IsolationMode,
     IsolationSpec,
     SnapshotRefused,
+    packs,
 )
-from acme.infra.agent_workspaces.vm import WORKSPACE, AgentWorkspaceVmImpl, vm_name
+from acme.infra.agent_workspaces.vm import WORKSPACE, AgentWorkspaceVmImpl, vm_name, vm_names
 from acme.infra.buckets import Buckets, BucketsInterface
 from acme.infra.buckets.local import BucketsLocalImpl
 from acme.infra.exceptions import BackendFailed
@@ -44,19 +47,21 @@ from acme.infra.transports.broker import BrokerTwinImpl
 from acme.infra.transports.vm import TransportVmImpl
 from acme.infra.vms.twin import VmsTwinImpl
 from acme.om.agent_root import AgentRootOptions
+from acme.om.agent_steps.rules import control_step
 from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
 from acme.om.agent_steps.types.content import TextBlock
 from acme.om.agent_steps.types.header import (
     HASH_SCHEME,
     AgentWorkspaceSnapshot,
+    ControlCommand,
     LoopOutcome,
     ParkReason,
     SnapshotHeader,
     SnapshotHolds,
 )
 from acme.om.agents.impl.loop import LOST_SNAPSHOT
-from acme.om.agents.loop_rules import FROM_BASE
-from acme.om.base import OmBase, new_id
+from acme.om.agents.loop_rules import FROM_BASE, LOST
+from acme.om.base import OmBase, new_id, utcnow
 from acme.om.context import Role, TenantContext
 from acme.om.privacy.impl.keys import AgentSessionKeysImpl
 from acme.om.privacy.impl.snapshots import SnapshotSealKeysImpl
@@ -101,8 +106,8 @@ class CountingVm(AgentWorkspaceVmImpl):
         self.packs: list[DirectoryPack] = []
         self.reads = 0
 
-    async def pack(self, workspace: AgentWorkspace) -> DirectoryPack:
-        pack = await super().pack(workspace)
+    async def pack(self, workspace: AgentWorkspace, bound: int) -> DirectoryPack:
+        pack = await super().pack(workspace, bound)
         self.packs.append(pack)
         return pack
 
@@ -154,12 +159,23 @@ class VmInfra(InfraLocalImpl):
 
     def directory(self, agent_workspace_id: UUID) -> Path:
         """The workspace's directory in its VM, on the twin."""
-        return self.vm_twin.vms[vm_name(PREFIX, agent_workspace_id)].folder / WORKSPACE
+        return directory_of(self.vm_twin, agent_workspace_id)
 
     async def stored(self, org_id: UUID, agent_session_id: UUID) -> dict[str, bytes]:
         """Every blob the session's snapshots keep, by key."""
         keys = await self.buckets.list(org_id, BUCKET, session_prefix(agent_session_id), 1000)
         return {key: await self.buckets.get(org_id, BUCKET, key) for key in keys}
+
+
+def standing(vm_twin: VmsTwinImpl, agent_workspace_id: UUID) -> list[str]:
+    """The VMs that stand under the workspace's names."""
+    return [name for name in vm_names(PREFIX, agent_workspace_id) if name in vm_twin.vms]
+
+
+def directory_of(vm_twin: VmsTwinImpl, agent_workspace_id: UUID) -> Path:
+    """The directory of the one VM the workspace stands on."""
+    (name,) = standing(vm_twin, agent_workspace_id)
+    return vm_twin.vms[name].folder / WORKSPACE
 
 
 def no_pack_left(packs: list[DirectoryPack]) -> bool:
@@ -298,6 +314,7 @@ async def test_a_restore_that_fails_parks_the_loop_and_touches_nothing_kept(
     agent_session_id = await loop.start(KEEPER.name)
     snapshot = await noted(loop, agent_session_id, PLAIN)
     assert snapshot is not None
+    before = standing(infra.vm_twin, agent_session_id)
     altered = part_key(agent_session_id, snapshot.id, 2)
     blob = await infra.buckets.get(org_id, BUCKET, altered)
     await infra.buckets.put(org_id, BUCKET, altered, blob[:-1] + bytes([blob[-1] ^ 1]), "x")
@@ -309,8 +326,56 @@ async def test_a_restore_that_fails_parks_the_loop_and_touches_nothing_kept(
     assert parked.park is not None and parked.park.reason is ParkReason.PERSON
     assert parked.park.cause == LOST_SNAPSHOT
     assert await infra.stored(org_id, agent_session_id) == kept, "the archive is untouched"
-    assert vm_name(PREFIX, agent_session_id) not in infra.vm_twin.vms, "no half-restored VM"
+    assert standing(infra.vm_twin, agent_session_id) == before, "no half-restored VM"
     assert snapshots(await loop.history(agent_session_id))[-1] == snapshot
+
+
+@pytest.mark.parametrize("damage", ["gone", "altered"])
+async def test_a_restore_whose_part_fails_keeps_the_vm_it_would_replace_for_the_unlock(
+    tmp_path: Path, damage: str
+) -> None:
+    """A part gone from the store, or altered in it, fails the restore once
+    its new VM stands: that VM alone is destroyed, the VM it would replace
+    stands as it was, and the loop parks for a person. The person's unlock
+    goes on from that VM: the directory holds the files the archive held,
+    and the model reads that the restore was lost."""
+    loop, infra = vm_loop(tmp_path)
+    org_id = loop.owner.org_id
+    agent_session_id = await loop.start(KEEPER.name)
+    snapshot = await noted(loop, agent_session_id, PLAIN)
+    assert snapshot is not None
+    (replaced,) = standing(infra.vm_twin, agent_session_id)
+    failing = part_key(agent_session_id, snapshot.id, 2)
+    if damage == "gone":
+        await infra.buckets.delete(org_id, BUCKET, failing)
+    else:
+        blob = await infra.buckets.get(org_id, BUCKET, failing)
+        await infra.buckets.put(org_id, BUCKET, failing, blob[:-1] + bytes([blob[-1] ^ 1]), "x")
+    launched = len(infra.vm_twin.calls)
+
+    await loop.say(agent_session_id, "Read it back.")
+    parked = await loop.loops.run(loop.owner, agent_session_id)
+
+    assert parked.park is not None and parked.park.reason is ParkReason.PERSON
+    assert parked.park.cause == LOST_SNAPSHOT
+    calls = infra.vm_twin.calls[launched:]
+    (new,) = [call[1] for call in calls if call[0] == "launch"]
+    assert new != replaced and ("destroy", new) in calls, "the new VM, destroyed"
+    assert ("destroy", replaced) not in calls
+    assert standing(infra.vm_twin, agent_session_id) == [replaced], "the VM it would replace"
+
+    unlock = control_step(new_id(), utcnow(), agent_session_id, loop.owner, ControlCommand.UNLOCK)
+    await loop.managers.agent_sessions.receive(loop.owner, agent_session_id, [unlock])
+    loop.anthropic.add(reply(said("Going on as it stands.")))
+    run = await loop.loops.run(loop.owner, agent_session_id)
+
+    assert run.outcome is LoopOutcome.SUCCEEDED
+    assert standing(infra.vm_twin, agent_session_id) == [replaced]
+    assert (infra.directory(agent_session_id) / "notes.txt").read_text() == PLAIN
+    history = await loop.history(agent_session_id)
+    assert [step.as_text() for step in history if step.type is AgentStepType.ENVIRONMENT_CHANGED][
+        -1
+    ] == LOST
 
 
 # Through the tools.
@@ -343,7 +408,7 @@ class Vms:
         self.ctx = context(Role.SERVICE, make_org())
 
     def directory(self, agent_workspace_id: UUID) -> Path:
-        return self.vm_twin.vms[vm_name(PREFIX, agent_workspace_id)].folder / WORKSPACE
+        return directory_of(self.vm_twin, agent_workspace_id)
 
     async def snapshot(self, workspace: AgentWorkspace) -> AgentWorkspaceSnapshot:
         epoch = await self.tools.steps.begin_run(self.ctx, workspace.id)
@@ -357,20 +422,26 @@ class Vms:
         return await self.buckets.list(self.ctx.org_id, BUCKET, prefix, 1000)
 
 
-async def test_a_directory_past_the_bound_is_refused_before_any_part_is_read(
-    tmp_path: Path,
+async def test_a_directory_past_the_bound_is_refused_before_it_is_packed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Its files are measured in the VM first: the refusal names their size
+    and the bound, and no pack is written, read, or kept."""
+    guest_tmp = tmp_path / "guest-tmp"
+    guest_tmp.mkdir()
+    monkeypatch.setattr(packs, "TEMPORARY", str(guest_tmp))
     vms = Vms(tmp_path, ToolsOptions(snapshot_part_bytes=PART, directory_bound=8 * PART))
     agent_session_id = new_id()
     workspace = await vms.tools.manager.prepare_agent_workspace(vms.ctx, agent_session_id, KEPT)
     (vms.directory(agent_session_id) / "large.bin").write_bytes(os.urandom(16 * PART))
 
-    with pytest.raises(SnapshotRefused, match=f"past the bound of {8 * PART}"):
+    refused = f"holds {16 * PART} bytes, past the bound of {8 * PART}"
+    with pytest.raises(SnapshotRefused, match=refused):
         await vms.snapshot(workspace)
 
+    assert vms.provider.packs == [] and list(guest_tmp.iterdir()) == [], "never packed"
     assert vms.provider.reads == 0, "not a byte of it was read"
     assert await vms.stored(agent_session_id) == []
-    assert no_pack_left(vms.provider.packs)
 
 
 async def test_a_secret_value_in_the_directory_refuses_the_snapshot_and_keeps_nothing(
@@ -401,7 +472,9 @@ async def test_a_fork_of_a_vm_keeps_the_childs_own_parts(tmp_path: Path) -> None
         (vms.directory(parent) / "state.txt").write_text("the parent's")
         kept = durability is Durability.SNAPSHOT
         taken = TakenSnapshot(
-            agent_workspace_id=parent, archive=await vms.provider.pack(workspace), kept=kept
+            agent_workspace_id=parent,
+            archive=await vms.provider.pack(workspace, 1 << 30),
+            kept=kept,
         )
 
         copy = await vms.tools.manager.fork_snapshot(vms.ctx, child, new_id(), taken)

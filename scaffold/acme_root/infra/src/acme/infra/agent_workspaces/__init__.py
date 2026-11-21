@@ -15,9 +15,9 @@ workspace from. A spec that asks for a workspace that can be kept so
 (`Durability.SNAPSHOT`) is refused by a provider that cannot, before
 anything is made, and is never met by a cache in its stead. A provider
 whose every instance starts from its base, such as a VM's, keeps its
-directory alone (`keeps_directory`): packed where the instance runs, measured, read
-out in parts the caller seals and keeps, and brought back into a new
-instance on the base, so nothing too large ever passes as bytes whole
+directory alone (`keeps_directory`): measured and packed where the instance
+runs, read out in parts the caller seals and keeps, and brought back into a
+new instance on the base, so nothing too large ever passes as bytes whole
 (ADR 1045).
 
 A spec may name a base: an image, and the commands that set it up, run once
@@ -301,12 +301,14 @@ class AgentWorkspaceProviderInterface(ABC):
         ...
 
     @abstractmethod
-    async def pack(self, workspace: AgentWorkspace) -> DirectoryPack:
+    async def pack(self, workspace: AgentWorkspace, bound: int) -> DirectoryPack:
         """The workspace's directory packed as one archive beside it, while
         nothing of the run runs in it, and measured: nothing of it has left
         the instance yet. `SnapshotRefused`, before anything is packed, when
-        this provider keeps no directory alone or the workspace holds no
-        instance."""
+        this provider keeps no directory alone, the workspace holds no
+        instance, or its files hold more than `bound` bytes, naming the
+        size and the bound. A pack that fails, or outlasts the time this
+        provider gives one, leaves no pack in the instance."""
         ...
 
     @abstractmethod
@@ -337,8 +339,10 @@ class AgentWorkspaceProviderInterface(ABC):
         replaced whole. Refused (`IsolationRefused`) as `prepare` refuses,
         before anything is made; a base this provider cannot bring in, or a
         provider that keeps no directory alone, raises `AgentWorkspaceLost`.
-        A restore that fails part way, an error `parts` raises included,
-        leaves no instance behind, never a half-restored one."""
+        The instance the workspace stood on goes only once the new one holds
+        the whole directory. A restore that fails part way, an error `parts`
+        raises included, leaves no instance of its own, never a
+        half-restored one, and the one it would replace as it stood."""
         ...
 
     @abstractmethod
@@ -424,7 +428,7 @@ class KeepsWholeMixin:
     def keeps_directory(self) -> bool:
         return False
 
-    async def pack(self, workspace: AgentWorkspace) -> DirectoryPack:
+    async def pack(self, workspace: AgentWorkspace, bound: int) -> DirectoryPack:
         raise SnapshotRefused(f"a {workspace.spec.mode.value} workspace keeps no directory alone")
 
     async def read(self, pack: DirectoryPack, part_bytes: int) -> AsyncGenerator[bytes]:

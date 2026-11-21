@@ -389,7 +389,8 @@ class ToolsManagerImpl(ToolsManagerInterface):
         """The live workspace's archive, or its directory's pack where its
         provider keeps the directory alone, refused before anything runs
         when there is none to take or the session keeps no content at rest.
-        A pack past the bound is refused before any byte of it is read. No
+        A directory past the bound is refused before it is packed, and a
+        pack past it before any byte of it is read. No
         credential is in it: the broker takes back all it attached there,
         one a lost run never took back included, and an injected secret's
         value a command wrote there refuses it, one a tool of `tools`, the
@@ -400,7 +401,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         await self._broker.detach_all(workspace)
         also = injected_secrets(tool.spec for tool in tools)
         if self._agent_workspaces.keeps_directory():
-            pack = await self._agent_workspaces.pack(workspace)
+            pack = await self._agent_workspaces.pack(workspace, self._snapshots.directory_bound)
             try:
                 self._snapshots.bounded(pack.size)
                 async with contextlib.aclosing(

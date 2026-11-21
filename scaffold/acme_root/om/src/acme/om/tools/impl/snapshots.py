@@ -150,7 +150,7 @@ class SnapshotStore:
         self._secrets = secrets
         self._secret_names = tuple(sorted(set(secret_names)))
         self._purge_batch = purge_batch
-        self._directory_bound = directory_bound
+        self.directory_bound = directory_bound
         self.part_bytes = part_bytes
 
     async def at_rest(self, ctx: TenantContext, agent_session_id: UUID) -> None:
@@ -186,10 +186,10 @@ class SnapshotStore:
     def bounded(self, size: int) -> None:
         """Refuses (`SnapshotRefused`) a directory's archive of `size` bytes
         past the bound, before any byte of it is read, and names both."""
-        if size > self._directory_bound:
+        if size > self.directory_bound:
             raise SnapshotRefused(
                 f"the workspace's directory packs to {size} bytes, "
-                f"past the bound of {self._directory_bound}, so no snapshot is kept"
+                f"past the bound of {self.directory_bound}, so no snapshot is kept"
             )
 
     async def keep_parts(

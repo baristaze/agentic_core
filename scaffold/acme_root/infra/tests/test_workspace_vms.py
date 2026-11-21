@@ -6,8 +6,12 @@ releases, packs its directory, restores it on a new VM, keeps a base,
 and purges. A spec the VMs cannot hold is refused before a VM starts: one
 whose probe finds no hypervisor, an egress they cannot close, a limit they
 cannot enforce, and a base their store cannot keep encrypted. A session's
-snapshot keeps the directory alone (ADR 1045); a base is a disk, held to
-its digest before a VM starts on it.
+snapshot keeps the directory alone (ADR 1045), measured against its bound
+before it is packed, and a pack that fails or outlasts its time leaves
+nothing behind. A restore starts its new VM under the next of the
+workspace's names, and the VM it replaces goes only once the new one holds
+the whole directory. A base is a disk, held to its digest before a VM
+starts on it.
 
 Over Lima, where this host runs it, a VM workspace runs Docker, and its
 directory comes back on a new VM whole, a file written as root included,
@@ -22,6 +26,7 @@ import json
 import os
 import shutil
 import tarfile
+import time
 from collections.abc import AsyncIterator, Iterable
 from datetime import timedelta
 from pathlib import Path
@@ -44,8 +49,9 @@ from acme.infra.agent_workspaces import (
     IsolationSpec,
     ResourceLimits,
     SnapshotRefused,
+    packs,
 )
-from acme.infra.agent_workspaces.vm import AgentWorkspaceVmImpl, longest_name, vm_name
+from acme.infra.agent_workspaces.vm import AgentWorkspaceVmImpl, longest_name, vm_name, vm_names
 from acme.infra.base import new_id, utcnow
 from acme.infra.exceptions import BackendFailed, InfraValidationFailed
 from acme.infra.impl.settings import InfraSettings
@@ -54,7 +60,7 @@ from acme.infra.transports import CommandSpec, TransportInterface, secret_held
 from acme.infra.transports.broker import BrokerTwinImpl
 from acme.infra.transports.twin import RecordSealTwin
 from acme.infra.transports.vm import TransportVmImpl
-from acme.infra.vms import VmReply, VmSpec, VmState
+from acme.infra.vms import Channel, VmReply, VmSpec, VmState
 from acme.infra.vms.lima import (
     SOCKET,
     VmsLimaImpl,
@@ -71,6 +77,8 @@ SEAL = RecordSealTwin().seal
 OPEN = EgressPolicy(mode=EgressMode.OPEN)
 NONE = EgressPolicy(mode=EgressMode.NONE)
 TIMEOUT = timedelta(seconds=60)
+BOUND = 1 << 30
+"""A bound no case's directory comes near."""
 
 
 def vm(
@@ -147,13 +155,17 @@ async def test_a_vm_workspace_keeps_its_directory_alone_and_a_restore_starts_on_
     script = "echo kept > kept.txt; mkdir -p deep; head -c 9000 /dev/zero > deep/z; echo x > ../out"
     assert await written(transport, workspace, script) == (0, "")
 
-    pack = await provider.pack(workspace)
+    pack = await provider.pack(workspace, BOUND)
 
     parts = await read_out(provider, pack, 4096)
     assert pack.location == workspace.location and pack.size == sum(map(len, parts))
     assert [len(part) for part in parts[:-1]] == [4096] * (len(parts) - 1) and len(parts) > 2
     assert members(b"".join(parts)) == {"kept.txt": b"kept\n", "deep/z": bytes(9000)}
     assert await twin.state(workspace.location) is VmState.RUNNING, "it keeps its instance"
+    await provider.drop(pack)
+    gone = f"test -e {pack.path} || echo gone"
+    assert await written(transport, workspace, gone) == (0, "gone\n"), "the pack"
+    await provider.drop(pack)
     assert await written(transport, workspace, "echo later > kept.txt; touch new.txt") == (0, "")
 
     restored = await provider.restore(org, agent_workspace_id, vm(), streamed(parts))
@@ -162,37 +174,126 @@ async def test_a_vm_workspace_keeps_its_directory_alone_and_a_restore_starts_on_
         0,
         "kept\ndeep\nkept.txt\ngone\n",
     )
-
-    await provider.drop(pack)
-    gone = f"test -e {pack.path} || echo gone"
-    assert await written(transport, restored, gone) == (0, "gone\n"), "the pack"
-    await provider.drop(pack)
+    names = vm_names(PREFIX, agent_workspace_id)
+    assert (workspace.location, restored.location) == names[:2]
+    assert await twin.names(names[0]) == [restored.location], "the VM it replaced, gone"
     await provider.purge(org, agent_workspace_id)
     assert await twin.names(vm_name(PREFIX, agent_workspace_id)) == [], "the VM"
 
 
-async def test_a_restore_that_fails_part_way_leaves_no_vm(tmp_path: Path) -> None:
+async def test_a_restore_that_fails_part_way_destroys_its_new_vm_alone(tmp_path: Path) -> None:
     """A part that does not match ends the restore with its error, and a
-    stream that is no archive ends it with the unpack's: either way no VM
-    stands for the workspace, never a half-restored one. A whole archive is
-    no VM's to start from."""
+    stream that is no archive ends it with the unpack's: either way the new
+    VM is destroyed, never left half-restored, and the VM it would replace
+    stands as it was, its files with it. Where none stood, none stands. A
+    whole archive is no VM's to start from."""
     provider, twin = over_twin(tmp_path)
     org, agent_workspace_id = new_id(), new_id()
+    names = vm_names(PREFIX, agent_workspace_id)
     transport = transport_over(twin, tmp_path, org)
     workspace = await provider.prepare(org, agent_workspace_id, vm())
     await written(transport, workspace, "head -c 20000 /dev/urandom > state.bin")
-    pack = await provider.pack(workspace)
+    held = (twin.vms[workspace.location].folder / "workspace" / "state.bin").read_bytes()
+    pack = await provider.pack(workspace, BOUND)
     parts = await read_out(provider, pack, 4096)
     await provider.drop(pack)
+    await provider.release(workspace)
 
     with pytest.raises(AgentWorkspaceLost, match="does not match"):
         await provider.restore(org, agent_workspace_id, vm(), streamed(parts, fail_after=2))
-    assert await twin.state(workspace.location) is VmState.ABSENT
     with pytest.raises(BackendFailed, match="unpack"):
         await provider.restore(org, agent_workspace_id, vm(), streamed([b"no archive" * 100]))
-    assert await twin.state(workspace.location) is VmState.ABSENT
+
+    assert [call for call in twin.calls if call[0] == "destroy"] == [("destroy", names[1])] * 2
+    assert await twin.names(names[0]) == [workspace.location], "the VM it would replace"
+    again = await provider.prepare(org, agent_workspace_id, vm())
+    assert again.location == workspace.location
+    assert (twin.vms[again.location].folder / "workspace" / "state.bin").read_bytes() == held
+    await provider.purge(org, agent_workspace_id)
+    with pytest.raises(AgentWorkspaceLost, match="does not match"):
+        await provider.restore(org, agent_workspace_id, vm(), streamed(parts, fail_after=2))
+    assert await twin.names(names[0]) == [], "none stood, and none stands"
     with pytest.raises(AgentWorkspaceLost, match="not a whole archive"):
         await provider.prepare(org, agent_workspace_id, vm(), snapshot=b"a container's tar")
+
+
+async def test_a_vm_a_restore_left_cut_off_is_never_the_workspace(tmp_path: Path) -> None:
+    """Of two VMs under the workspace's names, the later in turn is a
+    restore's that was cut off before the VM it replaces went: the next
+    prepare destroys it and finds the other, and the names go round."""
+    provider, twin = over_twin(tmp_path)
+    org, agent_workspace_id = new_id(), new_id()
+    names = vm_names(PREFIX, agent_workspace_id)
+    spec = VmSpec(image="twin-image", cpus=None, memory_mb=None, egress_open=True)
+    for earlier, later in ((0, 1), (2, 0)):
+        await twin.launch(names[earlier], spec)
+        await twin.launch(names[later], spec)
+
+        found = await provider.prepare(org, agent_workspace_id, vm())
+
+        assert found.location == names[earlier]
+        assert await twin.names(names[0]) == [names[earlier]], "the cut-off VM, destroyed"
+        await provider.purge(org, agent_workspace_id)
+
+
+def shimmed(tmp_path: Path, tar: str) -> tuple[Channel, Path, Path]:
+    """A channel into a folder of this host whose `tar` runs `tar` and whose
+    `sudo` refuses, so a pack runs as this user; the directory it packs;
+    and the folder its packs are written in."""
+    shims, guest, temporary = tmp_path / "shims", tmp_path / "guest", tmp_path / "var-tmp"
+    for folder in (shims, guest / "workspace", temporary):
+        folder.mkdir(parents=True)
+    for name, body in (("sudo", "exit 1"), ("tar", tar)):
+        (shims / name).write_text(f"#!/bin/sh\n{body}\n")
+        (shims / name).chmod(0o755)
+    path = f"{shims}:{os.environ.get('PATH', '/usr/bin:/bin')}"
+    channel = Channel(
+        argv=("sh", "-c", 'cd "$0" || exit 255; exec "$@"', str(guest)), env={"PATH": path}
+    )
+    return channel, guest / "workspace", temporary
+
+
+async def test_a_directory_past_the_bound_is_refused_by_its_size_before_it_is_packed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    channel, directory, temporary = shimmed(tmp_path, f'touch "{tmp_path}/tar-ran"; exit 2')
+    monkeypatch.setattr(packs, "TEMPORARY", str(temporary))
+    (directory / "deep").mkdir()
+    (directory / "a.bin").write_bytes(bytes(6000))
+    (directory / "deep" / "b.bin").write_bytes(bytes(5000))
+
+    with pytest.raises(SnapshotRefused, match="holds 11000 bytes, past the bound of 10000"):
+        await packs.pack(channel, "workspace", bound=10_000, within=TIMEOUT, stall=TIMEOUT)
+
+    assert not (tmp_path / "tar-ran").exists(), "never packed"
+    assert list(temporary.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    ("tar", "why"),
+    [
+        ("head -c 5000 /dev/zero; exit 2", "exited 2"),
+        ("exec 2>/dev/null; head -c 5000 /dev/zero; sleep 2", "did not end within 0.5 seconds"),
+    ],
+    ids=["fails", "outlasts its time"],
+)
+async def test_a_pack_that_fails_or_outlasts_its_time_leaves_no_pack_behind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tar: str, why: str
+) -> None:
+    """The pack's path is named before tar starts, so a tar that fails, or
+    one still writing when the pack's own time runs out, leaves no file."""
+    channel, directory, temporary = shimmed(tmp_path, tar)
+    monkeypatch.setattr(packs, "TEMPORARY", str(temporary))
+    (directory / "a.bin").write_bytes(bytes(100))
+    started = time.monotonic()
+
+    with pytest.raises(BackendFailed, match=why):
+        await packs.pack(
+            channel, "workspace", bound=10_000, within=timedelta(seconds=0.5), stall=TIMEOUT
+        )
+
+    assert time.monotonic() - started < 2, "bounded by its own time"
+    assert list(temporary.iterdir()) == [], "no pack left behind"
 
 
 async def test_a_base_kept_under_its_own_workspace_outlives_the_purge_of_its_build(
@@ -311,7 +412,7 @@ async def test_a_store_not_encrypted_at_rest_keeps_no_base(tmp_path: Path) -> No
     with pytest.raises(SnapshotRefused, match="not encrypted at rest"):
         await provider.snapshot(workspace)
     assert ("stop", workspace.location) not in twin.calls
-    pack = await provider.pack(workspace)
+    pack = await provider.pack(workspace, BOUND)
     assert pack.size > 0
     await provider.drop(pack)
 
@@ -327,7 +428,7 @@ async def test_a_released_workspace_holds_no_instance_and_refuses_a_snapshot(
     with pytest.raises(SnapshotRefused, match="holds no instance"):
         await provider.snapshot(workspace)
     with pytest.raises(SnapshotRefused, match="holds no instance"):
-        await provider.pack(workspace)
+        await provider.pack(workspace, BOUND)
 
 
 async def test_a_disks_secret_value_is_found_by_the_scan_of_what_the_snapshot_holds(
@@ -534,7 +635,7 @@ async def test_a_vm_runs_docker_and_its_directory_comes_back_on_a_new_vm(tmp_pat
         code, before = await written(transport, workspace, build)
         assert code == 0, before
 
-        pack = await provider.pack(workspace)
+        pack = await provider.pack(workspace, BOUND)
         parts = await read_out(provider, pack, 1 << 20)
         assert sum(map(len, parts)) == pack.size
         await vms.destroy(workspace.location)

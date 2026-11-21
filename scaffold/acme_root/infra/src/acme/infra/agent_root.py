@@ -20,7 +20,7 @@ from acme.infra.agent_workspaces.account import AgentWorkspaceAccountImpl
 from acme.infra.agent_workspaces.container import AgentWorkspaceContainerImpl
 from acme.infra.agent_workspaces.host import AgentWorkspaceHostImpl
 from acme.infra.agent_workspaces.twin import AgentWorkspaceNullImpl, AgentWorkspaceTwinImpl
-from acme.infra.agent_workspaces.vm import AgentWorkspaceVmImpl
+from acme.infra.agent_workspaces.vm import PACK_WITHIN, AgentWorkspaceVmImpl
 from acme.infra.keys import KeyServiceInterface
 from acme.infra.keys.kms import KeyServiceKmsImpl
 from acme.infra.keys.memory import KeyServiceMemoryImpl, root_key
@@ -90,6 +90,9 @@ class AgentInfraSettings(BaseSettings):
     # which may download its image and install Docker in it.
     vm_timeout_seconds: float = Field(default=120.0, gt=0)
     vm_boot_timeout_seconds: float = Field(default=900.0, gt=0)
+    # A pack of a VM workspace's directory, at a snapshot: its own bound,
+    # since it writes up to the snapshot's bound in the guest.
+    vm_pack_timeout_seconds: float = Field(default=PACK_WITHIN.total_seconds(), gt=0)
 
     @field_validator("keys_root_key")
     @classmethod
@@ -236,7 +239,13 @@ def _runtime(
     if settings.agent_workspace_backend == "vm":
         timeout = timedelta(seconds=settings.vm_timeout_seconds)
         return (
-            AgentWorkspaceVmImpl(vms, settings.vm_image, settings.vm_prefix, timeout),
+            AgentWorkspaceVmImpl(
+                vms,
+                settings.vm_image,
+                settings.vm_prefix,
+                timeout,
+                pack_within=timedelta(seconds=settings.vm_pack_timeout_seconds),
+            ),
             TransportVmImpl(records, secrets, broker, vms, timeout),
         )
     return AgentWorkspaceNullImpl(), TransportNullImpl()
