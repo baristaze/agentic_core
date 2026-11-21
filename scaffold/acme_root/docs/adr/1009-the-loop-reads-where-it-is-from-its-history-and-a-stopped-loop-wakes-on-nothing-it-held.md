@@ -33,8 +33,9 @@ park runs it. A park on the workspace at a call its own run wrote, or
 one a settled park held back, is settled too, and the run that resumes
 it runs the call once. One at a call a lost run left open comes before
 the run has a workspace to settle anything in: it is marked unsettled,
-and the run that resumes it settles the calls by their effect. A call that would wait for a person after a lost run is
-answered with its outcome unknown rather than parked open. A result the
+and the run that resumes it settles the calls by their effect. A call
+that would wait for a person after a lost run is answered with its
+outcome unknown rather than parked open. A result the
 gate accepted is recorded in its answer, and the loop ends on it once
 every call of the turn is answered.
 
