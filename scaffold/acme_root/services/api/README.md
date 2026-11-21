@@ -60,6 +60,10 @@ route are in no document:
   `Idempotent-Replayed: true`; the same key with a different request is
   refused. A secret is in the first answer only. A 429 is an answer
   about now and is not kept: the retry of the same create runs again.
+  A question to a kind whose loop runs in the request is answered with
+  a stream, which is no answer to keep: its routes take no key, and a
+  question asked again is a new one
+  ([ADR 1044](../../docs/adr/1044-a-kinds-loop-may-run-in-the-request-that-asks-it.md)).
 - **The calling app and its version.** `x-app` and `x-app-version`
   name the client, and travel into the provenance of every write.
 - **One error envelope.** Every refusal, the framework's own included,

@@ -181,6 +181,7 @@ flowchart LR
 | Visibility, participant, steerer | Who sees a session: the org, or its creator and participants; who takes part; whose messages instruct it | [Who Is Who](#who-is-who) |
 | Untrusted mark | A session's sticky flag once it has read data | [Bound What a Convinced Model Can Do](#bound-what-a-convinced-model-can-do) |
 | Agent kind | A versioned profile over the one loop | [Agent Kinds](#agent-kinds) |
+| Request kind | A kind whose loop runs in the request that asks it, bounded and read-only, and never waits | [Where a Loop Runs](#where-a-loop-runs) |
 | Tree | A root session and its sub-agents, sharing one budget and one deadline | [Sub-Agents](#sub-agents) |
 | Budget gate, hold | The one check before every model call or spending job; the worst case it reserves | [One Gate, Before the Call](#one-gate-before-the-call) |
 | Guard, bound, yield | A limit that parks; a limit that ends the loop; a limit that hands the loop to a new run | [Time, Steps, and Streaks](#time-steps-and-streaks) |
@@ -1393,11 +1394,56 @@ One loop serves many agents. An **agent kind** is a profile over it:
 | Result contract and gate | A report with cited evidence; a success needs evidence | None |
 | Authority mode | Steady | Delegated |
 | Default bounds | Budget, deadline, step guard, tree limits | Budget, step guard |
+| Where its loop runs | A worker | A worker, or the request that asks it |
 
 A kind is versioned. A session pins its kind version as it pins its fill
 set; an upgrade happens at a loop boundary and is recorded as a
 `switched` step. It pins its standing text the same way
 ([Rendering](#rendering)).
+
+### Where a Loop Runs
+
+Where a loop runs is a kind's own axis, apart from where its tools run
+([The Runtime](#the-runtime)). By default a kind's loop runs in a
+worker: an input that wakes its session asks for a run, a runner claims
+it, and a park waits there. A kind may instead declare that its loop
+runs in the request that asks it. Every version of a kind runs in one
+place, and neither axis changes the loop: one loop serves both.
+
+A **request kind** holds nothing a worker holds. It has no workspace,
+starts no sub-agent and no job, and makes no call that waits for a
+person: its own policy allows each tool it names, under the platform's
+ceilings. It makes at most 10 model calls, within 30 seconds. Publishing
+refuses a request kind that breaks any of these, and names each breach.
+
+A caller asks a request kind a **question**, which starts a session or
+continues one the caller steers. A participant's word is data, never a
+question, and a refused question writes nothing. The loop runs in that
+request and streams to it as server-sent events: the session first, then
+each text part with the id of the step it adds up to, a ping after 15
+seconds of quiet, and one end that names how the run ended, the loop's
+outcome and its cause, the steps it wrote, and what its model calls
+used. The text is the model's, which the caller renders as text, never
+as markup. The run is recorded as any run is: under a writer epoch,
+through the one gate, and attributed to whom it runs for.
+
+Nothing waits in a request. Where another loop would park or yield, on a
+budget, an outage, the step guard, a tenant's policy that holds a call
+for a person, or its run time, a request kind's loop answers each open
+call as not run and ends `inconclusive`, its cause naming the park. The
+stream ends with that cause, and the session's next question starts a
+loop of its own. No work item is written for its session, and no sweep
+or recovery touches it. A caller that goes away cancels the loop; the
+next question takes the open loop up and settles its calls by their
+effect ([Durable by Default](#durable-by-default)).
+
+*Example:* the person asks the checkout service's assistant, a request
+kind, how many orders a failed payment dropped last week. It reads the
+order records and streams its answer in the same request, and its spend
+lands on the same ledger as the investigation's.
+
+> **Principle:** A loop runs where its kind says. A request holds no
+> worker's work, is bounded in steps and time, and waits for nothing.
 
 ### Done Rules and the Result Gate
 
@@ -1617,7 +1663,9 @@ or a region the key lacks is the call's alone.
 | Run time | Wall time of one run | Yield | The run persists and hands its loop back to the queue; the next run continues |
 
 The guideline's rule holds: a guard parks, a bound fails ([Long-Running
-Orchestrations][g-lro]). A bound is a loop that cannot make progress,
+Orchestrations][g-lro]). A loop that runs in a request has no queue to
+wait in: where another would park or yield, it ends ([Where a Loop
+Runs](#where-a-loop-runs)). A bound is a loop that cannot make progress,
 which no raised limit cures; for a loop its failure is `inconclusive`,
 never `failed`, which is a conclusion of the work, and it never ends the
 session. A step count is never a lifetime cap, which would fail every
@@ -1662,7 +1710,9 @@ runs that call once. One at a call a lost run left open comes before
 its run has settled that run's calls, so it says so, and the run that
 resumes it settles them by their effect.
 When the unlock happens, a `resumed` step starts a new run. Raising a
-budget is the instruction to continue.
+budget is the instruction to continue. A loop that runs in a request
+never parks: it ends where another would park, and its next question
+starts anew ([Where a Loop Runs](#where-a-loop-runs)).
 
 A session waits in line as a waiter of the guideline's leases. A tool's
 ask joins the line under the call's key and answers at once with its
@@ -1980,6 +2030,7 @@ Decisions][g-adr]).
 | ASY-13 (Infrastructure, Secrets) | When a credential cannot be brokered, a short-lived, scoped secret is injected into the one tool process that needs it, from a stripped environment, redacted everywhere, and audited by name. |
 | STO-28 (The Storage Layer, The Second Fence) | A fourth login, held by the maintenance worker alone, deletes a session and its history within one tenant. |
 | STO-32, STO-34 (Naming Entities; Database Roles) | Step content holds personal values in free text. It is sealed per session, and its erasure is revoking the session's key, never redaction in place. |
+| ASY-15, NET-19 (Worker Roles; The Network Layer) | A request kind's loop runs in the request that asks it and streams its answer there, bounded in steps and time, and nothing of it outlives the request. |
 
 ## The Repository
 

@@ -1,20 +1,34 @@
 """Pure rules of agent kinds and trees: what a turn means under a kind's
 done rule, whether a tree has room for one more child, the tree a root
 starts with, the claim no gate is asked about, what a child's report
-tells its parent, and the park a parent waits for it on and what ends
-it. Values in, values out; no clock, no storage."""
+tells its parent, the park a parent waits for it on and what ends it,
+and what a kind whose loop runs in a request may hold and why its loop
+ended. Values in, values out; no clock, no storage."""
 
-from datetime import datetime
+from collections.abc import Mapping
+from datetime import datetime, timedelta
 from uuid import UUID
 
+from acme.infra.agent_workspaces import IsolationMode
 from acme.om.agent_sessions.limits import DEADLINE_UNLOCK
 from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.agent_steps.types.agent_step import AgentStep
 from acme.om.agent_steps.types.header import LoopOutcome, Park, ParkReason
-from acme.om.agents.types.kind import AgentKind, DoneRule
+from acme.om.agents.types.kind import (
+    REQUEST_STEPS,
+    REQUEST_TIME,
+    AgentKind,
+    AgentKindCatalog,
+    DoneRule,
+    RunsIn,
+)
 from acme.om.agents.types.report import Report
 from acme.om.agents.types.result import Claim, Result, Turn
 from acme.om.agents.types.tree import AgentTree
+from acme.om.exceptions import UnknownAgentKind
+from acme.om.tools.rules import decide, with_reach
+from acme.om.tools.types.policy import Decision, ToolPolicyCall, ToolPolicyLayer
+from acme.om.tools.types.tool import ToolClass, ToolMode, ToolSpec
 
 OUTCOMES: dict[Claim, LoopOutcome] = {
     Claim.SUCCEEDED: LoopOutcome.SUCCEEDED,
@@ -123,3 +137,82 @@ def report_text(child: AgentSession, report: Report) -> str:
     if not report.answer:
         return f"{text} It said nothing."
     return f"{text} Its last answer:\n\n{report.answer}"
+
+
+def request_kind_breaches(
+    kind: AgentKind, specs: Mapping[str, ToolSpec], ceilings: ToolPolicyLayer
+) -> tuple[str, ...]:
+    """What a kind whose loop runs in a request breaks of what such a kind
+    may hold, each named; none for a kind that runs in a worker. A request
+    holds no workspace, starts no sub-agent and no job, and runs no call
+    that waits for a person: each tool it names is one of `specs`, the
+    catalog's, and its own layer of policy allows it under the platform's
+    `ceilings`. It makes at most `REQUEST_STEPS` model calls, within
+    `REQUEST_TIME`. A tenant's layer may still hold a call for a person at
+    run time, and the loop then ends where it would park."""
+    if kind.runs_in is not RunsIn.REQUEST:
+        return ()
+    breaches: list[str] = []
+    if kind.isolation.mode is not IsolationMode.NONE:
+        breaches.append(f"it works in a {kind.isolation.mode.value} workspace")
+    for name in kind.tools:
+        spec = specs.get(name)
+        if spec is None:
+            breaches.append(f"{name} is no tool of the catalog")
+            continue
+        if spec.authorization_class == ToolClass.SPAWN:
+            breaches.append(f"{name} starts a session, a sub-agent's or a handoff's")
+        if spec.mode is ToolMode.JOB:
+            breaches.append(f"{name} starts a job, which outlives the request")
+        asked = ToolPolicyCall(
+            tool=name, authorization_class=spec.authorization_class, effect=spec.effect
+        )
+        if decide(with_reach(asked), kind.policy, ToolPolicyLayer(), ceilings) is Decision.APPROVE:
+            breaches.append(f"{name} waits for a person's approval")
+    if kind.limits.step_guard > REQUEST_STEPS:
+        breaches.append(
+            f"its step guard of {kind.limits.step_guard} is past {REQUEST_STEPS} model calls"
+        )
+    if kind.limits.run_time > REQUEST_TIME:
+        breaches.append(
+            f"its run time of {_seconds(kind.limits.run_time)} is past " + _seconds(REQUEST_TIME)
+        )
+    return tuple(breaches)
+
+
+def request_kind_refusal(
+    kinds: tuple[AgentKind, ...], specs: Mapping[str, ToolSpec], ceilings: ToolPolicyLayer
+) -> str | None:
+    """Why publishing `kinds` is refused, every breach of every request kind
+    among them named, or None when none breaks anything."""
+    refused = [
+        f"agent kind {kind.name} v{kind.version} runs in a request, and " + "; ".join(breaches)
+        for kind in kinds
+        if (breaches := request_kind_breaches(kind, specs, ceilings))
+    ]
+    return " | ".join(refused) or None
+
+
+def runs_in_request(kinds: AgentKindCatalog, session: AgentSession) -> bool:
+    """Whether the session's loop runs in the request that asks it, as its
+    kind says at every version. A kind the catalog no longer holds ran in a
+    worker."""
+    try:
+        return kinds.latest(session.kind).runs_in is RunsIn.REQUEST
+    except UnknownAgentKind:
+        return False
+
+
+def request_end_cause(park: Park | None, run_time: timedelta) -> str:
+    """Why a loop that runs in a request ended where another loop would park
+    or yield: nothing waits in a request. Named from the park's reason, what
+    clears it, and its cause, or from the run time a yield passed: names and
+    ids, never content."""
+    if park is None:
+        return f"a request waits for nothing: the run passed its run time of {_seconds(run_time)}"
+    said = f"a request waits for nothing: the loop parks on {park.reason.value} ({park.unlock})"
+    return said if park.cause is None else f"{said}: {park.cause}"
+
+
+def _seconds(span: timedelta) -> str:
+    return f"{span.total_seconds():g} seconds"

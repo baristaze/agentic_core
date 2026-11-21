@@ -124,6 +124,14 @@ path = "apps/site/package.json"
 adr = "docs/adr/0002-technology-choices.md"
 reason = "a static page with no script and no state; the portal and every app that calls the system stay React on Vite"
 
+# A kind whose loop runs in the request that asks it runs there, as a task
+# of the request's own that goes with it, and streams its answer.
+[[tool.arch-check.exception]]
+rule = "ASY-15"
+path = "services/api/src/acme/services/api/services/impl/questions.py"
+adr = "docs/adr/1044-a-kinds-loop-may-run-in-the-request-that-asks-it.md"
+reason = "the loop of a request kind runs in the request that asks it, cancelled when the request ends"
+
 # The sites that build a stage above the request stage, the same list
 # om/tests/unit/test_stage_construction.py holds: the helper that assembles
 # a tenant context and the tenancy manager's transitions.

@@ -92,7 +92,7 @@ class Unavailable(OmException):
 class UnsafeConfiguration(OmException):
     """A root refused what it was handed at boot: a combination that is only
     safe on a developer's machine, such as a quiet null budget gate outside
-    `local`."""
+    `local`, or a kind that cannot run where it says its loop runs."""
 
     code = "unsafe_configuration"
 

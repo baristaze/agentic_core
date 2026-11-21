@@ -62,7 +62,9 @@ history. This is one of the kinds of thing [Acme is made of](../../../../README.
   once, whether or not the agent is working, and the status follows it.
 - **Wake.** An input that wakes an idle session makes it pending, and a
   loop begins. Each time a session turns pending, the write that turns
-  it asks for a run of its loop, which the session runner takes up.
+  it asks for a run of its loop, which the session runner takes up. A
+  session whose kind's loop runs in the request that asks it asks for
+  nothing: that request runs it (ADR 1044).
 - **Work.** Once the agent writes a step, the session is running.
 - **Park.** A loop that cannot go on yet parks; what clears it makes the
   session pending again, for the agent to take up. A loop parked on the

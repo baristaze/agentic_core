@@ -21,7 +21,13 @@ from acme.om.agents.impl.loop_core import (
     LoopCore,
     RunState,
 )
-from acme.om.agents.rules import CHILDREN_PARK, ends_parents_wait, notes_parent
+from acme.om.agents.rules import (
+    CHILDREN_PARK,
+    ends_parents_wait,
+    notes_parent,
+    request_end_cause,
+)
+from acme.om.agents.types.kind import RunsIn
 from acme.om.agents.types.line import InLine
 from acme.om.agents.types.run import LoopRun, RunEnd
 from acme.om.attribution.types.authority import CallReach
@@ -50,13 +56,40 @@ class LoopParks(LoopCore):
         so the history holds no open call, and the loop ends `cancelled`,
         and so do its children's. Every job the loop started is cancelled
         with it, one whose `park` this run has not yet written as well."""
+        why = f"stopped by a principal's {ControlCommand.CANCEL.value}"
+        await self._stop_open(run, park, why)
+        return await self._end(run, LoopOutcome.CANCELLED)
+
+    async def _ends_in_request(self, run: RunState, cause: str) -> LoopRun:
+        """A loop that runs in a request waits for nothing: where another loop
+        would park or yield, every job it started is cancelled, every call
+        still open is answered as not run, and the loop ends `inconclusive`
+        with the cause, so the session's next question starts a loop of its
+        own (ADR 1044)."""
+        await self._stop_open(run, None, "stopped as its request ended")
+        return await self._end(run, LoopOutcome.INCONCLUSIVE, cause=cause)
+
+    async def _yield(self, run: RunState) -> LoopRun:
+        """The run passed its run time: it persists and hands its loop back to
+        the queue, and the next run continues. A loop that runs in a request
+        has no queue to go back to, and ends."""
+        if run.kind.runs_in is RunsIn.REQUEST:
+            return await self._ends_in_request(
+                run, request_end_cause(None, run.kind.limits.run_time)
+            )
+        await self._keep(run)
+        return self._result(run, RunEnd.YIELDED)
+
+    async def _stop_open(self, run: RunState, park: Park | None, why: str) -> None:
+        """Every job the loop started is cancelled, one whose `park` this run
+        has not yet written as well, and every call still open is answered
+        as stopped, `why`, so the history holds no open call."""
         history = await self._history(run.ctx, run.agent_session_id)
         jobs = rules.started_jobs(history, run.loop_id)
         if park is not None and park.job is not None and park.job.key not in jobs:
             request = next(step for step in history if step.id == park.job.key)
             jobs[park.job.key] = rules.StartedJob(request, park, None)
-        why = f"stopped by a principal's {ControlCommand.CANCEL.value}; the job was cancelled"
-        await self._stop_jobs(run, list(jobs.values()), why)
+        await self._stop_jobs(run, list(jobs.values()), f"{why}; the job was cancelled")
         response = rules.latest_response(history, run.loop_id)
         if response is not None:
             calls = [
@@ -67,21 +100,19 @@ class LoopParks(LoopCore):
             if calls:
                 requests = await self._requests(run, response, calls)
                 answers = [
-                    self._cancelled_call(run, request).model_copy(
+                    self._stopped_call(run, request, why).model_copy(
                         update={"id": response_id(request, run.epoch)}
                     )
                     for _, request in requests
                 ]
                 await self._append(run, answers)
-        return await self._end(run, LoopOutcome.CANCELLED)
 
-    def _cancelled_call(self, run: RunState, request: AgentStep) -> AgentStep:
-        """A cancel's answer to a call still open: stopped before it ran, or,
-        for one a lost run may have started, stopped with its outcome
-        unknown, so the model verifies before it calls again."""
+    def _stopped_call(self, run: RunState, request: AgentStep, why: str) -> AgentStep:
+        """The answer to a call still open when the loop stops: stopped before
+        it ran, or, for one a lost run may have started, stopped with its
+        outcome unknown, so the model verifies before it calls again."""
         if self._never_ran(run, request):
-            text = f"stopped by a principal's {ControlCommand.CANCEL.value} before it ran"
-            return self._stopped(request, text, ToolFailure.INTERRUPTED)
+            return self._stopped(request, f"{why} before it ran", ToolFailure.INTERRUPTED)
         return self._lost(request)
 
     async def _end(
@@ -109,6 +140,10 @@ class LoopParks(LoopCore):
         return self._result(run, RunEnd.ENDED, outcome=outcome)
 
     async def _park(self, run: RunState, park: Park) -> LoopRun:
+        if run.kind.runs_in is RunsIn.REQUEST:
+            return await self._ends_in_request(
+                run, request_end_cause(park, run.kind.limits.run_time)
+            )
         await self._keep(run)
         await self._sessions.park(run.ctx, run.agent_session_id, run.epoch, run.loop_id, park)
         if park.wait_line is not None and park.job is not None:

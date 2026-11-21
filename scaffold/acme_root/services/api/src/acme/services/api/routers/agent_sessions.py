@@ -8,6 +8,12 @@ retried send is one step. The loop runs in the session runner: a route
 writes what a person said and answers once it is durable. A session the
 caller does not see answers 404, as one that never existed.
 
+A kind whose loop runs in the request that asks it is asked a question
+instead (ADR 1044): the route writes it, runs the loop in the request, and
+answers with its stream, as server-sent events. A question is no create
+the idempotency record replays: a stream is no outcome to record, and the
+question asked again is a question of its own.
+
 Each park a person clears has its route, held to the permission its
 manager checks, and clearing it wakes the session: a message answers a
 question, a decision an approval, a moved deadline the deadline, an
@@ -22,11 +28,13 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Query, Response
+from fastapi.responses import StreamingResponse
 
 from acme.om.agent_sessions.types.agent_session import AgentSessionStatus, Among
 from acme.services.api.gateway.admin import OperatorCtx
 from acme.services.api.gateway.admission import HOLDER_CALL
 from acme.services.api.gateway.auth import Ctx
+from acme.services.api.gateway.events import EVENT_STREAM_RESPONSES, Events
 from acme.services.api.gateway.idempotency import Idem
 from acme.services.api.gateway.resolve import AgentSessionsService
 from acme.services.api.types.agent_sessions import (
@@ -42,7 +50,9 @@ from acme.services.api.types.agent_sessions import (
     JobCompletionRequest,
     MessageRequest,
     PrincipalRequest,
+    QuestionRequest,
     StartAgentSessionRequest,
+    StartQuestionRequest,
     ToolOutputPageView,
     VisibilityRequest,
 )
@@ -60,6 +70,38 @@ async def start_agent_session(
     return await idem.run(
         201, lambda attempt: sessions.start_agent_session(ctx, body, attempt.target_id)
     )
+
+
+@router.post(
+    "/questions",
+    response_class=StreamingResponse,
+    response_model=None,
+    responses=EVENT_STREAM_RESPONSES,
+)
+async def start_question(
+    ctx: Ctx, sessions: AgentSessionsService, body: StartQuestionRequest, events: Events
+) -> StreamingResponse:
+    """A session on a kind whose loop runs in the request that asks it,
+    started and asked at once: its loop runs in this request, and streams."""
+    return await events.answer(sessions.start_question(ctx, body))
+
+
+@router.post(
+    "/{agent_session_id}/questions",
+    response_class=StreamingResponse,
+    response_model=None,
+    responses=EVENT_STREAM_RESPONSES,
+)
+async def ask(
+    ctx: Ctx,
+    sessions: AgentSessionsService,
+    agent_session_id: UUID,
+    body: QuestionRequest,
+    events: Events,
+) -> StreamingResponse:
+    """A question to a session the caller steers: its loop runs in this
+    request, and streams."""
+    return await events.answer(sessions.ask(ctx, agent_session_id, body))
 
 
 @router.get("", response_model=AgentSessionPageView)

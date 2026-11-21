@@ -16,6 +16,7 @@ from acme.om.agent_steps.types.agent_step import Actor, AgentStepType, Origin
 from acme.om.agent_steps.types.content import MAX_NAME
 from acme.om.agent_steps.types.header import ControlCommand, LoopOutcome, ParkReason, ToolFailure
 from acme.om.agents.types.request import MAX_TITLE
+from acme.om.agents.types.run import RunEnd
 from acme.om.attribution.types.authority import Visibility
 from acme.om.attribution.types.principal import MAX_KIND
 from acme.om.tools.types.call import MAX_REPORT
@@ -193,6 +194,70 @@ class MessageRequest(RequestBody):
     session, and a running loop reads it at its next model request."""
 
     text: str = Field(min_length=1, max_length=MAX_MESSAGE)
+
+
+class StartQuestionRequest(RequestBody):
+    """A question that starts a session on the latest version of a kind
+    whose loop runs in the request that asks it."""
+
+    kind: str = Field(min_length=1, max_length=MAX_KIND)
+    title: str = Field(min_length=1, max_length=MAX_TITLE)
+    text: str = Field(min_length=1, max_length=MAX_MESSAGE)
+
+
+class QuestionRequest(RequestBody):
+    """A question to a session the caller steers, of a kind whose loop runs
+    in the request that asks it."""
+
+    text: str = Field(min_length=1, max_length=MAX_MESSAGE)
+
+
+class QuestionSessionView(View):
+    """The first event of a question's stream: the session it asks, and the
+    question as stored."""
+
+    agent_session_id: UUID
+    agent_step_id: UUID
+    seq: int
+
+
+class QuestionTextView(View):
+    """A piece of the text the model writes: the step it adds up to, its
+    place in that step's stream, and the text block it belongs to. It is the
+    model's text, which a client renders as text, never as markup."""
+
+    agent_step_id: UUID
+    n: int
+    index: int
+    text: str
+
+
+class QuestionPingView(View):
+    """Sent after each spell of quiet, so no proxy cuts a stream that waits."""
+
+
+class QuestionEndView(View):
+    """The last event of a question's stream. `end` is how the run stopped:
+    `ended` with the loop's `outcome` and its `cause`, `stale` when a later
+    run took the session over, `idle` when the session had no loop to run.
+    `first_seq` and `last_seq` bound the steps from the question to the
+    run's last, and `usage` is what the run's model calls used."""
+
+    agent_session_id: UUID
+    loop_id: UUID | None
+    end: RunEnd
+    outcome: LoopOutcome | None
+    cause: str | None
+    first_seq: int
+    last_seq: int
+    usage: AgentStepUsageView
+
+
+class QuestionErrorView(View):
+    """The last event of a stream whose run failed, in place of its end."""
+
+    code: str
+    message: str
 
 
 class AgentSessionControl(StrEnum):

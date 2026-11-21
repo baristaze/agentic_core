@@ -9,10 +9,10 @@ for a child, its spender and its tree. A spawn's or a hand-over's text is
 self-contained: a child never reads its parent's history."""
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Self
 from uuid import UUID
 
-from pydantic import AfterValidator, Field
+from pydantic import AfterValidator, Field, model_validator
 
 from acme.om.attribution.types.principal import MAX_KIND
 from acme.om.base import OmBase
@@ -59,6 +59,23 @@ class Start(OmBase):
     participants: tuple[UUID, ...] = ()
     deadline: datetime | None = None
     standing: StandingText = ""
+
+
+class Question(OmBase):
+    """A question to a session whose kind's loop runs in the request that
+    asks it. `id` is the question's step; `start`, when it is there, makes
+    the session first, under `agent_session_id`."""
+
+    id: UUID
+    agent_session_id: UUID
+    text: str = Field(min_length=1)
+    start: Start | None = None
+
+    @model_validator(mode="after")
+    def _starts_the_session_it_asks(self) -> Self:
+        if self.start is not None and self.start.id != self.agent_session_id:
+            raise ValueError("a question starts the session it asks")
+        return self
 
 
 class Spawn(OmBase):

@@ -747,6 +747,23 @@
         "title": "PrincipalRequest",
         "type": "object"
       },
+      "QuestionRequest": {
+        "additionalProperties": false,
+        "description": "A question to a session the caller steers, of a kind whose loop runs\nin the request that asks it.",
+        "properties": {
+          "text": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "QuestionRequest",
+        "type": "object"
+      },
       "SnapshotView": {
         "description": "A workspace's snapshot a step names: its id, which a restore names,\nthe hash of its bytes keyed by its session, its size in bytes, and the\nworkspace it was taken from.",
         "properties": {
@@ -800,6 +817,37 @@
           "title"
         ],
         "title": "StartAgentSessionRequest",
+        "type": "object"
+      },
+      "StartQuestionRequest": {
+        "additionalProperties": false,
+        "description": "A question that starts a session on the latest version of a kind\nwhose loop runs in the request that asks it.",
+        "properties": {
+          "kind": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title",
+          "text"
+        ],
+        "title": "StartQuestionRequest",
         "type": "object"
       },
       "StopReason": {
@@ -1476,6 +1524,94 @@
           }
         },
         "summary": "Start Agent Session",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
+    "/v1/agent-sessions/questions": {
+      "post": {
+        "description": "A session on a kind whose loop runs in the request that asks it,\nstarted and asked at once: its loop runs in this request, and streams.",
+        "operationId": "start_question",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartQuestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {}
+            },
+            "description": "The question's stream, as server-sent events: `session` (QuestionSessionView), then `text` (QuestionTextView) and `ping` (QuestionPingView), and one `end` (QuestionEndView) or `error` (QuestionErrorView)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "common.json#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Question",
         "tags": [
           "agent_sessions"
         ]
@@ -2604,6 +2740,104 @@
         ]
       }
     },
+    "/v1/agent-sessions/{agent_session_id}/questions": {
+      "post": {
+        "description": "A question to a session the caller steers: its loop runs in this\nrequest, and streams.",
+        "operationId": "ask",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Agent Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-app-version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-App-Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {}
+            },
+            "description": "The question's stream, as server-sent events: `session` (QuestionSessionView), then `text` (QuestionTextView) and `ping` (QuestionPingView), and one `end` (QuestionEndView) or `error` (QuestionErrorView)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "common.json#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ask",
+        "tags": [
+          "agent_sessions"
+        ]
+      }
+    },
     "/v1/agent-sessions/{agent_session_id}/steps": {
       "get": {
         "description": "The history in order, strictly after `after_seq`.",
@@ -3038,7 +3272,7 @@
   },
   "tags": [
     {
-      "description": "Agent session routes: start a session on a kind, list the ones a\nperson takes part in or sees, join one or leave it, switch who sees it,\nhand its steer on, send it a message or a control, decide a tool call it\nwaits on, clear the park a person clears, and read its history and its\ntool_outputs a page at a time. Each function is one call into the agent\nsessions service; every create runs under the idempotency record, so a\nretried send is one step. The loop runs in the session runner: a route\nwrites what a person said and answers once it is durable. A session the\ncaller does not see answers 404, as one that never existed.\n\nEach park a person clears has its route, held to the permission its\nmanager checks, and clearing it wakes the session: a message answers a\nquestion, a decision an approval, a moved deadline the deadline, an\nassignment a principal who no longer holds, a giving back the hand-over\nits holder holds, a job's completion its job, and an unlock the step\nguard, a spender, a lost workspace, and a key or a price fixed outside.\n\nOn the operator plane (`routers/tenancy.py`), an operator token that may\nread reads what one session's model calls used and cost.",
+      "description": "Agent session routes: start a session on a kind, list the ones a\nperson takes part in or sees, join one or leave it, switch who sees it,\nhand its steer on, send it a message or a control, decide a tool call it\nwaits on, clear the park a person clears, and read its history and its\ntool_outputs a page at a time. Each function is one call into the agent\nsessions service; every create runs under the idempotency record, so a\nretried send is one step. The loop runs in the session runner: a route\nwrites what a person said and answers once it is durable. A session the\ncaller does not see answers 404, as one that never existed.\n\nA kind whose loop runs in the request that asks it is asked a question\ninstead (ADR 1044): the route writes it, runs the loop in the request, and\nanswers with its stream, as server-sent events. A question is no create\nthe idempotency record replays: a stream is no outcome to record, and the\nquestion asked again is a question of its own.\n\nEach park a person clears has its route, held to the permission its\nmanager checks, and clearing it wakes the session: a message answers a\nquestion, a decision an approval, a moved deadline the deadline, an\nassignment a principal who no longer holds, a giving back the hand-over\nits holder holds, a job's completion its job, and an unlock the step\nguard, a spender, a lost workspace, and a key or a price fixed outside.\n\nOn the operator plane (`routers/tenancy.py`), an operator token that may\nread reads what one session's model calls used and cost.",
       "name": "agent_sessions"
     }
   ]

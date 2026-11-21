@@ -40,8 +40,9 @@ HOSTED: dict[str, tuple[APIRouter, ...]] = {
     # queued by the writes of the other namespaces.
     "work": (work.operator,),
     # A copy adds its entries below this line.
-    # Sessions with an agent, whose loops run in the session runner, and the
-    # operator's read of one session's usage.
+    # Sessions with an agent, whose loops run in the session runner or in
+    # the request that asks a question, and the operator's read of one
+    # session's usage.
     "agent_sessions": (agent_sessions.router, agent_sessions.operator),
 }
 """Every namespace this image hosts, and the routers that serve it."""

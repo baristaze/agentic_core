@@ -14,6 +14,12 @@ of](../../../../README.md).
   what one of its sessions may spend as a sub-agent.
   A product declares its kinds; each is versioned, and a session keeps
   the version it started on.
+- **Request kind**: a kind whose loop runs in the request that asks it,
+  not in a worker. It has no workspace, starts no sub-agent and no job,
+  and makes no call a person must approve, in at most 10 model calls and
+  30 seconds; a kind that breaks any of these is refused when the
+  product declares it. Asked a question, it answers in the same request,
+  as a stream, and where another loop would wait, its loop ends.
 - **Done rule**: an assistant is done when it answers without calling a
   tool; an agent that delivers work is done only when it submits a
   result.
@@ -241,8 +247,10 @@ that offer them. A child's loop hands its report to the agents manager,
 which bounds it through the windows and writes it into the parent's
 inbox. The session runner calls the loop's one operation with
 the session and the context its claim built: once each time the session
-turns pending, and again when a run's time is up. Nothing else drives a
-loop. A job's report comes in through the loop too, from whatever the
+turns pending, and again when a run's time is up. A kind whose loop runs
+in the request that asks it is driven by that request instead: the API
+calls the operation once per question, and where the loop would park or
+yield, it ends (ADR 1044). Nothing else drives a loop. A job's report comes in through the loop too, from whatever the
 product connects to the system the job runs on. A session waits in a
 line of the [leases](../leases/README.md) as a waiter the root
 registers, and a grant reaches it through the work queue. A layer above
