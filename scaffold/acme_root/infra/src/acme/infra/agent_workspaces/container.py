@@ -133,6 +133,11 @@ class AgentWorkspaceContainerImpl(AgentWorkspaceProviderInterface):
         self._image = image
         self._timeout = timeout
 
+    async def check(self, spec: IsolationSpec) -> None:
+        why = _refusal(spec)
+        if why is not None:
+            raise IsolationRefused(why, cause=why)
+
     async def prepare(
         self,
         org_id: UUID,
@@ -143,12 +148,7 @@ class AgentWorkspaceContainerImpl(AgentWorkspaceProviderInterface):
         *,
         building: bool = False,
     ) -> AgentWorkspace:
-        why = refusal(
-            spec,
-            mode=IsolationMode.CONTAINER,
-            egress={EgressMode.NONE, EgressMode.OPEN},
-            limits=LIMIT_FLAGS.keys(),
-        )
+        why = _refusal(spec)
         built = snapshot is None and spec.base is not None and bool(spec.base.setup)
         if why is None and built and base is None:
             why = "a workspace on a base with setup starts from the base's snapshot alone"
@@ -550,4 +550,14 @@ def _opened(snapshot: bytes) -> Kept:
         deleted=deleted,
         layer=parts.get("layer.tar", b""),
         files=parts.get("workspace.tar", b""),
+    )
+
+
+def _refusal(spec: IsolationSpec) -> str | None:
+    """Why a container can never meet `spec`."""
+    return refusal(
+        spec,
+        mode=IsolationMode.CONTAINER,
+        egress={EgressMode.NONE, EgressMode.OPEN},
+        limits=LIMIT_FLAGS.keys(),
     )

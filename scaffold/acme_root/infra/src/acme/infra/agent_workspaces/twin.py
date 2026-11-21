@@ -28,6 +28,11 @@ class AgentWorkspaceTwinImpl(AgentWorkspaceProviderInterface):
         self.files: dict[UUID, bytes] = {}
         self.bases: dict[UUID, bytes] = {}
 
+    async def check(self, spec: IsolationSpec) -> None:
+        why = _refusal(spec)
+        if why is not None:
+            raise IsolationRefused(why, cause=why)
+
     async def prepare(
         self,
         org_id: UUID,
@@ -38,12 +43,7 @@ class AgentWorkspaceTwinImpl(AgentWorkspaceProviderInterface):
         *,
         building: bool = False,
     ) -> AgentWorkspace:
-        why = refusal(
-            spec,
-            mode=IsolationMode.TWIN,
-            egress=set(EgressMode),
-            limits={"cpus", "memory_mb", "processes"},
-        )
+        why = _refusal(spec)
         built = snapshot is None and spec.base is not None and bool(spec.base.setup)
         if why is None and built and base is None:
             why = "a workspace on a base with setup starts from the base's snapshot alone"
@@ -101,6 +101,10 @@ class AgentWorkspaceNullImpl(AgentWorkspaceProviderInterface):
     """A process that prepares no workspace: every spec is refused, loudly,
     so a session that asks for one learns it before its first model call."""
 
+    async def check(self, spec: IsolationSpec) -> None:
+        why = f"this process prepares no workspace; a {spec.mode.value} workspace is refused"
+        raise IsolationRefused(why, cause=why)
+
     async def prepare(
         self,
         org_id: UUID,
@@ -143,3 +147,13 @@ class AgentWorkspaceNullImpl(AgentWorkspaceProviderInterface):
 
     async def close(self) -> None:
         return None
+
+
+def _refusal(spec: IsolationSpec) -> str | None:
+    """Why the twin can never meet `spec`: any mode but its own."""
+    return refusal(
+        spec,
+        mode=IsolationMode.TWIN,
+        egress=set(EgressMode),
+        limits={"cpus", "memory_mb", "processes"},
+    )

@@ -1,8 +1,9 @@
 """Why a loop ended or parked, as the API returns it: a loop runs here
-in-process, over the memory storage and the twin workspace and transport,
-on a kind whose workspace starts from a base with setup. A setup command
-that fails ends the loop `errored`, and its end step names the command and
-its exit code, never what the command wrote. A loop whose base another
+in-process, over the memory storage, the scripted model, and the twin
+workspace and transport, on a kind whose workspace starts from a base with
+setup, prepared at its first call that reaches it. A setup command that
+fails ends the loop `errored`, and its end step names the command and its
+exit code, never what the command wrote. A loop whose base another
 prepare is building parks on the leasable resource, and its park says so,
 on the step and on the session."""
 
@@ -25,10 +26,20 @@ from acme.infra.agent_workspaces import (
 )
 from acme.infra.transports import CommandSpec
 from acme.infra.transports.twin import TransportTwinImpl, TwinReply
+from acme.integrations.identity.twin import IdentityProviderTwinImpl
+from acme.integrations.impl.configured import IntegrationsOverImpl
+from acme.integrations.model_providers import ModelProvidersInterface
+from acme.integrations.model_providers.registry import scripted_model_providers
+from acme.integrations.model_providers.scripted import ModelProviderScriptedImpl
+from acme.integrations.model_providers.types import ProviderName
 from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
 from acme.om.attribution.types.authority import AuthorityMode
 from acme.om.context import TenantContext
+from acme.om.tools.types.policy import Decision, ToolPolicyLayer, ToolPolicyRule
+from acme.om.tools.types.tool import ToolClass
 from acme.services.api.container import AppContainer
+
+from contracts.loops import Lookup, reply, said, use
 
 SETUP = "pip install acme-tools"
 WROTE = "ERROR: tok-0123456789abcdef was refused by the registry"
@@ -40,6 +51,10 @@ BUILDER = AgentKind(
     done_rule=DoneRule.ANSWER,
     authority=AuthorityMode.DELEGATED,
     tree=TreeLimits(height=1, count=0),
+    tools=("lookup",),
+    policy=ToolPolicyLayer(
+        rules=(ToolPolicyRule(authorization_class=ToolClass.READ, decision=Decision.ALLOW),)
+    ),
     isolation=IsolationSpec(
         mode=IsolationMode.TWIN,
         egress=EgressPolicy(mode=EgressMode.NONE),
@@ -69,8 +84,24 @@ class Setup:
 
 
 @pytest.fixture
-def container(tmp_path: Path) -> AppContainer:
-    return build_container(tmp_path, agent_kinds=(BUILDER,))
+def providers() -> ModelProvidersInterface:
+    return scripted_model_providers()
+
+
+@pytest.fixture
+def container(tmp_path: Path, providers: ModelProvidersInterface) -> AppContainer:
+    integrations = IntegrationsOverImpl(IdentityProviderTwinImpl(), providers)
+    return build_container(
+        tmp_path, integrations=integrations, agent_kinds=(BUILDER,), tool_catalog=(Lookup(),)
+    )
+
+
+def model_of(providers: ModelProvidersInterface) -> ModelProviderScriptedImpl:
+    """The scripted model each builder's loop calls: its first turn calls
+    `lookup`, which reaches the workspace, so the run prepares it."""
+    model = providers.get(ProviderName.ANTHROPIC)
+    assert isinstance(model, ModelProviderScriptedImpl)
+    return model
 
 
 def setup_on(container: AppContainer, exit_code: int) -> Setup:
@@ -114,9 +145,13 @@ async def last_step(
 
 
 async def test_a_failed_setup_ends_the_loop_with_its_command_and_exit_code(
-    client: httpx.AsyncClient, owner: dict[str, str], container: AppContainer
+    client: httpx.AsyncClient,
+    owner: dict[str, str],
+    container: AppContainer,
+    providers: ModelProvidersInterface,
 ) -> None:
     setup_on(container, exit_code=2)
+    model_of(providers).add(reply(use("lookup")))
     agent_session_id = await spoken_to(client, owner)
 
     await container.managers.loop.run(await owner_context(container, owner), UUID(agent_session_id))
@@ -127,9 +162,13 @@ async def test_a_failed_setup_ends_the_loop_with_its_command_and_exit_code(
 
 
 async def test_a_park_on_a_base_being_built_says_so_on_the_step_and_the_session(
-    client: httpx.AsyncClient, owner: dict[str, str], container: AppContainer
+    client: httpx.AsyncClient,
+    owner: dict[str, str],
+    container: AppContainer,
+    providers: ModelProvidersInterface,
 ) -> None:
     setup = setup_on(container, exit_code=0)
+    model_of(providers).add(reply(use("lookup")), reply(use("lookup")), reply(said("Built.")))
     setup.gate = asyncio.Event()
     ctx = await owner_context(container, owner)
     building, waiting = await spoken_to(client, owner), await spoken_to(client, owner)

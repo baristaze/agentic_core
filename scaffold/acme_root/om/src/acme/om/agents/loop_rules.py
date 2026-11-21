@@ -800,17 +800,35 @@ def pending_restore(steps: Sequence[AgentStep]) -> AgentStep | None:
     return None
 
 
-def kept_snapshot(steps: Sequence[AgentStep]) -> AgentStep | None:
+def kept_snapshot(steps: Sequence[AgentStep], *, settled: bool) -> AgentStep | None:
     """The `snapshotted` step a workspace kept by snapshots starts from when
     no restore is pending: the latest, when nothing touched the workspace
-    after it. A tool call after it, as a run lost before its end leaves, or a
-    change a notice records, such as a person's work by hand or a restore
-    that was lost, leaves the workspace newer than any snapshot: None, and it
-    is prepared as it stands."""
+    after it. A call that reached the workspace after it, as a run lost
+    before its end leaves, or a change a notice records, such as a person's
+    work by hand or a restore that was lost, leaves the workspace newer than
+    any snapshot: None, and it is prepared as it stands. A call reached it
+    when its request says it reaches the workspace and it may have run: it
+    was answered, or it is still open and not `settled`. A call that
+    reaches nothing never touched it, so a run that made only such calls
+    leaves the snapshot whole. `settled` when no run may have started a
+    call still open: a park the loop wrote held it back, or the run asking
+    wrote it."""
+    reaching: set[UUID] = set()
+    answered: set[UUID] = set()
+    for step in steps:
+        header = step.header
+        if isinstance(header, ToolRequestHeader) and header.workspace:
+            reaching.add(step.id)
+        elif step.type is AgentStepType.TOOL_RESPONSE and step.responds_to is not None:
+            answered.add(step.responds_to)
     for step in reversed(steps):
         if step.type is AgentStepType.SNAPSHOTTED:
             return step
-        if step.type.is_tool_call() or step.type is AgentStepType.ENVIRONMENT_CHANGED:
+        if step.type is AgentStepType.ENVIRONMENT_CHANGED:
+            return None
+        if step.type is AgentStepType.TOOL_RESPONSE and step.responds_to in reaching:
+            return None
+        if step.id in reaching and step.id not in answered and not settled:
             return None
     return None
 
@@ -859,8 +877,8 @@ def restored_step(
 
 def called(steps: Sequence[AgentStep], loop_id: UUID) -> bool:
     """Whether the loop has made a model call: a request of any role names
-    it. A loop that stopped before its first call, parked as its workspace
-    was prepared say, is still new."""
+    it. A loop that stopped before its first call, on a refusal of its
+    hooks' or a lost claim say, is still new."""
     return any(
         step.type is AgentStepType.MODEL_REQUEST and step.loop_id == loop_id for step in steps
     )

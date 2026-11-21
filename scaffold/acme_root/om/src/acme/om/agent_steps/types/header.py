@@ -334,7 +334,10 @@ class ToolRequestHeader(OmBase):
     `refs`) and carrying its input's hash, never its input, and the class
     of power its tool exercises, which decides who may approve it. The
     agent acts (`agent`); the call runs under `principal`, whom `authority`
-    chose and the adopter's transition answered for on this call."""
+    chose and the adopter's transition answered for on this call.
+    `workspace` says whether the call reaches the session's workspace: its
+    run prepares the workspace before it, and a snapshot taken before it
+    no longer holds the workspace once it may have run."""
 
     kind: Literal["tool_request"] = "tool_request"
     tool: Stored = Field(min_length=1, max_length=MAX_NAME)
@@ -344,6 +347,7 @@ class ToolRequestHeader(OmBase):
     authority: AuthorityMode
     agent: AgentRef
     authorization_class: Stored = Field(min_length=1, max_length=MAX_NAME)
+    workspace: bool = True
 
 
 class AcceptedResult(OmBase):

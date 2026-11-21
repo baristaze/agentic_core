@@ -65,6 +65,7 @@ class WriteAgentPlanToolImpl(ToolInterface):
             effect=Effect.IDEMPOTENT,
             interruptible=True,
             mode=ToolMode.SYNC,
+            workspace=False,
         )
 
     @property

@@ -413,6 +413,7 @@ async def put_call(
         principal=a_person(),
         authority=AuthorityMode.STEADY,
         agent=AgentRef(kind="delivery", version=1, agent_session_id=agent_session_id),
+        workspace=True,
     )
     stored = await steps.append_agent_steps(
         ctx, agent_session_id, epoch, [model_request, model_response, request]

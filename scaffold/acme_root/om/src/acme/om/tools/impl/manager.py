@@ -217,6 +217,11 @@ class ToolsManagerImpl(ToolsManagerInterface):
 
     # The workspace.
 
+    async def check_agent_workspace(self, ctx: TenantContext, spec: IsolationSpec) -> None:
+        ctx.require(Permission.WRITE)
+        if spec.mode is not IsolationMode.NONE:
+            await self._agent_workspaces.check(spec)
+
     async def prepare_agent_workspace(
         self,
         ctx: TenantContext,

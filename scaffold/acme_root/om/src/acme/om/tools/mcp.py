@@ -92,6 +92,8 @@ class McpToolImpl(ToolInterface):
             interruptible=binding.interruptible,
             mode=ToolMode.SYNC,
             secrets=(secret,) if secret is not None else (),
+            # A server's tool runs on its server, never in the workspace.
+            workspace=False,
         )
 
     @property

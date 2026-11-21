@@ -9,22 +9,23 @@ snapshot is scanned for."""
 
 import asyncio
 from collections.abc import Sequence
+from datetime import timedelta
 from pathlib import Path
 from uuid import UUID
 
 import pytest
 
 from acme.infra.agent_workspaces import (
-    AgentWorkspace,
     Durability,
     EgressMode,
     EgressPolicy,
     IsolationMode,
-    IsolationRefused,
     IsolationSpec,
 )
 from acme.infra.agent_workspaces.twin import AgentWorkspaceTwinImpl
+from acme.infra.base import SYSTEM_SCOPE
 from acme.infra.impl.local import InfraLocalImpl
+from acme.infra.outages import Outage
 from acme.infra.transports import SecretUse, SecretVia
 from acme.integrations.model_providers.calls import ModelCall
 from acme.om.agent_sessions.types.agent_session import AgentSession
@@ -276,31 +277,34 @@ async def test_the_hooks_tell_a_new_loop_from_one_a_run_takes_up_again(tmp_path:
 
 
 async def test_a_loop_whose_first_run_parks_before_its_first_call_is_new_to_the_next(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     layer = Layer()
     loop = loop_over(tmp_path, hooks=layer)
     agent_session_id = await loop.start()
     await loop.say(agent_session_id, "Find the total.")
     loop.anthropic.add(reply(said("It is 12.")))
-    prepare = loop.managers.tools.prepare_agent_workspace
-
-    async def refused(*args: object, **kwargs: object) -> AgentWorkspace:
-        raise IsolationRefused("no host can give it the workspace yet", clears=True)
-
-    monkeypatch.setattr(loop.managers.tools, "prepare_agent_workspace", refused)
-    waiting = await loop.loops.run(loop.owner, agent_session_id)
-    monkeypatch.setattr(loop.managers.tools, "prepare_agent_workspace", prepare)
-    await loop.managers.agent_steps.append_inputs(
-        loop.owner, agent_session_id, [control(loop, agent_session_id, ControlCommand.UNLOCK)]
+    retry_at = loop.clock() + timedelta(minutes=1)
+    await loop.outages.mark(
+        Outage(
+            org_id=SYSTEM_SCOPE, provider="anthropic", credential=loop.credential, retry_at=retry_at
+        )
     )
 
+    waiting = await loop.loops.run(loop.owner, agent_session_id)
+    assert waiting.park is not None and waiting.park.reason is ParkReason.PROVIDER
+    loop.clock.now = retry_at
+    await loop.managers.agent_sessions.wake_agent_session(
+        loop.owner, agent_session_id, waiting.park
+    )
     done = await loop.loops.run(loop.owner, agent_session_id)
 
-    assert waiting.park is not None and waiting.park.reason is ParkReason.LEASABLE_RESOURCE
     assert done.outcome is LoopOutcome.SUCCEEDED and done.loop_id == waiting.loop_id
-    assert [start.new_loop for start in layer.starts] == [True], "new until its first call"
-    assert layer.renewed == [(done.loop_id, done.epoch)], "renewed before that call"
+    assert [start.new_loop for start in layer.starts] == [True, True], "new until its first call"
+    assert layer.renewed == [
+        (waiting.loop_id, waiting.epoch),
+        (done.loop_id, done.epoch),
+    ], "renewed before that call, by each run that reached it"
 
 
 async def test_a_renewal_that_finds_no_fill_ends_the_loop_before_any_call(tmp_path: Path) -> None:

@@ -53,6 +53,14 @@ class ToolsManagerInterface(ABC):
         ...
 
     @abstractmethod
+    async def check_agent_workspace(self, ctx: TenantContext, spec: IsolationSpec) -> None:
+        """Whether the provider can ever meet a session's spec, asked
+        before its loop's first model call: `IsolationRefused`, with its
+        cause, when it never can, and nothing is made. A spec of no
+        workspace passes."""
+        ...
+
+    @abstractmethod
     async def prepare_agent_workspace(
         self,
         ctx: TenantContext,
@@ -60,11 +68,12 @@ class ToolsManagerInterface(ABC):
         spec: IsolationSpec,
         restore: AgentWorkspaceSnapshot | None = None,
     ) -> AgentWorkspace:
-        """The session's workspace, prepared to its spec, before its loop's
-        first model call. `IsolationRefused` when the provider cannot meet
-        the spec: never a weaker workspace. Its `cause` is what a person
-        reads of it, when it names one. A spec of no workspace answers
-        the absent one, which every transport refuses, loudly.
+        """The session's workspace, prepared to its spec, as the first call
+        of a run that reaches it is about to be gated. `IsolationRefused`
+        when the provider cannot meet the spec: never a weaker workspace.
+        Its `cause` is what a person reads of it, when it names one. A spec
+        of no workspace answers the absent one, which every transport
+        refuses, loudly.
 
         With `restore`, a snapshot the session's history names, the
         workspace starts from it, replaced whole. Its bytes are read from
