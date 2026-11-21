@@ -28,6 +28,11 @@ Example: `fixer --done result_tool --result-tool submit --tools read_log,run_tes
   the answer; `result_tool` for an agent that delivers work, which only
   its result tool ends. A `result_tool` kind names its result tool among
   its tools.
+- `--tools`: every tool the kind calls, its result tool included. When
+  what the agent does asks for a power no tool named gives, such as
+  editing files with no tool that writes one, ask; unattended, the kind
+  names the tools `--tools` names, its prompt asks only what they give,
+  and the report names the power left out.
 - `--authority`: `delegated` runs each call under the asking person's
   live permissions; `steady` under one principal fixed when the session
   is made. When it is not given, ask; unattended, an agent a person
@@ -35,9 +40,9 @@ Example: `fixer --done result_tool --result-tool submit --tools read_log,run_tes
 - `--started-by`: who may start a session of the kind, as
   `AgentKind.started_by` holds it: `person` (the default) for a kind a
   person starts or a hand-off reaches, `agent` for one only a spawn
-  starts, `both` for either. When it is not given, it follows `--share`:
-  a kind that names a share is `both`, and one that names none is
-  `person`.
+  starts, `both` for either. When it is not given, a kind given
+  `--share`, or one the arguments or the conversation say a spawn
+  starts, is `both`, and any other is `person`.
 - `--tree`: the tree's height and its count of sub-agents; `1/0`, a
   single agent, unless the kind spawns. A height is at least 1
   (`TreeLimits.height`): 1 is the root alone. A height of 0 asks for a
@@ -52,12 +57,10 @@ Example: `fixer --done result_tool --result-tool submit --tools read_log,run_tes
   native tokens, `Amount(tokens=<count>)`. A share covers at least one
   call's worst-case hold (Hold, in `om/src/<name>/om/spend_budgets/README.md`):
   a smaller one refuses the child's first call, and only a person clears
-  it. A kind names a share when a spawn can start it, which is known when
-  the kind is written: every kind that delivers through a result tool,
-  and any kind the arguments say a spawn starts, which names `agent` in
-  `started_by` too. An assistant a person starts directly names none:
-  its `share` is left unset, never `Amount(cost_micros=0)`, and a spawn
-  of it is refused. When it is not
+  it. A kind names a share when a spawn can start it: when its
+  `started_by` names `agent`. A kind a person alone starts names none,
+  whatever its done rule: its `share` is left unset, never
+  `Amount(cost_micros=0)`, and a spawn of it is refused. When it is not
   given for a kind that names one, ask; unattended, the kind takes the
   largest share another kind of the catalog names, and when none names
   one it leaves the share unset and the report says a spawn of the kind
@@ -82,6 +85,19 @@ Example: `fixer --done result_tool --result-tool submit --tools read_log,run_tes
     kind allows every class of its tools. When the arguments do not say
     which, ask; unattended, it allows `read` alone, and the report names
     each class of its tools left to wait for a person.
+  - `isolation` is `NO_AGENT_WORKSPACE`, which every transport refuses.
+    It holds for a kind whose tools all reach no workspace (`workspace`
+    false, as the tool skill says), and always for a request kind. A kind
+    with a tool that runs a command or reads, writes, or lists files
+    works in a workspace: an `IsolationSpec` from
+    `infra/src/<name>/infra/agent_workspaces/__init__.py`, its mode one
+    the product's workspace provider holds, and its egress
+    `EgressPolicy(mode=EgressMode.NONE)` unless the arguments say its
+    work reaches a network. When the arguments do not give the mode,
+    ask; unattended, it is `IsolationMode.CONTAINER`.
+  - `private_data` is `True`, one of the rule of two's three. A kind
+    sets `False` only when its sessions read no tenant record and no
+    person's words.
 
 ## Created
 
@@ -154,8 +170,15 @@ example's are those of `DELIVERY` and `ASSISTANT` in
    `<name>_<tool>`, and the report says so. Read
    `../agentic-scaffold-tool/SKILL.md` and follow it, then register the
    tool as the Changed table says. A
-   result tool's input holds a `Result`, from
-   `om/src/<name>/om/agents/types/result.py`. The gates of that skill
+   result tool's input is a `Result`: `class <Tool>Input(ToolInput, Result)`,
+   with `Result` from `om/src/<name>/om/agents/types/result.py` and no
+   field of its own, since the loop reads the call's input as a `Result`
+   and refuses any field it does not hold. The loop answers the call
+   itself, through the result gate, and never calls the tool's `run`.
+   The call still passes the kind's policy first, as every call does, so
+   the tool is written `--class read --effect read_only` with `workspace`
+   false: the policy that allows `read` then runs every submission
+   without a person. The gates of that skill
    are not run there: this skill's run once, for both.
 4. A kind's bounds are the tree's: its height, its count, and one
    deadline every session of it shares. A kind that spawns sub-agents
