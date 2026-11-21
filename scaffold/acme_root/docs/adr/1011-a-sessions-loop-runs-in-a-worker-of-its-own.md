@@ -22,7 +22,8 @@ model away from the history.
 
 **The loop runs in the session runner, a worker role of its own.** It
 claims one kind, `LOOP`, on a lane of its own, and calls the loop's one
-operation under the claim's context. A loop holds its claim for minutes,
+operation under the claim's context. A kind whose loop runs in the
+request that asks it is the one exception (ADR 1044). A loop holds its claim for minutes,
 so the maintenance worker's lane, and its cap on a tenant's share, counts
 none of them. It holds no purge login, and the maintenance worker
 holds no model key and runs no tool.

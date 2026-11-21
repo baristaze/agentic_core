@@ -4,11 +4,11 @@ Group id: `agents`. Covers Agent Kinds and Sub-Agents of
 `agentic_core_spec.md`.
 
 This group judges the profiles over the one loop and how sessions
-relate: agent kinds, done rules and the result gate, sub-agents and
-their tree, and handoffs. It leaves the class and policy of the spawn
-tool to `tools`, the untrusted mark a child inherits to `trust`, the
-gate each call of the tree passes to `bounds`, and the null result
-gate's marked verdict to `privacy`.
+relate: agent kinds, where a kind's loop runs, done rules and the
+result gate, sub-agents and their tree, and handoffs. It leaves the
+class and policy of the spawn tool to `tools`, the untrusted mark a
+child inherits to `trust`, the gate each call of the tree passes to
+`bounds`, and the null result gate's marked verdict to `privacy`.
 
 ## AGT-01 An agent kind is a versioned profile over one loop
 
@@ -184,5 +184,44 @@ change the new session's objective.
 **Severity.** high
 
 **Shape.** `scaffold/acme_root/om/src/acme/om/agents/impl/manager.py`
+
+**Check.** review
+
+## AGT-08 A request kind holds no worker's work and waits for nothing
+
+**Principle.** Where a loop runs is a kind's own axis: a worker, or the
+request that asks it, at every version. A request kind has no
+workspace, no sub-agent, no job, and no call that waits for a person,
+and makes at most 10 model calls within 30 seconds; publishing refuses
+one that breaks any of these, naming each breach. Only the steerer asks
+it, and a refused question writes nothing. Each event's data is one
+line of JSON. Where another loop would park or yield, it answers each
+open call as not run and ends `inconclusive` with the park's cause. No
+work item is written for its session, and no sweep or recovery touches
+it.
+
+**Source.** Agent Kinds and Sub-Agents, Where a Loop Runs; Deviations
+from the Guideline.
+
+**Look for.** `AgentKind.runs_in` and the check a root runs on a
+request kind when its catalog is built (`request_kind_breaches`); the
+loop's park and yield for a request kind; the projection's work rows
+for its session; the question route, who it lets ask, and what it
+writes before it refuses; how the stream frames the model's text and
+when it pings; what a caller that goes away leaves running.
+
+**Violation.** A request kind published with a workspace, a spawn-class
+or job tool, a tool its own policy holds for a person, a step guard
+past 10, or a run time past 30 seconds; versions of one kind that run
+in different places; a request kind's loop that writes a `parked` step
+or yields; a `LOOP` or wake row for its session; a question a
+participant or a non-member asks that lands a step; the model's text
+written into an event unescaped; a loop that outlives the request that
+ran it.
+
+**Severity.** high
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/agents/rules.py` and
+`scaffold/acme_root/services/api/src/acme/services/api/services/impl`
 
 **Check.** review
