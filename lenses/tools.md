@@ -18,10 +18,11 @@ of a session with no workspace to `privacy`.
 what the model sees and are versioned with the kind, since descriptions
 are prompts; a typed input schema that refuses unknown fields; a typed
 output, rendered to the model within a size bound; its own timeout; its
-authorization class; its effect; whether it is interruptible; and its
-mode, `sync` or `job`. A preflight is optional: it refuses a call that
-cannot succeed before anyone is asked to approve it. Tools from native
-code, MCP servers, and sub-agents take one contract.
+authorization class; its effect; whether it is interruptible; its mode,
+`sync` or `job`; and whether its calls reach the session's workspace,
+which a tool that says nothing does. A preflight is optional: it refuses
+a call that cannot succeed before anyone is asked to approve it. Tools
+from native code, MCP servers, and sub-agents take one contract.
 
 **Source.** Tools, The Tool Contract; The Registry.
 
@@ -30,10 +31,13 @@ input schema's handling of unknown fields; where descriptions live and
 how they are versioned.
 
 **Violation.** A tool with no class, no effect, no timeout, or no mode;
-an input schema that accepts unknown fields; a description changed
-outside the kind's version; a sub-agent or an MCP tool registered
-through a second contract. (An effect declared safer than the tool is
-TOL-02.)
+a tool that says its calls reach no workspace and runs a command or
+touches a file through its runtime; a gate that reads that declaration,
+such as a rule of two that reads the egress of the workspace a call was
+given rather than the session's; an input schema that accepts unknown
+fields; a description changed outside the kind's version; a sub-agent or
+an MCP tool registered through a second contract. (An effect declared
+safer than the tool is TOL-02.)
 
 **Severity.** medium
 
@@ -398,29 +402,31 @@ rest is judged.
 
 ## TOL-14 Isolation is refused, never weakened
 
-**Principle.** Isolation is chosen up front and never weakened. A
-workspace provider that cannot meet a session's isolation spec refuses
-before the first model call; it never falls back to something weaker.
-A refusal that cannot clear ends the loop `errored`. One that waits for
-a workspace that may come parks the loop on the resource, and the loop
-asks again after a wait. Either step names the refusal's cause, never a
-command's output or the host's state. A workspace whose durable state
-is gone parks it for a person. An environment may vanish between loops:
-an instance is released, and a session is not. The next loop prepares
-another, and an `environment_changed` step tells the model what changed
-under it.
+**Principle.** Isolation is chosen up front and never weakened. A spec
+the provider can never meet is refused before the first model call,
+whole. A workspace is made at the first tool call that reaches it,
+never before a model call. A refusal that cannot clear ends the loop
+`errored`, each call left open answered; one that may clear parks it on
+the resource with the call open, which runs once when the workspace
+comes. Either names its cause, never a command's output or the host's
+state. A lost workspace parks the loop for a person. A released
+instance is prepared again by the next loop that reaches it, and an
+`environment_changed` step tells the model what changed.
 
 **Source.** The Runtime.
 
 **Look for.** What a workspace provider does when it cannot meet a spec;
-when that check runs against the first model call; what a refusal's
-cause is composed from, and the step that carries it; how a new
-environment is announced.
+whether a spec it never meets is refused before the first model call,
+and when the workspace is prepared; what a refusal's cause is composed
+from, and the step that carries it; how a new environment is announced.
 
 **Violation.** A fallback from a VM to a container, or from a container
 to a directory on the host, when the stronger mode is unavailable; a
-refusal found after the model has been called; a refusal that may clear
-ending the loop, or one that cannot clear parking it; a refusal's cause
+spec the provider can never meet found after the model has been called;
+a workspace prepared before a model call, or for a run whose calls reach
+none; a call that waits for a workspace lost, or run twice once it
+comes; a refusal that may clear ending the loop, or one that cannot
+clear parking it, or ending it with a call left open; a refusal's cause
 that holds a command's output, an environment, or the host's own state,
 or one the refusal names that its loop's end or park drops; a workspace
 rebuilt from something else when what it is rebuilt from is gone; a new
@@ -463,7 +469,9 @@ the snapshot ends.
 
 **Violation.** A snapshot of part of what the commands wrote, such as a
 host directory kept as if whole, or a released container's volume on a
-fresh instance; an instance let go that no snapshot holds; a restore
+fresh instance; an instance let go that no snapshot holds; the latest
+snapshot passed over for a call that reached no workspace, or one taken
+by a run that held none; a restore
 from bytes whose hash was not checked, on an image named by a tag, or a
 half-restored workspace left to run; a lost restore tried again at each
 unlock; a credential or an injected secret's value in a kept snapshot; a

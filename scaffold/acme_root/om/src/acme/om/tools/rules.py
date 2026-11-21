@@ -168,11 +168,12 @@ def tool_request(
     principal: Principal,
     authority: AuthorityMode,
     agent: AgentRef,
+    workspace: bool,
 ) -> AgentStep:
     """The request step of one tool use of a model response, the agent's act:
     it references the response and the use's id, carries the input's hash
-    keyed by its session, never the input, and names the principal the call
-    runs under."""
+    keyed by its session, never the input, names the principal the call
+    runs under, and says whether the call reaches the workspace."""
     return AgentStep(
         id=agent_step_id,
         created_at=at,
@@ -190,6 +191,7 @@ def tool_request(
             authority=authority,
             agent=agent,
             authorization_class=authorization_class,
+            workspace=workspace,
         ),
     )
 

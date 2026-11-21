@@ -55,6 +55,13 @@ class ToolInput(OmBase):
     """The root of every tool's input: frozen, and refusing a field it does
     not declare, so the schema the model reads is the one the call holds."""
 
+    def reaches_workspace(self, declared: bool) -> bool:
+        """Whether the call this input asks for reaches the session's
+        workspace, so its run prepares the workspace before the call is
+        gated: what its tool `declared`, unless the input says more, as a
+        spawn that forks does."""
+        return declared
+
 
 class ToolSpec(OmBase):
     """What a tool declares. `secrets` names what its process may be given,
@@ -62,7 +69,11 @@ class ToolSpec(OmBase):
     `rate_micros_per_hour` is what a job that spends (compute, a leased
     machine) costs an hour at most, at reference cost: its hold is that
     rate until its deadline. A job that spends nothing, and every `sync`
-    tool, declares none."""
+    tool, declares none. `workspace` says whether its calls reach the
+    session's workspace through their runtime: a call that does waits for
+    the workspace to be prepared, and one that does not is given none, so
+    the first model call and a call that runs nothing there never wait for
+    one. A tool that does not say reaches it."""
 
     name: str = Field(pattern=TOOL_NAME)
     description: str = Field(min_length=1)
@@ -75,6 +86,7 @@ class ToolSpec(OmBase):
     mode: ToolMode = ToolMode.SYNC
     secrets: tuple[SecretUse, ...] = ()
     rate_micros_per_hour: int | None = Field(default=None, ge=0)
+    workspace: bool = True
 
     @model_validator(mode="after")
     def _only_a_job_spends_by_the_hour(self) -> Self:

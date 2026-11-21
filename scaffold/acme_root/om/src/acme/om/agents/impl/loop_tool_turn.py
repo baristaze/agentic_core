@@ -15,6 +15,7 @@ from uuid import UUID
 
 from pydantic import ValidationError
 
+from acme.infra.agent_workspaces import AgentWorkspace
 from acme.infra.transports import OutputSink
 from acme.om.agent_sessions.kinds import AGENT_SESSION_WAITER
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
@@ -102,6 +103,8 @@ class LoopToolTurn(LoopCore):
             settled = await self._settle_call(
                 run, history, use, request, fresh=self._never_ran(run, request)
             )
+            if settled.stopped is not None:
+                return settled.stopped
             if settled.cancelled:
                 return await self._cancelled(run)
             if settled.park is not None:
@@ -120,7 +123,8 @@ class LoopToolTurn(LoopCore):
         calls: Sequence[tuple[ToolUseBlock, AgentStep | None]],
     ) -> list[tuple[ToolUseBlock, AgentStep]]:
         """The request of every call, writing those not yet written, in one
-        append, before any is decided; the run keeps the ids it wrote."""
+        append, before any is decided; the run keeps the ids it wrote. Each
+        says whether its call reaches the workspace."""
         missing = [use for use, request in calls if request is None]
         if not missing:
             return [(use, request) for use, request in calls if request is not None]
@@ -144,6 +148,7 @@ class LoopToolTurn(LoopCore):
                 principal=principal,
                 authority=run.kind.authority,
                 agent=agent,
+                workspace=self._reaches_workspace(run, use),
             )
             for use, hashed in zip(missing, hashes, strict=True)
         ]
@@ -162,7 +167,6 @@ class LoopToolTurn(LoopCore):
         fresh: bool,
     ) -> Settled:
         ctx = run.ctx
-        assert run.workspace is not None
         tool = self._offered(run, request)
         if tool is None and run.registry.get(use.name) is not None:
             # A load in the call's own turn added its tool after the call was
@@ -182,6 +186,12 @@ class LoopToolTurn(LoopCore):
                 # A job a run started is settled by the job alone: it is never
                 # asked about, gated, or started again.
                 return await self._settle_job(run, started)
+        # The workspace, for a call that reaches it, before anything of the
+        # call runs, its preflight included: a run whose workspace must wait
+        # stops here with the call open, and runs it once when it comes.
+        workspace = await self._workspace(run, history, request, fresh=fresh)
+        if isinstance(workspace, LoopRun):
+            return Settled(stopped=workspace)
         try:
             gate = await self._tools.gate(
                 ctx,
@@ -189,7 +199,10 @@ class LoopToolTurn(LoopCore):
                 run.kind.policy,
                 request,
                 use.input,
-                run.workspace,
+                workspace,
+                # The rule of two reads the session's egress, never the
+                # workspace a call that reaches none was given.
+                egress=run.kind.isolation.egress.mode,
                 holds_private=rules.holds_private(run.session, run.kind, run.registry, history),
                 # A fresh call's preflight keeps the tree's deadline. A call a
                 # lost run may have started is settled by its effect, which
@@ -218,7 +231,7 @@ class LoopToolTurn(LoopCore):
         assert tool is not None  # the gate resolved it
         if tool.spec.mode is ToolMode.JOB:
             return await self._start_job(
-                run, gate.authority.context, tool, request, use.input, history
+                run, gate.authority.context, tool, request, use.input, history, workspace
             )
         # The call runs under the live context of the principal attribution
         # answered for it, asked again for this call.
@@ -231,14 +244,16 @@ class LoopToolTurn(LoopCore):
         try:
             try:
                 if fresh:
-                    ran = await self._execute(run, call_ctx, tool, request, use.input, on_output)
+                    ran = await self._execute(
+                        run, call_ctx, tool, request, use.input, workspace, on_output
+                    )
                 else:
                     ran = await self._tools.recover(
                         call_ctx,
                         run.registry,
                         request,
                         use.input,
-                        run.workspace,
+                        workspace,
                         epoch=run.epoch,
                         tree_deadline=run.deadline,
                         on_output=on_output,
@@ -263,19 +278,19 @@ class LoopToolTurn(LoopCore):
         tool: ToolInterface,
         request: AgentStep,
         call_input: Mapping[str, Any],
+        workspace: AgentWorkspace,
         on_output: OutputSink,
     ) -> AgentStep | ControlCommand:
         """Runs a call while its controls are read: a cancel, or an interrupt
         of a tool that may be stopped, ends it, and answers the control that
         did. A read that fails leaves the call running, to be read again."""
-        assert run.workspace is not None
         task = asyncio.ensure_future(
             self._tools.execute(
                 call_ctx,
                 run.registry,
                 request,
                 call_input,
-                run.workspace,
+                workspace,
                 epoch=run.epoch,
                 tree_deadline=run.deadline,
                 on_output=on_output,
@@ -323,6 +338,7 @@ class LoopToolTurn(LoopCore):
         request: AgentStep,
         call_input: Mapping[str, Any],
         history: Sequence[AgentStep],
+        workspace: AgentWorkspace,
     ) -> Settled:
         """Starts a job its gate let run, by a deadline of its own never later
         than the tree's, and parks the loop on it. A job that spends passes
@@ -332,7 +348,6 @@ class LoopToolTurn(LoopCore):
         does; nothing starts. A job that will not start is answered with its
         failure, and its hold released only when the start was refused before
         any work began."""
-        assert run.workspace is not None
         now = self._clock()
         deadline = job_deadline(now, tool.spec.timeout, run.deadline)
         if deadline <= now:
@@ -362,7 +377,7 @@ class LoopToolTurn(LoopCore):
                 run.registry,
                 request,
                 call_input,
-                run.workspace,
+                workspace,
                 epoch=run.epoch,
                 tree_deadline=deadline,
             )
@@ -615,6 +630,19 @@ class LoopToolTurn(LoopCore):
             )
 
         return on_output
+
+    def _reaches_workspace(self, run: RunState, use: ToolUseBlock) -> bool:
+        """Whether a call reaches the workspace, as its tool says of it. A
+        name the registry does not hold, or an input its schema refuses, is
+        refused before anything runs, and reaches nothing."""
+        tool = run.registry.get(use.name)
+        if tool is None:
+            return False
+        try:
+            parsed = tool.spec.input_model.model_validate(thaw_mapping(use.input))
+        except ValidationError:
+            return False
+        return parsed.reaches_workspace(tool.spec.workspace)
 
     def _class_of(self, run: RunState, name: str) -> str:
         """A call's class, as its tool declares it. A name the registry does

@@ -1,7 +1,7 @@
 """The loop's hooks: where a layer above the engine extends a run without
 editing the loop. A root wires one impl; the null one extends nothing.
 
-Two seams. Before anything renders, once a run, the toolsets a session
+Three seams. Before anything renders, once a run, the toolsets a session
 holds beyond its kind's: a tenant's own connector, say, which rides on the
 session and never on the kind, the product's one version shared by every
 tenant. The loop folds them into the session's kind, so held ones join its
@@ -9,10 +9,14 @@ registry and deferred ones its `load_toolset` line, and a load of one is
 recorded as any load is. Every guard that reads a session's tools reads
 them too: who may instruct the session, what a message it writes into
 another carries for the rule of two, and the secrets its workspace's
-snapshot is scanned for. Then, once the workspace is prepared and before
-the run's first model call, the steps a layer appends: what
-changed under the model since its last loop, say. They are written under
-the run's epoch, so a run that lost its claim writes none."""
+snapshot is scanned for. Then, before the run's first model call, the
+steps a layer appends: what changed under the model since its last loop,
+say. No workspace is prepared by then: it waits for the first call that
+reaches it. Last, once that call has prepared it and before the call
+runs, the steps a layer appends about the workspace: what changed in it
+since the session's last loop, say. A run that reaches no workspace is
+never asked. Steps are written under the run's epoch, so a run that lost
+its claim writes none."""
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
@@ -73,21 +77,20 @@ def with_attached_toolsets(kind: AgentKind, attached: AttachedToolsets) -> Agent
 @dataclass(frozen=True)
 class LoopStart:
     """A run as it reaches its first model call: its session, its kind with
-    the attached toolsets folded in, its epoch and loop, whether the loop is
-    new, and its prepared workspace.
+    the attached toolsets folded in, its epoch and loop, and whether the
+    loop is new. It holds no workspace: none is prepared before a model
+    call, and `workspace_prepared` is given the one a later call prepares.
 
     A loop is new until its first model call. One whose run stopped before
-    that call, parked as its workspace was prepared say, is new again to
-    the run that takes it up, so a step taken once a loop may be taken
-    twice before the loop's first call, and the second leaves what the
-    first left."""
+    that call, its claim lost say, is new again to the run that takes it
+    up, so a step taken once a loop may be taken twice before the loop's
+    first call, and the second leaves what the first left."""
 
     agent_session: AgentSession
     kind: AgentKind
     epoch: int
     loop_id: UUID
     new_loop: bool
-    workspace: AgentWorkspace
 
 
 class LoopHooksInterface(ABC):
@@ -106,7 +109,20 @@ class LoopHooksInterface(ABC):
     @abstractmethod
     async def before_first_call(self, ctx: TenantContext, start: LoopStart) -> Sequence[AgentStep]:
         """The steps appended before the run's first model call, in order,
-        after its workspace is prepared. A refusal of the session's fill
-        (`UnresolvedRole`, `UnpricedModel`) ends the loop errored, as the
-        loop's own resolve does."""
+        once the session's spec is checked and before any workspace is
+        prepared. A refusal of the session's fill (`UnresolvedRole`,
+        `UnpricedModel`) ends the loop errored, as the loop's own resolve
+        does."""
+        ...
+
+    @abstractmethod
+    async def workspace_prepared(
+        self, ctx: TenantContext, start: LoopStart, workspace: AgentWorkspace
+    ) -> Sequence[AgentStep]:
+        """The steps appended once the run's workspace is prepared, in
+        order: at the first call of the run that reaches it, after its
+        prepare and any restore's notice, and before that call is gated, so
+        the model reads them with the call's answer. `start` is the run as
+        it reached its first model call. Asked at most once a run, and never
+        in a run that reaches no workspace."""
         ...

@@ -56,6 +56,10 @@ class SpawnSubAgentInput(ToolInput):
     kind: str | None = Field(default=None, min_length=1, max_length=MAX_KIND)
     fork: bool = False
 
+    def reaches_workspace(self, declared: bool) -> bool:
+        # A fork takes the workspace whole; any other spawn never touches it.
+        return declared and self.fork
+
 
 class Spawned(OmBase):
     """The sub-agent the call started, the same one however often the call

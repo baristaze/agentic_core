@@ -175,13 +175,13 @@ async def test_a_workspace_that_cannot_meet_the_spec_ends_the_loop_before_any_ca
     assert [step.type for step in steps] == [AgentStepType.MESSAGE, AgentStepType.LOOP_ENDED]
 
 
-async def test_a_lost_workspace_parks_the_loop_for_a_person_before_any_call(
+async def test_a_lost_workspace_parks_the_loop_for_a_person_at_the_call_that_needs_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     loop = loop_over(tmp_path)
     agent_session_id = await loop.start("delivery")
     await loop.say(agent_session_id, "Build it.")
-    loop.anthropic.add(reply(said("Never asked.")))
+    loop.anthropic.add(reply(use("lookup", use_id="use_lookup")), reply(said("Never asked.")))
 
     async def lost(*args: object, **kwargs: object) -> AgentWorkspace:
         raise AgentWorkspaceLost("the branch of the session is gone, and nothing says why")
@@ -196,7 +196,11 @@ async def test_a_lost_workspace_parks_the_loop_for_a_person_before_any_call(
         None,
     ), "a person clears it, never a clock"
     assert run.park.cause == LOST_SOURCE, "the engine's words, never the provider's message"
-    assert loop.anthropic.calls == [] and loop.anthropic.remaining == 1, "no call was made"
+    assert len(loop.anthropic.calls) == 1 and loop.anthropic.remaining == 1, "one call, no more"
+    steps = await loop.history(agent_session_id)
+    assert len(of_type(steps, AgentStepType.TOOL_REQUEST)) == 1
+    assert of_type(steps, AgentStepType.TOOL_RESPONSE) == [], "the call waits, open"
+    assert loop.tools["lookup"].ran_as == [], "nothing ran"
 
 
 async def test_a_deadline_moved_while_a_run_works_is_read_again_before_it_parks(

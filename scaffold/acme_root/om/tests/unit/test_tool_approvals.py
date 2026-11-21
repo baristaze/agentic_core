@@ -73,7 +73,13 @@ async def test_an_approval_binds_the_call_and_a_changed_input_asks_again(setting
         tools.manager, tools.steps, agent, "push_branch", {"branch": "feature"}, "integration"
     )
     gate = await tools.manager.gate(
-        agent, registry, KIND_DEFAULTS, first.request, first.call_input, workspace
+        agent,
+        registry,
+        KIND_DEFAULTS,
+        first.request,
+        first.call_input,
+        workspace,
+        egress=workspace.spec.egress.mode,
     )
     assert gate.outcome is GateOutcome.ASK and gate.decision is Decision.APPROVE
 
@@ -89,7 +95,13 @@ async def test_an_approval_binds_the_call_and_a_changed_input_asks_again(setting
     assert header.call.decided_by == owner.user_id
 
     gate = await tools.manager.gate(
-        agent, registry, KIND_DEFAULTS, first.request, first.call_input, workspace
+        agent,
+        registry,
+        KIND_DEFAULTS,
+        first.request,
+        first.call_input,
+        workspace,
+        egress=workspace.spec.egress.mode,
     )
     assert gate.outcome is GateOutcome.RUN
 
@@ -105,14 +117,26 @@ async def test_an_approval_binds_the_call_and_a_changed_input_asks_again(setting
         epoch=first.epoch,
     )
     gate = await tools.manager.gate(
-        agent, registry, KIND_DEFAULTS, changed.request, changed.call_input, workspace
+        agent,
+        registry,
+        KIND_DEFAULTS,
+        changed.request,
+        changed.call_input,
+        workspace,
+        egress=workspace.spec.egress.mode,
     )
     assert gate.outcome is GateOutcome.ASK, "the approval of one input is not one of another"
 
     # An input that is not the one the request recorded is never run on it.
     with pytest.raises(ValidationFailed, match="not the one request"):
         await tools.manager.gate(
-            agent, registry, KIND_DEFAULTS, first.request, changed.call_input, workspace
+            agent,
+            registry,
+            KIND_DEFAULTS,
+            first.request,
+            changed.call_input,
+            workspace,
+            egress=workspace.spec.egress.mode,
         )
     assert push.pushed == [], "a gate runs nothing"
 
@@ -127,13 +151,25 @@ async def test_an_expired_approval_asks_again(setting: Setting) -> None:
     await tools.manager.decide_call(owner, found.agent_session_id, found.request.seq, approve=True)
     tools.clock.now += timedelta(hours=1, seconds=1)
     gate = await tools.manager.gate(
-        agent, registry, KIND_DEFAULTS, found.request, found.call_input, workspace
+        agent,
+        registry,
+        KIND_DEFAULTS,
+        found.request,
+        found.call_input,
+        workspace,
+        egress=workspace.spec.egress.mode,
     )
     assert gate.outcome is GateOutcome.ASK
     # Asked again, a new approval lets it run.
     await tools.manager.decide_call(owner, found.agent_session_id, found.request.seq, approve=True)
     gate = await tools.manager.gate(
-        agent, registry, KIND_DEFAULTS, found.request, found.call_input, workspace
+        agent,
+        registry,
+        KIND_DEFAULTS,
+        found.request,
+        found.call_input,
+        workspace,
+        egress=workspace.spec.egress.mode,
     )
     assert gate.outcome is GateOutcome.RUN
 
@@ -153,7 +189,13 @@ async def test_a_denial_is_a_denied_tool_response_with_the_persons_note(setting:
         note="not during the freeze",
     )
     gate = await tools.manager.gate(
-        agent, registry, KIND_DEFAULTS, found.request, found.call_input, workspace
+        agent,
+        registry,
+        KIND_DEFAULTS,
+        found.request,
+        found.call_input,
+        workspace,
+        egress=workspace.spec.egress.mode,
     )
     assert gate.outcome is GateOutcome.REFUSE and gate.response is not None
     response = gate.response
@@ -267,7 +309,13 @@ async def test_a_decision_counts_only_in_a_role_the_policy_lets_decide(setting: 
 
     async def outcome() -> GateOutcome:
         gate = await tools.manager.gate(
-            agent, registry, KIND_DEFAULTS, found.request, found.call_input, workspace
+            agent,
+            registry,
+            KIND_DEFAULTS,
+            found.request,
+            found.call_input,
+            workspace,
+            egress=workspace.spec.egress.mode,
         )
         return gate.outcome
 
@@ -311,7 +359,13 @@ async def test_a_decision_sent_on_an_api_key_is_a_programs_and_approves_nothing(
         program, found.agent_session_id, found.request.seq, approve=True
     )
     gate = await tools.manager.gate(
-        agent, registry, KIND_DEFAULTS, found.request, found.call_input, workspace
+        agent,
+        registry,
+        KIND_DEFAULTS,
+        found.request,
+        found.call_input,
+        workspace,
+        egress=workspace.spec.egress.mode,
     )
 
     assert decision.actor is Actor.PROGRAM

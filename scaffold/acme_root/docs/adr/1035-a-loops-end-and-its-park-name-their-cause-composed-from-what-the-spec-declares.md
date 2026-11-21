@@ -4,9 +4,11 @@
 
 ## Context
 
-A loop whose workspace cannot be prepared stops before its first model
-call. A refusal that never clears ends it `errored`. One that clears
-parks it on the resource, and a lost workspace parks it for a person.
+A loop whose spec its provider can never meet stops before its first
+model call, and one whose workspace cannot be prepared stops at the
+first call that reaches it (ADR 1043). A refusal that never clears ends
+it `errored`. One that clears parks it on the resource, and a lost
+workspace parks it for a person.
 The `loop_ended` step holds its outcome alone, and a park its reason,
 its unlock, and its retry time. Why the workspace was refused, such as
 the base's setup command that failed and its exit code, reaches the

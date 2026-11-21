@@ -35,6 +35,7 @@ from acme.om.agents.hooks import (
     NO_ATTACHED_TOOLSETS,
     AttachedToolsets,
     LoopHooksInterface,
+    LoopStart,
 )
 from acme.om.agents.sink import StreamSinkInterface
 from acme.om.agents.types.kind import AgentKind, AgentKindCatalog
@@ -114,10 +115,18 @@ class RunState:
     start_seq: int
     started_at: datetime
     resumed: bool  # it resumed a park the loop wrote: the calls it held back never ran
+    # A person let the loop go on that parked on its lost workspace: a restore
+    # that still cannot load gives way to the workspace as it stands.
+    unlocked: bool = False
     deadline: datetime | None = None
     # The policy layers of the kinds above the session in its tree, nearest
     # first: each of its calls is decided under them as under its own kind's.
     above: tuple[ToolPolicyLayer, ...] = ()
+    # The run as its hooks were told it before its first model call; the
+    # hooks are told it again, with the workspace, once one is prepared.
+    began: LoopStart | None = None
+    # Prepared at the first call that reaches it, and None until then: a
+    # run that makes no such call holds none, and snapshots none.
     workspace: AgentWorkspace | None = None
     kept: bool = False  # a snapshot holds its workspace whole, taken at its end
     made: set[UUID] = field(default_factory=lambda: set[UUID]())  # tool requests it wrote
@@ -148,6 +157,7 @@ class Settled:
     asked: bool = False  # it waits for a person's decision
     cancelled: bool = False  # a cancel stopped it
     park: Park | None = None  # the loop cannot go on with it
+    stopped: LoopRun | None = None  # the run stopped on it, parked or ended
 
 
 @dataclass
@@ -306,8 +316,12 @@ class LoopCore(ABC):
             limit=self._options.stopped_chars,
         )
 
-    def _lost(self, request: AgentStep) -> AgentStep:
+    def _lost(self, request: AgentStep, why: str | None = None) -> AgentStep:
+        """A call a lost run may have started, answered with its outcome
+        unknown, and `why` the run that answers it stops, when it says."""
         text = "a run that made this call was lost before it answered; whether it ran is unknown"
+        if why is not None:
+            text = f"{text}; {why}"
         return self._stopped(request, text, ToolFailure.INTERRUPTED)
 
     def _never_ran(self, run: RunState, request: AgentStep) -> bool:
@@ -395,7 +409,8 @@ class LoopCore(ABC):
         """The workspace's instance goes between runs; its files stay. A loop
         that parks holds no runtime, but for a workspace kept by snapshots
         that no snapshot holds whole: its instance stays, so nothing in it is
-        lost, and the next run prepares it as it stands."""
+        lost, and the next run that reaches it prepares it as it stands. A
+        run that reached none holds none, and lets nothing go."""
         if run.workspace is None:
             return
         if run.workspace.spec.durability is Durability.SNAPSHOT and not run.kept:
@@ -453,6 +468,11 @@ class LoopCore(ABC):
 
     @abstractmethod
     def _offered(self, run: RunState, request: AgentStep) -> ToolInterface | None: ...
+
+    @abstractmethod
+    async def _workspace(
+        self, run: RunState, history: Sequence[AgentStep], request: AgentStep, *, fresh: bool
+    ) -> AgentWorkspace | LoopRun: ...
 
     @abstractmethod
     async def _stop_jobs(

@@ -263,7 +263,7 @@ async def test_a_run_keeps_its_vm_directory_in_sealed_parts_and_the_next_run_hol
     assert no_pack_left(infra.vms.packs)
 
     await loop.say(agent_session_id, "Read it back.")
-    loop.anthropic.add(reply(said("It is there.")))
+    loop.anthropic.add(reply(call("lookup", q="the notes")), reply(said("It is there.")))
     assert (await loop.loops.run(loop.owner, agent_session_id)).outcome is LoopOutcome.SUCCEEDED
 
     directory = infra.directory(agent_session_id)
@@ -297,7 +297,7 @@ async def test_an_archive_that_fails_part_way_keeps_nothing_and_the_snapshot_bef
     assert snapshots(await loop.history(agent_session_id))[-1] == first
     assert no_pack_left(infra.vms.packs)
     await loop.say(agent_session_id, "Look again.")
-    loop.anthropic.add(reply(said("Seen.")))
+    loop.anthropic.add(reply(call("lookup", q="the notes")), reply(said("Seen.")))
     assert (await loop.loops.run(loop.owner, agent_session_id)).outcome is LoopOutcome.SUCCEEDED
     notes = (infra.directory(agent_session_id) / "notes.txt").read_text()
     assert notes == "written since " + PLAIN
@@ -321,6 +321,7 @@ async def test_a_restore_that_fails_parks_the_loop_and_touches_nothing_kept(
     kept = await infra.stored(org_id, agent_session_id)
 
     await loop.say(agent_session_id, "Read it back.")
+    loop.anthropic.add(reply(call("lookup", q="the notes")))
     parked = await loop.loops.run(loop.owner, agent_session_id)
 
     assert parked.park is not None and parked.park.reason is ParkReason.PERSON
@@ -354,6 +355,7 @@ async def test_a_restore_whose_part_fails_keeps_the_vm_it_would_replace_for_the_
     launched = len(infra.vm_twin.calls)
 
     await loop.say(agent_session_id, "Read it back.")
+    loop.anthropic.add(reply(call("lookup", q="the notes")))
     parked = await loop.loops.run(loop.owner, agent_session_id)
 
     assert parked.park is not None and parked.park.reason is ParkReason.PERSON

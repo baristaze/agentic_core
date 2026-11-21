@@ -427,6 +427,11 @@ class AgentWorkspaceAccountImpl(KeepsWholeMixin, AgentWorkspaceProviderInterface
         self._held: UUID | None = None
         self._lock: int | None = None
 
+    async def check(self, spec: IsolationSpec) -> None:
+        why = _refusal(spec)
+        if why is not None:
+            raise IsolationRefused(why, cause=why)
+
     async def prepare(
         self,
         org_id: UUID,
@@ -437,9 +442,7 @@ class AgentWorkspaceAccountImpl(KeepsWholeMixin, AgentWorkspaceProviderInterface
         *,
         building: bool = False,
     ) -> AgentWorkspace:
-        why = refusal(
-            spec, mode=IsolationMode.ACCOUNT, egress={EgressMode.OPEN}, limits=LIMITS, unkept=UNKEPT
-        )
+        why = _refusal(spec)
         if why is None and (snapshot is not None or base is not None):
             why = f"an account workspace cannot start from a snapshot: {UNKEPT}"
         if why is not None:
@@ -635,3 +638,10 @@ def _closed(job: Path) -> None:
         os.chmod(job, CLOSED_MODE)
     except FileNotFoundError:
         pass
+
+
+def _refusal(spec: IsolationSpec) -> str | None:
+    """Why an account's directory can never meet `spec`."""
+    return refusal(
+        spec, mode=IsolationMode.ACCOUNT, egress={EgressMode.OPEN}, limits=LIMITS, unkept=UNKEPT
+    )

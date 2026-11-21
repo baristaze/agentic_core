@@ -22,7 +22,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from acme.infra.agent_workspaces import AgentWorkspace, IsolationSpec
+from acme.infra.agent_workspaces import AgentWorkspace, EgressMode, IsolationSpec
 from acme.infra.transports import OutputSink
 from acme.om.agent_steps.types.agent_step import AgentStep
 from acme.om.agent_steps.types.header import AgentWorkspaceSnapshot
@@ -53,6 +53,14 @@ class ToolsManagerInterface(ABC):
         ...
 
     @abstractmethod
+    async def check_agent_workspace(self, ctx: TenantContext, spec: IsolationSpec) -> None:
+        """Whether the provider can ever meet a session's spec, asked
+        before its loop's first model call: `IsolationRefused`, with its
+        cause, when it never can, and nothing is made. A spec of no
+        workspace passes."""
+        ...
+
+    @abstractmethod
     async def prepare_agent_workspace(
         self,
         ctx: TenantContext,
@@ -60,11 +68,12 @@ class ToolsManagerInterface(ABC):
         spec: IsolationSpec,
         restore: AgentWorkspaceSnapshot | None = None,
     ) -> AgentWorkspace:
-        """The session's workspace, prepared to its spec, before its loop's
-        first model call. `IsolationRefused` when the provider cannot meet
-        the spec: never a weaker workspace. Its `cause` is what a person
-        reads of it, when it names one. A spec of no workspace answers
-        the absent one, which every transport refuses, loudly.
+        """The session's workspace, prepared to its spec, as the first call
+        of a run that reaches it is about to be gated. `IsolationRefused`
+        when the provider cannot meet the spec: never a weaker workspace.
+        Its `cause` is what a person reads of it, when it names one. A spec
+        of no workspace answers the absent one, which every transport
+        refuses, loudly.
 
         With `restore`, a snapshot the session's history names, the
         workspace starts from it, replaced whole. Its bytes are read from
@@ -164,6 +173,7 @@ class ToolsManagerInterface(ABC):
         call_input: Mapping[str, Any],
         workspace: AgentWorkspace,
         *,
+        egress: EgressMode,
         holds_private: bool = True,
         tree_deadline: datetime | None = None,
         above: Sequence[ToolPolicyLayer] = (),
@@ -171,12 +181,14 @@ class ToolsManagerInterface(ABC):
         """Where a call stands before it runs. A tool the registry does not
         hold, an input its schema refuses, and a preflight that refuses are
         answered at once; the preflight runs by the call's own time, never
-        past `tree_deadline`. Then attribution answers whose authority the
-        call runs under, asked again of the adopter's transition (`denied`
-        for a delegated principal who no longer holds it; `PrincipalLapsed`
-        for a steady one), and the rule of two: whether the session is marked,
-        `holds_private` (its private data or credentials), and whether the
-        call acts outward, read from its target. Then policy decides from the
+        past `tree_deadline`, given `workspace`. Then attribution answers
+        whose authority the call runs under, asked again of the adopter's
+        transition (`denied` for a delegated principal who no longer holds
+        it; `PrincipalLapsed` for a steady one), and the rule of two: whether
+        the session is marked, `holds_private` (its private data or
+        credentials), and whether the call acts outward, read from its
+        target and from `egress`, the session's spec's, whatever workspace
+        the call was given. Then policy decides from the
         tool, its class, its effect, and its target's attributes (`defaults`
         are the agent kind's; `above` are the kinds' above it in its tree,
         and the call is decided under each of them too, the strictest

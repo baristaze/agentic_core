@@ -1,18 +1,13 @@
 """The loop of a session: one run, from its session's status to its
-end, its park, or its yield. A run reads its history once, prepares its
-workspace, and drives each turn, the model's or the tools', reading only
-what was added since."""
+end, its park, or its yield. A run reads its history once, checks its
+workspace's spec, and drives each turn, the model's or the tools', reading
+only what was added since. Its workspace is prepared at the first call
+that reaches it, never before a model call."""
 
 import logging
 from collections.abc import Sequence
 from uuid import UUID
 
-from acme.infra.agent_workspaces import (
-    AgentWorkspaceLost,
-    Durability,
-    IsolationRefused,
-)
-from acme.infra.exceptions import InfraException
 from acme.integrations.model_providers.types import StopReason
 from acme.om.agent_sessions.kinds import AGENT_SESSION_WAITER
 from acme.om.agent_sessions.limits import Limit, Trip, tally_loop, tripped
@@ -38,11 +33,16 @@ from acme.om.agents.impl.loop_parks import LoopParks
 from acme.om.agents.impl.loop_recovery import LoopRecovery
 from acme.om.agents.impl.loop_take_over import LoopTakeOver
 from acme.om.agents.impl.loop_tool_turn import LoopToolTurn
+from acme.om.agents.impl.loop_workspace import (
+    LOST_SNAPSHOT,
+    LOST_SOURCE,
+    LoopWorkspace,
+    lost_agent_workspace,
+)
 from acme.om.agents.loop import LoopManagerInterface
 from acme.om.agents.rules import after_turn
 from acme.om.agents.types.result import Turn
 from acme.om.agents.types.run import LoopRun, RunEnd
-from acme.om.base import new_id
 from acme.om.context import Permission, TenantContext
 from acme.om.exceptions import (
     StaleWriter,
@@ -50,10 +50,6 @@ from acme.om.exceptions import (
     UnresolvedRole,
 )
 from acme.om.language_models.types.fill import Eligibility
-from acme.om.tools.rules import (
-    ISOLATION_REFUSED,
-    named_snapshot,
-)
 from acme.om.tools.types.policy import ToolPolicyLayer
 
 log = logging.getLogger(__name__)
@@ -61,18 +57,16 @@ log = logging.getLogger(__name__)
 __all__ = ["LOST_SNAPSHOT", "LOST_SOURCE", "LoopManagerImpl", "LoopOptions", "lost_agent_workspace"]
 
 
-AGENT_WORKSPACE_UNLOCK = "agent_workspace"
-LOST_SNAPSHOT = "the snapshot the workspace starts from is gone, or no longer matches what was kept"
-LOST_SOURCE = "what the workspace is rebuilt from is gone, or cannot be brought in"
-"""The causes a park on a lost workspace names, the engine's own words: the
-provider's message may hold what a command wrote, and reaches the log
-alone."""
-
-
 class LoopManagerImpl(
-    LoopModelTurn, LoopToolTurn, LoopParks, LoopRecovery, LoopTakeOver, LoopManagerInterface
+    LoopModelTurn,
+    LoopToolTurn,
+    LoopParks,
+    LoopRecovery,
+    LoopTakeOver,
+    LoopWorkspace,
+    LoopManagerInterface,
 ):
-    """The loop: a run reads its session, prepares its workspace, and
+    """The loop: a run reads its session, checks its workspace's spec, and
     drives turns of the model and of the tools until the loop ends, parks,
     or yields. Each concern is a module of its own; the constructor and
     what they share are `LoopCore`'s."""
@@ -120,6 +114,8 @@ class LoopManagerImpl(
         registry = self._registry(session, kind, history, attached)
         tree = await self._agents.tree_of(ctx, agent_session_id)
         above = await self._policies_above(ctx, session)
+        # A person let a loop go on that parked on its lost workspace.
+        unlocked = loop is not None and loop.park is not None and lost_agent_workspace(loop.park)
         run = RunState(
             ctx=ctx,
             session=session,
@@ -134,6 +130,7 @@ class LoopManagerImpl(
             above=above or (),
             jobs={} if loop is None else rules.started_jobs(history, loop_id),
             attached=attached,
+            unlocked=unlocked,
         )
         if above is None:
             # Its calls are decided under every kind above it, and one of
@@ -147,16 +144,10 @@ class LoopManagerImpl(
         except (UnresolvedRole, UnpricedModel) as refused:
             log.warning("session %s resolves no fill: %s", agent_session_id, refused.message)
             return await self._end(run, LoopOutcome.ERRORED)
-        # A restore a principal or a fork asked for wins. A workspace kept by
-        # snapshots otherwise starts from its latest, unless something touched
-        # it since: then it stands newer than any snapshot.
-        start = rules.pending_restore(history)
-        if start is None and kind.isolation.durability is Durability.SNAPSHOT:
-            start = rules.kept_snapshot(history)
-        # A person let a loop go on that parked on its lost workspace.
-        unlocked = loop is not None and loop.park is not None and lost_agent_workspace(loop.park)
         try:
-            stopped = await self._prepare(run, start, unlocked=unlocked)
+            # The spec, held to what the provider can ever meet; the workspace
+            # itself waits for the first call that reaches it.
+            stopped = await self._check(run)
             if stopped is not None:
                 return stopped
             stopped = await self._start(run, new_loop=not rules.called(history, loop_id))
@@ -175,102 +166,22 @@ class LoopManagerImpl(
         """The steps the hooks append before the run's first model call, under
         its epoch. None once they are written; else how the run stopped: a
         fill the hooks refuse ends the loop, as the resolve before does."""
-        assert run.workspace is not None
         start = LoopStart(
             agent_session=run.session,
             kind=run.kind,
             epoch=run.epoch,
             loop_id=run.loop_id,
             new_loop=new_loop,
-            workspace=run.workspace,
         )
         try:
             steps = await self._hooks.before_first_call(run.ctx, start)
         except (UnresolvedRole, UnpricedModel) as refused:
             log.warning("session %s resolves no fill: %s", run.agent_session_id, refused.message)
             return await self._end(run, LoopOutcome.ERRORED)
+        run.began = start
         if steps:
             await self._append(run, list(steps))
         return None
-
-    async def _prepare(
-        self, run: RunState, start: AgentStep | None, *, unlocked: bool
-    ) -> LoopRun | None:
-        """The run's workspace, before the first model call: a workspace
-        weaker than the spec is never made, and nothing is spent on a loop
-        that cannot run. It starts from the snapshot `start` names, when
-        there is one. None once it is prepared; else how the run stopped.
-
-        A restore that cannot load parks the loop for a person. Once the
-        person lets it go on (`unlocked`) and it still cannot load, the loop
-        goes on from the workspace as it stands, and a notice that
-        references `start` records the restore lost, so it is never tried
-        again and the model reads why."""
-        restore = None if start is None else named_snapshot(start)
-        try:
-            run.workspace = await self._tools.prepare_agent_workspace(
-                run.ctx, run.agent_session_id, run.kind.isolation, restore=restore
-            )
-        except InfraException as refused:
-            if start is not None and unlocked and refused.code == AgentWorkspaceLost.code:
-                log.warning(
-                    "session %s goes on without its snapshot: %s", run.agent_session_id, refused
-                )
-                lost = rules.lost_step(
-                    new_id(), self._clock(), run.agent_session_id, run.loop_id, start
-                )
-                await self._append(run, [lost])
-                return await self._prepare(run, None, unlocked=unlocked)
-            return await self._unprepared(run, refused, restoring=start is not None)
-        if start is not None:
-            # The record that a restore was done, and the model's notice: it
-            # is delivered with the next model request. A run lost before it
-            # is written restores again, to the same snapshot.
-            done = rules.restore_notice(
-                new_id(), self._clock(), run.agent_session_id, run.loop_id, start
-            )
-            if done is not None:
-                await self._append(run, [done])
-        return None
-
-    async def _unprepared(
-        self, run: RunState, refused: InfraException, *, restoring: bool
-    ) -> LoopRun:
-        """How a run stops when its workspace cannot be prepared: its end or
-        its park names the refusal's cause, so a person reads why without the
-        log. `restoring` when the workspace was to start from a snapshot."""
-        cause = refused.cause if isinstance(refused, IsolationRefused) else None
-        if isinstance(refused, IsolationRefused) and refused.clears:
-            # No host can give it the workspace yet: no weaker one, and
-            # no call spent. It waits on the resource and asks again.
-            log.warning("session %s waits for a workspace: %s", run.agent_session_id, refused)
-            retry_at = self._clock() + self._options.agent_workspace_wait
-            park = Park(
-                reason=ParkReason.LEASABLE_RESOURCE,
-                unlock=AGENT_WORKSPACE_UNLOCK,
-                retry_at=retry_at,
-                unsettled=not run.resumed,
-                cause=cause,
-            )
-            return await self._park(run, park)
-        if refused.code == ISOLATION_REFUSED:
-            # A provider that cannot meet the spec refuses it whole: no
-            # weaker workspace, and no call spent on a loop that cannot run.
-            log.warning("session %s has no workspace: %s", run.agent_session_id, refused)
-            return await self._end(run, LoopOutcome.ERRORED, cause=cause)
-        if refused.code != AgentWorkspaceLost.code:
-            raise refused
-        # What the workspace is rebuilt from is gone: nothing restarts
-        # from scratch in its stead, and a person says what comes next.
-        # The loop parks with everything it reached kept.
-        log.error("session %s lost its workspace: %s", run.agent_session_id, refused)
-        park = Park(
-            reason=ParkReason.PERSON,
-            unlock=AGENT_WORKSPACE_UNLOCK,
-            unsettled=not run.resumed,
-            cause=LOST_SNAPSHOT if restoring else LOST_SOURCE,
-        )
-        return await self._park(run, park)
 
     async def _drive(self, run: RunState, history: Sequence[AgentStep]) -> LoopRun:
         # What a lost run left in flight: a model request with no response is
@@ -435,8 +346,3 @@ class LoopManagerImpl(
         if len(above) < session.depth - 1:
             return None
         return tuple(self._kinds.get(agent.kind, agent.version).policy for agent in above)
-
-
-def lost_agent_workspace(park: Park) -> bool:
-    """Whether a park waits for a person on a workspace that was lost."""
-    return park.reason is ParkReason.PERSON and park.unlock == AGENT_WORKSPACE_UNLOCK

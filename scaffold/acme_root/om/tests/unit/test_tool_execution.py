@@ -260,6 +260,7 @@ async def test_a_preflight_runs_by_the_trees_deadline(tmp_path: Path) -> None:
         found.request,
         found.call_input,
         workspace,
+        egress=workspace.spec.egress.mode,
         tree_deadline=soon,
     )
     assert timed.deadlines == [soon], "never past the tree's deadline"
@@ -450,7 +451,13 @@ async def test_a_preflight_refuses_before_anyone_is_asked(tmp_path: Path) -> Non
         tools.manager, tools.steps, ctx, "push_branch", {"branch": "gone"}, "integration"
     )
     gate = await tools.manager.gate(
-        ctx, registry, KIND_DEFAULTS, found.request, found.call_input, workspace
+        ctx,
+        registry,
+        KIND_DEFAULTS,
+        found.request,
+        found.call_input,
+        workspace,
+        egress=workspace.spec.egress.mode,
     )
     assert gate.decision is None and gate.response is not None
     assert failure_of(gate.response) is ToolFailure.INVALID_INPUT
@@ -620,7 +627,13 @@ async def test_an_input_that_is_not_one_object_is_invalid_input_and_never_runs(
         tools.manager, tools.steps, ctx, "run_command", {UNPARSED: written}, "execute"
     )
     gate = await tools.manager.gate(
-        ctx, registry, KIND_DEFAULTS, found.request, found.call_input, workspace
+        ctx,
+        registry,
+        KIND_DEFAULTS,
+        found.request,
+        found.call_input,
+        workspace,
+        egress=workspace.spec.egress.mode,
     )
     ran = await tools.manager.execute(
         ctx,

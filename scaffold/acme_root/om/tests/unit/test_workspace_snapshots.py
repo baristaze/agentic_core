@@ -3,8 +3,9 @@ twin provider (ADR 1027, ADR 1030). A snapshot is kept sealed under its session'
 under a hash keyed by it, and a step names it. A restore trusts its bytes
 only by that hash, and one that does not match loses the workspace before
 it starts. A snapshot holds no credential and no injected secret's value.
-The loop snapshots a workspace kept by snapshots at the end of each run, and
-the next run starts from it. A rewind starts the next loop from an earlier
+The loop snapshots a workspace kept by snapshots at the end of each run
+that held it, and the next run that reaches it starts from it; a run that
+reaches none takes none, and leaves the latest whole. A rewind starts the next loop from an earlier
 snapshot, a step records it, and every earlier step and snapshot stays; one
 that cannot load parks once, and a person's unlock goes on without it. A
 fork takes its parent's workspace as it stands at the spawn, in any run,
@@ -48,6 +49,7 @@ from acme.om.agent_steps.types.header import (
     SnapshotHeader,
     ToolFailure,
     ToolRequestHeader,
+    ToolResponseHeader,
 )
 from acme.om.agents.impl.loop import LOST_SNAPSHOT
 from acme.om.agents.loop_rules import FORKED, LOST, REWOUND, pending_restore
@@ -62,11 +64,14 @@ from acme.om.tools.native.ask_person import ASK_PERSON
 from acme.om.tools.native.spawn_sub_agent import SPAWN_SUB_AGENT
 from acme.om.tools.native.wait_for_sub_agents import WAIT_FOR_SUB_AGENTS
 from acme.om.tools.tool import TakenSnapshot, ToolRuntime
+from acme.om.tools.types.call import JobCompletion
+from acme.om.tools.types.policy import Decision, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput
 
 from contracts.doubles import context
 from contracts.factories import make_org
 from contracts.loops import (
+    ALLOWED,
     ASSISTANT,
     DELIVERY,
     Asked,
@@ -328,6 +333,19 @@ FORKER = ASSISTANT.model_copy(
 )
 
 
+KEPT_BUILDER = KEEPER.model_copy(
+    update={"name": "kept_builder", "tools": ("lookup", "scribble", "build")}
+)
+"""A kind that keeps its workspace by snapshots and starts a job in it."""
+APPROVED_BUILDER = KEPT_BUILDER.model_copy(
+    update={
+        "name": "approved_builder",
+        "policy": ToolPolicyLayer(
+            rules=(*ALLOWED.rules, ToolPolicyRule(tool="build", decision=Decision.APPROVE))
+        ),
+    }
+)
+"""A kept builder whose job waits for a person's approval before it starts."""
 CACHE_FORKER = FORKER.model_copy(
     update={
         "name": "cache_forker",
@@ -347,7 +365,7 @@ def kept_loop(tmp_path: Path) -> tuple[Loop, AgentWorkspaceTwinImpl]:
     injected = SecretUse(name=TOKEN, via=SecretVia.INJECTED, env=TOKEN)
     loop = loop_over(
         tmp_path,
-        kinds=(ASSISTANT, DELIVERY, KEEPER, FORKER, CACHE_FORKER),
+        kinds=(ASSISTANT, DELIVERY, KEEPER, FORKER, CACHE_FORKER, KEPT_BUILDER, APPROVED_BUILDER),
         infra=infra,
         extra=(Scribble(twin), Command("run_command", secrets=(injected,))),
     )
@@ -382,7 +400,8 @@ async def test_a_kept_workspace_is_snapshotted_at_each_runs_end_and_the_next_run
 ) -> None:
     """The run that parks snapshots the workspace before its park, then lets
     the instance go. The resumed run, and a later loop, start from that
-    snapshot: what a release lost is back."""
+    snapshot at their first call that reaches it: what a release lost is
+    back."""
     loop, twin = kept_loop(tmp_path)
     agent_session_id = await loop.start(KEEPER.name)
     await loop.say(agent_session_id, "Install the tool, then ask me which version.")
@@ -402,10 +421,57 @@ async def test_a_kept_workspace_is_snapshotted_at_each_runs_end_and_the_next_run
         # On the twin the files outlive a release; a container's layer does not.
         twin.files[agent_session_id] = b"what a release loses"
         await loop.say(agent_session_id, text)
-        loop.anthropic.add(reply(said("It is there.")))
+        loop.anthropic.add(reply(call("lookup", q="the tool")), reply(said("It is there.")))
         assert (await loop.loops.run(loop.owner, agent_session_id)).outcome is LoopOutcome.SUCCEEDED
         assert twin.files[agent_session_id] == b"the tool, installed"
     assert len(snapshots(await loop.history(agent_session_id))) == 3, "one at each run's end"
+
+
+async def test_a_run_that_reaches_no_workspace_keeps_none_and_the_next_starts_from_the_latest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run whose calls reach no workspace prepares none and snapshots
+    none. Its calls never touched the workspace, so the next run that
+    reaches it starts from the latest snapshot, never from the instance as
+    it stands."""
+    loop, twin = kept_loop(tmp_path)
+    agent_session_id = await loop.start(KEEPER.name)
+    await wrote(loop, agent_session_id, b"as the last run left it")
+    prepared: list[bytes | None] = []
+    prepare = twin.prepare
+
+    async def recorded(
+        org_id: UUID,
+        agent_workspace_id: UUID,
+        spec: IsolationSpec,
+        snapshot: bytes | None = None,
+        base: bytes | None = None,
+        *,
+        building: bool = False,
+    ) -> AgentWorkspace:
+        prepared.append(snapshot)
+        return await prepare(org_id, agent_workspace_id, spec, snapshot, base, building=building)
+
+    monkeypatch.setattr(twin, "prepare", recorded)
+    # On the twin the files outlive a release; a container's layer does not.
+    twin.files[agent_session_id] = b"what a release loses"
+    await loop.say(agent_session_id, "Ask me which version.")
+    loop.anthropic.add(reply(call(ASK_PERSON, question="Which version?")))
+
+    asked = await loop.loops.run(loop.owner, agent_session_id)
+
+    assert asked.park == QUESTION
+    assert prepared == [] and agent_session_id not in twin.live, "it prepared nothing"
+    assert len(snapshots(await loop.history(agent_session_id))) == 1, "and snapshotted nothing"
+
+    await loop.say(agent_session_id, "Version 2.")
+    loop.anthropic.add(reply(call("lookup", q="version 2")), reply(said("It is there.")))
+    done = await loop.loops.run(loop.owner, agent_session_id)
+
+    assert done.outcome is LoopOutcome.SUCCEEDED
+    assert prepared == [b"as the last run left it"], "prepared from the latest snapshot"
+    assert twin.files[agent_session_id] == b"as the last run left it"
+    assert len(snapshots(await loop.history(agent_session_id))) == 2, "kept at the end"
 
 
 async def test_a_run_whose_snapshot_fails_keeps_its_instance_and_the_next_starts_as_it_stands(
@@ -430,9 +496,205 @@ async def test_a_run_whose_snapshot_fails_keeps_its_instance_and_the_next_starts
     assert len(snapshots(await loop.history(agent_session_id))) == 1
 
     await loop.say(agent_session_id, "Look again.")
-    loop.anthropic.add(reply(said("Seen.")))
+    loop.anthropic.add(reply(call("lookup", q="the change")), reply(said("Seen.")))
     assert (await loop.loops.run(loop.owner, agent_session_id)).outcome is LoopOutcome.SUCCEEDED
     assert twin.files[agent_session_id] == b"written since"
+
+
+async def test_a_job_an_earlier_run_started_leaves_the_next_to_prepare_its_workspace_as_it_stands(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A job's start writes into the workspace, and the snapshot at its park
+    is refused, so the instance stays live. The run its completion wakes
+    answers the call an earlier run made, and that call reached the
+    workspace whatever run answers it: the run's first call that reaches
+    the workspace prepares it as it stands, never from the older
+    snapshot."""
+    loop, twin = kept_loop(tmp_path)
+    agent_session_id = await loop.start(KEPT_BUILDER.name)
+    older = await wrote(loop, agent_session_id, b"as the last run left it")
+
+    async def refused(*args: object, **kwargs: object) -> AgentStep:
+        raise SnapshotRefused("the workspace holds the secret 'SERVICE_TOKEN'")
+
+    await loop.say(agent_session_id, "Start the build.")
+    loop.anthropic.add(reply(call("build", q="everything")))
+    with monkeypatch.context() as patched:
+        patched.setattr(loop.managers.tools, "snapshot_agent_workspace", refused)
+        parked = await loop.loops.run(loop.owner, agent_session_id)
+    assert parked.park is not None and parked.park.reason is ParkReason.JOB
+    assert agent_session_id in twin.live, "no snapshot holds it, so its instance stays"
+    # What the job's start, and the job, wrote into the live instance.
+    twin.files[agent_session_id] = b"what the build wrote"
+    (build,) = [
+        step
+        for step in await loop.history(agent_session_id)
+        if isinstance(step.header, ToolRequestHeader) and step.header.tool == "build"
+    ]
+    completion = JobCompletion(key=build.id, handle="build-1", text="built")
+    await loop.loops.complete_job(loop.owner, agent_session_id, completion)
+    loop.anthropic.add(reply(call("lookup", q="the output")), reply(said("It is built.")))
+
+    done = await loop.loops.run(loop.owner, agent_session_id)
+
+    assert done.outcome is LoopOutcome.SUCCEEDED
+    assert twin.files[agent_session_id] == b"what the build wrote", "no older snapshot over it"
+    latest = named(snapshots(await loop.history(agent_session_id))[-1])
+    assert latest.id != older.id and latest.size == len(b"what the build wrote")
+
+
+def prepared_from(
+    monkeypatch: pytest.MonkeyPatch, twin: AgentWorkspaceTwinImpl
+) -> list[bytes | None]:
+    """The snapshot each prepare on the twin starts from, None for one that
+    takes the workspace as it stands, in order."""
+    prepared: list[bytes | None] = []
+    prepare = twin.prepare
+
+    async def recorded(
+        org_id: UUID,
+        agent_workspace_id: UUID,
+        spec: IsolationSpec,
+        snapshot: bytes | None = None,
+        base: bytes | None = None,
+        *,
+        building: bool = False,
+    ) -> AgentWorkspace:
+        prepared.append(snapshot)
+        return await prepare(org_id, agent_workspace_id, spec, snapshot, base, building=building)
+
+    monkeypatch.setattr(twin, "prepare", recorded)
+    return prepared
+
+
+async def test_a_job_whose_park_kept_the_workspace_leaves_the_run_its_end_wakes_to_start_from_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The snapshot at a job's park holds the workspace, so its instance
+    goes, and the job runs after. The run the job's end wakes answers the
+    call, and that answer touches nothing of the workspace: the run's first
+    call that reaches it prepares it from the park's snapshot, never as the
+    instance stands."""
+    loop, twin = kept_loop(tmp_path)
+    agent_session_id = await loop.start(KEPT_BUILDER.name)
+    await wrote(loop, agent_session_id, b"as the last run left it")
+
+    await loop.say(agent_session_id, "Write the input, then start the build.")
+    loop.anthropic.add(
+        reply(call("scribble", q="the build's input")), reply(call("build", q="everything"))
+    )
+    parked = await loop.loops.run(loop.owner, agent_session_id)
+    assert parked.park is not None and parked.park.reason is ParkReason.JOB
+    assert agent_session_id not in twin.live, "a snapshot holds it, so its instance went"
+    assert named(snapshots(await loop.history(agent_session_id))[-1]).size == len(
+        b"the build's input"
+    )
+    # On the twin the files outlive a release; a container's layer does not.
+    twin.files[agent_session_id] = b"what a release loses"
+    (build,) = [
+        step
+        for step in await loop.history(agent_session_id)
+        if isinstance(step.header, ToolRequestHeader) and step.header.tool == "build"
+    ]
+    completion = JobCompletion(key=build.id, handle="build-1", text="built")
+    await loop.loops.complete_job(loop.owner, agent_session_id, completion)
+    prepared = prepared_from(monkeypatch, twin)
+    loop.anthropic.add(reply(call("lookup", q="the output")), reply(said("It is built.")))
+
+    done = await loop.loops.run(loop.owner, agent_session_id)
+
+    assert done.outcome is LoopOutcome.SUCCEEDED
+    assert prepared == [b"the build's input"], "prepared from the park's snapshot"
+    assert twin.files[agent_session_id] == b"the build's input"
+
+
+async def test_a_job_held_for_approval_over_a_snapshot_leaves_what_its_start_wrote_to_the_run_its_end_wakes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A job's call waits for a person's approval, and that park's snapshot
+    holds the workspace, so its instance goes. The run that takes the loop
+    up once it is approved starts the job, which writes into the workspace,
+    and the snapshot at the job's park is refused, so the instance stays
+    live. The call ran in that run, not where its request was made: the run
+    the job's end wakes prepares the workspace as it stands, with what the
+    start wrote, never from the snapshot taken before the job started."""
+    loop, twin = kept_loop(tmp_path)
+    agent_session_id = await loop.start(APPROVED_BUILDER.name)
+    await wrote(loop, agent_session_id, b"as the last run left it")
+
+    await loop.say(agent_session_id, "Write the input, then start the build.")
+    loop.anthropic.add(
+        reply(call("scribble", q="the build's input"), call("build", q="everything"))
+    )
+    asked = await loop.loops.run(loop.owner, agent_session_id)
+    assert asked.park is not None and asked.park.reason is ParkReason.PERSON
+    assert agent_session_id not in twin.live, "a snapshot holds it, so its instance went"
+    (build,) = [
+        step
+        for step in await loop.history(agent_session_id)
+        if isinstance(step.header, ToolRequestHeader) and step.header.tool == "build"
+    ]
+    await loop.managers.tools.decide_call(loop.owner, agent_session_id, build.seq, approve=True)
+    prepared = prepared_from(monkeypatch, twin)
+
+    async def refused(*args: object, **kwargs: object) -> AgentStep:
+        raise SnapshotRefused("the workspace holds the secret 'SERVICE_TOKEN'")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(loop.managers.tools, "snapshot_agent_workspace", refused)
+        parked = await loop.loops.run(loop.owner, agent_session_id)
+    assert parked.park is not None and parked.park.reason is ParkReason.JOB
+    assert agent_session_id in twin.live, "no snapshot holds it, so its instance stays"
+    # What the job's start wrote into the live instance.
+    twin.files[agent_session_id] = b"what the build's start wrote"
+    completion = JobCompletion(key=build.id, handle="build-1", text="built")
+    await loop.loops.complete_job(loop.owner, agent_session_id, completion)
+    loop.anthropic.add(reply(call("lookup", q="the output")), reply(said("It is built.")))
+
+    done = await loop.loops.run(loop.owner, agent_session_id)
+
+    assert done.outcome is LoopOutcome.SUCCEEDED
+    assert prepared == [b"the build's input", None], "the job's start kept, never the older"
+    assert twin.files[agent_session_id] == b"what the build's start wrote"
+
+
+async def test_a_call_a_refused_workspace_never_ran_leaves_the_next_loop_the_latest_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A prepare refused for good ends the loop with the call that asked
+    for it answered as never run, marked `unstarted`. That call touched
+    nothing, so the next loop's first call that reaches the workspace
+    prepares it from the latest snapshot, never as the instance stands."""
+    loop, twin = kept_loop(tmp_path)
+    agent_session_id = await loop.start(KEEPER.name)
+    await wrote(loop, agent_session_id, b"as the last run left it")
+    # On the twin the files outlive a release; a container's layer does not.
+    twin.files[agent_session_id] = b"what a release loses"
+
+    async def refused(*args: object, **kwargs: object) -> AgentWorkspace:
+        raise IsolationRefused("a container workspace needs Docker: the daemon is not running")
+
+    await loop.say(agent_session_id, "Look.")
+    loop.anthropic.add(reply(call("lookup", q="the files")))
+    with monkeypatch.context() as patched:
+        patched.setattr(twin, "prepare", refused)
+        ended = await loop.loops.run(loop.owner, agent_session_id)
+    assert ended.outcome is LoopOutcome.ERRORED
+    answer = [
+        step.header
+        for step in await loop.history(agent_session_id)
+        if isinstance(step.header, ToolResponseHeader)
+    ][-1]
+    assert answer.unstarted and answer.failure is ToolFailure.PERMANENT
+    prepared = prepared_from(monkeypatch, twin)
+
+    await loop.say(agent_session_id, "Look again.")
+    loop.anthropic.add(reply(call("lookup", q="the files")), reply(said("Seen.")))
+    done = await loop.loops.run(loop.owner, agent_session_id)
+
+    assert done.outcome is LoopOutcome.SUCCEEDED
+    assert prepared == [b"as the last run left it"], "prepared from the latest snapshot"
+    assert twin.files[agent_session_id] == b"as the last run left it"
 
 
 async def test_a_workspace_a_person_worked_in_by_hand_is_never_replaced_by_an_older_snapshot(
@@ -444,7 +706,7 @@ async def test_a_workspace_a_person_worked_in_by_hand_is_never_replaced_by_an_ol
     await loop.loops.take_over(loop.owner, agent_session_id)
     twin.files[agent_session_id] = b"as the person fixed it"
     await loop.loops.give_back(loop.owner, agent_session_id, "Fixed the config by hand.")
-    loop.anthropic.add(reply(said("Seen.")))
+    loop.anthropic.add(reply(call("lookup", q="the config")), reply(said("Seen.")))
 
     assert (await loop.loops.run(loop.owner, agent_session_id)).outcome is LoopOutcome.SUCCEEDED
 
@@ -464,7 +726,7 @@ async def test_a_rewind_starts_the_next_loop_from_the_earlier_snapshot_and_keeps
 
     control = await rewind(loop, agent_session_id, earlier.id)
     await loop.say(agent_session_id, "Go on from the earlier state.")
-    loop.anthropic.add(reply(said("Going on.")))
+    loop.anthropic.add(reply(call("lookup", q="the records")), reply(said("Going on.")))
     run = await loop.loops.run(loop.owner, agent_session_id)
 
     assert run.outcome is LoopOutcome.SUCCEEDED
@@ -487,7 +749,7 @@ async def test_a_rewind_starts_the_next_loop_from_the_earlier_snapshot_and_keeps
     # never done again.
     await wrote(loop, agent_session_id, b"written since the rewind")
     await loop.say(agent_session_id, "One more.")
-    loop.anthropic.add(reply(said("Done.")))
+    loop.anthropic.add(reply(call("lookup", q="the records")), reply(said("Done.")))
     await loop.loops.run(loop.owner, agent_session_id)
     assert twin.files[agent_session_id] == b"written since the rewind"
     notices = [step for step in await loop.history(agent_session_id) if control.id in step.refs]
@@ -499,10 +761,11 @@ async def test_a_restore_whose_bytes_are_gone_parks_once_and_the_unlock_goes_on_
     tmp_path: Path, asked: str
 ) -> None:
     """A rewind, or the next run's start from the latest snapshot, whose bytes
-    are gone: the loop parks for a person, with no model call. The person's
-    unlock goes on from the workspace as it stands, a model call follows, and
-    a notice that references what named the snapshot records the restore
-    lost, which the model reads. It is never tried again."""
+    are gone: the loop parks for a person at the first call that reaches
+    the workspace, with that call open. The person's unlock goes on from
+    the workspace as it stands, the call runs, and a notice that references
+    what named the snapshot records the restore lost, which the model reads
+    with the call's answer. It is never tried again."""
     loop, twin = kept_loop(tmp_path)
     agent_session_id = await loop.start(KEEPER.name)
     earlier = await wrote(loop, agent_session_id, b"the earlier state")
@@ -519,13 +782,16 @@ async def test_a_restore_whose_bytes_are_gone_parks_once_and_the_unlock_goes_on_
         ]
     await loop.say(agent_session_id, "Go on.")
     calls = len(loop.anthropic.calls)
+    loop.anthropic.add(reply(call("lookup", q="the state")))
 
     parked = await loop.loops.run(loop.owner, agent_session_id)
 
     assert parked.park is not None
     assert (parked.park.reason, parked.park.unlock) == (ParkReason.PERSON, "agent_workspace")
     assert parked.park.cause == LOST_SNAPSHOT, "a person reads why it waits"
-    assert len(loop.anthropic.calls) == calls, "no model call on a lost restore"
+    assert not parked.park.unsettled, "the call it holds open never ran"
+    assert len(loop.anthropic.calls) == calls + 1, "the call that asked, and no more"
+    assert loop.tools["lookup"].ran_as == [], "the call waits"
 
     unlock = control_step(new_id(), utcnow(), agent_session_id, loop.owner, ControlCommand.UNLOCK)
     await loop.managers.agent_sessions.receive(loop.owner, agent_session_id, [unlock])
@@ -533,7 +799,8 @@ async def test_a_restore_whose_bytes_are_gone_parks_once_and_the_unlock_goes_on_
     run = await loop.loops.run(loop.owner, agent_session_id)
 
     assert run.outcome is LoopOutcome.SUCCEEDED
-    assert len(loop.anthropic.calls) == calls + 1, "a model call follows the unlock"
+    assert len(loop.tools["lookup"].ran_as) == 1, "the call ran once, after the unlock"
+    assert len(loop.anthropic.calls) == calls + 2, "a model call follows the unlock"
     assert twin.files[agent_session_id] == b"the latest state", "the workspace as it stood"
     history = await loop.history(agent_session_id)
     (lost,) = [step for step in history if source.id in step.refs]
@@ -542,7 +809,7 @@ async def test_a_restore_whose_bytes_are_gone_parks_once_and_the_unlock_goes_on_
     assert pending_restore(history) is None
 
     await loop.say(agent_session_id, "And again.")
-    loop.anthropic.add(reply(said("Fine.")))
+    loop.anthropic.add(reply(call("lookup", q="the state")), reply(said("Fine.")))
     again = await loop.loops.run(loop.owner, agent_session_id)
     assert again.outcome is LoopOutcome.SUCCEEDED, "parked once, never again"
 
@@ -630,7 +897,7 @@ async def test_a_cache_parent_forks_and_the_child_alone_keeps_the_snapshot(
     assert await buckets.list(org_id, Buckets.SNAPSHOTS, session_prefix(parent), 10) == []
 
     child = request.id
-    loop.anthropic.add(reply(said("Held.")))
+    loop.anthropic.add(reply(call("lookup", q="the copy")), reply(said("Held.")))
     assert (await loop.loops.run(loop.owner, child)).outcome is LoopOutcome.SUCCEEDED
     assert twin.files[child] == b"before the spawn"
     assert len(await buckets.list(org_id, Buckets.SNAPSHOTS, session_prefix(child), 10)) == 1

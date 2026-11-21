@@ -95,8 +95,9 @@ class AgentKind(OmBase):
     # Its layer of tool policy, before a tenant narrows or loosens it and
     # under the platform's ceilings.
     policy: ToolPolicyLayer = ToolPolicyLayer()
-    # The workspace its sessions work in, prepared to this spec before a
-    # loop's first model call and never weakened.
+    # The workspace its sessions work in: checked against the provider
+    # before a loop's first model call, prepared to this spec at the first
+    # call that reaches it, and never weakened.
     isolation: IsolationSpec = NO_AGENT_WORKSPACE
     # Whether its sessions hold private data, one of the rule of two's
     # three. Only a kind that reads no tenant record and no person's words

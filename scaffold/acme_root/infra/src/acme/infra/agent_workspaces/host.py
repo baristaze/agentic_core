@@ -39,6 +39,11 @@ class AgentWorkspaceHostImpl(KeepsWholeMixin, AgentWorkspaceProviderInterface):
     def __init__(self, root: Path) -> None:
         self._root = root
 
+    async def check(self, spec: IsolationSpec) -> None:
+        why = _refusal(spec)
+        if why is not None:
+            raise IsolationRefused(why, cause=why)
+
     async def prepare(
         self,
         org_id: UUID,
@@ -49,9 +54,7 @@ class AgentWorkspaceHostImpl(KeepsWholeMixin, AgentWorkspaceProviderInterface):
         *,
         building: bool = False,
     ) -> AgentWorkspace:
-        why = refusal(
-            spec, mode=IsolationMode.HOST, egress={EgressMode.OPEN}, limits=(), unkept=UNKEPT
-        )
+        why = _refusal(spec)
         if why is None and (snapshot is not None or base is not None):
             why = f"a host workspace cannot start from a snapshot: {UNKEPT}"
         if why is not None:
@@ -126,3 +129,10 @@ def _given_back(function: Callable[..., object], path: str, error: BaseException
         shutil.rmtree(path, onexc=_given_back)
     else:
         function(path)
+
+
+def _refusal(spec: IsolationSpec) -> str | None:
+    """Why a directory on this host can never meet `spec`."""
+    return refusal(
+        spec, mode=IsolationMode.HOST, egress={EgressMode.OPEN}, limits=(), unkept=UNKEPT
+    )

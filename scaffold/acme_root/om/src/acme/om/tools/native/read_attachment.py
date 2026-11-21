@@ -111,6 +111,7 @@ class ReadAttachmentToolImpl(ToolInterface):
             effect=Effect.READ_ONLY,
             interruptible=True,
             mode=ToolMode.SYNC,
+            workspace=False,
         )
 
     @property

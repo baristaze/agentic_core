@@ -86,10 +86,11 @@ class Found(OmBase):
 
 
 class Lookup(ToolInterface):
-    """A read-only lookup that touches no workspace. It keeps who it ran as,
-    and holds its first call until `release` is set when `holds` is. When
+    """A read-only lookup that runs nothing. It keeps who it ran as, and
+    holds its first call until `release` is set when `holds` is. When
     `remote` is, it reads its target from the system it acts on, an await
-    that suspends."""
+    that suspends. It declares that it reaches the workspace, as a tool
+    that says nothing does, unless `workspace` is False."""
 
     def __init__(
         self,
@@ -98,6 +99,7 @@ class Lookup(ToolInterface):
         effect: Effect = Effect.READ_ONLY,
         authorization_class: str = ToolClass.READ,
         holds: bool = False,
+        workspace: bool = True,
     ) -> None:
         self._spec = ToolSpec(
             name=name,
@@ -108,6 +110,7 @@ class Lookup(ToolInterface):
             authorization_class=authorization_class,
             effect=effect,
             interruptible=True,
+            workspace=workspace,
         )
         self.holds = holds
         self.remote = False

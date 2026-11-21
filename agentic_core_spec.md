@@ -235,9 +235,12 @@ customer's cloud, and a unit test are all valid hosts.
 An adopter extends a run without editing the loop, through the loop's
 hooks, which its root wires beside the rest. Once a run, before anything
 renders, the hooks name the toolsets a session holds beyond its kind,
-which the loop folds into the kind. Once the workspace is prepared, they
-name the steps to append before the first model call. With none wired,
-the null extends nothing ([Null Objects](#null-objects)).
+which the loop folds into the kind. Before the run calls a model, they
+name the steps to append, and no workspace is prepared by then. Once
+the run's first call that reaches the workspace has prepared it, and
+before that call runs, they are given it and name the steps to append
+about it, such as what changed in it; a run that reaches no workspace
+never asks. With none wired, the null extends nothing ([Null Objects](#null-objects)).
 
 Its operations take the guideline's context first. A tenant operation
 takes `TenantContext`; a consumer that reads less declares a scope
@@ -757,6 +760,7 @@ Tools are where the engine touches the world.
 | effect | `read_only`; `idempotent`, safe to repeat natively or under the idempotency key; or `unsafe`, where a repeat may duplicate a side effect |
 | interruptible | Whether an urgent input may stop it mid-run |
 | mode | `sync`, or `job` for work that outlives a run ([Long-Running Jobs](#long-running-jobs)) |
+| workspace | Whether its calls reach the session's workspace, so a call waits for it to be prepared ([The Runtime](#the-runtime)); a tool that does not say reaches it, and a call's input may narrow it, as a spawn that does not fork. It decides nothing of the gate: the rule of two reads the session's egress either way |
 | preflight | Optional: refuses a call that cannot succeed, before anyone is asked to approve it |
 
 ### The Registry
@@ -993,19 +997,31 @@ workspace, and the agent's commands may run containers inside it. A
 laptop's own hypervisor runs them, or a cloud's VMs, behind the same
 interface.
 
-Isolation is chosen up front and never weakened. A provider that cannot
-meet a session's isolation spec refuses before the first model call; it
-never falls back to something weaker. A refusal says whether it can
-clear. One that cannot, such as a spec the provider does not support,
-ends the loop `errored`. One that waits for a workspace that may come
-parks the loop on the resource, and the loop asks again after a wait.
-Either step names the refusal's cause, for a person to read: what the
-spec asks that the provider cannot meet, or the setup command that
-failed and its exit code. A cause never holds a command's output, an
-environment, or the host's own state; those reach the operator's log
-alone. What a workspace is rebuilt from may be gone for good, such as
-the branch it tracks; the loop then parks for a person, its park saying
-what is gone, and nothing is rebuilt from something else in its stead.
+Isolation is chosen up front and never weakened. A spec the provider
+can never meet is refused before the first model call, whole, and
+nothing is made; the provider never falls back to something weaker. No
+model call waits for a workspace. The instance is made at the first
+tool call that reaches the workspace, and only that call waits for it:
+a VM's boot never stands in front of the first token, and a run whose
+calls reach no workspace makes none. A tool says whether its calls reach
+it ([The Tool Contract](#the-tool-contract)).
+
+A refusal says whether it can clear. One that cannot, such as a spec the
+provider does not support or a base whose setup failed, ends the loop
+`errored`, and each call the loop left open is answered first, with the
+refusal's cause, so the session's next input starts a loop that reads
+why. One that waits for a
+workspace that may come, with no host free yet or a VM still starting,
+parks the loop on the resource with the call open, and the loop asks
+again after a wait: once the workspace comes, the same call runs once,
+under its idempotency key. Either step names the refusal's cause, for a
+person to read: what the spec asks that the provider cannot meet, or the
+setup command that failed and its exit code. A cause never holds a
+command's output, an environment, or the host's own state; those reach
+the operator's log alone. What a workspace is rebuilt from may be gone
+for good, such as the branch it tracks; the loop then parks for a
+person at that call, its park saying what is gone, and nothing is
+rebuilt from something else in its stead.
 
 A directory confines files alone. Its commands can run as an account of
 the host, apart from the engine's, one workspace at a time: they reach
@@ -1013,7 +1029,7 @@ nothing of the engine's, and nothing they start outlives the workspace's
 release.
 
 An environment may vanish between loops: an instance is released, and a
-session is not. The next loop prepares another, and an
+session is not. The next loop that reaches it prepares another, and an
 `environment_changed` step tells the model what changed under it.
 
 The brain and the hands can live apart. The loop runs in one place and
@@ -1053,17 +1069,20 @@ platform's ([Next: The Platform](#next-the-platform)).
   a command is refused.
 - **When.** The run that holds a `snapshot` workspace snapshots it at
   its end, live, before its loop parks or ends, and lets the instance
-  go only once a snapshot holds it. The next run starts from the latest
-  snapshot, unless something touched the workspace after it: a person's
-  work by hand, or a run lost before its end, leaves it to be prepared
-  as it stands. A workspace no run holds has no instance, and refuses a
-  snapshot.
+  go only once a snapshot holds it. A run whose calls reach no workspace
+  holds none and takes no snapshot. The next run that reaches it starts
+  from the latest snapshot, unless something touched the workspace
+  after it: a person's work by hand, or a run lost before its end,
+  leaves it to be prepared as it stands. A call that reaches no
+  workspace touches none. A workspace no run holds has no instance, and
+  refuses a snapshot.
 - **Who can.** A provider says whether it can. A directory on a host
   cannot, since its commands write outside it, and neither can an
   account's. A VM's commands write outside its directory too, but they
-  write in a VM that goes, and the next starts from the base. A spec may ask for a workspace that can be snapshotted. A
-  provider that cannot refuses it before the first model call, never a
-  cache in its stead, and refuses a snapshot before anything runs.
+  write in a VM that goes, and the next starts from the base. A spec may
+  ask for a workspace that can be snapshotted. A provider that cannot
+  refuses that spec before the first model call, never a cache in its
+  stead, and refuses a snapshot before anything runs.
 - **Where it is kept.** Sealed under the session's key, in the
   guideline's buckets ([Infrastructure][g-infra]), under a hash of its
   bytes keyed by the session. A `snapshotted` step names it: its id, its
@@ -1637,9 +1656,11 @@ must fix it; no retry time means only a person can unblock it. Each park
 a person clears has a route that clears it, held to the permission its
 operation checks, and clearing it wakes the session: no park waits for a
 cancel alone. A gate supplied from outside may name a reason and an unlock
-of its own. A park on the workspace comes before its run has settled a
-lost run's calls, so it says so, and the run that resumes it settles
-them by their effect.
+of its own. A park on the workspace at a call its own run wrote is
+settled, as any park the loop writes is, and the run that resumes it
+runs that call once. One at a call a lost run left open comes before
+its run has settled that run's calls, so it says so, and the run that
+resumes it settles them by their effect.
 When the unlock happens, a `resumed` step starts a new run. Raising a
 budget is the instruction to continue.
 

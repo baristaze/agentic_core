@@ -811,18 +811,66 @@ def pending_restore(steps: Sequence[AgentStep]) -> AgentStep | None:
     return None
 
 
-def kept_snapshot(steps: Sequence[AgentStep]) -> AgentStep | None:
+def kept_snapshot(steps: Sequence[AgentStep], *, settled: bool) -> AgentStep | None:
     """The `snapshotted` step a workspace kept by snapshots starts from when
     no restore is pending: the latest, when nothing touched the workspace
-    after it. A tool call after it, as a run lost before its end leaves, or a
-    change a notice records, such as a person's work by hand or a restore
-    that was lost, leaves the workspace newer than any snapshot: None, and it
-    is prepared as it stands."""
+    after it. A call that ran in the workspace after it, as a run lost
+    before its end leaves, or a change a notice records, such as a person's
+    work by hand or a restore that was lost, leaves the workspace newer than
+    any snapshot: None, and it is prepared as it stands.
+
+    A call ran in it after the snapshot when its request says it reaches
+    the workspace and it may have run there since: it was answered after
+    the snapshot, unless the answer says no run started it (`unstarted`),
+    or its request came after the snapshot and it is still open and not
+    `settled`. A job's call ran in the run that started its job, whatever
+    run made its request: the run that wrote the first park naming the
+    job. That run's snapshot at the park, written just before it, with
+    nothing between them but what arrived, holds what the start wrote. The
+    job runs once the instance is released, so its answer, written by
+    whichever run the job's end wakes, touches nothing. A call that reaches
+    nothing never touched it, so a run that made only such calls leaves the
+    snapshot whole. `settled` when no run may have started a call still
+    open: a park the loop wrote held it back, or the run asking wrote it."""
+    reaching: set[UUID] = set()
+    answered: set[UUID] = set()
+    jobs: set[UUID] = set()
+    starts: set[UUID] = set()  # the first park naming each job a reaching call started
+    for step in steps:
+        header = step.header
+        if isinstance(header, ToolRequestHeader) and header.workspace:
+            reaching.add(step.id)
+        elif step.type is AgentStepType.TOOL_RESPONSE and step.responds_to is not None:
+            answered.add(step.responds_to)
+        elif isinstance(header, ParkedHeader) and header.park.job is not None:
+            key = header.park.job.key
+            if key in reaching and key not in jobs:
+                starts.add(step.id)
+            jobs.add(key)
+    started = False
     for step in reversed(steps):
         if step.type is AgentStepType.SNAPSHOTTED:
             return step
-        if step.type.is_tool_call() or step.type is AgentStepType.ENVIRONMENT_CHANGED:
+        if step.type is AgentStepType.ENVIRONMENT_CHANGED:
             return None
+        if started:
+            # A run that starts a job parks on it at once: behind the park
+            # lies the snapshot it took there, or, when it took none, a step
+            # written before the start.
+            if arrives(step):
+                continue
+            return None
+        header = step.header
+        if (
+            isinstance(header, ToolResponseHeader)
+            and step.responds_to in reaching
+            and step.responds_to not in jobs
+            and not header.unstarted
+        ):
+            return None
+        if step.id in reaching and step.id not in jobs and step.id not in answered and not settled:
+            return None
+        started = step.id in starts
     return None
 
 
@@ -901,8 +949,8 @@ def restored_step(
 
 def called(steps: Sequence[AgentStep], loop_id: UUID) -> bool:
     """Whether the loop has made a model call: a request of any role names
-    it. A loop that stopped before its first call, parked as its workspace
-    was prepared say, is still new."""
+    it. A loop that stopped before its first call, on a refusal of its
+    hooks' or a lost claim say, is still new."""
     return any(
         step.type is AgentStepType.MODEL_REQUEST and step.loop_id == loop_id for step in steps
     )

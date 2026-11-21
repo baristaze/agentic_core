@@ -5,7 +5,10 @@ there (`acme.infra.transports`).
 
 Isolation is chosen up front and never weakened. A provider meets a spec
 whole or refuses it with `IsolationRefused`, before it creates anything, and
-never hands back a weaker place in its stead. A released workspace keeps its
+never hands back a weaker place in its stead. It says so up front too: its
+`check` refuses a spec it can never meet and makes nothing, so a session
+learns it before its first model call, and a workspace is made only when a
+call needs one. A released workspace keeps its
 files and loses its instance: the next prepare under the same id finds the
 files again. A purged one keeps nothing.
 
@@ -286,6 +289,16 @@ class AgentWorkspaceProviderInterface(ABC):
         no such power. A provider whose instances hold none ignores it, and
         so does one whose wall is the VM, whose commands hold their
         guest whole."""
+        ...
+
+    @abstractmethod
+    async def check(self, spec: IsolationSpec) -> None:
+        """Refuses a spec this provider can never meet, with
+        `IsolationRefused` and its cause, as `prepare` refuses it, and makes
+        nothing: what a loop learns before its first model call. A spec it
+        meets passes, whatever this host holds now: whether a workspace can
+        be made yet, and from what, is `prepare`'s to say. A refusal here
+        never clears."""
         ...
 
     @abstractmethod

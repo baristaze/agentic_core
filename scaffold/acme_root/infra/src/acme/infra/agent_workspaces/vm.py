@@ -131,6 +131,11 @@ class AgentWorkspaceVmImpl(AgentWorkspaceProviderInterface):
         self._timeout = timeout
         self._pack_within = pack_within
 
+    async def check(self, spec: IsolationSpec) -> None:
+        why = self._refusal(spec)
+        if why is not None:
+            raise IsolationRefused(why, cause=why)
+
     async def prepare(
         self,
         org_id: UUID,

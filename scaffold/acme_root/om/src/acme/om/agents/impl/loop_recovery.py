@@ -58,6 +58,10 @@ class LoopRecovery(LoopCore):
             if park is not None and tool is not None and tool.spec.mode is ToolMode.JOB:
                 continue
             settled = await self._settle_call(run, history, use, request, fresh=False)
+            if settled.stopped is not None:
+                # Its workspace cannot be had: the park it wrote is unsettled,
+                # and the run that resumes it settles every call left open.
+                return settled.stopped
             if settled.cancelled:
                 return await self._cancelled(run, park)
             park = park or settled.park
