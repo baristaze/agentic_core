@@ -34,12 +34,14 @@ its loop parks, ends, or yields, so no run that follows starts before
 the step names it. Its instance goes only once a snapshot holds it. A
 snapshot that is refused, as for a secret's value in the workspace, or
 that fails is logged, and the instance stays, so nothing in it is lost.
-The next run starts from the latest snapshot when nothing touched the
-workspace after it. A tool call after it, as a run lost before its end
-leaves, or a change an `environment_changed` step records, a person's
-work by hand or a lost restore, leaves the workspace newer than any
-snapshot, so it is prepared as it stands. A pending restore wins over
-both. A released workspace holds no instance, so a snapshot asked of it
+A run whose calls reach no workspace prepares none and takes no
+snapshot (ADR 1043). The next run that reaches it starts from the latest
+snapshot when nothing touched the workspace after it. A call that
+reached the workspace after it and may have run, as a run lost before
+its end leaves, or a change an `environment_changed` step records, a
+person's work by hand or a lost restore, leaves the workspace newer than
+any snapshot, so it is prepared as it stands. A call that reaches no
+workspace touches none. A pending restore wins over both. A released workspace holds no instance, so a snapshot asked of it
 is refused, and no volume is ever kept as the whole.
 
 **Who can.** A directory on a host refuses, and so does an account's:
@@ -47,7 +49,7 @@ their commands write outside the directory, so a snapshot of it would
 lose what they installed without a word. The refusal comes before
 anything runs. A spec may ask for a workspace that can be snapshotted
 (`durability: snapshot`); a provider that cannot refuses that spec at
-prepare, before the first model call, never a cache in its stead.
+its check, before the first model call, never a cache in its stead.
 
 **The container's snapshot.** It holds the container's whole
 filesystem: what `docker diff` names in its writable layer, read out of

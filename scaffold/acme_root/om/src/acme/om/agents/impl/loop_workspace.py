@@ -3,7 +3,7 @@ call, and its instance prepared at the first call that reaches it, so no
 model call waits for a workspace. A spec the provider can never meet ends
 the loop before anything is spent; a workspace that cannot be prepared yet
 parks the loop with its call open, and the run that takes the loop up
-again gates and runs that call once."""
+again gates and runs that call once (ADR 1043)."""
 
 import logging
 from collections.abc import Sequence

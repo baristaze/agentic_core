@@ -37,19 +37,20 @@ kind, so held ones join the registry and deferred ones the load. What
 they attach holds every guard a kind's own tools hold: who may instruct
 the session classes their tools, a message the session writes into
 another carries their secrets for the rule of two, and its workspace's
-snapshot is scanned for the secrets they may have injected. Once the
-workspace is prepared, before the first model call, it asks them for the
-steps to append, under the run's epoch, and tells them whether the loop
-is new: whether it has made no model call yet, so a loop whose first run
+snapshot is scanned for the secrets they may have injected. Before the
+first model call, with no workspace prepared yet (ADR 1043), it asks
+them for the steps to append, under the run's epoch, and tells them
+whether the loop is new: whether it has made no model call yet, so a loop whose first run
 parked before its first call is still new to the run that takes it up.
 A refusal of the session's fill there ends the loop errored, as
 the loop's own resolve does. With no hooks wired, the null extends
 nothing.
 
 **The loop is split by concern behind one class.** The model turn, the
-tool turn with its jobs, parks and waits, recovery after a lost run, and
-take-over each live in a module of their own over a base that holds the
-constructor, the run's state, and the seams between them.
+tool turn with its jobs, parks and waits, recovery after a lost run,
+take-over, and the workspace each live in a module of their own over a
+base that holds the constructor, the run's state, and the seams between
+them.
 `LoopManagerImpl` keeps its public face.
 
 ## Consequences
