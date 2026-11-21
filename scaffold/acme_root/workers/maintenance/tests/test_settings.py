@@ -72,6 +72,7 @@ LOCAL_DEFAULT_SERVES_THE_CLOUD = {
     "vm_store_encrypted": "the vm workspace backend only",
     "vm_timeout_seconds": "the vm workspace backend only",
     "vm_boot_timeout_seconds": "the vm workspace backend only",
+    "vm_pack_timeout_seconds": "the vm workspace backend only",
     "flags_file": "the local flags backend only",
     "log_level": "INFO everywhere",
     "otel_endpoint": "traces go to the collector sidecar, wired in the task, not a knob",
