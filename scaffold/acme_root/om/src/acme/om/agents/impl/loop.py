@@ -8,7 +8,7 @@ import logging
 from collections.abc import Sequence
 from uuid import UUID
 
-from acme.infra.agent_workspaces import IsolationRefused
+from acme.infra.exceptions import InfraException
 from acme.integrations.model_providers.types import StopReason
 from acme.om.agent_sessions.kinds import AGENT_SESSION_WAITER
 from acme.om.agent_sessions.limits import Limit, Trip, tally_loop, tripped
@@ -51,6 +51,7 @@ from acme.om.exceptions import (
     UnresolvedRole,
 )
 from acme.om.language_models.types.fill import Eligibility
+from acme.om.tools.rules import ISOLATION_REFUSED
 from acme.om.tools.types.policy import ToolPolicyLayer
 
 log = logging.getLogger(__name__)
@@ -181,7 +182,9 @@ class LoopManagerImpl(
         except (UnresolvedRole, UnpricedModel) as refused:
             log.warning("session %s resolves no fill: %s", run.agent_session_id, refused.message)
             return await self._end(run, LoopOutcome.ERRORED)
-        except IsolationRefused as refused:
+        except InfraException as refused:
+            if refused.code != ISOLATION_REFUSED:
+                raise
             # As at the check of the spec: nothing is prepared yet, and the
             # calls a lost run left open are not settled yet.
             return await self._unprepared(run, refused, restoring=False, settled=run.resumed)
