@@ -36,6 +36,7 @@ from acme.om.agent_steps.types.header import (
     LoopOutcome,
     MarkHeader,
     ParkReason,
+    SnapshotHeader,
 )
 from acme.om.agents.hooks import (
     NO_ATTACHED_TOOLSETS,
@@ -392,6 +393,40 @@ async def test_a_child_private_through_an_attached_secret_tool_marks_its_parent(
     assert run.end is RunEnd.PARKED and run.park is not None
     assert (run.park.reason, run.park.unlock) == (ParkReason.PERSON, "approval")
     assert loop.tools["send"].ran_as == [], "it holds its child's credentials"
+
+
+async def test_a_notice_a_layer_appends_before_the_first_call_leaves_the_snapshot_whole(
+    tmp_path: Path,
+) -> None:
+    """A layer's notice comes before its run prepares the workspace, and
+    touches nothing of it: the run that wrote it starts from the latest
+    snapshot, never from the instance as it stands."""
+    infra = InfraLocalImpl(tmp_path)
+    twin = infra.get_agent_workspaces()
+    assert isinstance(twin, AgentWorkspaceTwinImpl)
+    loop = loop_over(
+        tmp_path, kinds=(ASSISTANT, DELIVERY, KEEPER), infra=infra, hooks=Layer(changed=CHANGED)
+    )
+    agent_session_id = await loop.start(KEEPER.name)
+    twin.files[agent_session_id] = b"as the first run left it"
+    for text in ("Look it up.", "Look again."):
+        await loop.say(agent_session_id, text)
+        loop.anthropic.add(reply(use("lookup")), reply(said("Found.")))
+        assert (await loop.loops.run(loop.owner, agent_session_id)).outcome is LoopOutcome.SUCCEEDED
+        # On the twin the files outlive a release; a container's layer does not.
+        twin.files[agent_session_id] = b"what a release loses"
+
+    history = await loop.history(agent_session_id)
+    assert [s.as_text() for s in history if s.type is AgentStepType.ENVIRONMENT_CHANGED] == [
+        CHANGED,
+        CHANGED,
+    ]
+    snapshotted = [s for s in history if s.type is AgentStepType.SNAPSHOTTED]
+    assert len(snapshotted) == 2, "one at each run's end"
+    assert isinstance(snapshotted[-1].header, SnapshotHeader)
+    assert snapshotted[-1].header.snapshot.size == len(b"as the first run left it"), (
+        "the second run started from the first run's snapshot"
+    )
 
 
 async def test_a_workspace_that_holds_an_attached_tools_secret_keeps_no_snapshot(
