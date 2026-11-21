@@ -51,7 +51,9 @@ prepares none, takes no snapshot, and lets nothing go. The next run that
 reaches the workspace starts from the latest snapshot, unless a call
 that reached the workspace and may have run, or an `environment_changed`
 step, came after it. A call that reaches no workspace touches none, and
-a call a park the loop wrote held open never ran.
+a call a park the loop wrote held open never ran. A call an earlier run
+made counts whatever run answered it, a job's included; a notice the
+run's own hooks wrote before its workspace was prepared does not.
 
 **The loop hooks receive no workspace.** `LoopStart` holds the session,
 the kind, the epoch, the loop, and whether the loop is new. A layer that

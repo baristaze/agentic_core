@@ -95,10 +95,16 @@ class LoopWorkspace(LoopCore):
         history = await self._history(run.ctx, run.agent_session_id, history, own=run.own)
         start = rules.pending_restore(history)
         if start is None and run.kind.isolation.durability is Durability.SNAPSHOT:
-            # What the run wrote itself before its workspace was prepared, a
-            # hook's notice or a call that reaches none, touched nothing of it.
-            others = [step for step in history if step.seq not in run.own]
-            start = rules.kept_snapshot(others, settled=settled)
+            # A notice the run's hooks wrote before its workspace was
+            # prepared touched nothing of it. Anything else the run wrote
+            # counts as any run's would: its answer to a call an earlier run
+            # made, such as a job's, is that call's, which reached it.
+            read = [
+                step
+                for step in history
+                if not (step.seq in run.own and step.type is AgentStepType.ENVIRONMENT_CHANGED)
+            ]
+            start = rules.kept_snapshot(read, settled=settled)
         return await self._prepare_from(run, start, settled=settled)
 
     async def _prepare_from(
