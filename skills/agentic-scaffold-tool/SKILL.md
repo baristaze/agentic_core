@@ -70,7 +70,7 @@ contract.
 
 | File | Change |
 |------|--------|
-| `om/src/<name>/om/agents/kinds.py` (with `--kinds`) | the tool's name in each kind's `tools`, as `../agentic-scaffold-agent-kind/SKILL.md` changes a kind |
+| `om/src/<name>/om/agents/kinds/<kind>/kind.py` (with `--kinds`) | the tool's name in each kind's `tools`, as `../agentic-scaffold-agent-kind/SKILL.md` changes a kind |
 | `om/src/<name>/om/tools/rules.py` (a class of the product's own that must always wait for a person) | a row in `DEFAULT_CEILINGS` |
 
 ## Procedure

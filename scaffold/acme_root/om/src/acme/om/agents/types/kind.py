@@ -6,12 +6,17 @@ A kind names the tools it may call, alone or in toolsets, some of which
 it may defer until the agent loads them; the rule that says when a loop is
 done, the result tool a delivery kind submits through, the authority mode
 its calls run under, the bounds of a tree it roots, the share one of
-its sessions may spend when it runs as a sub-agent, and where its loop
-runs: in a worker, or in the request that asks it. It also carries
+its sessions may spend when it runs as a sub-agent, who may start it (a
+person, an agent as its sub-agent, or both), and where its loop runs: in
+a worker, or in the request that asks it. It also carries
 what the loop reads of it: its prompts, the model roles it calls and
 what it asks of them, the bounds of one loop, its layer of tool policy, the workspace its sessions
 work in, and whether they hold private data. Its prompts and its tools'
-contracts are the product's, versioned with it."""
+contracts are the product's, versioned with it.
+
+A product keeps each kind in a folder of its own, `kinds/<kind>/`, beside
+the others: a module of its versions' constants, and the prompt of each
+version in Markdown, which the module reads at import (`agents.prompts`)."""
 
 from collections.abc import Mapping
 from datetime import timedelta
@@ -52,6 +57,13 @@ class RunsIn(StrEnum):
 
     WORKER = "worker"  # a runner claims the session's work, and a park waits there
     REQUEST = "request"  # the request that asks it runs it and streams it, and nothing waits
+
+
+class Starter(StrEnum):
+    """Who may start a session of a kind."""
+
+    PERSON = "person"  # a principal's start, or a hand-off its principal confirms
+    AGENT = "agent"  # a spawn: an agent starts it as its sub-agent
 
 
 class DoneRule(StrEnum):
@@ -126,6 +138,10 @@ class AgentKind(OmBase):
     # `REQUEST_TIME`; publishing it refuses one that breaks any of these
     # (`agents.rules.request_kind_breaches`).
     runs_in: RunsIn = RunsIn.WORKER
+    # Who may start a session of it: a person's start or a hand-off needs
+    # `person`, and a spawn `agent`. A kind that names no other is started
+    # by a person alone, and no spawn starts it.
+    started_by: frozenset[Starter] = Field(default=frozenset({Starter.PERSON}), min_length=1)
 
     @model_validator(mode="before")
     @classmethod

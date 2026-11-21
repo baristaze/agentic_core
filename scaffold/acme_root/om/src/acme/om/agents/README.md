@@ -11,9 +11,13 @@ of](../../../../README.md).
   tools it may call, one by one or in toolsets, some of which wait until
   the agent loads them, when its work is done, the tool it reports a result
   through, how its calls are allowed, how large a tree it may grow, and
-  what one of its sessions may spend as a sub-agent.
+  what one of its sessions may spend as a sub-agent, and who may start
+  it: a person, an agent as its sub-agent, or both.
   A product declares its kinds; each is versioned, and a session keeps
-  the version it started on.
+  the version it started on. Each kind is a folder of its own: a module
+  holds a constant for each version, and each version's prompt is a
+  Markdown file beside it. A released version's prompt never changes: a
+  lock pins it, and a changed prompt is a new version.
 - **Request kind**: a kind whose loop runs in the request that asks it,
   not in a worker. It has no workspace, starts no sub-agent and no job,
   and makes no call a person must approve, in at most 10 model calls and

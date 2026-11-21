@@ -1395,11 +1395,26 @@ One loop serves many agents. An **agent kind** is a profile over it:
 | Authority mode | Steady | Delegated |
 | Default bounds | Budget, deadline, step guard, tree limits | Budget, step guard |
 | Where its loop runs | A worker | A worker, or the request that asks it |
+| Who may start it | A person, or an agent as its sub-agent | A person |
 
 A kind is versioned. A session pins its kind version as it pins its fill
 set; an upgrade happens at a loop boundary and is recorded as a
 `switched` step. It pins its standing text the same way
 ([Rendering](#rendering)).
+
+A product keeps each kind in a folder of its own, beside the others and
+never inside one. A module there holds a typed constant for each
+version, and each version's prompt is a Markdown file beside it, which
+the constant reads: no prompt is a string in code. Once a version is
+released, a lock the repository commits pins its prompt by digest, so a
+changed prompt is a new version, and a session renders the text it
+started with. A check refuses a prompt file that is missing, a file no
+version reads, a prompt past its bound, and a released prompt changed in
+place, each by its file. The engine reads the module and the prompts
+alone; a layer above may keep folders of its own beside them.
+
+A kind names who may start it: a person, an agent as its sub-agent, or
+both. A start it does not allow is refused before anything is made.
 
 ### Where a Loop Runs
 
@@ -1411,8 +1426,8 @@ runs in the request that asks it. Every version of a kind runs in one
 place, and neither axis changes the loop: one loop serves both.
 
 A **request kind** holds nothing a worker holds. It has no workspace,
-starts no sub-agent and no job, and makes no call that waits for a
-person: its own policy allows each tool it names, under the platform's
+starts no sub-agent and no job, runs as no agent's sub-agent, and makes
+no call that waits for a person: its own policy allows each tool it names, under the platform's
 ceilings. It makes at most 10 model calls, within 30 seconds. Publishing
 refuses a request kind that breaks any of these, and names each breach.
 
@@ -1464,7 +1479,8 @@ mistakes it for checked.
 A sub-agent is a session with a parent, spawned through a `spawn`-class
 tool, so it is gated and audited like any other power. The engine ships
 that tool and a second one, which parks the parent on its children; a
-kind names both to start sub-agents and wait for them. A spawn takes
+kind names both to start sub-agents and wait for them. A spawn starts
+only a kind that an agent may start. A spawn takes
 the id of the call that asks for it, so a call asked again finds the
 child it made, and a bound the spawn reaches is the call's failure,
 which the model reads.

@@ -28,8 +28,8 @@ from acme.om.agent_steps.types.header import (
 )
 from acme.om.agents import ResultGateInterface
 from acme.om.agents.loop_rules import holds_private
-from acme.om.agents.rules import after_turn, claim_refusal, tree_refusal
-from acme.om.agents.types.kind import AgentKind, AgentKindCatalog, DoneRule, TreeLimits
+from acme.om.agents.rules import after_turn, claim_refusal, start_refusal, tree_refusal
+from acme.om.agents.types.kind import AgentKind, AgentKindCatalog, DoneRule, Starter, TreeLimits
 from acme.om.agents.types.request import MAX_OBJECTIVE, Handoff, Spawn, Start
 from acme.om.agents.types.result import Claim, Result, Turn, Verdict
 from acme.om.agents.types.tree import AgentTree
@@ -76,6 +76,7 @@ DELIVERY = AgentKind(
     tree=TreeLimits(height=3, count=3),
     deadline=timedelta(hours=8),
     share=Amount(cost_micros=5_000),
+    started_by=frozenset(Starter),
 )
 OLDER = DELIVERY.model_copy(update={"version": 1})
 HELPER = AgentKind(
@@ -87,6 +88,7 @@ HELPER = AgentKind(
     authority=AuthorityMode.STEADY,
     tree=TreeLimits(height=1, count=0),
     share=Amount(cost_micros=1_000),
+    started_by=frozenset(Starter),
 )
 ASSISTANT = AgentKind(
     name="assistant",
@@ -96,6 +98,7 @@ ASSISTANT = AgentKind(
     authority=AuthorityMode.DELEGATED,
     tree=TreeLimits(height=2, count=1),
     share=Amount(cost_micros=1_000),
+    started_by=frozenset(Starter),
 )
 REPORTER = HELPER.model_copy(
     update={"name": "reporter", "tools": ("read_log", "report"), "result_tool": "report"}
@@ -104,7 +107,12 @@ REPORTER = HELPER.model_copy(
 RESEARCHER = HELPER.model_copy(update={"name": "researcher", "private_data": False})
 # A kind that names no share, so no spawn starts it.
 UNSHARED = HELPER.model_copy(update={"name": "unshared", "share": None})
-KINDS = (OLDER, DELIVERY, HELPER, ASSISTANT, REPORTER, RESEARCHER, UNSHARED)
+# A kind only an agent starts, as its sub-agent, and one only a person starts.
+UNDERLING = HELPER.model_copy(
+    update={"name": "underling", "started_by": frozenset({Starter.AGENT})}
+)
+PERSONAL = HELPER.model_copy(update={"name": "personal", "started_by": frozenset({Starter.PERSON})})
+KINDS = (OLDER, DELIVERY, HELPER, ASSISTANT, REPORTER, RESEARCHER, UNSHARED, UNDERLING, PERSONAL)
 TOOLS = stand_ins(*(tool for kind in KINDS for tool in kind.tools))
 
 
@@ -414,6 +422,63 @@ async def test_a_kind_that_names_no_share_is_never_spawned(managers: Managers) -
     with pytest.raises(ValidationFailed, match="names no share"):
         await managers.agents.spawn(ctx, root.id, spawn("unshared"))
     assert (await managers.agents.tree_of(ctx, root.id)).size == 0, "no slot taken"
+
+
+# Check 3: a start its kind's `started_by` does not allow is refused,
+# before anything is made.
+
+
+def test_a_kind_names_who_starts_it_and_a_person_alone_by_default() -> None:
+    assert AgentKind.model_validate(
+        {**HELPER.model_dump(exclude={"started_by"}), "name": "plain"}
+    ).started_by == frozenset({Starter.PERSON})
+    with pytest.raises(ValidationError):
+        AgentKind.model_validate({**HELPER.model_dump(), "started_by": frozenset()})
+    assert start_refusal(UNDERLING, Starter.AGENT) is None
+    assert start_refusal(UNDERLING, Starter.PERSON) == (
+        "agent kind underling is started only when an agent starts it as its sub-agent"
+    )
+    assert start_refusal(PERSONAL, Starter.AGENT) == (
+        "agent kind personal is started only when a person starts it, or confirms a hand-off to it"
+    )
+
+
+async def test_a_person_never_starts_a_kind_only_an_agent_starts(managers: Managers) -> None:
+    ctx = context(Role.MEMBER)
+    asked = Start(id=new_id(), kind="underling", title="reproduce it")
+
+    with pytest.raises(ValidationFailed, match="started only when an agent starts it"):
+        await managers.agents.start_agent_session(ctx, asked)
+
+    with pytest.raises(NotFound):
+        await managers.agent_sessions.get_agent_session(ctx, asked.id)
+    with pytest.raises(NotFound):
+        await managers.agents.tree_of(ctx, asked.id)
+    root = await start(managers, ctx)
+    assert (await managers.agents.spawn(ctx, root.id, spawn("underling"))).kind == "underling"
+
+
+async def test_a_handoff_never_starts_a_kind_only_an_agent_starts(managers: Managers) -> None:
+    ctx = context(Role.MEMBER)
+    source = await start(managers, ctx, "assistant")
+    handoff = Handoff(id=new_id(), kind="underling", title="fix it", objective="fix the total")
+
+    with pytest.raises(ValidationFailed, match="started only when an agent starts it"):
+        await managers.agents.hand_off(ctx, source.id, handoff)
+
+    with pytest.raises(NotFound):
+        await managers.agent_sessions.get_agent_session(ctx, handoff.id)
+
+
+async def test_a_spawn_never_starts_a_kind_only_a_person_starts(managers: Managers) -> None:
+    ctx = context(Role.MEMBER)
+    root = await start(managers, ctx)
+
+    with pytest.raises(ValidationFailed, match="started only when a person starts it"):
+        await managers.agents.spawn(ctx, root.id, spawn("personal"))
+
+    assert (await managers.agents.tree_of(ctx, root.id)).size == 0, "no slot taken"
+    assert (await start(managers, ctx, "personal")).kind == "personal"
 
 
 async def test_a_moved_deadline_unlocks_every_session_of_the_tree_it_parked(

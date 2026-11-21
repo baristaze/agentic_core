@@ -17,18 +17,29 @@ over it: prompts, a tool registry, model roles, a done rule, a result
 contract and gate, an authority mode, and default bounds. A kind is
 versioned. A session pins its kind version as it pins its fill set; an
 upgrade happens at a loop boundary and is recorded as a `switched` step.
+Each kind is a folder: typed constants, one per version, and each
+version's prompt in a Markdown file. A lock pins each released prompt
+by digest; a check refuses a missing file, an orphan file, a prompt
+past its bound, and a released prompt changed in place.
 
 **Source.** Agent Kinds and Sub-Agents, Agent Kinds.
 
 **Look for.** How a kind is declared and versioned; branches on a kind
-inside the loop; where a session's kind version changes.
+inside the loop; where a session's kind version changes; each folder
+under `kinds/`, its module's `VERSIONS`, its `prompts/v<N>.md` and
+`prompts/lock.json`; the test that runs `prompt_breaches` over every
+folder.
 
 **Violation.** A second loop for one kind; loop code that branches on a
-kind's name; a kind upgraded mid-loop, or with no `switched` step.
+kind's name; a kind upgraded mid-loop, or with no `switched` step; a
+prompt written as a string in a kind's module; a kind folder inside
+another; a lock entry changed or removed, or a released version's
+prompt file edited in place; a kind folder no test checks.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/agents/types/kind.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/agents/prompts.py` and
+`scaffold/acme_root/services/api/src/acme/services/api/kinds/assistant`
 
 **Check.** review
 
@@ -191,10 +202,11 @@ change the new session's objective.
 
 **Principle.** Where a loop runs is a kind's own axis: a worker, or the
 request that asks it, at every version. A request kind has no
-workspace, no sub-agent, no job, and no call that waits for a person,
-and makes at most 10 model calls within 30 seconds; publishing refuses
-one that breaks any of these, naming each breach. Only the steerer asks
-it, and a refused question writes nothing. Each event's data is one
+workspace, no sub-agent, no job, no agent that starts it, and no call
+that waits for a person, and makes at most 10 model calls within 30
+seconds; publishing refuses one that breaks any of these, naming each
+breach. Only the steerer asks it, and a refused question writes
+nothing. Each event's data is one
 line of JSON. Where another loop would park or yield, it answers each
 open call as not run and ends `inconclusive` with the park's cause. No
 work item is written for its session, and no sweep or recovery touches
@@ -211,17 +223,43 @@ writes before it refuses; how the stream frames the model's text and
 when it pings; what a caller that goes away leaves running.
 
 **Violation.** A request kind published with a workspace, a spawn-class
-or job tool, a tool its own policy holds for a person, a step guard
-past 10, or a run time past 30 seconds; versions of one kind that run
-in different places; a request kind's loop that writes a `parked` step
-or yields; a `LOOP` or wake row for its session; a question a
-participant or a non-member asks that lands a step; the model's text
-written into an event unescaped; a loop that outlives the request that
-ran it.
+or job tool, an agent among those who may start it, a tool its own
+policy holds for a person, a step guard past 10, or a run time past 30
+seconds; versions of one kind that run in different places; a request
+kind's loop that writes a `parked` step or yields; a `LOOP` or wake row
+for its session; a question a participant or a non-member asks that
+lands a step; the model's text written into an event unescaped; a loop
+that outlives the request that ran it.
 
 **Severity.** high
 
 **Shape.** `scaffold/acme_root/om/src/acme/om/agents/rules.py` and
 `scaffold/acme_root/services/api/src/acme/services/api/services/impl`
+
+**Check.** review
+
+## AGT-09 A kind names who may start it
+
+**Principle.** A kind names who may start it: a person, an agent as its
+sub-agent, or both. A person's start, and a hand-off its principal
+confirms, need a kind a person may start; a spawn needs one an agent may
+start. A start the kind does not allow is refused before anything is
+made.
+
+**Source.** Agent Kinds and Sub-Agents, Agent Kinds; Agent Kinds and
+Sub-Agents, Sub-Agents.
+
+**Look for.** `AgentKind.started_by` and its default; `start_refusal`,
+and where the start, the hand-off, and the spawn ask it, before the
+tree, the session, or a share is written.
+
+**Violation.** A start, a hand-off, or a spawn that reads no
+`started_by`; one refused only after it wrote a tree, a session, a slot,
+or a budget; a kind a spawn starts because it names a share alone.
+
+**Severity.** high
+
+**Shape.** `scaffold/acme_root/om/src/acme/om/agents/rules.py` and
+`scaffold/acme_root/om/src/acme/om/agents/impl/manager.py`
 
 **Check.** review

@@ -26,7 +26,7 @@ from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
 from acme.om.agent_steps.types.content import Content, TextBlock
 from acme.om.agent_steps.types.header import InputHeader, ModelRequestHeader, ParkReason
-from acme.om.agents.types.kind import AgentKind, DoneRule
+from acme.om.agents.types.kind import AgentKind, DoneRule, Starter
 from acme.om.agents.types.request import Start
 from acme.om.agents.types.run import LoopRun
 from acme.om.attribution.types.authority import AuthorityMode
@@ -91,6 +91,7 @@ REVIEWER = AgentKind(
     done_rule=DoneRule.ANSWER,
     authority=AuthorityMode.DELEGATED,
     share=Amount(cost_micros=1_000_000),
+    started_by=frozenset(Starter),
     prompts=("You review one part of a change, and report what holds.",),
     policy=ALLOWED,
 )

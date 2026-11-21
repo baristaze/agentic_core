@@ -17,7 +17,7 @@ from acme.infra.impl.local import InfraLocalImpl
 from acme.om.agent_root import AgentRootOptions
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
 from acme.om.agent_steps.types.header import InputHeader, ToolFailure
-from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
+from acme.om.agents.types.kind import AgentKind, DoneRule, Starter, TreeLimits
 from acme.om.agents.types.request import Spawn, Start
 from acme.om.attribution.rules import trust_of
 from acme.om.attribution.types.authority import AuthorityMode, Trust
@@ -68,6 +68,7 @@ CONFIGURER = AgentKind(
     authority=AuthorityMode.STEADY,
     tree=TreeLimits(height=1, count=0),
     share=Amount(tokens=1_000_000),
+    started_by=frozenset(Starter),
 )
 
 

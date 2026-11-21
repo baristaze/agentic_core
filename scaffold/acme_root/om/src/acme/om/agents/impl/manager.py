@@ -26,11 +26,12 @@ from acme.om.agents.rules import (
     notes_parent,
     report_text,
     report_wakes,
+    start_refusal,
     tree_for,
     tree_refusal,
 )
 from acme.om.agents.storage import AgentStorageInterface
-from acme.om.agents.types.kind import AgentKind, AgentKindCatalog, RunsIn
+from acme.om.agents.types.kind import AgentKind, AgentKindCatalog, RunsIn, Starter
 from acme.om.agents.types.report import Report
 from acme.om.agents.types.request import Handoff, Question, Spawn, Start, SwitchStanding
 from acme.om.agents.types.result import Result, Verdict
@@ -107,6 +108,7 @@ class AgentsManagerImpl(AgentsManagerInterface):
     async def start_agent_session(self, ctx: TenantContext, start: Start) -> AgentSession:
         ctx.require(Permission.WRITE)
         kind = self._kinds.latest(start.kind)
+        _may_start(kind, Starter.PERSON)
         # What the hooks attach is asked of a session that stands, so it is
         # classed at each instruction (`require_instructor`), the first one
         # that wakes the session included.
@@ -183,6 +185,7 @@ class AgentsManagerImpl(AgentsManagerInterface):
             if kind.result_tool is not None and kind.result_tool not in parent.tools:
                 # Its tools are cut to its parent's, so it could never submit.
                 raise ValidationFailed(f"agent session {parent_id} cannot grant {kind.result_tool}")
+            _may_start(kind, Starter.AGENT)
             if kind.share is None:
                 # With no cap of its own, one child could spend all its tree has left.
                 raise ValidationFailed(f"agent kind {kind.name} names no share to spawn it under")
@@ -376,6 +379,9 @@ class AgentsManagerImpl(AgentsManagerInterface):
             )
         if session is None:
             kind = self._kinds.latest(handoff.kind)
+            # Its principal confirms its objective before it starts: a
+            # person's start, which the kind must allow.
+            _may_start(kind, Starter.PERSON)
             await self._create_tree(
                 ctx, tree_for(kind, handoff.id, None, self._clock(), ctx.user_id)
             )
@@ -621,3 +627,11 @@ class AgentsManagerImpl(AgentsManagerInterface):
         """The write has committed; a relay that fails is left to the sweep."""
         if rows:
             await self._relay.relay_all(ctx.org_id, rows)
+
+
+def _may_start(kind: AgentKind, starter: Starter) -> None:
+    """Refused, before anything is made, when `starter` may not start a
+    session of `kind`."""
+    refusal = start_refusal(kind, starter)
+    if refusal is not None:
+        raise ValidationFailed(refusal)

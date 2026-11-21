@@ -34,7 +34,7 @@ from acme.om.agent_steps.types.header import (
     SummaryHeader,
     ToolRequestHeader,
 )
-from acme.om.agents.types.kind import AgentKind, DoneRule, TreeLimits
+from acme.om.agents.types.kind import AgentKind, DoneRule, Starter, TreeLimits
 from acme.om.agents.types.request import Spawn, Start
 from acme.om.attribution.manager import PrincipalContext
 from acme.om.attribution.rules import (
@@ -103,6 +103,7 @@ DELIVERY = AgentKind(
     authority=AuthorityMode.STEADY,
     tree=TreeLimits(height=3, count=4),
     share=Amount(tokens=1_000_000),
+    started_by=frozenset(Starter),
 )
 ASSISTANT = AgentKind(
     name="assistant",
@@ -112,6 +113,7 @@ ASSISTANT = AgentKind(
     authority=AuthorityMode.DELEGATED,
     tree=TreeLimits(height=2, count=2),
     share=Amount(tokens=1_000_000),
+    started_by=frozenset(Starter),
 )
 TOOLS = stand_ins(*DELIVERY.tools, *ASSISTANT.tools)
 OUTWARD = CallReach(outward=True, holds_private=True)

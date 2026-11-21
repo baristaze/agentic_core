@@ -33,7 +33,7 @@ from acme.om.agent_steps.types.header import (
 )
 from acme.om.agents.loop_rules import APPROVAL_UNLOCK
 from acme.om.agents.rules import CHILDREN_PARK
-from acme.om.agents.types.kind import AgentKind, DoneRule
+from acme.om.agents.types.kind import AgentKind, DoneRule, Starter
 from acme.om.agents.types.request import Spawn
 from acme.om.agents.types.run import LoopRun, RunEnd
 from acme.om.attribution.types.authority import AuthorityMode
@@ -70,6 +70,7 @@ RESEARCH = AgentKind(
     done_rule=DoneRule.ANSWER,
     authority=AuthorityMode.DELEGATED,
     share=Amount(cost_micros=50_000_000),
+    started_by=frozenset(Starter),
     prompts=("You test each hypothesis in a sub-agent of its own.",),
     policy=SPAWNING,
 )
