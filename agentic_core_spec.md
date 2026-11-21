@@ -236,8 +236,11 @@ An adopter extends a run without editing the loop, through the loop's
 hooks, which its root wires beside the rest. Once a run, before anything
 renders, the hooks name the toolsets a session holds beyond its kind,
 which the loop folds into the kind. Before the run calls a model, they
-name the steps to append, and no workspace is prepared by then. With
-none wired, the null extends nothing ([Null Objects](#null-objects)).
+name the steps to append, and no workspace is prepared by then. Once
+the run's first call that reaches the workspace has prepared it, and
+before that call runs, they are given it and name the steps to append
+about it, such as what changed in it; a run that reaches no workspace
+never asks. With none wired, the null extends nothing ([Null Objects](#null-objects)).
 
 Its operations take the guideline's context first. A tenant operation
 takes `TenantContext`; a consumer that reads less declares a scope

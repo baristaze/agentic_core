@@ -90,8 +90,9 @@ class LoopWorkspace(LoopCore):
         """The run's workspace, from what the history names: a restore a
         principal or a fork asked for wins; a workspace kept by snapshots
         otherwise starts from its latest, unless something touched it since,
-        and then it stands newer than any snapshot. None once it is
-        prepared; else how the run stopped."""
+        and then it stands newer than any snapshot. Once it is prepared,
+        the steps the hooks append about it are written. None then; else
+        how the run stopped."""
         history = await self._history(run.ctx, run.agent_session_id, history, own=run.own)
         start = rules.pending_restore(history)
         if start is None and run.kind.isolation.durability is Durability.SNAPSHOT:
@@ -105,7 +106,17 @@ class LoopWorkspace(LoopCore):
                 if not (step.seq in run.own and step.type is AgentStepType.ENVIRONMENT_CHANGED)
             ]
             start = rules.kept_snapshot(read, settled=settled)
-        return await self._prepare_from(run, start, settled=settled)
+        stopped = await self._prepare_from(run, start, settled=settled)
+        if stopped is not None:
+            return stopped
+        # What a layer tells the model of the workspace, before the call
+        # that reached it is gated: the model reads it with that call's
+        # answer.
+        assert run.began is not None and run.workspace is not None
+        steps = await self._hooks.workspace_prepared(run.ctx, run.began, run.workspace)
+        if steps:
+            await self._append(run, list(steps))
+        return None
 
     async def _prepare_from(
         self, run: RunState, start: AgentStep | None, *, settled: bool

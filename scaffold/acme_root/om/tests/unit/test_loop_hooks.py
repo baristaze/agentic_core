@@ -16,6 +16,7 @@ from uuid import UUID
 import pytest
 
 from acme.infra.agent_workspaces import (
+    AgentWorkspace,
     Durability,
     EgressMode,
     EgressPolicy,
@@ -80,6 +81,7 @@ ARCHIVE = Toolset(
     name="archive", version=1, summary="The tenant's archive.", tools=("archive_search",)
 )
 CHANGED = "the files under the workspace were rebuilt since your last loop"
+REBUILT = "the workspace was rebuilt from its base since your last loop"
 SETTINGS = Toolset(
     name="settings", version=1, summary="The tenant's settings.", tools=("settings_write",)
 )
@@ -122,25 +124,44 @@ class VaultSync(Lookup):
         return Found(text="synced")
 
 
+def notice(start: LoopStart, text: str) -> AgentStep:
+    """A layer's notice that something changed under the model."""
+    return AgentStep(
+        id=new_id(),
+        created_at=utcnow(),
+        agent_session_id=start.agent_session.id,
+        loop_id=start.loop_id,
+        type=AgentStepType.ENVIRONMENT_CHANGED,
+        actor=Actor.ENGINE,
+        origin=Origin.ENGINE,
+        header=MarkHeader(),
+        content=Content(blocks=(TextBlock(text=text),)),
+    )
+
+
 class Layer(LoopHooksInterface):
     """A layer's hooks: what it attaches to every session, a renewal it runs
-    at a new loop under the run's epoch, and a step it appends before each
-    run's first call when something changed. `refuses` stands for a renewal
-    that finds no fill for the session."""
+    at a new loop under the run's epoch, a step it appends before each
+    run's first call when something changed, and one it appends once the
+    run's workspace is prepared when something changed in it. `refuses`
+    stands for a renewal that finds no fill for the session."""
 
     def __init__(
         self,
         attached: AttachedToolsets = NO_ATTACHED_TOOLSETS,
         *,
         changed: str | None = None,
+        rebuilt: str | None = None,
         refuses: bool = False,
     ) -> None:
         self.attached = attached
         self.changed = changed
+        self.rebuilt = rebuilt
         self.refuses = refuses
         self.asked: list[UUID] = []
         self.starts: list[LoopStart] = []
         self.renewed: list[tuple[UUID, int]] = []
+        self.prepared: list[tuple[LoopStart, AgentWorkspace]] = []
 
     async def attached_toolsets(
         self, ctx: TenantContext, agent_session: AgentSession
@@ -154,20 +175,13 @@ class Layer(LoopHooksInterface):
             if self.refuses:
                 raise UnresolvedRole("no fill serves the main role any longer")
             self.renewed.append((start.loop_id, start.epoch))
-        if self.changed is None:
-            return ()
-        changed = AgentStep(
-            id=new_id(),
-            created_at=utcnow(),
-            agent_session_id=start.agent_session.id,
-            loop_id=start.loop_id,
-            type=AgentStepType.ENVIRONMENT_CHANGED,
-            actor=Actor.ENGINE,
-            origin=Origin.ENGINE,
-            header=MarkHeader(),
-            content=Content(blocks=(TextBlock(text=self.changed),)),
-        )
-        return (changed,)
+        return () if self.changed is None else (notice(start, self.changed),)
+
+    async def workspace_prepared(
+        self, ctx: TenantContext, start: LoopStart, workspace: AgentWorkspace
+    ) -> Sequence[AgentStep]:
+        self.prepared.append((start, workspace))
+        return () if self.rebuilt is None else (notice(start, self.rebuilt),)
 
 
 class ChildLayer(Layer):
@@ -427,6 +441,43 @@ async def test_a_notice_a_layer_appends_before_the_first_call_leaves_the_snapsho
     assert snapshotted[-1].header.snapshot.size == len(b"as the first run left it"), (
         "the second run started from the first run's snapshot"
     )
+
+
+async def test_a_layer_is_told_of_a_prepared_workspace_before_the_call_that_reached_it_runs(
+    tmp_path: Path,
+) -> None:
+    """A layer's hook on the prepared workspace is asked once its first
+    call has prepared it, and its steps are written before that call runs,
+    so the model reads them with its answer. A run that reaches no
+    workspace prepares none, and the hook is never asked."""
+    layer = Layer(rebuilt=REBUILT)
+    hands = KEEPER.model_copy(update={"name": "hands", "tools": ("slow", "ledger")})
+    loop = loop_over(
+        tmp_path, kinds=(ASSISTANT, hands), hooks=layer, extra=(Lookup("ledger", workspace=False),)
+    )
+    agent_session_id = await loop.start(hands.name)
+    await loop.say(agent_session_id, "What does the ledger say?")
+    loop.anthropic.add(reply(call("ledger", q="the total")), reply(said("It is 12.")))
+    assert (await loop.loops.run(loop.owner, agent_session_id)).outcome is LoopOutcome.SUCCEEDED
+    assert layer.prepared == [], "a run that reaches no workspace is never asked"
+
+    await loop.say(agent_session_id, "Find it in the workspace.")
+    loop.anthropic.add(reply(use("slow")), reply(said("Found.")))
+    slow = loop.tools["slow"]
+    running = asyncio.ensure_future(loop.loops.run(loop.owner, agent_session_id))
+    await slow.started.wait()
+    held = await loop.history(agent_session_id)
+    assert [s.as_text() for s in held if s.type is AgentStepType.ENVIRONMENT_CHANGED] == [
+        REBUILT
+    ], "written before the call that reached the workspace ran"
+    slow.release.set()
+    done = await running
+
+    assert done.outcome is LoopOutcome.SUCCEEDED
+    ((start, workspace),) = layer.prepared
+    assert (start.loop_id, start.epoch) == (done.loop_id, done.epoch), "told of its own run"
+    assert workspace.id == agent_session_id and workspace.spec == hands.isolation
+    assert REBUILT in text_of(loop.anthropic.calls[-1]), "the model read it with the answer"
 
 
 async def test_a_workspace_that_holds_an_attached_tools_secret_keeps_no_snapshot(

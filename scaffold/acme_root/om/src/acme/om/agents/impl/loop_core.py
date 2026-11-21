@@ -35,6 +35,7 @@ from acme.om.agents.hooks import (
     NO_ATTACHED_TOOLSETS,
     AttachedToolsets,
     LoopHooksInterface,
+    LoopStart,
 )
 from acme.om.agents.sink import StreamSinkInterface
 from acme.om.agents.types.kind import AgentKind, AgentKindCatalog
@@ -121,6 +122,9 @@ class RunState:
     # The policy layers of the kinds above the session in its tree, nearest
     # first: each of its calls is decided under them as under its own kind's.
     above: tuple[ToolPolicyLayer, ...] = ()
+    # The run as its hooks were told it before its first model call; the
+    # hooks are told it again, with the workspace, once one is prepared.
+    began: LoopStart | None = None
     # Prepared at the first call that reaches it, and None until then: a
     # run that makes no such call holds none, and snapshots none.
     workspace: AgentWorkspace | None = None

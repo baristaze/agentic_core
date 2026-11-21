@@ -178,6 +178,7 @@ class LoopManagerImpl(
         except (UnresolvedRole, UnpricedModel) as refused:
             log.warning("session %s resolves no fill: %s", run.agent_session_id, refused.message)
             return await self._end(run, LoopOutcome.ERRORED)
+        run.began = start
         if steps:
             await self._append(run, list(steps))
         return None

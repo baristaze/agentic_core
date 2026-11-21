@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 
+from acme.infra.agent_workspaces import AgentWorkspace
 from acme.infra.base import QuietNull
 from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.agent_steps.types.agent_step import AgentStep
@@ -14,7 +15,8 @@ from acme.om.context import TenantContext
 
 class LoopHooksNullImpl(LoopHooksInterface, QuietNull):
     """The hooks of a root that wired none: every session holds its kind's
-    tools, and nothing is appended before a run's first call."""
+    tools, and nothing is appended before a run's first call or once its
+    workspace is prepared."""
 
     async def attached_toolsets(
         self, ctx: TenantContext, agent_session: AgentSession
@@ -22,4 +24,9 @@ class LoopHooksNullImpl(LoopHooksInterface, QuietNull):
         return NO_ATTACHED_TOOLSETS
 
     async def before_first_call(self, ctx: TenantContext, start: LoopStart) -> Sequence[AgentStep]:
+        return ()
+
+    async def workspace_prepared(
+        self, ctx: TenantContext, start: LoopStart, workspace: AgentWorkspace
+    ) -> Sequence[AgentStep]:
         return ()

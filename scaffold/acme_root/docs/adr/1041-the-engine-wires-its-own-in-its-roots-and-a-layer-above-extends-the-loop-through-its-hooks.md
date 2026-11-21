@@ -43,8 +43,11 @@ them for the steps to append, under the run's epoch, and tells them
 whether the loop is new: whether it has made no model call yet, so a loop whose first run
 parked before its first call is still new to the run that takes it up.
 A refusal of the session's fill there ends the loop errored, as
-the loop's own resolve does. With no hooks wired, the null extends
-nothing.
+the loop's own resolve does. Once the run's first call that reaches the
+workspace has prepared it, and before that call is gated, it gives them
+the workspace and asks for the steps to append about it: what changed in
+it since the session's last loop, say. A run that reaches no workspace
+never asks. With no hooks wired, the null extends nothing.
 
 **The loop is split by concern behind one class.** The model turn, the
 tool turn with its jobs, parks and waits, recovery after a lost run,

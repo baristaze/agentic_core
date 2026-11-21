@@ -56,9 +56,14 @@ a call a park the loop wrote held open never ran. A call an earlier run
 made counts whatever run answered it, a job's included; a notice the
 run's own hooks wrote before its workspace was prepared does not.
 
-**The loop hooks receive no workspace.** `LoopStart` holds the session,
-the kind, the epoch, the loop, and whether the loop is new. A layer that
-must look into the workspace does so through a tool's call.
+**The hooks are told of the workspace once it is prepared.** `LoopStart`
+holds the session, the kind, the epoch, the loop, and whether the loop
+is new, and no workspace. Once the run's first call that reaches the
+workspace has prepared it, the loop asks the hooks' `workspace_prepared`,
+given the run's `LoopStart` and the workspace, for the steps to append,
+and writes them before that call is gated: a layer tells the model what
+changed in the workspace there, and the model reads it with the call's
+answer. A run that reaches no workspace never asks.
 
 ## Consequences
 
@@ -69,7 +74,8 @@ must look into the workspace does so through a tool's call.
   reach, a base's setup, is learned at the first call that reaches the
   workspace, after model calls were spent, and ends or parks the loop
   there.
-- Every workspace provider implements `check`, a layer's own included.
+- Every workspace provider implements `check`, a layer's own included,
+  and every layer's hooks implement `workspace_prepared`.
 - A tool that runs a command or touches a file and declares that its
   calls reach no workspace is refused by the transport, loudly.
 - A restore a principal or a fork asked for, and a restore lost, is
