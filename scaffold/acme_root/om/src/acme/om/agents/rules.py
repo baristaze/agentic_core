@@ -18,12 +18,14 @@ from acme.om.agents.types.kind import (
     REQUEST_STEPS,
     REQUEST_TIME,
     AgentKind,
+    AgentKindCatalog,
     DoneRule,
     RunsIn,
 )
 from acme.om.agents.types.report import Report
 from acme.om.agents.types.result import Claim, Result, Turn
 from acme.om.agents.types.tree import AgentTree
+from acme.om.exceptions import UnknownAgentKind
 from acme.om.tools.rules import decide, with_reach
 from acme.om.tools.types.policy import Decision, ToolPolicyCall, ToolPolicyLayer
 from acme.om.tools.types.tool import ToolClass, ToolMode, ToolSpec
@@ -189,6 +191,16 @@ def request_kind_refusal(
         if (breaches := request_kind_breaches(kind, specs, ceilings))
     ]
     return " | ".join(refused) or None
+
+
+def runs_in_request(kinds: AgentKindCatalog, session: AgentSession) -> bool:
+    """Whether the session's loop runs in the request that asks it, as its
+    kind says at every version. A kind the catalog no longer holds ran in a
+    worker."""
+    try:
+        return kinds.latest(session.kind).runs_in is RunsIn.REQUEST
+    except UnknownAgentKind:
+        return False
 
 
 def request_end_cause(park: Park | None, run_time: timedelta) -> str:

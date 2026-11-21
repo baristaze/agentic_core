@@ -16,7 +16,6 @@ from acme.integrations.root import IntegrationsInterface
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.impl.manager import AgentSessionsManagerImpl, AgentSessionsOptions
 from acme.om.agent_sessions.kinds import AGENT_SESSION_WAITER
-from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.agent_steps import AgentStepsManagerInterface
 from acme.om.agent_steps.impl.manager import AgentStepsManagerImpl, AgentStepsOptions
 from acme.om.agent_steps.storage import AgentStepStorageInterface
@@ -30,9 +29,9 @@ from acme.om.agents.impl.manager import AgentsManagerImpl, AgentsOptions
 from acme.om.agents.impl.sink import StreamSinkNullImpl
 from acme.om.agents.impl.waiter import AgentSessionWaiterImpl
 from acme.om.agents.loop import LoopManagerInterface
-from acme.om.agents.rules import request_kind_refusal
+from acme.om.agents.rules import request_kind_refusal, runs_in_request
 from acme.om.agents.sink import StreamSinkInterface
-from acme.om.agents.types.kind import AgentKind, AgentKindCatalog, RunsIn
+from acme.om.agents.types.kind import AgentKind, AgentKindCatalog
 from acme.om.attribution import AttributionManagerInterface, PrincipalContext
 from acme.om.attribution.impl.manager import (
     AttributionManagerImpl,
@@ -42,7 +41,7 @@ from acme.om.attribution.impl.manager import (
 from acme.om.base import utcnow
 from acme.om.change_events import ChangeEventsManagerInterface
 from acme.om.context import TenantContext
-from acme.om.exceptions import NotFound, UnknownAgentKind, UnsafeConfiguration
+from acme.om.exceptions import NotFound, UnsafeConfiguration
 from acme.om.language_models.impl.credentials import CallCredentialsPlatformImpl
 from acme.om.language_models.impl.manager import LanguageModelsManagerImpl, LanguageModelsOptions
 from acme.om.language_models.impl.prices import ModelPricesFromPricingImpl
@@ -194,16 +193,6 @@ class AgentRootOptions:
     loop_options: LoopOptions | None = None
     loop_hooks: LoopHooksInterface | None = None
     environment: str = LOCAL
-
-
-def runs_in_request(kinds: AgentKindCatalog, session: AgentSession) -> bool:
-    """Whether the session's loop runs in the request that asks it, as its
-    kind says at every version. A kind the catalog no longer holds ran in a
-    worker."""
-    try:
-        return kinds.latest(session.kind).runs_in is RunsIn.REQUEST
-    except UnknownAgentKind:
-        return False
 
 
 def refuse_quiet_spend(environment: str, *capabilities: object) -> None:
