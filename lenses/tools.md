@@ -438,20 +438,15 @@ environment with no
 ## TOL-15 A snapshot is kept whole, trusted by its hash, and holds no credential
 
 **Principle.** A provider that can snapshots a workspace whole: all its
-commands could write, or, for a VM that starts from its base, its
-directory alone. One that cannot refuses a snapshot, and a spec asking
-for one, before anything runs. The run that holds a `snapshot`
-workspace snapshots it at its end, and lets the instance go only once a
-snapshot holds it. A snapshot is sealed under its session's key, stored
-under a keyed hash, and named by a `snapshotted` step that says what it
-holds; a VM's directory is packed in the VM, held to a size bound before
-any part leaves it, and kept in parts, each sealed and hashed on its
-own, named by a manifest. A restore trusts its bytes only by those
-hashes, and replaces the workspace whole: a VM's starts a new VM on the
-base, and its notice tells the model the rest is the base's again. One
-that cannot load parks the loop once, and touches nothing kept. The
-broker detaches its credentials first; an injected secret's value
-refuses a snapshot. A fork copies its parent's workspace at the spawn.
+commands could write, or a VM's directory, as each VM starts on its base.
+One that cannot refuses a snapshot before anything runs. The run
+that holds a `snapshot` workspace snapshots it at its end, and lets the
+instance go only once a snapshot holds it. A snapshot is sealed under
+its session's key, stored under a keyed hash, and named by a
+`snapshotted` step; a VM's directory is held to a bound, then kept in
+parts, each sealed and hashed. A restore trusts only those hashes and
+replaces the workspace whole; one that cannot load parks the loop once.
+It never holds a credential or an injected secret's value.
 
 **Source.** Workspace Snapshots.
 
@@ -483,8 +478,7 @@ that replaces the archive it read, or one that leaves a half-restored VM.
 **Severity.** high
 
 **Shape.**
-`scaffold/acme_root/infra/src/acme/infra/agent_workspaces/container.py`,
-`scaffold/acme_root/infra/src/acme/infra/agent_workspaces/vm.py`, and
+`scaffold/acme_root/infra/src/acme/infra/agent_workspaces/vm.py` and
 `scaffold/acme_root/om/src/acme/om/tools/impl/snapshots.py`
 
 **Check.** review

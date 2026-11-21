@@ -985,9 +985,9 @@ capabilities in the guideline's sense ([Infrastructure][g-infra]):
   its idempotency key can answer its outcome after a crash.
 
 A VM workspace runs on **VMs**, a third capability: it starts a VM
-from an image or from a snapshot, runs a command in it, stops
-it, snapshots its disk for a base, and destroys it. It says up front what it can
-hold: whether its host has a hypervisor, the egress it closes from
+from an image or from a snapshot, runs a command in it, stops it,
+snapshots its disk for a base, and destroys it. It says up front what it
+can hold: whether its host has a hypervisor, the egress it closes from
 outside a guest, and the limits it enforces. One VM serves one
 workspace, and the agent's commands may run containers inside it. A
 laptop's own hypervisor runs them, or a cloud's VMs, behind the same
