@@ -5,15 +5,16 @@ included, stay on its GitHub release. Releases are tagged
 `vMAJOR.MINOR.PATCH`; see `CONTRIBUTING.md` for what bumps which
 number.
 
-## 0.26.1 (2026-11-21)
+## 0.27.0 (2026-11-21)
 
-No worker runs a kind's loop that runs in the request that asks it.
-Patch.
+A layer's loop hook may refuse a session's workspace before the first
+model call, and the loop ends naming the refusal's cause. Minor.
 
-### Fixed
+### Added
 
-- The session runner completes a loop item for a session whose kind
-  runs its loop in the request, without running it, so a loop its
-  request bounds is never taken up by a worker, as ADR 1044 says. The
-  runner's container keeps the kind catalog its managers are built from
-  (#141).
+- `before_first_call` may raise the session's workspace refusal
+  (`IsolationRefused`). The run stops before any model call, with
+  nothing prepared, as on a refused spec: a refusal that cannot clear
+  ends the loop `errored`, its cause on the step that ends it, and one
+  that clears parks the loop on the resource. The spec's hooks
+  paragraph, the hooks' contract, and ADRs 1041 and 1043 say so (#143).
