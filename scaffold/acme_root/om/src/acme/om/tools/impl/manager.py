@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from datetime import datetime, timedelta
@@ -9,14 +10,17 @@ from pydantic import Field, ValidationError
 
 from acme.infra.agent_workspaces import (
     AgentWorkspace,
+    AgentWorkspaceDirectoryInterface,
     AgentWorkspaceLost,
     AgentWorkspaceProviderInterface,
+    DirectoryPack,
     Durability,
     IsolationMode,
     IsolationRefused,
     IsolationSpec,
     SnapshotRefused,
 )
+from acme.infra.buckets import MIB, PART_BYTES
 from acme.infra.exceptions import InfraException
 from acme.infra.transports import (
     CredentialBrokerInterface,
@@ -34,6 +38,7 @@ from acme.om.agent_steps.types.header import (
     ControlCommand,
     ControlHeader,
     DecidedCall,
+    SnapshotHolds,
     ToolFailure,
     ToolRequestHeader,
 )
@@ -103,6 +108,8 @@ from acme.om.tools.types.tool import ToolInput, ToolMode
 
 log = logging.getLogger(__name__)
 
+GIB = 1024 * MIB
+
 CREATED = "tools.tool_policy.created"
 UPDATED = "tools.tool_policy.updated"
 SECRET_USED = "tools.secret.used"
@@ -126,6 +133,11 @@ class ToolsOptions(OmBase):
     # The most a workspace base's build takes, its setup's commands together;
     # its claim holds as long, so a build lost with its process is made again.
     base_build_limit: timedelta = timedelta(minutes=30)
+    # The most a snapshot of a workspace's directory alone holds, packed:
+    # one past it is refused before any part is read. Each part it is kept in
+    # holds `snapshot_part_bytes`, but the last.
+    directory_bound: int = Field(default=4 * GIB, gt=0)
+    snapshot_part_bytes: int = Field(default=PART_BYTES, gt=0)
 
 
 class ToolsManagerImpl(ToolsManagerInterface):
@@ -232,6 +244,8 @@ class ToolsManagerImpl(ToolsManagerInterface):
                     cause="a session with no workspace starts from no snapshot",
                 )
             return AgentWorkspace.absent(ctx.org_id, agent_session_id)
+        if restore is not None and restore.holds is SnapshotHolds.DIRECTORY:
+            return await self._restore_directory(ctx, agent_session_id, spec, restore)
         # Its bytes are trusted by their hash before the provider sees them:
         # a snapshot that does not match starts nothing.
         archive = (
@@ -249,15 +263,49 @@ class ToolsManagerImpl(ToolsManagerInterface):
         except InfraException as lost:
             if base is None or lost.code != AgentWorkspaceLost.code:
                 raise
-            # A base this host cannot bring in, such as one on an image this
-            # host cannot pull, holds nothing of the session's: it is built
-            # again, and the loop asks again once it is.
-            await self._bases.drop(ctx, spec)
-            raise IsolationRefused(
-                f"the workspace base is built again: {lost.message}",
-                clears=True,
-                cause="the workspace base is built again",
-            ) from lost
+            raise await self._base_lost(ctx, spec, lost) from lost
+
+    async def _restore_directory(
+        self,
+        ctx: TenantContext,
+        agent_session_id: UUID,
+        spec: IsolationSpec,
+        restore: AgentWorkspaceSnapshot,
+    ) -> AgentWorkspace:
+        """The workspace on a new instance on its base, its directory what
+        the snapshot `restore` holds. The manifest is trusted by its hash
+        before anything is replaced, and each part as it is read: one that
+        does not match loses the workspace, and nothing kept is touched."""
+        directory = self._agent_workspaces.directory()
+        if directory is None:
+            raise AgentWorkspaceLost(
+                f"snapshot {restore.id} holds a directory alone, which no instance here starts from"
+            )
+        manifest = await self._snapshots.manifest(ctx, agent_session_id, restore)
+        # Everything outside the directory comes from the base again.
+        base = None
+        if spec.base is not None and spec.base.setup:
+            base = await self._bases.archive(ctx, spec)
+        parts = _Watched(self._snapshots.parts(ctx, agent_session_id, manifest))
+        try:
+            return await directory.restore(ctx.org_id, agent_session_id, spec, parts, base=base)
+        except InfraException as lost:
+            if base is None or lost.code != AgentWorkspaceLost.code or parts.failed:
+                raise
+            raise await self._base_lost(ctx, spec, lost) from lost
+
+    async def _base_lost(
+        self, ctx: TenantContext, spec: IsolationSpec, lost: InfraException
+    ) -> IsolationRefused:
+        """A base this host cannot bring in, such as one on an image this host
+        cannot pull, holds nothing of the session's: it is built again, and
+        the loop asks again once it is."""
+        await self._bases.drop(ctx, spec)
+        return IsolationRefused(
+            f"the workspace base is built again: {lost.message}",
+            clears=True,
+            cause="the workspace base is built again",
+        )
 
     async def release_agent_workspace(self, ctx: TenantContext, workspace: AgentWorkspace) -> None:
         ctx.require(Permission.WRITE)
@@ -276,14 +324,34 @@ class ToolsManagerImpl(ToolsManagerInterface):
     ) -> AgentStep:
         ctx.require(Permission.WRITE)
         archive = await self._take(ctx, agent_session_id, workspace, tools)
-        return await self._name(
-            ctx, agent_session_id, workspace, archive, epoch=epoch, loop_id=loop_id
-        )
+        try:
+            return await self._name(
+                ctx, agent_session_id, workspace, archive, epoch=epoch, loop_id=loop_id
+            )
+        finally:
+            if isinstance(archive, DirectoryPack):
+                await self._drop(archive)
 
     async def fork_snapshot(
         self, ctx: TenantContext, child_id: UUID, snapshot_id: UUID, taken: TakenSnapshot
     ) -> AgentWorkspaceSnapshot:
         ctx.require(Permission.WRITE)
+        if isinstance(taken.archive, DirectoryPack):
+            # The child's own parts, read from the pack the spawn took and
+            # sealed under its key, so neither session's purge nor revocation
+            # reaches the other's. The pack goes once they are kept.
+            pack = taken.archive
+            try:
+                return await self._snapshots.keep_parts(
+                    ctx,
+                    child_id,
+                    snapshot_id,
+                    taken.agent_workspace_id,
+                    pack.size,
+                    lambda part_bytes: self._directory().read(pack, part_bytes),
+                )
+            finally:
+                await self._drop(pack)
         # The child's own copy: what the provider keeps outside the archive,
         # such as a disk, is copied under the child's workspace, so neither
         # session's purge nor revocation reaches the other's.
@@ -317,9 +385,11 @@ class ToolsManagerImpl(ToolsManagerInterface):
         agent_session_id: UUID,
         workspace: AgentWorkspace,
         tools: Sequence[ToolInterface],
-    ) -> bytes:
-        """The live workspace's archive, refused before anything runs when
-        there is none to take or the session keeps no content at rest. No
+    ) -> bytes | DirectoryPack:
+        """The live workspace's archive, or its directory's pack where its
+        provider keeps the directory alone, refused before anything runs
+        when there is none to take or the session keeps no content at rest.
+        A pack past the bound is refused before any byte of it is read. No
         credential is in it: the broker takes back all it attached there,
         one a lost run never took back included, and an injected secret's
         value a command wrote there refuses it, one a tool of `tools`, the
@@ -328,13 +398,23 @@ class ToolsManagerImpl(ToolsManagerInterface):
             raise SnapshotRefused(f"agent session {agent_session_id} has no workspace to snapshot")
         await self._snapshots.at_rest(ctx, agent_session_id)
         await self._broker.detach_all(workspace)
+        also = injected_secrets(tool.spec for tool in tools)
+        directory = self._agent_workspaces.directory()
+        if directory is not None:
+            pack = await directory.pack(workspace)
+            try:
+                self._snapshots.bounded(pack.size)
+                async with contextlib.aclosing(
+                    directory.read(pack, self._snapshots.part_bytes)
+                ) as held:
+                    await self._snapshots.scan(ctx, held, also=also)
+            except BaseException:
+                await self._drop(pack)
+                raise
+            return pack
         archive = await self._agent_workspaces.snapshot(workspace)
         try:
-            await self._snapshots.scan(
-                ctx,
-                self._agent_workspaces.held(archive),
-                also=injected_secrets(tool.spec for tool in tools),
-            )
+            await self._snapshots.scan(ctx, self._agent_workspaces.held(archive), also=also)
         except BaseException:
             # Refused, so nothing of it stays: a disk its provider keeps
             # apart, one that holds a secret's value included, goes too.
@@ -347,21 +427,33 @@ class ToolsManagerImpl(ToolsManagerInterface):
         ctx: TenantContext,
         agent_session_id: UUID,
         workspace: AgentWorkspace,
-        archive: bytes,
+        archive: bytes | DirectoryPack,
         *,
         epoch: int,
         loop_id: UUID,
     ) -> AgentStep:
         """`archive` kept as the session's snapshot, and the `snapshotted`
-        step that names it, appended under the run's epoch."""
-        try:
-            kept = await self._snapshots.keep(
-                ctx, agent_session_id, new_id(), workspace.id, archive
+        step that names it, appended under the run's epoch. A directory's
+        pack is kept in parts, and stays for its caller to drop."""
+        if isinstance(archive, DirectoryPack):
+            pack = archive
+            kept = await self._snapshots.keep_parts(
+                ctx,
+                agent_session_id,
+                new_id(),
+                workspace.id,
+                pack.size,
+                lambda part_bytes: self._directory().read(pack, part_bytes),
             )
-        except BaseException:
-            # Not kept, so nothing of it stays, a disk kept apart included.
-            await self._agent_workspaces.discard(archive)
-            raise
+        else:
+            try:
+                kept = await self._snapshots.keep(
+                    ctx, agent_session_id, new_id(), workspace.id, archive
+                )
+            except BaseException:
+                # Not kept, so nothing of it stays, a disk kept apart included.
+                await self._agent_workspaces.discard(archive)
+                raise
         step = snapshotted_step(new_id(), self._clock(), agent_session_id, loop_id, kept)
         (stored,) = await self._steps.append_agent_steps(ctx, agent_session_id, epoch, [step])
         return stored
@@ -383,10 +475,30 @@ class ToolsManagerImpl(ToolsManagerInterface):
         archive = await self._take(ctx, agent_session_id, workspace, registry.tools())
         kept = workspace.spec.durability is Durability.SNAPSHOT
         if kept:
-            await self._name(
-                ctx, agent_session_id, workspace, archive, epoch=epoch, loop_id=request.loop_id
-            )
+            try:
+                await self._name(
+                    ctx, agent_session_id, workspace, archive, epoch=epoch, loop_id=request.loop_id
+                )
+            except BaseException:
+                if isinstance(archive, DirectoryPack):
+                    await self._drop(archive)
+                raise
         return TakenSnapshot(agent_workspace_id=workspace.id, archive=archive, kept=kept)
+
+    def _directory(self) -> AgentWorkspaceDirectoryInterface:
+        directory = self._agent_workspaces.directory()
+        if directory is None:
+            raise SnapshotRefused("no provider here keeps a workspace's directory alone")
+        return directory
+
+    async def _drop(self, pack: DirectoryPack) -> None:
+        """A directory's pack removed from its instance, once it is kept or
+        refused. One that cannot be goes with the instance's next restore,
+        or its purge."""
+        try:
+            await self._directory().drop(pack)
+        except Exception:
+            log.warning("the pack %s stays in its instance", pack.path, exc_info=True)
 
     # A call.
 
@@ -878,6 +990,26 @@ class ToolsManagerImpl(ToolsManagerInterface):
         """The write has committed; a relay that fails is left to the sweep."""
         if rows:
             await self._relay.relay_all(ctx.org_id, rows)
+
+
+class _Watched:
+    """The parts of a restore, read through, so its caller can tell an error
+    of theirs from one of the provider's."""
+
+    def __init__(self, parts: AsyncIterator[bytes]) -> None:
+        self._parts = parts
+        self.failed = False
+
+    def __aiter__(self) -> AsyncIterator[bytes]:
+        return self._read()
+
+    async def _read(self) -> AsyncIterator[bytes]:
+        try:
+            async for part in self._parts:
+                yield part
+        except Exception:
+            self.failed = True
+            raise
 
 
 def _header(request: AgentStep) -> ToolRequestHeader:

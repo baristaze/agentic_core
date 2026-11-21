@@ -49,6 +49,7 @@ from uuid import UUID
 
 from acme.infra.agent_workspaces import (
     AgentWorkspace,
+    AgentWorkspaceDirectoryInterface,
     AgentWorkspaceProviderInterface,
     EgressMode,
     IsolationMode,
@@ -467,6 +468,9 @@ class AgentWorkspaceAccountImpl(AgentWorkspaceProviderInterface):
         return AgentWorkspace(
             id=agent_workspace_id, org_id=org_id, spec=spec, location=str(job / HOME)
         )
+
+    def directory(self) -> AgentWorkspaceDirectoryInterface | None:
+        return None  # it snapshots nothing
 
     async def snapshot(self, workspace: AgentWorkspace) -> bytes:
         raise SnapshotRefused(f"an account workspace cannot be snapshotted: {UNKEPT}")

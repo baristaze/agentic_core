@@ -11,6 +11,7 @@ from uuid import UUID
 
 from acme.infra.agent_workspaces import (
     AgentWorkspace,
+    AgentWorkspaceDirectoryInterface,
     AgentWorkspaceLost,
     AgentWorkspaceProviderInterface,
     EgressMode,
@@ -177,6 +178,9 @@ class AgentWorkspaceContainerImpl(AgentWorkspaceProviderInterface):
         else:
             await self._start(workspace, self._named_image(spec), building=building)
         return workspace
+
+    def directory(self) -> AgentWorkspaceDirectoryInterface | None:
+        return None  # its snapshot keeps the container whole
 
     async def snapshot(self, workspace: AgentWorkspace) -> bytes:
         name = workspace.location

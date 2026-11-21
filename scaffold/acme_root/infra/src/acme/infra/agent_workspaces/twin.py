@@ -3,6 +3,7 @@ from uuid import UUID
 
 from acme.infra.agent_workspaces import (
     AgentWorkspace,
+    AgentWorkspaceDirectoryInterface,
     AgentWorkspaceProviderInterface,
     EgressMode,
     IsolationMode,
@@ -62,6 +63,9 @@ class AgentWorkspaceTwinImpl(AgentWorkspaceProviderInterface):
             location=f"twin:{agent_workspace_id.hex}",
         )
 
+    def directory(self) -> AgentWorkspaceDirectoryInterface | None:
+        return None  # its snapshot keeps the workspace whole
+
     async def snapshot(self, workspace: AgentWorkspace) -> bytes:
         if workspace.id not in self.live:
             raise SnapshotRefused(f"workspace {workspace.id} holds no instance to snapshot")
@@ -113,6 +117,9 @@ class AgentWorkspaceNullImpl(AgentWorkspaceProviderInterface):
     ) -> AgentWorkspace:
         why = f"this process prepares no workspace; a {spec.mode.value} workspace is refused"
         raise IsolationRefused(why, cause=why)
+
+    def directory(self) -> AgentWorkspaceDirectoryInterface | None:
+        return None  # it snapshots nothing
 
     async def snapshot(self, workspace: AgentWorkspace) -> bytes:
         raise SnapshotRefused("this process prepares no workspace, so it snapshots none")
