@@ -17,12 +17,10 @@ over it: prompts, a tool registry, model roles, a done rule, a result
 contract and gate, an authority mode, and default bounds. A kind is
 versioned. A session pins its kind version as it pins its fill set; an
 upgrade happens at a loop boundary and is recorded as a `switched` step.
-Each kind is a folder of its own, beside the others: a module of typed
-constants, one per version, and each version's prompt in a Markdown
-file the constant reads. A lock pins each released prompt by digest,
-and a check refuses a missing file, a file no version reads, a prompt
-past its bound, and a released prompt changed in place, each by its
-file.
+Each kind is a folder: typed constants, one per version, and each
+version's prompt in a Markdown file. A lock pins each released prompt
+by digest; a check refuses a missing file, an orphan file, a prompt
+past its bound, and a released prompt changed in place.
 
 **Source.** Agent Kinds and Sub-Agents, Agent Kinds.
 
@@ -225,13 +223,13 @@ writes before it refuses; how the stream frames the model's text and
 when it pings; what a caller that goes away leaves running.
 
 **Violation.** A request kind published with a workspace, a spawn-class
-or job tool, an agent among those who may start it, a tool its own policy holds for a person, a step guard
-past 10, or a run time past 30 seconds; versions of one kind that run
-in different places; a request kind's loop that writes a `parked` step
-or yields; a `LOOP` or wake row for its session; a question a
-participant or a non-member asks that lands a step; the model's text
-written into an event unescaped; a loop that outlives the request that
-ran it.
+or job tool, an agent among those who may start it, a tool its own
+policy holds for a person, a step guard past 10, or a run time past 30
+seconds; versions of one kind that run in different places; a request
+kind's loop that writes a `parked` step or yields; a `LOOP` or wake row
+for its session; a question a participant or a non-member asks that
+lands a step; the model's text written into an event unescaped; a loop
+that outlives the request that ran it.
 
 **Severity.** high
 

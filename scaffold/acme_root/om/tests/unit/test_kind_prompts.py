@@ -4,6 +4,7 @@ under a released version, a missing file, a file no version reads, and a
 prompt past its bound are each refused, naming the file."""
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -89,7 +90,7 @@ def test_a_referenced_prompt_file_missing_is_refused(tmp_path: Path) -> None:
     released = version(folder, 1)
     (folder / PROMPTS / "v1.md").unlink()
 
-    with pytest.raises(UnsafeConfiguration, match="ledger/prompts/v1.md: no such prompt file"):
+    with pytest.raises(UnsafeConfiguration, match=re.escape("ledger/prompts/v1.md: no such")):
         version(folder, 1)
     assert prompt_breaches(folder, (released,)) == ("ledger/prompts/v1.md: no such prompt file",)
 
@@ -108,7 +109,7 @@ def test_a_prompt_past_its_bound_is_refused(tmp_path: Path) -> None:
     (folder / PROMPTS / "v1.md").write_text("x" * (MAX_PROMPT + 1), encoding="utf-8")
 
     past = f"ledger/prompts/v1.md: {MAX_PROMPT + 1} characters, past the bound of {MAX_PROMPT}"
-    with pytest.raises(UnsafeConfiguration, match=past):
+    with pytest.raises(UnsafeConfiguration, match=re.escape(past)):
         version(folder, 1)
     assert prompt_breaches(folder, (released,)) == (past,)
 
