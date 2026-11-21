@@ -341,7 +341,7 @@ async def test_a_renewal_that_finds_no_fill_ends_the_loop_before_any_call(tmp_pa
     assert loop.anthropic.calls == [], "nothing is spent on a loop with no fill"
 
 
-PLACEMENT = "the egress the agent's allowlist asks for is one its placement never holds"
+REFUSED_CAUSE = "the egress the session's spec asks for is one this layer never grants"
 
 
 async def refused_by_its_layer(
@@ -352,7 +352,9 @@ async def refused_by_its_layer(
     infra = InfraLocalImpl(tmp_path)
     twin = infra.get_agent_workspaces()
     assert isinstance(twin, AgentWorkspaceTwinImpl)
-    refusal = IsolationRefused("placement p-3 closes egress", clears=clears, cause=PLACEMENT)
+    refusal = IsolationRefused(
+        "the layer grants this session no egress", clears=clears, cause=REFUSED_CAUSE
+    )
     layer = Layer(refusal=refusal)
     loop = loop_over(tmp_path, kinds=(ASSISTANT, DELIVERY, KEEPER), infra=infra, hooks=layer)
     agent_session_id = await loop.start(KEEPER.name)
@@ -378,7 +380,7 @@ async def test_a_workspace_the_hooks_refuse_ends_the_loop_before_any_call_naming
 
     assert (ran.end, ran.outcome, ran.park) == (RunEnd.ENDED, LoopOutcome.ERRORED, None)
     ended = history[-1]
-    assert isinstance(ended.header, LoopEndedHeader) and ended.header.cause == PLACEMENT
+    assert isinstance(ended.header, LoopEndedHeader) and ended.header.cause == REFUSED_CAUSE
     assert twin.live == set() and layer.prepared == [], "nothing was prepared"
 
 
@@ -393,7 +395,7 @@ async def test_a_workspace_the_hooks_refuse_until_it_clears_parks_the_loop_on_it
     assert (ran.park.reason, ran.park.unlock, ran.park.cause) == (
         ParkReason.LEASABLE_RESOURCE,
         "agent_workspace",
-        PLACEMENT,
+        REFUSED_CAUSE,
     )
     assert ran.park.retry_at is not None, "it asks again after a wait"
     assert twin.live == set() and layer.prepared == [], "nothing was prepared"
