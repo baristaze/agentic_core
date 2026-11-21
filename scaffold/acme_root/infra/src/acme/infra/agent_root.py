@@ -74,9 +74,10 @@ class AgentInfraSettings(BaseSettings):
     # `vm_prefix`. It holds a project's name and `-vm-`, and no more:
     # Lima keeps a socket under each name, the host bounds its path, and a
     # probe refuses a Lima home too deep for the longest name. A VM's
-    # snapshot is its disk, kept in the backend's store;
-    # `vm_store_encrypted` declares that store encrypted at rest, and
-    # without it a VM workspace keeps no snapshot.
+    # snapshot keeps its directory, sealed in the buckets; a base is a disk
+    # kept in the backend's store. `vm_store_encrypted` declares that store
+    # encrypted at rest, and without it a VM workspace starts from no base
+    # with setup.
     vms_backend: Literal["none", "lima"] = "none"
     vm_image: str = "template:_images/ubuntu-lts"
     vm_prefix: str = Field(default="acme-vm-", pattern=r"^[a-z][a-z0-9-]*-$", max_length=21)
