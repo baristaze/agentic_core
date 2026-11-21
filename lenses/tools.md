@@ -456,9 +456,10 @@ where the hash is held to the step's and the broker's credentials
 detached; what a restore that cannot load does after a person's unlock;
 where a fork takes its parent's workspace and the copy it makes, and
 what a purge and a key's revocation remove; for a VM, where the bound
-is checked against the pack, what a store that fails part way removes,
-where each part is held to its hash on a restore, and that the pack is
-dropped however the snapshot ends.
+is checked against the directory before it is packed, what a store that
+fails part way removes, where each part is held to its hash on a restore
+and when the VM it replaces goes, and that the pack is dropped however
+the snapshot ends.
 
 **Violation.** A snapshot of part of what the commands wrote, such as a
 host directory kept as if whole, or a released container's volume on a
@@ -470,10 +471,12 @@ fork that starts from a snapshot older than its spawn, or takes a slot
 or makes a child before its snapshot is taken; a cache that keeps a
 fork's snapshot as its own; a copy of a session that keeps no content at
 rest; a child whose writes reach its parent's workspace; or, for a VM,
-a disk kept as a session's snapshot, a part sent before the bound is
-checked, a part stored in the clear or under another session's key, the
-parts of a failed archive left beside the snapshot before it, a restore
-that replaces the archive it read, or one that leaves a half-restored VM.
+a disk kept as a session's snapshot, a directory packed before the bound
+is checked, a pack left in the VM after it fails, a part stored in the
+clear or under another session's key, the parts of a failed archive left
+beside the snapshot before it, a restore that replaces the archive it
+read, one that destroys the VM it replaces before the new one holds the
+whole directory, or one that leaves a half-restored VM.
 
 **Severity.** high
 

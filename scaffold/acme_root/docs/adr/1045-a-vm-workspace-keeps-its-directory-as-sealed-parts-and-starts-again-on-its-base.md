@@ -26,20 +26,26 @@ again, and the model is told so: a notice follows each restore of a
 directory alone, and a rewind's or a fork's notice says it too.
 
 **The provider packs; the tools keep.** A provider whose instances start
-from their base says so (`keeps_directory`). It packs the directory into one
-tar archive beside it, in the instance's temporary space, and measures
-it; it reads the pack out in parts, drops it, and restores a pack's
-bytes into a new instance on the base. Where the parts go, and what
-seals them, is the tools'. The packing runs through a channel (`packs`),
+from their base says so (`keeps_directory`). It measures the directory by
+the bytes its files hold, and refuses one past the bound the tools give
+it before anything is packed, naming its size and the bound. Then it packs
+the directory into one tar archive in the instance's temporary space, at
+a path it names before tar starts, under a time bound of its own
+(`vm_pack_timeout_seconds`, ten minutes by default): a pack that fails,
+outlasts it, or is cancelled is removed, so none is left to fill the
+instance's disk. It reads the pack out in parts, drops it, and restores a
+pack's bytes into a new instance on the base. Where the parts go, and
+what seals them, is the tools'. The packing runs through a channel (`packs`),
 so a provider that reaches its instances by a command line on the
 engine's host, a layer's own included, archives and restores a directory
 the same way. It runs as the instance's root where its user may become
 root without a password, so a file a command wrote as root comes back as
 it was.
 
-**Parts, sealed, under the session's names.** The tools hold the pack's
-size to a bound (`directory_bound`, 4 GiB by default) before any byte of
-it is read, and refuse one past it, naming the size and the bound. They
+**Parts, sealed, under the session's names.** The tools give the
+provider the bound (`directory_bound`, 4 GiB by default), and hold the
+pack's own size to it before any byte of it is read, since an archive
+holds more than its files. They
 scan the pack for an injected secret's value, as they scan any snapshot.
 Then each part (`snapshot_part_bytes`, 8 MiB by default) is sealed under
 the session's key on its own, bound to its own keyed hash, and put at
@@ -52,12 +58,18 @@ part it put, so no step names it and the snapshot before stays the
 latest. The pack goes from the instance however the snapshot ends.
 
 **Restore.** The manifest is trusted by its hash before anything is
-replaced. Then the instance the workspace had goes, a new one starts on
-the base, its directory is emptied, and the parts are unpacked into it
-in order, each trusted only once it opens under the session's key and
-matches its hash. A part gone, erased, or altered loses the workspace:
-the new instance goes, never left half-restored, nothing kept is
-touched, and the loop parks for a person as a lost restore parks.
+replaced. Then a new instance starts on the base, beside the one the
+workspace stands on, its directory is emptied, and the parts are
+unpacked into it in order, each trusted only once it opens under the
+session's key and matches its hash. The instance it replaces goes only
+once the new one holds the whole directory. A part gone, erased, or
+altered loses the restore: the new instance goes, never left
+half-restored, nothing kept is touched, the instance it would replace
+stands as it was, and the loop parks for a person as a lost restore
+parks. The person's unlock goes on from that instance's files. A VM
+takes its workspace's names in turn, three of them, so the new VM
+stands under the next while the old one stands; of two found, the later
+in turn is a restore's that was cut off, and it is destroyed.
 
 **Forks.** A fork's child keeps parts of its own, read from the pack the
 spawn took and sealed under the child's key, so the parent's purge and
@@ -90,8 +102,7 @@ longer needs that store; a base with setup still does.
   the scan, once by the store.
 - A file that a process left running changes while it is packed is kept
   as it was read, as GNU tar packs it.
-- A part altered in the store is found as the restore reads it, once the
-  instance it replaces is gone. For a run-to-run restore that instance
-  held what the archive held.
+- A restore holds two instances at once, for as long as the parts take
+  to unpack: the host needs room for both.
 - The pack needs the directory's size free in the instance's temporary
   space.

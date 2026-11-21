@@ -1071,16 +1071,19 @@ platform's ([Next: The Platform](#next-the-platform)).
   history is the source of truth for which snapshots a session holds. A
   VM's directory is packed in the VM and kept in parts, each sealed under
   the session's key on its own, and a manifest names them by their hash.
-  Its size is held to a bound before any part leaves the VM, and one past
-  it is refused with its cause. An archive that fails part way keeps none
-  of its parts, so the snapshot before stays the latest.
+  The directory is held to a bound before it is packed, and its pack
+  before any part leaves the VM; one past it is refused with its cause,
+  and a pack that fails, or outlasts its own time, leaves nothing in the
+  VM. An archive that fails part way keeps none of its parts, so the
+  snapshot before stays the latest.
 - **Restore.** A prepare may start from a snapshot the history names,
   and the workspace is replaced whole, on its image, pulled by its
   digest where the host lacks it. A VM's starts a new VM on the base
-  and unpacks the directory into it. Its bytes are trusted only once they
-  match its hash, a VM's part by part as each is read. One that is gone,
-  erased, or altered loses the workspace before it starts, leaves every
-  archive as it was, and the loop parks for a person, once:
+  and unpacks the directory into it, and the VM it replaces goes only
+  once the new one holds the whole directory. Its bytes are trusted only
+  once they match its hash, a VM's part by part as each is read. One that
+  is gone, erased, or altered loses the workspace before it starts,
+  leaves every archive as it was, and the loop parks for a person, once:
   the person's unlock goes on from the workspace as it stands, and an
   `environment_changed` step records the restore lost and tells the
   model.
