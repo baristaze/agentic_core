@@ -13,6 +13,7 @@ from acme.infra.agent_workspaces import (
     IsolationMode,
     IsolationRefused,
     IsolationSpec,
+    KeepsWholeMixin,
     SnapshotRefused,
     refusal,
 )
@@ -25,7 +26,7 @@ outside the directory, and a snapshot of the directory alone would lose it
 without a word."""
 
 
-class AgentWorkspaceHostImpl(AgentWorkspaceProviderInterface):
+class AgentWorkspaceHostImpl(KeepsWholeMixin, AgentWorkspaceProviderInterface):
     """A directory on this host, one per workspace, under `root`. A directory
     confines where files go and nothing else: not a process's network, and
     not what it takes of the machine. So it meets the host mode with open

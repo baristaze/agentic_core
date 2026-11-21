@@ -89,8 +89,11 @@ contract.
    mid-run would leave a half-done effect. `workspace` is false for a
    tool whose calls never use `runtime.run`, `read_file`, `write_file`,
    `list_files`, or `snapshot`, so they never wait for a workspace to be
-   prepared; the transport refuses such a call that tries. An input that
-   decides it per call narrows it in its model's `reaches_workspace`, as
+   prepared; the transport refuses such a call that tries. It decides
+   whether a call waits for the workspace, never what the gate decides:
+   the rule of two reads the session's egress, so an `execute` call that
+   reaches none is held as one that reaches it. An input that decides it
+   per call narrows it in its model's `reaches_workspace`, as
    `SpawnSubAgentInput` in `om/src/<name>/om/tools/native/spawn_sub_agent.py`
    does for `fork`.
 3. `target` reads what the call acts on from the system it acts on,

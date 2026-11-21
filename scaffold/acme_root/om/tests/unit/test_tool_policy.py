@@ -239,7 +239,13 @@ async def test_the_target_comes_from_the_system_and_not_from_what_the_input_clai
             "integration",
         )
         gate = await tools.manager.gate(
-            ctx, registry, KIND_DEFAULTS, found.request, found.call_input, workspace
+            ctx,
+            registry,
+            KIND_DEFAULTS,
+            found.request,
+            found.call_input,
+            workspace,
+            egress=workspace.spec.egress.mode,
         )
         assert gate.outcome is GateOutcome.REFUSE and gate.decision is DENY
         assert gate.response is not None
@@ -255,7 +261,13 @@ async def test_the_target_comes_from_the_system_and_not_from_what_the_input_clai
         "integration",
     )
     gate = await tools.manager.gate(
-        ctx, registry, KIND_DEFAULTS, open_branch.request, open_branch.call_input, workspace
+        ctx,
+        registry,
+        KIND_DEFAULTS,
+        open_branch.request,
+        open_branch.call_input,
+        workspace,
+        egress=workspace.spec.egress.mode,
     )
     # Not denied, since the branch is open; a push acts outward, so the
     # platform's ceiling still holds it for a person.
@@ -330,7 +342,13 @@ async def test_a_call_that_runs_code_acts_outward_from_a_workspace_with_open_egr
         tools.manager, tools.steps, ctx, "run_command", {"argv": ["true"]}, "execute"
     )
     await tools.manager.gate(
-        ctx, registry_of(Command()), KIND_DEFAULTS, found.request, found.call_input, workspace
+        ctx,
+        registry_of(Command()),
+        KIND_DEFAULTS,
+        found.request,
+        found.call_input,
+        workspace,
+        egress=workspace.spec.egress.mode,
     )
     assert [reach.outward for reach in tools.attribution.reaches] == [outward]
     assert (
@@ -377,7 +395,13 @@ async def test_a_permission_taken_away_stops_the_next_call_of_its_class(tmp_path
         )
         gates.append(
             await tools.manager.gate(
-                admin, registry_of(configure), allowed, found.request, found.call_input, workspace
+                admin,
+                registry_of(configure),
+                allowed,
+                found.request,
+                found.call_input,
+                workspace,
+                egress=workspace.spec.egress.mode,
             )
         )
 
@@ -414,6 +438,7 @@ async def test_the_outward_ceiling_holds_a_call_whose_target_does_not_say(
         found.request,
         found.call_input,
         AgentWorkspace.absent(org.id, new_id()),
+        egress=EgressMode.NONE,
     )
 
     assert (gate.outcome, gate.decision) == (GateOutcome.ASK, APPROVE)

@@ -173,7 +173,7 @@ flowchart LR
 | Approval | A person's decision on one exact tool call | [Approvals](#approvals) |
 | Workspace, transport | Where tools run; the only way to run there | [The Runtime](#the-runtime) |
 | VMs | The virtual machines a VM workspace runs on, each started from an image or a snapshot of a disk | [The Runtime](#the-runtime) |
-| Snapshot | A workspace kept whole, sealed, named by a step, and trusted by its hash | [Workspace Snapshots](#workspace-snapshots) |
+| Snapshot | A workspace kept whole, or a VM's directory on its base, sealed, named by a step, and trusted by its hash | [Workspace Snapshots](#workspace-snapshots) |
 | Base | An image and its setup, built once for a tenant and kept as a snapshot workspaces start from | [Workspace Snapshots](#workspace-snapshots) |
 | Stream part | A typed, live fragment of a step or artifact | [Streams](#streams) |
 | Inbox, control | Inputs waiting for the next model call; out-of-band commands | [Steering](#steering) |
@@ -237,8 +237,11 @@ An adopter extends a run without editing the loop, through the loop's
 hooks, which its root wires beside the rest. Once a run, before anything
 renders, the hooks name the toolsets a session holds beyond its kind,
 which the loop folds into the kind. Before the run calls a model, they
-name the steps to append, and no workspace is prepared by then. With
-none wired, the null extends nothing ([Null Objects](#null-objects)).
+name the steps to append, and no workspace is prepared by then. Once
+the run's first call that reaches the workspace has prepared it, and
+before that call runs, they are given it and name the steps to append
+about it, such as what changed in it; a run that reaches no workspace
+never asks. With none wired, the null extends nothing ([Null Objects](#null-objects)).
 
 Its operations take the guideline's context first. A tenant operation
 takes `TenantContext`; a consumer that reads less declares a scope
@@ -758,7 +761,7 @@ Tools are where the engine touches the world.
 | effect | `read_only`; `idempotent`, safe to repeat natively or under the idempotency key; or `unsafe`, where a repeat may duplicate a side effect |
 | interruptible | Whether an urgent input may stop it mid-run |
 | mode | `sync`, or `job` for work that outlives a run ([Long-Running Jobs](#long-running-jobs)) |
-| workspace | Whether its calls reach the session's workspace, so a call waits for it to be prepared ([The Runtime](#the-runtime)); a tool that does not say reaches it, and a call's input may narrow it, as a spawn that does not fork |
+| workspace | Whether its calls reach the session's workspace, so a call waits for it to be prepared ([The Runtime](#the-runtime)); a tool that does not say reaches it, and a call's input may narrow it, as a spawn that does not fork. It decides nothing of the gate: the rule of two reads the session's egress either way |
 | preflight | Optional: refuses a call that cannot succeed, before anyone is asked to approve it |
 
 ### The Registry
@@ -987,9 +990,9 @@ capabilities in the guideline's sense ([Infrastructure][g-infra]):
   its idempotency key can answer its outcome after a crash.
 
 A VM workspace runs on **VMs**, a third capability: it starts a VM
-from an image or from a snapshot, runs a command in it, stops
-it, snapshots its disk, and destroys it. It says up front what it can
-hold: whether its host has a hypervisor, the egress it closes from
+from an image or from a snapshot, runs a command in it, stops it,
+snapshots its disk for a base, and destroys it. It says up front what it
+can hold: whether its host has a hypervisor, the egress it closes from
 outside a guest, and the limits it enforces. One VM serves one
 workspace, and the agent's commands may run containers inside it. A
 laptop's own hypervisor runs them, or a cloud's VMs, behind the same
@@ -1005,7 +1008,10 @@ calls reach no workspace makes none. A tool says whether its calls reach
 it ([The Tool Contract](#the-tool-contract)).
 
 A refusal says whether it can clear. One that cannot, such as a spec the
-provider does not support, ends the loop `errored`. One that waits for a
+provider does not support or a base whose setup failed, ends the loop
+`errored`, and each call the loop left open is answered first, with the
+refusal's cause, so the session's next input starts a loop that reads
+why. One that waits for a
 workspace that may come, with no host free yet or a VM still starting,
 parks the loop on the resource with the call open, and the loop asks
 again after a wait: once the workspace comes, the same call runs once,
@@ -1045,8 +1051,8 @@ loudly ([Null Objects](#null-objects)).
 A workspace is a cache, and stays one. Some sessions must resume on
 their whole machine: the tools they installed, a local database, the
 files they generated. For them, a provider that can **snapshots** a
-workspace: everything its commands could write, as one archive, kept as
-durable state the way the history is. A kind chooses its workspace's
+workspace: everything its commands could write, kept as durable state
+the way the history is. A kind chooses its workspace's
 durability: `cache`, the default, or `snapshot`. The engine states the
 capability and takes the snapshots; which workspaces keep them, where
 they live relative to a customer's wall, and for how long are the
@@ -1055,7 +1061,10 @@ platform's ([Next: The Platform](#next-the-platform)).
 - **What it holds.** Everything the workspace's commands could write: a
   container's whole filesystem, its writable layer and its volume, on
   the image beneath it, named by its id and by the digest its registry
-  serves it under; a VM's disk. Never a credential: the broker detaches
+  serves it under. A VM's is its directory alone: each VM a session
+  uses starts from its base, so what its commands installed outside the
+  directory comes from the base again, and a restore tells the model
+  so. Never a credential: the broker detaches
   every credential it attached there before the snapshot is taken, and
   a snapshot that holds the value of a secret the engine injected into
   a command is refused.
@@ -1070,23 +1079,31 @@ platform's ([Next: The Platform](#next-the-platform)).
   refuses a snapshot.
 - **Who can.** A provider says whether it can. A directory on a host
   cannot, since its commands write outside it, and neither can an
-  account's. A spec may ask for a workspace that can be snapshotted. A
-  provider that cannot refuses that spec before the first model call,
-  never a cache in its stead, and refuses a snapshot before anything
-  runs.
+  account's. A VM's commands write outside its directory too, but they
+  write in a VM that goes, and the next starts from the base. A spec may
+  ask for a workspace that can be snapshotted. A provider that cannot
+  refuses that spec before the first model call, never a cache in its
+  stead, and refuses a snapshot before anything runs.
 - **Where it is kept.** Sealed under the session's key, in the
   guideline's buckets ([Infrastructure][g-infra]), under a hash of its
   bytes keyed by the session. A `snapshotted` step names it: its id, its
-  hash, its size, and the workspace it came from. The history is the
-  source of truth for which snapshots a session holds. A VM's disk is
-  too large for a bucket: its VMs keep it, in a store encrypted at
-  rest, and the sealed archive names it by a reference and a digest the
-  restore holds it to.
+  hash, its size, the workspace it came from, and what it holds. The
+  history is the source of truth for which snapshots a session holds. A
+  VM's directory is packed in the VM and kept in parts, each sealed under
+  the session's key on its own, and a manifest names them by their hash.
+  The directory is held to a bound before it is packed, and its pack
+  before any part leaves the VM; one past it is refused with its cause,
+  and a pack that fails, or outlasts its own time, leaves nothing in the
+  VM. An archive that fails part way keeps none of its parts, so the
+  snapshot before stays the latest.
 - **Restore.** A prepare may start from a snapshot the history names,
   and the workspace is replaced whole, on its image, pulled by its
-  digest where the host lacks it. Its bytes are trusted only once they
-  match its hash. One that is gone, erased, or altered loses the
-  workspace before it starts, and the loop parks for a person, once:
+  digest where the host lacks it. A VM's starts a new VM on the base
+  and unpacks the directory into it, and the VM it replaces goes only
+  once the new one holds the whole directory. Its bytes are trusted only
+  once they match its hash, a VM's part by part as each is read. One that
+  is gone, erased, or altered loses the workspace before it starts,
+  leaves every archive as it was, and the loop parks for a person, once:
   the person's unlock goes on from the workspace as it stands, and an
   `environment_changed` step records the restore lost and tells the
   model.
@@ -1097,7 +1114,7 @@ platform's ([Next: The Platform](#next-the-platform)).
 - **Fork.** A sub-agent spawned with `fork` starts from its parent's
   workspace as it stands at the spawn, in any run, the first included.
   The run that holds the workspace snapshots it live, and the child
-  keeps a copy sealed under its own key, a VM's disk copied with it. A
+  keeps a copy sealed under its own key, a VM's in parts of its own. A
   parent kept by snapshots also keeps it, named in its history; a cache
   keeps nothing of it. What the child writes never reaches its parent's
   workspace. A fork whose snapshot is refused, as for a secret's value
@@ -1120,12 +1137,14 @@ platform's ([Next: The Platform](#next-the-platform)).
   served stale. Two prepares racing on one base build it once. A setup
   command that fails keeps nothing, and the loop's end names the command
   and how it ended, never what it wrote. A base with no setup is the
-  image alone. A provider that cannot
+  image alone. A VM's base is its setup's disk, which the VMs keep in a
+  store encrypted at rest. A provider that cannot
   snapshot refuses a base.
 - **Purge.** A snapshot is content. A session's purge removes its
-  snapshots, a VM's disks included. Revoking its key erases every
-  archive and destroys the disks kept for them with it; a fork's copy is
-  the child's, under the child's key, and stays.
+  snapshots, every part included. Revoking its key leaves every archive
+  and every part noise; a fork's copy is the child's, under the child's
+  key, and stays. A session that keeps no content at rest keeps no
+  snapshot.
 
 *Example:* the checkout session's workspace holds a test database it
 seeded. Its run snapshots it as the loop parks, and the review
@@ -1137,7 +1156,8 @@ network at all.
 
 > **Principle:** A workspace is a cache; a snapshot is kept state, named
 > by a step and trusted by its hash. It holds everything the workspace's
-> commands wrote, and never a credential. A base is built once, and its
+> commands wrote, or a VM's directory on its base, and never a
+> credential. A base is built once, and its
 > setup's egress never reaches a workspace.
 
 ## Streams
@@ -1684,9 +1704,11 @@ must fix it; no retry time means only a person can unblock it. Each park
 a person clears has a route that clears it, held to the permission its
 operation checks, and clearing it wakes the session: no park waits for a
 cancel alone. A gate supplied from outside may name a reason and an unlock
-of its own. A park on the workspace comes before its run has settled a
-lost run's calls, so it says so, and the run that resumes it settles
-them by their effect.
+of its own. A park on the workspace at a call its own run wrote is
+settled, as any park the loop writes is, and the run that resumes it
+runs that call once. One at a call a lost run left open comes before
+its run has settled that run's calls, so it says so, and the run that
+resumes it settles them by their effect.
 When the unlock happens, a `resumed` step starts a new run. Raising a
 budget is the instruction to continue. A loop that runs in a request
 never parks: it ends where another would park, and its next question
@@ -1878,9 +1900,9 @@ audit, and tracing keep working on a session whose content is gone.
   content becomes noise and the shape stays: every step keeps its place,
   its type, and its cost. A record with holes in known places is still a
   record. This is the erasure of a session's content, in place of the
-  guideline's redaction of named fields. What the session's snapshots
-  keep outside the seal, a VM's disks, is destroyed with the key; a
-  fork's copy is its child's content, and stays.
+  guideline's redaction of named fields. The session's snapshots are
+  sealed under it, a VM's part by part, and are noise with it; a fork's
+  copy is its child's content, and stays.
 - **Purge:** after the shape's own retention, its rows are removed. It is
   the guideline's one hard delete, never an on-demand one.
 

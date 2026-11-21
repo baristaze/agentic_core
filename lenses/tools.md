@@ -32,7 +32,9 @@ how they are versioned.
 
 **Violation.** A tool with no class, no effect, no timeout, or no mode;
 a tool that says its calls reach no workspace and runs a command or
-touches a file through its runtime; an input schema that accepts unknown
+touches a file through its runtime; a gate that reads that declaration,
+such as a rule of two that reads the egress of the workspace a call was
+given rather than the session's; an input schema that accepts unknown
 fields; a description changed outside the kind's version; a sub-agent or
 an MCP tool registered through a second contract. (An effect declared
 safer than the tool is TOL-02.)
@@ -402,12 +404,12 @@ rest is judged.
 
 **Principle.** Isolation is chosen up front and never weakened. A spec
 the provider can never meet is refused before the first model call,
-whole, never met with something weaker. A workspace is made at the
-first tool call that reaches it, never before a model call.
-A refusal that cannot clear ends the loop `errored`; one that may clear
-parks it on the resource with the call open, which runs once when the
-workspace comes. Either names its cause, never a command's output or the
-host's state. A lost workspace parks the loop for a person. A released
+whole. A workspace is made at the first tool call that reaches it,
+never before a model call. A refusal that cannot clear ends the loop
+`errored`, each call left open answered; one that may clear parks it on
+the resource with the call open, which runs once when the workspace
+comes. Either names its cause, never a command's output or the host's
+state. A lost workspace parks the loop for a person. A released
 instance is prepared again by the next loop that reaches it, and an
 `environment_changed` step tells the model what changed.
 
@@ -424,7 +426,7 @@ spec the provider can never meet found after the model has been called;
 a workspace prepared before a model call, or for a run whose calls reach
 none; a call that waits for a workspace lost, or run twice once it
 comes; a refusal that may clear ending the loop, or one that cannot
-clear parking it; a refusal's cause
+clear parking it, or ending it with a call left open; a refusal's cause
 that holds a command's output, an environment, or the host's own state,
 or one the refusal names that its loop's end or park drops; a workspace
 rebuilt from something else when what it is rebuilt from is gone; a new
@@ -442,15 +444,15 @@ environment with no
 ## TOL-15 A snapshot is kept whole, trusted by its hash, and holds no credential
 
 **Principle.** A provider that can snapshots a workspace whole: all its
-commands could write. One that cannot refuses a snapshot, and a spec
-asking for one, before anything runs. The run that holds a `snapshot`
-workspace snapshots it at its end, and lets the instance go only once a
-snapshot holds it. A snapshot, or a VM disk's name, is sealed under its
-session's key, stored under a keyed hash, and named by a `snapshotted`
-step. A restore trusts its bytes only by that hash, and replaces the
-workspace whole; one that cannot load parks the loop once. The broker
-detaches its credentials first; an injected secret's value refuses a
-snapshot. A fork copies its parent's workspace at the spawn.
+commands could write, or a VM's directory, as each VM starts on its base.
+One that cannot refuses a snapshot before anything runs. The run
+that holds a `snapshot` workspace snapshots it at its end, and lets the
+instance go only once a snapshot holds it. A snapshot is sealed under
+its session's key, stored under a keyed hash, and named by a
+`snapshotted` step; a VM's directory is held to a bound, then kept in
+parts, each sealed and hashed. A restore trusts only those hashes and
+replaces the workspace whole; one that cannot load parks the loop once.
+It never holds a credential or an injected secret's value.
 
 **Source.** Workspace Snapshots.
 
@@ -459,8 +461,11 @@ the loop takes one at a run's end and what the next run starts from;
 where the hash is held to the step's and the broker's credentials
 detached; what a restore that cannot load does after a person's unlock;
 where a fork takes its parent's workspace and the copy it makes, and
-what a purge and a key's revocation remove; for a VM, the digest its
-disk is held to, its store's encryption at rest, and what the scan reads.
+what a purge and a key's revocation remove; for a VM, where the bound
+is checked against the directory before it is packed, what a store that
+fails part way removes, where each part is held to its hash on a restore
+and when the VM it replaces goes, and that the pack is dropped however
+the snapshot ends.
 
 **Violation.** A snapshot of part of what the commands wrote, such as a
 host directory kept as if whole, or a released container's volume on a
@@ -473,15 +478,19 @@ unlock; a credential or an injected secret's value in a kept snapshot; a
 fork that starts from a snapshot older than its spawn, or takes a slot
 or makes a child before its snapshot is taken; a cache that keeps a
 fork's snapshot as its own; a copy of a session that keeps no content at
-rest; a child whose writes reach its parent's workspace; or a VM's disk
-the scan never reads, one kept in a store not encrypted at rest, or one
-a revocation of its session's key leaves.
+rest; a child whose writes reach its parent's workspace; or, for a VM,
+a disk kept as a session's snapshot, a directory packed before the bound
+is checked, a pack left in the VM after it fails, a part stored in the
+clear or under another session's key, the parts of a failed archive left
+beside the snapshot before it, a restore that replaces the archive it
+read, one that destroys the VM it replaces before the new one holds the
+whole directory, or one that leaves a half-restored VM.
 
 **Severity.** high
 
 **Shape.**
-`scaffold/acme_root/infra/src/acme/infra/agent_workspaces/container.py`
-and `scaffold/acme_root/om/src/acme/om/tools/impl/snapshots.py`
+`scaffold/acme_root/infra/src/acme/infra/agent_workspaces/vm.py` and
+`scaffold/acme_root/om/src/acme/om/tools/impl/snapshots.py`
 
 **Check.** review
 

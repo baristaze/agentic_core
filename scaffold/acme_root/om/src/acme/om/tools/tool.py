@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
 
-from acme.infra.agent_workspaces import AgentWorkspace
+from acme.infra.agent_workspaces import AgentWorkspace, DirectoryPack
 from acme.infra.transports import (
     CommandResult,
     CommandSpec,
@@ -46,15 +46,17 @@ uses it runs."""
 
 @dataclass(frozen=True)
 class TakenSnapshot:
-    """A live workspace taken whole for a sub-agent to start from, held in
-    memory until the child is made: the provider's archive, its
-    credentials taken back and scanned for every injected secret's value,
-    the workspace it came from, and whether that workspace keeps it as its
-    own snapshot too. What one that does not keep it holds outside the
-    archive, such as a disk, goes once the child's copy is kept."""
+    """A live workspace taken for a sub-agent to start from, held until the
+    child is made: the provider's archive, or the pack of its directory
+    where its provider keeps the directory alone, its credentials taken
+    back and scanned for every injected secret's value, the workspace it
+    came from, and whether that workspace keeps it as its own snapshot too.
+    What one that does not keep it holds outside the archive, such as a
+    disk, goes once the child's copy is kept, and a pack goes then
+    whatever the workspace keeps."""
 
     agent_workspace_id: UUID
-    archive: bytes = field(repr=False)
+    archive: bytes | DirectoryPack = field(repr=False)
     kept: bool = False
 
 

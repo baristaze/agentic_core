@@ -34,25 +34,36 @@ call's input may narrow it, as a spawn reaches the workspace only when
 it forks. The engine's own tools and every tool over MCP reach none. The
 call's request records the answer, and the loop reads it there. A call
 that reaches none is given the absent workspace, which every transport
-refuses, loudly.
+refuses, loudly. It decides nothing of the gate: the rule of two reads
+the session's egress, whatever workspace a call was given.
 
 **A workspace that must wait parks the loop with its call open.** A
 prepare that refuses with `clears` parks the loop on the resource, and a
 lost workspace parks it for a person, at that call. The park is settled
 when its own run wrote the call, so the run that takes the loop up runs
 it once, under its idempotency key. One written while a lost run's calls
-are settled is unsettled, and those calls are settled by their effect.
+are settled is unsettled, and those calls are settled by their effect. A
+refusal that cannot clear ends the loop `errored` there, and each call
+the loop left open is answered first, with the refusal's cause, so the
+session's next input starts a loop whose history holds every answer.
 
 **A run that reaches no workspace keeps the latest snapshot whole.** It
 prepares none, takes no snapshot, and lets nothing go. The next run that
 reaches the workspace starts from the latest snapshot, unless a call
 that reached the workspace and may have run, or an `environment_changed`
 step, came after it. A call that reaches no workspace touches none, and
-a call a park the loop wrote held open never ran.
+a call a park the loop wrote held open never ran. A call an earlier run
+made counts whatever run answered it, a job's included; a notice the
+run's own hooks wrote before its workspace was prepared does not.
 
-**The loop hooks receive no workspace.** `LoopStart` holds the session,
-the kind, the epoch, the loop, and whether the loop is new. A layer that
-must look into the workspace does so through a tool's call.
+**The hooks are told of the workspace once it is prepared.** `LoopStart`
+holds the session, the kind, the epoch, the loop, and whether the loop
+is new, and no workspace. Once the run's first call that reaches the
+workspace has prepared it, the loop asks the hooks' `workspace_prepared`,
+given the run's `LoopStart` and the workspace, for the steps to append,
+and writes them before that call is gated: a layer tells the model what
+changed in the workspace there, and the model reads it with the call's
+answer. A run that reaches no workspace never asks.
 
 ## Consequences
 
@@ -63,7 +74,8 @@ must look into the workspace does so through a tool's call.
   reach, a base's setup, is learned at the first call that reaches the
   workspace, after model calls were spent, and ends or parks the loop
   there.
-- Every workspace provider implements `check`, a layer's own included.
+- Every workspace provider implements `check`, a layer's own included,
+  and every layer's hooks implement `workspace_prepared`.
 - A tool that runs a command or touches a file and declares that its
   calls reach no workspace is refused by the transport, loudly.
 - A restore a principal or a fork asked for, and a restore lost, is

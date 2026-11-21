@@ -420,6 +420,8 @@ def build_agent_managers(
         infra.get_secrets(),
         injected_secrets(tool.spec for tool in catalog),
         tools_settings.purge_batch,
+        directory_bound=tools_settings.directory_bound,
+        part_bytes=tools_settings.snapshot_part_bytes,
     )
     tools = ToolsManagerImpl(
         storage.get_tool_storage(),

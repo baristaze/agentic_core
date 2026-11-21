@@ -154,13 +154,16 @@ async def test_a_session_holding_no_private_data_acts_outward_unattended(tmp_pat
     assert ran == {False: RunEnd.PARKED, True: RunEnd.ENDED}
 
 
+@pytest.mark.parametrize("reaches", [True, False], ids=["reaches", "reaches-none"])
 async def test_a_command_under_open_egress_runs_unattended_until_the_session_is_marked(
-    tmp_path: Path,
+    tmp_path: Path, reaches: bool
 ) -> None:
-    """A command in a workspace whose egress is open acts outward for the
-    rule of two, and for nothing else: a session that holds private data
-    but is not marked runs it as its kind's policy decides, and once a tool
-    result marks the session, the same command waits for a person."""
+    """A command in a session whose workspace's egress is open acts outward
+    for the rule of two, and for nothing else: a session that holds private
+    data but is not marked runs it as its kind's policy decides, and once a
+    tool result marks the session, the same command waits for a person. A
+    tool that says its calls reach no workspace is held the same: the rule
+    reads the session's egress, never the workspace a call was given."""
     worker = ASSISTANT.model_copy(
         update={
             "name": "worker",
@@ -178,7 +181,7 @@ async def test_a_command_under_open_egress_runs_unattended_until_the_session_is_
     )
     ran: dict[bool, RunEnd] = {}
     for marked in (False, True):
-        shell = Lookup("shell", authorization_class=ToolClass.EXECUTE)
+        shell = Lookup("shell", authorization_class=ToolClass.EXECUTE, workspace=reaches)
         loop = loop_over(tmp_path / str(marked), kinds=(worker,), extra=(shell,))
         agent_session_id = await loop.start("worker")
         await loop.say(agent_session_id, "Run the build.")
