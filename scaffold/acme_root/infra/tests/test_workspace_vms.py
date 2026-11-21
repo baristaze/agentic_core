@@ -143,7 +143,7 @@ async def test_a_vm_workspace_keeps_its_directory_alone_and_a_restore_starts_on_
     org, agent_workspace_id = new_id(), new_id()
     transport = transport_over(twin, tmp_path, org)
     workspace = await provider.prepare(org, agent_workspace_id, vm(durability=Durability.SNAPSHOT))
-    assert provider.directory() is provider
+    assert provider.keeps_directory()
     script = "echo kept > kept.txt; mkdir -p deep; head -c 9000 /dev/zero > deep/z; echo x > ../out"
     assert await written(transport, workspace, script) == (0, "")
 

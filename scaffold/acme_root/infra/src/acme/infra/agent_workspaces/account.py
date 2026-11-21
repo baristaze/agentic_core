@@ -49,12 +49,12 @@ from uuid import UUID
 
 from acme.infra.agent_workspaces import (
     AgentWorkspace,
-    AgentWorkspaceDirectoryInterface,
     AgentWorkspaceProviderInterface,
     EgressMode,
     IsolationMode,
     IsolationRefused,
     IsolationSpec,
+    KeepsWholeMixin,
     ResourceLimits,
     SnapshotRefused,
     refusal,
@@ -403,7 +403,7 @@ async def end_group_as(switch: Switch, group: int, seconds: float = ENDING_SECON
         await ending.wait()
 
 
-class AgentWorkspaceAccountImpl(AgentWorkspaceProviderInterface):
+class AgentWorkspaceAccountImpl(KeepsWholeMixin, AgentWorkspaceProviderInterface):
     """A directory per workspace under `root`, its commands run as `account`
     by the local transport given the same account. It meets the account
     mode with open egress and a bound on processes, and refuses any spec
@@ -468,9 +468,6 @@ class AgentWorkspaceAccountImpl(AgentWorkspaceProviderInterface):
         return AgentWorkspace(
             id=agent_workspace_id, org_id=org_id, spec=spec, location=str(job / HOME)
         )
-
-    def directory(self) -> AgentWorkspaceDirectoryInterface | None:
-        return None  # it snapshots nothing
 
     async def snapshot(self, workspace: AgentWorkspace) -> bytes:
         raise SnapshotRefused(f"an account workspace cannot be snapshotted: {UNKEPT}")

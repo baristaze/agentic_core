@@ -3,18 +3,18 @@ from uuid import UUID
 
 from acme.infra.agent_workspaces import (
     AgentWorkspace,
-    AgentWorkspaceDirectoryInterface,
     AgentWorkspaceProviderInterface,
     EgressMode,
     IsolationMode,
     IsolationRefused,
     IsolationSpec,
+    KeepsWholeMixin,
     SnapshotRefused,
     refusal,
 )
 
 
-class AgentWorkspaceTwinImpl(AgentWorkspaceProviderInterface):
+class AgentWorkspaceTwinImpl(KeepsWholeMixin, AgentWorkspaceProviderInterface):
     """The workspace provider's twin, for tests: it prepares the twin mode,
     whose transport runs nothing, so every egress and every limit holds by
     default. It refuses every other mode, as the real ones refuse theirs,
@@ -63,9 +63,6 @@ class AgentWorkspaceTwinImpl(AgentWorkspaceProviderInterface):
             location=f"twin:{agent_workspace_id.hex}",
         )
 
-    def directory(self) -> AgentWorkspaceDirectoryInterface | None:
-        return None  # its snapshot keeps the workspace whole
-
     async def snapshot(self, workspace: AgentWorkspace) -> bytes:
         if workspace.id not in self.live:
             raise SnapshotRefused(f"workspace {workspace.id} holds no instance to snapshot")
@@ -101,7 +98,7 @@ class AgentWorkspaceTwinImpl(AgentWorkspaceProviderInterface):
         return None
 
 
-class AgentWorkspaceNullImpl(AgentWorkspaceProviderInterface):
+class AgentWorkspaceNullImpl(KeepsWholeMixin, AgentWorkspaceProviderInterface):
     """A process that prepares no workspace: every spec is refused, loudly,
     so a session that asks for one learns it before its first model call."""
 
@@ -117,9 +114,6 @@ class AgentWorkspaceNullImpl(AgentWorkspaceProviderInterface):
     ) -> AgentWorkspace:
         why = f"this process prepares no workspace; a {spec.mode.value} workspace is refused"
         raise IsolationRefused(why, cause=why)
-
-    def directory(self) -> AgentWorkspaceDirectoryInterface | None:
-        return None  # it snapshots nothing
 
     async def snapshot(self, workspace: AgentWorkspace) -> bytes:
         raise SnapshotRefused("this process prepares no workspace, so it snapshots none")

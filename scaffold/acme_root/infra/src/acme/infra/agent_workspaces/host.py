@@ -8,12 +8,12 @@ from uuid import UUID
 
 from acme.infra.agent_workspaces import (
     AgentWorkspace,
-    AgentWorkspaceDirectoryInterface,
     AgentWorkspaceProviderInterface,
     EgressMode,
     IsolationMode,
     IsolationRefused,
     IsolationSpec,
+    KeepsWholeMixin,
     SnapshotRefused,
     refusal,
 )
@@ -26,7 +26,7 @@ outside the directory, and a snapshot of the directory alone would lose it
 without a word."""
 
 
-class AgentWorkspaceHostImpl(AgentWorkspaceProviderInterface):
+class AgentWorkspaceHostImpl(KeepsWholeMixin, AgentWorkspaceProviderInterface):
     """A directory on this host, one per workspace, under `root`. A directory
     confines where files go and nothing else: not a process's network, and
     not what it takes of the machine. So it meets the host mode with open
@@ -61,9 +61,6 @@ class AgentWorkspaceHostImpl(AgentWorkspaceProviderInterface):
         return AgentWorkspace(
             id=agent_workspace_id, org_id=org_id, spec=spec, location=str(directory)
         )
-
-    def directory(self) -> AgentWorkspaceDirectoryInterface | None:
-        return None  # it snapshots nothing
 
     async def snapshot(self, workspace: AgentWorkspace) -> bytes:
         raise SnapshotRefused(f"a host workspace cannot be snapshotted: {UNKEPT}")

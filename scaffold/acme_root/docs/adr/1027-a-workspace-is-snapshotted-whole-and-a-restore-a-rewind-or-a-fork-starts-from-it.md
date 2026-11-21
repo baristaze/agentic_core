@@ -27,7 +27,7 @@ workspace into one archive of its own format, and its `prepare` takes
 an optional archive and starts the workspace from it, replaced whole.
 The archive passes as bytes, since the guideline's buckets take bytes. A
 VM's directory, too large to pass whole, goes through its provider's
-`directory` in parts instead
+`pack` and `restore` in parts instead
 ([ADR 1045](1045-a-vm-workspace-keeps-its-directory-as-sealed-parts-and-starts-again-on-its-base.md)).
 
 **When it is taken.** A workspace of durability `snapshot` is

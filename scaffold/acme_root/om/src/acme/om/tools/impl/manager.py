@@ -10,7 +10,6 @@ from pydantic import Field, ValidationError
 
 from acme.infra.agent_workspaces import (
     AgentWorkspace,
-    AgentWorkspaceDirectoryInterface,
     AgentWorkspaceLost,
     AgentWorkspaceProviderInterface,
     DirectoryPack,
@@ -276,8 +275,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
         the snapshot `restore` holds. The manifest is trusted by its hash
         before anything is replaced, and each part as it is read: one that
         does not match loses the workspace, and nothing kept is touched."""
-        directory = self._agent_workspaces.directory()
-        if directory is None:
+        if not self._agent_workspaces.keeps_directory():
             raise AgentWorkspaceLost(
                 f"snapshot {restore.id} holds a directory alone, which no instance here starts from"
             )
@@ -288,7 +286,9 @@ class ToolsManagerImpl(ToolsManagerInterface):
             base = await self._bases.archive(ctx, spec)
         parts = _Watched(self._snapshots.parts(ctx, agent_session_id, manifest))
         try:
-            return await directory.restore(ctx.org_id, agent_session_id, spec, parts, base=base)
+            return await self._agent_workspaces.restore(
+                ctx.org_id, agent_session_id, spec, parts, base=base
+            )
         except InfraException as lost:
             if base is None or lost.code != AgentWorkspaceLost.code or parts.failed:
                 raise
@@ -348,7 +348,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
                     snapshot_id,
                     taken.agent_workspace_id,
                     pack.size,
-                    lambda part_bytes: self._directory().read(pack, part_bytes),
+                    lambda part_bytes: self._agent_workspaces.read(pack, part_bytes),
                 )
             finally:
                 await self._drop(pack)
@@ -399,13 +399,12 @@ class ToolsManagerImpl(ToolsManagerInterface):
         await self._snapshots.at_rest(ctx, agent_session_id)
         await self._broker.detach_all(workspace)
         also = injected_secrets(tool.spec for tool in tools)
-        directory = self._agent_workspaces.directory()
-        if directory is not None:
-            pack = await directory.pack(workspace)
+        if self._agent_workspaces.keeps_directory():
+            pack = await self._agent_workspaces.pack(workspace)
             try:
                 self._snapshots.bounded(pack.size)
                 async with contextlib.aclosing(
-                    directory.read(pack, self._snapshots.part_bytes)
+                    self._agent_workspaces.read(pack, self._snapshots.part_bytes)
                 ) as held:
                     await self._snapshots.scan(ctx, held, also=also)
             except BaseException:
@@ -443,7 +442,7 @@ class ToolsManagerImpl(ToolsManagerInterface):
                 new_id(),
                 workspace.id,
                 pack.size,
-                lambda part_bytes: self._directory().read(pack, part_bytes),
+                lambda part_bytes: self._agent_workspaces.read(pack, part_bytes),
             )
         else:
             try:
@@ -485,18 +484,12 @@ class ToolsManagerImpl(ToolsManagerInterface):
                 raise
         return TakenSnapshot(agent_workspace_id=workspace.id, archive=archive, kept=kept)
 
-    def _directory(self) -> AgentWorkspaceDirectoryInterface:
-        directory = self._agent_workspaces.directory()
-        if directory is None:
-            raise SnapshotRefused("no provider here keeps a workspace's directory alone")
-        return directory
-
     async def _drop(self, pack: DirectoryPack) -> None:
         """A directory's pack removed from its instance, once it is kept or
         refused. One that cannot be goes with the instance's next restore,
         or its purge."""
         try:
-            await self._directory().drop(pack)
+            await self._agent_workspaces.drop(pack)
         except Exception:
             log.warning("the pack %s stays in its instance", pack.path, exc_info=True)
 

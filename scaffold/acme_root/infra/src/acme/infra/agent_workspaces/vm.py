@@ -9,7 +9,6 @@ from uuid import UUID
 
 from acme.infra.agent_workspaces import (
     AgentWorkspace,
-    AgentWorkspaceDirectoryInterface,
     AgentWorkspaceLost,
     AgentWorkspaceProviderInterface,
     DirectoryPack,
@@ -77,7 +76,7 @@ class Kept:
     digest: str
 
 
-class AgentWorkspaceVmImpl(AgentWorkspaceProviderInterface, AgentWorkspaceDirectoryInterface):
+class AgentWorkspaceVmImpl(AgentWorkspaceProviderInterface):
     """A VM per workspace on the VMs it is given, Docker inside it,
     so a workspace's commands can build and run containers of their own.
     It meets the VM mode with the egress the VMs can close, open
@@ -89,7 +88,7 @@ class AgentWorkspaceVmImpl(AgentWorkspaceProviderInterface, AgentWorkspaceDirect
     wall, so a base's build (`building`) holds nothing more than any other.
 
     A released workspace's VM is stopped, its disk kept. Its snapshot
-    keeps its directory alone (`directory`): packed in the guest, read out in
+    keeps its directory alone (`keeps_directory`): packed in the guest, read out in
     parts its caller seals under the session's key, and unpacked into a new
     VM on the workspace's base at a restore, so what its commands installed
     outside the directory comes from the base again. A base is the one disk
@@ -128,8 +127,8 @@ class AgentWorkspaceVmImpl(AgentWorkspaceProviderInterface, AgentWorkspaceDirect
         await self._start(name, vm, kept.name if kept is not None and new else None, new=new)
         return AgentWorkspace(id=agent_workspace_id, org_id=org_id, spec=spec, location=name)
 
-    def directory(self) -> AgentWorkspaceDirectoryInterface | None:
-        return self
+    def keeps_directory(self) -> bool:
+        return True
 
     async def pack(self, workspace: AgentWorkspace) -> DirectoryPack:
         name = workspace.location

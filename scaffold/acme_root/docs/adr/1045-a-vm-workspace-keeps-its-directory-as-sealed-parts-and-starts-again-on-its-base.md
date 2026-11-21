@@ -26,7 +26,7 @@ again, and the model is told so: a notice follows each restore of a
 directory alone, and a rewind's or a fork's notice says it too.
 
 **The provider packs; the tools keep.** A provider whose instances start
-from their base says so (`directory`). It packs the directory into one
+from their base says so (`keeps_directory`). It packs the directory into one
 tar archive beside it, in the instance's temporary space, and measures
 it; it reads the pack out in parts, drops it, and restores a pack's
 bytes into a new instance on the base. Where the parts go, and what
