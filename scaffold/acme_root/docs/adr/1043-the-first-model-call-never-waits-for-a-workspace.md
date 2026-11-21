@@ -50,11 +50,16 @@ session's next input starts a loop whose history holds every answer.
 **A run that reaches no workspace keeps the latest snapshot whole.** It
 prepares none, takes no snapshot, and lets nothing go. The next run that
 reaches the workspace starts from the latest snapshot, unless a call
-that reached the workspace and may have run, or an `environment_changed`
-step, came after it. A call that reaches no workspace touches none, and
-a call a park the loop wrote held open never ran. A call an earlier run
-made counts whatever run answered it, a job's included; a notice the
-run's own hooks wrote before its workspace was prepared does not.
+that reached the workspace may have run after it, or an
+`environment_changed` step came after it. A call that reaches no
+workspace touches none, and a call a park the loop wrote held open
+never ran. One answered after the snapshot ran then, whatever run
+answered it, unless its answer is marked `unstarted`: a refused
+workspace answers the calls no run started that way. A job's call ran
+where its request was made, so a job park's snapshot holds what its
+start wrote, and the answer the job's end brings touches nothing: the
+job runs once the instance is released. A notice the run's own hooks
+wrote before its workspace was prepared touches nothing either.
 
 **The hooks are told of the workspace once it is prepared.** `LoopStart`
 holds the session, the kind, the epoch, the loop, and whether the loop
