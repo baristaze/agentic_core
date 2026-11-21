@@ -22,6 +22,7 @@ from acme.om.agent_steps.types.header import (
     ParkReason,
     ToolFailure,
     ToolRequestHeader,
+    ToolResponseHeader,
 )
 from acme.om.agents import loop_rules as rules
 from acme.om.agents.impl.loop_core import LoopCore, RunState
@@ -98,8 +99,8 @@ class LoopWorkspace(LoopCore):
         if start is None and run.kind.isolation.durability is Durability.SNAPSHOT:
             # A notice the run's hooks wrote before its workspace was
             # prepared touched nothing of it. Anything else the run wrote
-            # counts as any run's would: its answer to a call an earlier run
-            # made, such as a job's, is that call's, which reached it.
+            # is read as any run's would be: its answer to a call an earlier
+            # run made tells whether that call ran after the snapshot.
             read = [
                 step
                 for step in history
@@ -207,9 +208,9 @@ class LoopWorkspace(LoopCore):
     async def _refuse_open(self, run: RunState, cause: str | None) -> None:
         """Every call of the loop's latest response still open, answered
         before a refused workspace ends the loop, each naming `cause`: one
-        no run started as never run, and one a lost run may have started
-        with its outcome unknown. A job a run started is the end's to stop
-        and answer."""
+        no run started as never run, marked `unstarted` since it touched
+        nothing, and one a lost run may have started with its outcome
+        unknown. A job a run started is the end's to stop and answer."""
         history = await self._history(run.ctx, run.agent_session_id)
         response = rules.latest_response(history, run.loop_id)
         if response is None:
@@ -227,6 +228,8 @@ class LoopWorkspace(LoopCore):
         for _, request in await self._requests(run, response, calls):
             if self._never_ran(run, request):
                 answer = self._stopped(request, f"not run: {why}", ToolFailure.PERMANENT)
+                header = ToolResponseHeader(failure=ToolFailure.PERMANENT, unstarted=True)
+                answer = answer.model_copy(update={"header": header})
             else:
                 answer = self._lost(request, why)
             answers.append(answer.model_copy(update={"id": response_id(request, run.epoch)}))
