@@ -35,20 +35,25 @@ from acme.om.agent_steps.types.header import (
     LoopOutcome,
     ParkedHeader,
     ParkReason,
+    ToolFailure,
     ToolRequestHeader,
 )
 from acme.om.agents.impl.loop import LoopOptions
+from acme.om.agents.impl.loop_workspace import REFUSED
 from acme.om.agents.rules import CHILDREN_PARK
 from acme.om.agents.types.run import RunEnd
 from acme.om.context import TenantContext
 from acme.om.tools.native.wait_for_sub_agents import WAIT_FOR_SUB_AGENTS
 
 from contracts import sub_agents
+from contracts.sub_agents import failure_of
+from contracts.sub_agents import text_of as said_by
 from contracts.loops import (
     ASSISTANT,
     DELIVERY,
     Lookup,
     Loop,
+    answer_to,
     call,
     loop_over,
     of_type,
@@ -205,6 +210,91 @@ async def test_a_refused_spec_ends_the_loop_errored_and_wakes_its_waiting_parent
     assert len(loop.anthropic.calls) == calls, "no call was made"
     woken = await loop.managers.agent_sessions.get_agent_session(loop.owner, root)
     assert (woken.status, woken.park) == (AgentSessionStatus.PENDING, None), "its report woke it"
+
+
+@pytest.mark.parametrize(
+    "refusal",
+    [
+        IsolationRefused("setup command 1 exited 3", cause="the base's setup command 1 exited 3"),
+        IsolationRefused("a container workspace needs Docker: the daemon is not running"),
+    ],
+    ids=["setup", "engine"],
+)
+async def test_a_refusal_that_cannot_clear_at_the_first_call_answers_every_call_left_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, refusal: IsolationRefused
+) -> None:
+    """A base whose setup fails, or a provider that cannot reach its engine,
+    is learned at the first call that reaches the workspace. The loop ends
+    `errored`, and each call the turn left open is answered first, never
+    run, with the refusal's cause: the session's next input starts a loop
+    that calls the model, and the model reads why."""
+    loop = hands_loop(tmp_path)
+    twin = loop.infra.get_agent_workspaces()
+    agent_session_id = await loop.start(HANDS.name)
+    await loop.say(agent_session_id, "Find the total, and check the ledger.")
+    loop.anthropic.add(reply(use("lookup"), call("ledger", q="the total")))
+
+    async def refused(*args: object, **kwargs: object) -> AgentWorkspace:
+        raise refusal
+
+    with monkeypatch.context() as patched:
+        patched.setattr(twin, "prepare", refused)
+        ended = await loop.loops.run(loop.owner, agent_session_id)
+
+    assert (ended.end, ended.outcome) == (RunEnd.ENDED, LoopOutcome.ERRORED)
+    history = await loop.history(agent_session_id)
+    last = history[-1]
+    assert isinstance(last.header, LoopEndedHeader) and last.header.cause == refusal.cause
+    requests = of_type(history, AgentStepType.TOOL_REQUEST)
+    assert len(requests) == 2
+    why = REFUSED if refusal.cause is None else f"{REFUSED}: {refusal.cause}"
+    for request in requests:
+        answer = answer_to(history, request)
+        assert failure_of(answer) is ToolFailure.PERMANENT
+        assert f"not run: {why}" in said_by(answer), "never run, and why"
+    assert loop.tools["lookup"].ran_as == [], "nothing ran"
+
+    await loop.say(agent_session_id, "The setup is fixed. Try again.")
+    loop.anthropic.add(reply(said("It is 12.")))
+    again = await loop.loops.run(loop.owner, agent_session_id)
+
+    assert again.outcome is LoopOutcome.SUCCEEDED, "the next input started a loop"
+    assert len(loop.anthropic.calls) == 2, "and that loop called the model"
+    assert why in text_of(loop.anthropic.calls[-1]), "the model read why its calls never ran"
+
+
+async def test_a_spec_refused_on_a_resumed_run_answers_the_call_its_park_held_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run that resumes a park holding a call open, and finds the spec
+    refused, answers that call with the cause before the loop ends."""
+    loop = loop_over(tmp_path)
+    agent_session_id = await loop.start()
+    await loop.say(agent_session_id, "Find the total and send it.")
+    loop.anthropic.add(reply(use("lookup", use_id="use_lookup")), reply(use("send")))
+    asked = await loop.loops.run(loop.owner, agent_session_id)
+    assert asked.park is not None and asked.park.unlock == "approval"
+    (send,) = [
+        step
+        for step in await loop.history(agent_session_id)
+        if isinstance(step.header, ToolRequestHeader) and step.header.tool == "send"
+    ]
+    await loop.managers.tools.decide_call(loop.owner, agent_session_id, send.seq, approve=True)
+
+    async def never(ctx: TenantContext, spec: IsolationSpec) -> None:
+        await loop.infra.get_agent_workspaces().check(CONTAINER)
+
+    monkeypatch.setattr(loop.managers.tools, "check_agent_workspace", never)
+    ended = await loop.loops.run(loop.owner, agent_session_id)
+
+    assert (ended.end, ended.outcome) == (RunEnd.ENDED, LoopOutcome.ERRORED)
+    history = await loop.history(agent_session_id)
+    last = history[-1]
+    assert isinstance(last.header, LoopEndedHeader) and last.header.cause is not None
+    answer = answer_to(history, send)
+    assert failure_of(answer) is ToolFailure.PERMANENT, "its park held it back: it never ran"
+    assert last.header.cause in said_by(answer), "the call held open reads the cause"
+    assert loop.tools["send"].ran_as == []
 
 
 async def test_a_workspace_that_must_wait_parks_with_its_call_open_and_runs_it_once_after(

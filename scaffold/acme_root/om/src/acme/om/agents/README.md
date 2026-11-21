@@ -215,7 +215,9 @@ of](../../../../README.md).
 - **An interrupt stops the call it names,** and no other.
 - **Isolation is refused, never weakened.** A spec the provider can
   never meet ends the loop before its first model call, with nothing
-  made. A prepare that waits for a workspace that may come parks the
+  made. A prepare that cannot clear, a base whose setup failed say,
+  ends the loop at the call that asked, each call left open answered
+  with the cause. A prepare that waits for a workspace that may come parks the
   loop on `leasable_resource` with its call open, and it asks again
   after a wait; the call then runs once. A workspace whose durable state
   is gone parks the loop, loudly, for a person. The step that ends or parks the

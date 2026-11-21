@@ -312,8 +312,12 @@ class LoopCore(ABC):
             limit=self._options.stopped_chars,
         )
 
-    def _lost(self, request: AgentStep) -> AgentStep:
+    def _lost(self, request: AgentStep, why: str | None = None) -> AgentStep:
+        """A call a lost run may have started, answered with its outcome
+        unknown, and `why` the run that answers it stops, when it says."""
         text = "a run that made this call was lost before it answered; whether it ran is unknown"
+        if why is not None:
+            text = f"{text}; {why}"
         return self._stopped(request, text, ToolFailure.INTERRUPTED)
 
     def _never_ran(self, run: RunState, request: AgentStep) -> bool:

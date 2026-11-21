@@ -1004,7 +1004,10 @@ calls reach no workspace makes none. A tool says whether its calls reach
 it ([The Tool Contract](#the-tool-contract)).
 
 A refusal says whether it can clear. One that cannot, such as a spec the
-provider does not support, ends the loop `errored`. One that waits for a
+provider does not support or a base whose setup failed, ends the loop
+`errored`, and each call the loop left open is answered first, with the
+refusal's cause, so the session's next input starts a loop that reads
+why. One that waits for a
 workspace that may come, with no host free yet or a VM still starting,
 parks the loop on the resource with the call open, and the loop asks
 again after a wait: once the workspace comes, the same call runs once,

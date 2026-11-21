@@ -20,13 +20,14 @@ from acme.om.agent_steps.types.header import (
     LoopOutcome,
     Park,
     ParkReason,
+    ToolFailure,
     ToolRequestHeader,
 )
 from acme.om.agents import loop_rules as rules
 from acme.om.agents.impl.loop_core import LoopCore, RunState
 from acme.om.agents.types.run import LoopRun
 from acme.om.base import new_id
-from acme.om.tools.rules import ISOLATION_REFUSED, named_snapshot
+from acme.om.tools.rules import ISOLATION_REFUSED, named_snapshot, response_id
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +37,9 @@ LOST_SOURCE = "what the workspace is rebuilt from is gone, or cannot be brought 
 """The causes a park on a lost workspace names, the engine's own words: the
 provider's message may hold what a command wrote, and reaches the log
 alone."""
+REFUSED = "the session's workspace was refused, and the loop ended"
+"""What a call still open reads when a refused workspace ends its loop,
+with the refusal's cause when it names one."""
 
 
 def lost_agent_workspace(park: Park) -> bool:
@@ -162,8 +166,11 @@ class LoopWorkspace(LoopCore):
             return await self._park(run, park)
         if refused.code == ISOLATION_REFUSED:
             # A provider that cannot meet the spec, or a base whose setup
-            # failed, refuses it whole: no weaker workspace, ever.
+            # failed, refuses it whole: no weaker workspace, ever. The loop
+            # ends with no call left open, so the session's next input
+            # starts a loop whose history renders.
             log.warning("session %s has no workspace: %s", run.agent_session_id, refused)
+            await self._refuse_open(run, cause)
             return await self._end(run, LoopOutcome.ERRORED, cause=cause)
         if refused.code != AgentWorkspaceLost.code:
             raise refused
@@ -178,3 +185,31 @@ class LoopWorkspace(LoopCore):
             cause=LOST_SNAPSHOT if restoring else LOST_SOURCE,
         )
         return await self._park(run, park)
+
+    async def _refuse_open(self, run: RunState, cause: str | None) -> None:
+        """Every call of the loop's latest response still open, answered
+        before a refused workspace ends the loop, each naming `cause`: one
+        no run started as never run, and one a lost run may have started
+        with its outcome unknown. A job a run started is the end's to stop
+        and answer."""
+        history = await self._history(run.ctx, run.agent_session_id)
+        response = rules.latest_response(history, run.loop_id)
+        if response is None:
+            return
+        jobs = rules.started_jobs(history, run.loop_id)
+        calls = [
+            (use, request)
+            for use, request in rules.open_calls(history, response)
+            if request is None or request.id not in jobs
+        ]
+        if not calls:
+            return
+        why = REFUSED if cause is None else f"{REFUSED}: {cause}"
+        answers: list[AgentStep] = []
+        for _, request in await self._requests(run, response, calls):
+            if self._never_ran(run, request):
+                answer = self._stopped(request, f"not run: {why}", ToolFailure.PERMANENT)
+            else:
+                answer = self._lost(request, why)
+            answers.append(answer.model_copy(update={"id": response_id(request, run.epoch)}))
+        await self._append(run, answers)

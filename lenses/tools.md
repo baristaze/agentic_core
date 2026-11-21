@@ -404,9 +404,9 @@ rest is judged.
 the provider can never meet is refused before the first model call,
 whole, never met with something weaker. A workspace is made at the
 first tool call that reaches it, never before a model call.
-A refusal that cannot clear ends the loop `errored`; one that may clear
-parks it on the resource with the call open, which runs once when the
-workspace comes. Either names its cause, never a command's output or the
+A refusal that cannot clear ends the loop `errored`, each call it left
+open answered with its cause; one that may clear parks it on the
+resource with the call open, which runs once when the workspace comes. Either names its cause, never a command's output or the
 host's state. A lost workspace parks the loop for a person. A released
 instance is prepared again by the next loop that reaches it, and an
 `environment_changed` step tells the model what changed.
@@ -424,7 +424,7 @@ spec the provider can never meet found after the model has been called;
 a workspace prepared before a model call, or for a run whose calls reach
 none; a call that waits for a workspace lost, or run twice once it
 comes; a refusal that may clear ending the loop, or one that cannot
-clear parking it; a refusal's cause
+clear parking it, or ending it with a call left open; a refusal's cause
 that holds a command's output, an environment, or the host's own state,
 or one the refusal names that its loop's end or park drops; a workspace
 rebuilt from something else when what it is rebuilt from is gone; a new
