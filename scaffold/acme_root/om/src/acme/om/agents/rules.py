@@ -64,7 +64,7 @@ STARTS: dict[Starter, str] = {
     Starter.PERSON: "a person starts it, or confirms a hand-off to it",
     Starter.AGENT: "an agent starts it as its sub-agent",
 }
-"""What each starter of a kind is, as a refusal names the one it lacks."""
+"""Each starter, in the words a refusal uses to name those a kind allows."""
 
 
 def start_refusal(kind: AgentKind, starter: Starter) -> str | None:
@@ -163,14 +163,15 @@ def report_text(child: AgentSession, report: Report) -> str:
 def request_kind_breaches(
     kind: AgentKind, specs: Mapping[str, ToolSpec], ceilings: ToolPolicyLayer
 ) -> tuple[str, ...]:
-    """What a kind whose loop runs in a request breaks of what such a kind
-    may hold, each named; none for a kind that runs in a worker. A request
-    holds no workspace, starts no sub-agent and no job, is started by no
-    agent as its sub-agent, and runs no call that waits for a person: each tool it names is one of `specs`, the
-    catalog's, and its own layer of policy allows it under the platform's
-    `ceilings`. It makes at most `REQUEST_STEPS` model calls, within
-    `REQUEST_TIME`. A tenant's layer may still hold a call for a person at
-    run time, and the loop then ends where it would park."""
+    """What a kind whose loop runs in a request breaks of what such a kind may
+    hold, each named; none for a kind that runs in a worker. A request holds
+    no workspace, starts no sub-agent and no job, is started by no agent as
+    its sub-agent, and runs no call that waits for a person: each tool it
+    names is one of `specs`, the catalog's, and its own layer of policy
+    allows it under the platform's `ceilings`. It makes at most
+    `REQUEST_STEPS` model calls, within `REQUEST_TIME`. A tenant's layer may
+    still hold a call for a person at run time, and the loop then ends where
+    it would park."""
     if kind.runs_in is not RunsIn.REQUEST:
         return ()
     breaches: list[str] = []
