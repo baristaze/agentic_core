@@ -5,47 +5,62 @@ included, stay on its GitHub release. Releases are tagged
 `vMAJOR.MINOR.PATCH`; see `CONTRIBUTING.md` for what bumps which
 number.
 
-## 0.24.0 (2026-10-25)
+## 0.25.0 (2026-11-21)
 
-The engine is measured on the path a deployment runs: `performance/`
-replays a long session's shape with every step sealed. The loop no
-longer opens again what it wrote, and a session's title is sealed like
-the rest of its content. Minor, with one reversal: a read answers a
-session's title sealed, and what shows it opens it.
+The first model call never waits for a workspace, a VM workspace keeps
+its directory sealed in the buckets rather than its disk, and a kind's
+loop may run in the request that asks it. Minor, with three reversals:
+a workspace is prepared at the first tool call that reaches it, no
+longer before the first model call, and the loop hooks no longer
+receive one before that call; a VM workspace's snapshot is its
+directory, no longer its disk (ADR 1029 now covers a base alone); and a
+web service runs a request kind's loop in its request (ADR 1044 records
+the deviation from the guideline's ASY-15 and NET-19).
 
 ### Added
 
-- `performance/`, outside the scaffold: a long session's shape, kept as
-  numbers and tool classes, replayed through the engine as the session
-  runner wires it, every step sealed, on a Postgres per role, Valkey,
-  MinIO, and the KMS adapter at a digest-pinned emulator or the key
-  twin. A read pass pages each history and the session list as the API
-  does, and a sampler ranks where the wall time goes. `make performance`
-  runs it on its own compose project, and `make performance-check` runs
-  a short replay in CI (#129).
+- A kind declares where its loop runs: `runs_in` is `worker`, the
+  default, or `request`. A request kind holds no workspace, no
+  sub-agent, no job, and no tool behind an approval, within 10 steps
+  and 30 seconds, and a root built with one that breaks a rule is
+  refused, naming each breach. `POST /v1/agent-sessions/questions` and
+  `POST /v1/agent-sessions/{id}/questions` run its loop in the request
+  and stream server-sent events: the session, its text, a ping after 15
+  seconds of quiet, and one end with the outcome, its cause, the steps,
+  and the usage. A park ends the stream with its cause and answers each
+  open call as not run; no work item is written, and no recovery or
+  sweep touches the session. The scaffold offers an example request
+  kind, `assistant`, where a product declares none (ADR 1044, #136).
+- `LoopHooksInterface.workspace_prepared`: a layer above learns of a
+  prepared workspace once, before the call that reached it runs, and
+  appends its own steps there (#135).
 
 ### Changed
 
-- A run holds what it reads and writes, for the run alone: its own
-  appends join its history with no read back, an append opens nothing
-  again, and recovering a lost run's calls reads on from the history
-  read at its start. The key ring's revocation rides the statement that
-  reads its versions. On the 1,500-turn replay with the KMS emulator,
-  steps a second rise from 17.8 to 23.2, key calls for each step
-  written fall from 4.41 to 2.86, and a run's start at its median from
-  662 to 383 ms (#131).
-- A session's title is content, sealed at rest under a title key of its
-  own, wrapped under the tenant's title key, which the key service
-  wraps (ADR 1042). A page of titles opens with one read of its title
-  keys and one unwrap. A revocation clears the title key in its commit,
-  so the title reads absent while the session keeps its place; a
-  rotation rewraps the tenant's key, and a tenant's purge takes it. A
-  memory-only session's title is kept at rest, sealed. This reverses
-  the earlier contract: a read, `create_agent_session` included,
-  answers a title sealed, and what shows one opens it with
-  `open_titles`, as the API, the sub-agent tools, and the demo do
-  (#132).
-- The core migration `202610250340` only adds: a row this release
-  writes holds `(sealed)` in the column the release before reads, and
-  the maintenance sweep seals each existing title in place, never
-  dropping one (#132).
+- Before a loop's first model call, a workspace provider only checks the
+  isolation spec (`check`), and a spec it can never meet is refused
+  there with its cause, nothing made. The workspace is prepared at the
+  first tool call that reaches it (`ToolSpec.workspace`), and only that
+  call waits: a prepare that must wait parks the loop with the call
+  open, and it runs once when the workspace comes. A run that reaches
+  no workspace prepares nothing and takes no snapshot. A refusal that
+  cannot clear answers every open call before the loop ends. The rule
+  of two reads the session's own egress, whatever a call reaches
+  (`gate(..., egress=)`). The snapshot a run starts from counts a job's
+  call in the run that started it, and no call no run started (ADR 1043,
+  #135).
+- A VM workspace kept by snapshots keeps its directory alone: measured
+  against a bound before it is packed, packed in the guest under a time
+  bound of its own, and kept in parts, each sealed under the session's
+  key, beside a sealed manifest; the parts of a failed archive are
+  removed. A restore starts a new VM on the base beside the one it
+  replaces and lets the old one go only once every part is unpacked,
+  each held to its keyed hash, so a bad part loses nothing. The model is
+  told that what lay outside the directory comes from the base again. A
+  provider implements `keeps_directory`, `pack`, `read`, `drop`, and
+  `restore`, or takes `KeepsWholeMixin` (ADR 1045, #134).
+
+### Fixed
+
+- A test of a pack that fails no longer reads a loaded machine's slow
+  measure as a timeout (#137).
