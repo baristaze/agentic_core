@@ -181,7 +181,9 @@ async def test_a_restore_that_fails_part_way_leaves_no_vm(tmp_path: Path) -> Non
     transport = transport_over(twin, tmp_path, org)
     workspace = await provider.prepare(org, agent_workspace_id, vm())
     await written(transport, workspace, "head -c 20000 /dev/urandom > state.bin")
-    parts = await read_out(provider, await provider.pack(workspace), 4096)
+    pack = await provider.pack(workspace)
+    parts = await read_out(provider, pack, 4096)
+    await provider.drop(pack)
 
     with pytest.raises(AgentWorkspaceLost, match="does not match"):
         await provider.restore(org, agent_workspace_id, vm(), streamed(parts, fail_after=2))
