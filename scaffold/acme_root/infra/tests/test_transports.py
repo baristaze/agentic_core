@@ -730,7 +730,9 @@ LIMA_TIMEOUT = timedelta(seconds=120)
 
 
 LIMA_IMAGE = "template:_images/ubuntu-lts"
-on_base = vm.model_copy(update={"base": AgentWorkspaceBase(image=LIMA_IMAGE, setup=("true",))})
+on_base = vm.model_copy(
+    update={"base": AgentWorkspaceBase(image=LIMA_IMAGE, setup=("true",), egress=vm.egress)}
+)
 
 
 def on_lima() -> tuple[VmsLimaImpl, AgentWorkspaceVmImpl]:
