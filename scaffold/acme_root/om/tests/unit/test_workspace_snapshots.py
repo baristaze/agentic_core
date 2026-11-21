@@ -49,6 +49,7 @@ from acme.om.agent_steps.types.header import (
     SnapshotHeader,
     ToolFailure,
     ToolRequestHeader,
+    ToolResponseHeader,
 )
 from acme.om.agents.impl.loop import LOST_SNAPSHOT
 from acme.om.agents.loop_rules import FORKED, LOST, REWOUND, pending_restore
@@ -64,11 +65,13 @@ from acme.om.tools.native.spawn_sub_agent import SPAWN_SUB_AGENT
 from acme.om.tools.native.wait_for_sub_agents import WAIT_FOR_SUB_AGENTS
 from acme.om.tools.tool import TakenSnapshot, ToolRuntime
 from acme.om.tools.types.call import JobCompletion
+from acme.om.tools.types.policy import Decision, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import Effect, ToolClass, ToolInput
 
 from contracts.doubles import context
 from contracts.factories import make_org
 from contracts.loops import (
+    ALLOWED,
     ASSISTANT,
     DELIVERY,
     Asked,
@@ -334,6 +337,15 @@ KEPT_BUILDER = KEEPER.model_copy(
     update={"name": "kept_builder", "tools": ("lookup", "scribble", "build")}
 )
 """A kind that keeps its workspace by snapshots and starts a job in it."""
+APPROVED_BUILDER = KEPT_BUILDER.model_copy(
+    update={
+        "name": "approved_builder",
+        "policy": ToolPolicyLayer(
+            rules=(*ALLOWED.rules, ToolPolicyRule(tool="build", decision=Decision.APPROVE))
+        ),
+    }
+)
+"""A kept builder whose job waits for a person's approval before it starts."""
 CACHE_FORKER = FORKER.model_copy(
     update={
         "name": "cache_forker",
@@ -353,7 +365,7 @@ def kept_loop(tmp_path: Path) -> tuple[Loop, AgentWorkspaceTwinImpl]:
     injected = SecretUse(name=TOKEN, via=SecretVia.INJECTED, env=TOKEN)
     loop = loop_over(
         tmp_path,
-        kinds=(ASSISTANT, DELIVERY, KEEPER, FORKER, CACHE_FORKER, KEPT_BUILDER),
+        kinds=(ASSISTANT, DELIVERY, KEEPER, FORKER, CACHE_FORKER, KEPT_BUILDER, APPROVED_BUILDER),
         infra=infra,
         extra=(Scribble(twin), Command("run_command", secrets=(injected,))),
     )
@@ -529,6 +541,160 @@ async def test_a_job_an_earlier_run_started_leaves_the_next_to_prepare_its_works
     assert twin.files[agent_session_id] == b"what the build wrote", "no older snapshot over it"
     latest = named(snapshots(await loop.history(agent_session_id))[-1])
     assert latest.id != older.id and latest.size == len(b"what the build wrote")
+
+
+def prepared_from(
+    monkeypatch: pytest.MonkeyPatch, twin: AgentWorkspaceTwinImpl
+) -> list[bytes | None]:
+    """The snapshot each prepare on the twin starts from, None for one that
+    takes the workspace as it stands, in order."""
+    prepared: list[bytes | None] = []
+    prepare = twin.prepare
+
+    async def recorded(
+        org_id: UUID,
+        agent_workspace_id: UUID,
+        spec: IsolationSpec,
+        snapshot: bytes | None = None,
+        base: bytes | None = None,
+        *,
+        building: bool = False,
+    ) -> AgentWorkspace:
+        prepared.append(snapshot)
+        return await prepare(org_id, agent_workspace_id, spec, snapshot, base, building=building)
+
+    monkeypatch.setattr(twin, "prepare", recorded)
+    return prepared
+
+
+async def test_a_job_whose_park_kept_the_workspace_leaves_the_run_its_end_wakes_to_start_from_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The snapshot at a job's park holds the workspace, so its instance
+    goes, and the job runs after. The run the job's end wakes answers the
+    call, and that answer touches nothing of the workspace: the run's first
+    call that reaches it prepares it from the park's snapshot, never as the
+    instance stands."""
+    loop, twin = kept_loop(tmp_path)
+    agent_session_id = await loop.start(KEPT_BUILDER.name)
+    await wrote(loop, agent_session_id, b"as the last run left it")
+
+    await loop.say(agent_session_id, "Write the input, then start the build.")
+    loop.anthropic.add(
+        reply(call("scribble", q="the build's input")), reply(call("build", q="everything"))
+    )
+    parked = await loop.loops.run(loop.owner, agent_session_id)
+    assert parked.park is not None and parked.park.reason is ParkReason.JOB
+    assert agent_session_id not in twin.live, "a snapshot holds it, so its instance went"
+    assert named(snapshots(await loop.history(agent_session_id))[-1]).size == len(
+        b"the build's input"
+    )
+    # On the twin the files outlive a release; a container's layer does not.
+    twin.files[agent_session_id] = b"what a release loses"
+    (build,) = [
+        step
+        for step in await loop.history(agent_session_id)
+        if isinstance(step.header, ToolRequestHeader) and step.header.tool == "build"
+    ]
+    completion = JobCompletion(key=build.id, handle="build-1", text="built")
+    await loop.loops.complete_job(loop.owner, agent_session_id, completion)
+    prepared = prepared_from(monkeypatch, twin)
+    loop.anthropic.add(reply(call("lookup", q="the output")), reply(said("It is built.")))
+
+    done = await loop.loops.run(loop.owner, agent_session_id)
+
+    assert done.outcome is LoopOutcome.SUCCEEDED
+    assert prepared == [b"the build's input"], "prepared from the park's snapshot"
+    assert twin.files[agent_session_id] == b"the build's input"
+
+
+async def test_a_job_held_for_approval_over_a_snapshot_leaves_what_its_start_wrote_to_the_run_its_end_wakes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A job's call waits for a person's approval, and that park's snapshot
+    holds the workspace, so its instance goes. The run that takes the loop
+    up once it is approved starts the job, which writes into the workspace,
+    and the snapshot at the job's park is refused, so the instance stays
+    live. The call ran in that run, not where its request was made: the run
+    the job's end wakes prepares the workspace as it stands, with what the
+    start wrote, never from the snapshot taken before the job started."""
+    loop, twin = kept_loop(tmp_path)
+    agent_session_id = await loop.start(APPROVED_BUILDER.name)
+    await wrote(loop, agent_session_id, b"as the last run left it")
+
+    await loop.say(agent_session_id, "Write the input, then start the build.")
+    loop.anthropic.add(
+        reply(call("scribble", q="the build's input"), call("build", q="everything"))
+    )
+    asked = await loop.loops.run(loop.owner, agent_session_id)
+    assert asked.park is not None and asked.park.reason is ParkReason.PERSON
+    assert agent_session_id not in twin.live, "a snapshot holds it, so its instance went"
+    (build,) = [
+        step
+        for step in await loop.history(agent_session_id)
+        if isinstance(step.header, ToolRequestHeader) and step.header.tool == "build"
+    ]
+    await loop.managers.tools.decide_call(loop.owner, agent_session_id, build.seq, approve=True)
+    prepared = prepared_from(monkeypatch, twin)
+
+    async def refused(*args: object, **kwargs: object) -> AgentStep:
+        raise SnapshotRefused("the workspace holds the secret 'SERVICE_TOKEN'")
+
+    with monkeypatch.context() as patched:
+        patched.setattr(loop.managers.tools, "snapshot_agent_workspace", refused)
+        parked = await loop.loops.run(loop.owner, agent_session_id)
+    assert parked.park is not None and parked.park.reason is ParkReason.JOB
+    assert agent_session_id in twin.live, "no snapshot holds it, so its instance stays"
+    # What the job's start wrote into the live instance.
+    twin.files[agent_session_id] = b"what the build's start wrote"
+    completion = JobCompletion(key=build.id, handle="build-1", text="built")
+    await loop.loops.complete_job(loop.owner, agent_session_id, completion)
+    loop.anthropic.add(reply(call("lookup", q="the output")), reply(said("It is built.")))
+
+    done = await loop.loops.run(loop.owner, agent_session_id)
+
+    assert done.outcome is LoopOutcome.SUCCEEDED
+    assert prepared == [b"the build's input", None], "the job's start kept, never the older"
+    assert twin.files[agent_session_id] == b"what the build's start wrote"
+
+
+async def test_a_call_a_refused_workspace_never_ran_leaves_the_next_loop_the_latest_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A prepare refused for good ends the loop with the call that asked
+    for it answered as never run, marked `unstarted`. That call touched
+    nothing, so the next loop's first call that reaches the workspace
+    prepares it from the latest snapshot, never as the instance stands."""
+    loop, twin = kept_loop(tmp_path)
+    agent_session_id = await loop.start(KEEPER.name)
+    await wrote(loop, agent_session_id, b"as the last run left it")
+    # On the twin the files outlive a release; a container's layer does not.
+    twin.files[agent_session_id] = b"what a release loses"
+
+    async def refused(*args: object, **kwargs: object) -> AgentWorkspace:
+        raise IsolationRefused("a container workspace needs Docker: the daemon is not running")
+
+    await loop.say(agent_session_id, "Look.")
+    loop.anthropic.add(reply(call("lookup", q="the files")))
+    with monkeypatch.context() as patched:
+        patched.setattr(twin, "prepare", refused)
+        ended = await loop.loops.run(loop.owner, agent_session_id)
+    assert ended.outcome is LoopOutcome.ERRORED
+    answer = [
+        step.header
+        for step in await loop.history(agent_session_id)
+        if isinstance(step.header, ToolResponseHeader)
+    ][-1]
+    assert answer.unstarted and answer.failure is ToolFailure.PERMANENT
+    prepared = prepared_from(monkeypatch, twin)
+
+    await loop.say(agent_session_id, "Look again.")
+    loop.anthropic.add(reply(call("lookup", q="the files")), reply(said("Seen.")))
+    done = await loop.loops.run(loop.owner, agent_session_id)
+
+    assert done.outcome is LoopOutcome.SUCCEEDED
+    assert prepared == [b"as the last run left it"], "prepared from the latest snapshot"
+    assert twin.files[agent_session_id] == b"as the last run left it"
 
 
 async def test_a_workspace_a_person_worked_in_by_hand_is_never_replaced_by_an_older_snapshot(
