@@ -21,6 +21,7 @@ from acme.infra.agent_workspaces import (
     EgressMode,
     EgressPolicy,
     IsolationMode,
+    IsolationRefused,
     IsolationSpec,
 )
 from acme.infra.agent_workspaces.twin import AgentWorkspaceTwinImpl
@@ -34,6 +35,7 @@ from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType
 from acme.om.agent_steps.types.content import Content, TextBlock, ToolResultBlock, ToolUseBlock
 from acme.om.agent_steps.types.header import (
     ControlCommand,
+    LoopEndedHeader,
     LoopOutcome,
     MarkHeader,
     ParkReason,
@@ -47,7 +49,7 @@ from acme.om.agents.hooks import (
     with_attached_toolsets,
 )
 from acme.om.agents.types.request import Spawn
-from acme.om.agents.types.run import RunEnd
+from acme.om.agents.types.run import LoopRun, RunEnd
 from acme.om.base import OmBase, new_id, utcnow
 from acme.om.context import Role, TenantContext
 from acme.om.exceptions import NotAuthorized, UnresolvedRole
@@ -144,7 +146,8 @@ class Layer(LoopHooksInterface):
     at a new loop under the run's epoch, a step it appends before each
     run's first call when something changed, and one it appends once the
     run's workspace is prepared when something changed in it. `refuses`
-    stands for a renewal that finds no fill for the session."""
+    stands for a renewal that finds no fill for the session, and `refusal`
+    for a session whose workspace the layer knows cannot be had."""
 
     def __init__(
         self,
@@ -153,11 +156,13 @@ class Layer(LoopHooksInterface):
         changed: str | None = None,
         rebuilt: str | None = None,
         refuses: bool = False,
+        refusal: IsolationRefused | None = None,
     ) -> None:
         self.attached = attached
         self.changed = changed
         self.rebuilt = rebuilt
         self.refuses = refuses
+        self.refusal = refusal
         self.asked: list[UUID] = []
         self.starts: list[LoopStart] = []
         self.renewed: list[tuple[UUID, int]] = []
@@ -171,6 +176,8 @@ class Layer(LoopHooksInterface):
 
     async def before_first_call(self, ctx: TenantContext, start: LoopStart) -> Sequence[AgentStep]:
         self.starts.append(start)
+        if self.refusal is not None:
+            raise self.refusal
         if start.new_loop:
             if self.refuses:
                 raise UnresolvedRole("no fill serves the main role any longer")
@@ -332,6 +339,64 @@ async def test_a_renewal_that_finds_no_fill_ends_the_loop_before_any_call(tmp_pa
 
     assert ran.end is RunEnd.ENDED and ran.outcome is LoopOutcome.ERRORED
     assert loop.anthropic.calls == [], "nothing is spent on a loop with no fill"
+
+
+PLACEMENT = "the egress the agent's allowlist asks for is one its placement never holds"
+
+
+async def refused_by_its_layer(
+    tmp_path: Path, *, clears: bool
+) -> tuple[LoopRun, list[AgentStep], AgentWorkspaceTwinImpl, Layer]:
+    """A run of a session with a workspace, whose layer refuses that
+    workspace before the run's first model call, with a cause."""
+    infra = InfraLocalImpl(tmp_path)
+    twin = infra.get_agent_workspaces()
+    assert isinstance(twin, AgentWorkspaceTwinImpl)
+    refusal = IsolationRefused("placement p-3 closes egress", clears=clears, cause=PLACEMENT)
+    layer = Layer(refusal=refusal)
+    loop = loop_over(tmp_path, kinds=(ASSISTANT, DELIVERY, KEEPER), infra=infra, hooks=layer)
+    agent_session_id = await loop.start(KEEPER.name)
+    await loop.say(agent_session_id, "Look it up.")
+    loop.anthropic.add(reply(use("lookup")), reply(said("Found.")))
+
+    ran = await loop.loops.run(loop.owner, agent_session_id)
+
+    assert loop.anthropic.calls == [], "no model call is spent on a session that cannot run"
+    history = await loop.history(agent_session_id)
+    assert AgentStepType.MODEL_REQUEST not in [step.type for step in history]
+    return ran, history, twin, layer
+
+
+async def test_a_workspace_the_hooks_refuse_ends_the_loop_before_any_call_naming_its_cause(
+    tmp_path: Path,
+) -> None:
+    """A layer that knows the session's workspace can never be had refuses
+    it before the run's first model call, and the loop ends as on a refused
+    spec: `errored`, with nothing spent or made, its end naming the cause
+    for a person, never the refusal's message."""
+    ran, history, twin, layer = await refused_by_its_layer(tmp_path, clears=False)
+
+    assert (ran.end, ran.outcome, ran.park) == (RunEnd.ENDED, LoopOutcome.ERRORED, None)
+    ended = history[-1]
+    assert isinstance(ended.header, LoopEndedHeader) and ended.header.cause == PLACEMENT
+    assert twin.live == set() and layer.prepared == [], "nothing was prepared"
+
+
+async def test_a_workspace_the_hooks_refuse_until_it_clears_parks_the_loop_on_it(
+    tmp_path: Path,
+) -> None:
+    """A refusal that clears parks the loop on the resource, as a refused
+    spec's would, its park naming the cause, and asks again after a wait."""
+    ran, _, twin, layer = await refused_by_its_layer(tmp_path, clears=True)
+
+    assert ran.end is RunEnd.PARKED and ran.park is not None, "never ended"
+    assert (ran.park.reason, ran.park.unlock, ran.park.cause) == (
+        ParkReason.LEASABLE_RESOURCE,
+        "agent_workspace",
+        PLACEMENT,
+    )
+    assert ran.park.retry_at is not None, "it asks again after a wait"
+    assert twin.live == set() and layer.prepared == [], "nothing was prepared"
 
 
 def test_attached_toolsets_fold_into_the_kind_and_give_each_tool_once() -> None:

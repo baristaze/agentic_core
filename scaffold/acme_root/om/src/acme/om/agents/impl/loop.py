@@ -8,6 +8,7 @@ import logging
 from collections.abc import Sequence
 from uuid import UUID
 
+from acme.infra.agent_workspaces import IsolationRefused
 from acme.integrations.model_providers.types import StopReason
 from acme.om.agent_sessions.kinds import AGENT_SESSION_WAITER
 from acme.om.agent_sessions.limits import Limit, Trip, tally_loop, tripped
@@ -165,7 +166,9 @@ class LoopManagerImpl(
     async def _start(self, run: RunState, *, new_loop: bool) -> LoopRun | None:
         """The steps the hooks append before the run's first model call, under
         its epoch. None once they are written; else how the run stopped: a
-        fill the hooks refuse ends the loop, as the resolve before does."""
+        fill the hooks refuse ends the loop, as the resolve before does, and
+        a workspace they refuse stops it as a refused spec does, its end or
+        its park naming the refusal's cause."""
         start = LoopStart(
             agent_session=run.session,
             kind=run.kind,
@@ -178,6 +181,10 @@ class LoopManagerImpl(
         except (UnresolvedRole, UnpricedModel) as refused:
             log.warning("session %s resolves no fill: %s", run.agent_session_id, refused.message)
             return await self._end(run, LoopOutcome.ERRORED)
+        except IsolationRefused as refused:
+            # As at the check of the spec: nothing is prepared yet, and the
+            # calls a lost run left open are not settled yet.
+            return await self._unprepared(run, refused, restoring=False, settled=run.resumed)
         run.began = start
         if steps:
             await self._append(run, list(steps))
