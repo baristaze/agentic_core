@@ -56,10 +56,14 @@ workspace touches none, and a call a park the loop wrote held open
 never ran. One answered after the snapshot ran then, whatever run
 answered it, unless its answer is marked `unstarted`: a refused
 workspace answers the calls no run started that way. A job's call ran
-where its request was made, so a job park's snapshot holds what its
-start wrote, and the answer the job's end brings touches nothing: the
-job runs once the instance is released. A notice the run's own hooks
-wrote before its workspace was prepared touches nothing either.
+in the run that started its job, the run that wrote the first park
+naming it, whatever run made its request: a call held for an approval
+across a snapshot runs after it. That run parks as soon as the job
+starts, so the snapshot it takes at that park holds what the start
+wrote, and when none is taken the workspace stands newer than the
+latest. The answer the job's end brings touches nothing: the job runs
+once the instance is released. A notice the run's own hooks wrote
+before its workspace was prepared touches nothing either.
 
 **The hooks are told of the workspace once it is prepared.** `LoopStart`
 holds the session, the kind, the epoch, the loop, and whether the loop
