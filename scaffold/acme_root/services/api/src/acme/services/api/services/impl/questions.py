@@ -27,10 +27,10 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from acme.om.agent_steps.types.stream import StreamPart, TextPart
-from acme.om.agents.sink import StreamSinkInterface
 from acme.om.agents.types.run import LoopRun
 from acme.om.context import TenantContext
 from acme.om.exceptions import OmException
+from acme.services.api.services.questions import QuestionStreamsInterface
 from acme.services.api.types.agent_sessions import (
     QuestionEndView,
     QuestionErrorView,
@@ -51,21 +51,14 @@ Sleep = Callable[[float], Awaitable[None]]
 sleeps."""
 
 
-class _Ran:
-    """The mark the loop's task leaves in the queue once it is done."""
-
-
-RAN = _Ran()
-
-
-class QuestionStreams(StreamSinkInterface):
+class QuestionStreamsImpl(QuestionStreamsInterface):
     """The stream sink of a process that runs loops in the requests that ask
     them. Each request subscribes to its session for as long as it runs the
     session's loop; a writer epoch lets one run write at a time, so a part
     reaches the request that runs the loop."""
 
     def __init__(self) -> None:
-        self._queues: dict[UUID, list[asyncio.Queue[StreamPart | _Ran]]] = {}
+        self._queues: dict[UUID, list[asyncio.Queue[StreamPart | None]]] = {}
 
     def emit(self, part: StreamPart) -> None:
         for queue in self._queues.get(part.agent_session_id, ()):
@@ -78,10 +71,10 @@ class QuestionStreams(StreamSinkInterface):
         return None
 
     @contextmanager
-    def subscribed(self, agent_session_id: UUID) -> Iterator[asyncio.Queue[StreamPart | _Ran]]:
+    def subscribed(self, agent_session_id: UUID) -> Iterator[asyncio.Queue[StreamPart | None]]:
         """A queue of every part the session's loop emits from now until the
         block ends."""
-        queue: asyncio.Queue[StreamPart | _Ran] = asyncio.Queue()
+        queue: asyncio.Queue[StreamPart | None] = asyncio.Queue()
         self._queues.setdefault(agent_session_id, []).append(queue)
         try:
             yield queue
@@ -98,7 +91,7 @@ def event(name: str, data: BaseModel) -> str:
 
 
 async def stream_question(
-    streams: QuestionStreams,
+    streams: QuestionStreamsInterface,
     asked: QuestionSessionView,
     run: Callable[[], Coroutine[Any, Any, LoopRun]],
     ended: Callable[[LoopRun], Awaitable[QuestionEndView]],
@@ -113,13 +106,13 @@ async def stream_question(
     yield event("session", asked)
     with streams.subscribed(asked.agent_session_id) as parts:
         task = asyncio.create_task(run())
-        task.add_done_callback(lambda _: parts.put_nowait(RAN))
+        task.add_done_callback(lambda _: parts.put_nowait(None))
         try:
             while True:
                 part = await _next(parts, quiet, sleep)
-                if part is None:
+                if isinstance(part, _Quiet):
                     yield event("ping", QuestionPingView())
-                elif isinstance(part, _Ran):
+                elif part is None:
                     break
                 elif isinstance(part, TextPart):
                     yield event(
@@ -148,10 +141,18 @@ async def stream_question(
     yield event("end", await ended(run_ended))
 
 
+class _Quiet:
+    """A spell of quiet passed with nothing in the queue."""
+
+
+QUIET_SPELL = _Quiet()
+
+
 async def _next(
-    parts: asyncio.Queue[StreamPart | _Ran], quiet: timedelta, sleep: Sleep
-) -> StreamPart | _Ran | None:
-    """The next part in the queue, or None once `quiet` passes with none."""
+    parts: asyncio.Queue[StreamPart | None], quiet: timedelta, sleep: Sleep
+) -> StreamPart | _Quiet | None:
+    """What comes next in the queue: a part, None once the run is done, or
+    `QUIET_SPELL` once `quiet` passes with nothing."""
     getting = asyncio.ensure_future(parts.get())
     waiting = asyncio.ensure_future(sleep(quiet.total_seconds()))
     try:
@@ -160,4 +161,4 @@ async def _next(
         waiting.cancel()
         if not getting.done():
             getting.cancel()
-    return getting.result() if getting.done() and not getting.cancelled() else None
+    return getting.result() if getting.done() and not getting.cancelled() else QUIET_SPELL

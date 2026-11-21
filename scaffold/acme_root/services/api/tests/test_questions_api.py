@@ -42,7 +42,7 @@ from acme.om.tools.types.policy import Decision, ToolPolicyLayer, ToolPolicyRule
 from acme.om.tools.types.tool import ToolClass
 from acme.om.work.storage.impl.memory import WorkStorageMemoryImpl
 from acme.services.api.container import AppContainer
-from acme.services.api.services.impl.questions import QuestionStreams, stream_question
+from acme.services.api.services.impl.questions import QuestionStreamsImpl, stream_question
 from acme.services.api.types.agent_sessions import (
     AgentStepUsageView,
     QuestionEndView,
@@ -347,7 +347,7 @@ class StepClock:
 
 
 async def test_a_quiet_stream_pings_after_fifteen_seconds_on_the_test_clock() -> None:
-    streams = QuestionStreams()
+    streams = QuestionStreamsImpl()
     asked = QuestionSessionView(agent_session_id=new_id(), agent_step_id=new_id(), seq=1)
     release = asyncio.Event()
     clock = StepClock()

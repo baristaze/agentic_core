@@ -24,10 +24,10 @@ from acme.services.api.services.impl.change_events import ChangeEventsServiceImp
 from acme.services.api.services.impl.flags import FlagsServiceImpl
 from acme.services.api.services.impl.leases import LeasesServiceImpl
 from acme.services.api.services.impl.media import MediaServiceImpl
-from acme.services.api.services.impl.questions import QuestionStreams
 from acme.services.api.services.impl.realtime import RealtimeServiceImpl
 from acme.services.api.services.impl.tenancy import TenancyServiceImpl
 from acme.services.api.services.impl.webhooks import WebhooksServiceImpl
+from acme.services.api.services.questions import QuestionStreamsInterface
 
 
 class ServicesImpl(ServicesInterface):
@@ -90,7 +90,7 @@ def build_services(
     infra: InfraInterface,
     integrations: IntegrationsInterface,
     head_max_age: timedelta,
-    streams: QuestionStreams,
+    streams: QuestionStreamsInterface,
 ) -> ServicesInterface:
     """In-process impls only: a Python caller outside the process reaches the
     same services through the typed client under `clients/python`. `streams`

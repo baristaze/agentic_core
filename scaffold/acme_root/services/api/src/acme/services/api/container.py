@@ -27,7 +27,7 @@ from acme.om.tools.tool import ToolInterface
 from acme.services.api.assistant import offered
 from acme.services.api.gateway.ratelimit import RateLimit, RateLimitOptions, RefusedAddresses
 from acme.services.api.services import ServicesInterface
-from acme.services.api.services.impl.questions import QuestionStreams
+from acme.services.api.services.impl.questions import QuestionStreamsImpl
 from acme.services.api.services.impl.root import build_services
 from acme.services.api.settings import ApiSettings
 
@@ -212,7 +212,7 @@ class AppContainer:
         starts on one of the kinds, and a start or a message is checked
         against the class of every tool its registry offers, the product's
         included. A registry name the catalog cannot class is refused."""
-        streams = QuestionStreams()
+        streams = QuestionStreamsImpl()
         # The example assistant, where the environment offers it; its tool
         # reads the media manager the root below builds.
         example_kinds, example_tools = offered(settings.environment, lambda: managers.media)

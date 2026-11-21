@@ -8,8 +8,6 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from pydantic import Field
-
 from acme.om.agent_sessions.limits import Limits
 from acme.om.agents.types.kind import REQUEST_STEPS, REQUEST_TIME, AgentKind, DoneRule, RunsIn
 from acme.om.attribution.types.authority import AuthorityMode
@@ -19,7 +17,7 @@ from acme.om.media import MediaManagerInterface
 from acme.om.media.types.file import FilePurpose
 from acme.om.tools.tool import ToolInterface, ToolRuntime
 from acme.om.tools.types.policy import Decision, Target, ToolPolicyLayer, ToolPolicyRule
-from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolSpec
+from acme.om.tools.types.tool import Effect, ToolClass, ToolInput, ToolMode, ToolSpec
 
 OFFERED_IN = frozenset({"local", "staging"})
 """The environments whose API offers the example assistant."""
@@ -41,11 +39,11 @@ class FileSeen(OmBase):
 
 
 class FilesFound(OmBase):
-    files: list[FileSeen] = Field(default_factory=lambda: [])
+    files: tuple[FileSeen, ...] = ()
     has_more: bool = False
 
 
-class ListFiles(ToolInterface):
+class ListFilesToolImpl(ToolInterface):
     """The org's stored files, a page at a time, oldest first: what each is
     called, its type, its size, and when it came. Never a file's bytes."""
 
@@ -64,6 +62,7 @@ class ListFiles(ToolInterface):
             authorization_class=ToolClass.READ,
             effect=Effect.READ_ONLY,
             interruptible=True,
+            mode=ToolMode.SYNC,
             workspace=False,
         )
 
@@ -82,7 +81,7 @@ class ListFiles(ToolInterface):
     async def run(self, ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> OmBase:
         assert isinstance(call_input, FilesAsked)
         page = await self._media().get_files(ctx, FilePurpose.UPLOAD, None, call_input.after, PAGE)
-        seen = [FileSeen.model_validate(file, from_attributes=True) for file in page.items]
+        seen = tuple(FileSeen.model_validate(file, from_attributes=True) for file in page.items)
         return FilesFound(files=seen, has_more=page.has_more)
 
 
@@ -113,4 +112,4 @@ def offered(
     root that builds it stands."""
     if environment not in OFFERED_IN:
         return (), ()
-    return (ASSISTANT,), (ListFiles(media),)
+    return (ASSISTANT,), (ListFilesToolImpl(media),)

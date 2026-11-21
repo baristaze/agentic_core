@@ -40,11 +40,11 @@ from acme.om.windows import WindowsManagerInterface
 from acme.services.api.services.agent_sessions import AgentSessionsServiceInterface
 from acme.services.api.services.impl.questions import (
     QUIET,
-    QuestionStreams,
     Sleep,
     stream_question,
 )
 from acme.services.api.services.impl.tenancy import decode_cursor, encode_cursor
+from acme.services.api.services.questions import QuestionStreamsInterface
 from acme.services.api.types.agent_sessions import (
     AgentSessionPageView,
     AgentSessionUsageView,
@@ -182,7 +182,7 @@ class AgentSessionsServiceImpl(AgentSessionsServiceInterface):
         loop: LoopManagerInterface,
         windows: WindowsManagerInterface,
         spend_budgets_operator: SpendBudgetsOperatorManagerInterface,
-        streams: QuestionStreams,
+        streams: QuestionStreamsInterface,
         *,
         quiet: timedelta = QUIET,
         sleep: Sleep = asyncio.sleep,
