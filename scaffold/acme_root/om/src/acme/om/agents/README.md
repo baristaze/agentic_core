@@ -263,6 +263,8 @@ once a run, the loop asks them for the toolsets a session holds beyond
 its kind, and, before any workspace is prepared, for the steps they
 append before its first model call; once a call has prepared the
 workspace, it gives them the workspace and asks for the steps they
-append about it before that call runs.
+append about it before that call runs. A hook that refuses the
+session's workspace before the first model call stops the run as a
+refused spec does, its cause on the step that ends or parks the loop.
 Each session is an [agent session](../agent_sessions/README.md); what it
 may do and who pays is [attribution](../attribution/README.md)'s.

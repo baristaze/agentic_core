@@ -112,7 +112,12 @@ class LoopHooksInterface(ABC):
         once the session's spec is checked and before any workspace is
         prepared. A refusal of the session's fill (`UnresolvedRole`,
         `UnpricedModel`) ends the loop errored, as the loop's own resolve
-        does."""
+        does. A refusal of the session's workspace (`IsolationRefused`)
+        stops the run as a refused spec does, before any model call and
+        with nothing made: one that cannot clear ends the loop errored, and
+        one that clears parks it on the resource, to ask again after a
+        wait. Its `cause` is what a person reads on the step that ends or
+        parks the loop; its message reaches the log alone."""
         ...
 
     @abstractmethod
