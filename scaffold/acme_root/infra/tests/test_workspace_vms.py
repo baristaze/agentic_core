@@ -220,7 +220,7 @@ async def test_a_restore_that_fails_part_way_destroys_its_new_vm_alone(tmp_path:
 async def test_a_vm_a_restore_left_cut_off_is_never_the_workspace(tmp_path: Path) -> None:
     """Of two VMs under the workspace's names, the later in turn is a
     restore's that was cut off before the VM it replaces went: the next
-    prepare destroys it and finds the other, and the names go round."""
+    prepare destroys it and finds the other, the names taken in turn."""
     provider, twin = over_twin(tmp_path)
     org, agent_workspace_id = new_id(), new_id()
     names = vm_names(PREFIX, agent_workspace_id)
