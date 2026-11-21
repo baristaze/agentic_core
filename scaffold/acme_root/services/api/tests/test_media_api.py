@@ -151,14 +151,18 @@ async def test_no_route_takes_or_serves_a_files_bytes(
     app: FastAPI, client: httpx.AsyncClient, container: AppContainer, owner: dict[str, str]
 ) -> None:
     """No route of the app carries a file's bytes, and the issued parts are
-    the store's URLs, each signed for its own length."""
+    the store's URLs, each signed for its own length. A question's route
+    serves its stream of events, and nothing else does."""
     for path, operations in app.openapi()["paths"].items():
+        served = {"application/json"}
+        if path.endswith("/questions"):
+            served.add("text/event-stream")
         for method, operation in operations.items():
             body = operation.get("requestBody", {}).get("content", {})
             assert set(body) <= {"application/json"}, f"{method} {path} takes {set(body)}"
             for answer in operation.get("responses", {}).values():
                 kinds = set(answer.get("content", {}))
-                assert kinds <= {"application/json"}, f"{method} {path} serves {kinds}"
+                assert kinds <= served, f"{method} {path} serves {kinds}"
     started = (await start(client, owner, size=len(PDF))).json()
     issued = await client.post(f"/v1/media/files/{started['id']}/upload", headers=owner)
     (part,) = issued.json()["parts"]
