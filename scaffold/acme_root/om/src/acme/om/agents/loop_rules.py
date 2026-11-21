@@ -823,15 +823,19 @@ def kept_snapshot(steps: Sequence[AgentStep], *, settled: bool) -> AgentStep | N
     the workspace and it may have run there since: it was answered after
     the snapshot, unless the answer says no run started it (`unstarted`),
     or its request came after the snapshot and it is still open and not
-    `settled`. A job's call ran where its request was made: its job runs
-    once the instance is released, so its answer, written by whichever run
-    the job's end wakes, touches nothing. A call that reaches nothing never
-    touched it, so a run that made only such calls leaves the snapshot
-    whole. `settled` when no run may have started a call still open: a park
-    the loop wrote held it back, or the run asking wrote it."""
+    `settled`. A job's call ran in the run that started its job, whatever
+    run made its request: the run that wrote the first park naming the
+    job. That run's snapshot at the park, written just before it, with
+    nothing between them but what arrived, holds what the start wrote. The
+    job runs once the instance is released, so its answer, written by
+    whichever run the job's end wakes, touches nothing. A call that reaches
+    nothing never touched it, so a run that made only such calls leaves the
+    snapshot whole. `settled` when no run may have started a call still
+    open: a park the loop wrote held it back, or the run asking wrote it."""
     reaching: set[UUID] = set()
     answered: set[UUID] = set()
     jobs: set[UUID] = set()
+    starts: set[UUID] = set()  # the first park naming each job a reaching call started
     for step in steps:
         header = step.header
         if isinstance(header, ToolRequestHeader) and header.workspace:
@@ -839,11 +843,22 @@ def kept_snapshot(steps: Sequence[AgentStep], *, settled: bool) -> AgentStep | N
         elif step.type is AgentStepType.TOOL_RESPONSE and step.responds_to is not None:
             answered.add(step.responds_to)
         elif isinstance(header, ParkedHeader) and header.park.job is not None:
-            jobs.add(header.park.job.key)
+            key = header.park.job.key
+            if key in reaching and key not in jobs:
+                starts.add(step.id)
+            jobs.add(key)
+    started = False
     for step in reversed(steps):
         if step.type is AgentStepType.SNAPSHOTTED:
             return step
         if step.type is AgentStepType.ENVIRONMENT_CHANGED:
+            return None
+        if started:
+            # A run that starts a job parks on it at once: behind the park
+            # lies the snapshot it took there, or, when it took none, a step
+            # written before the start.
+            if arrives(step):
+                continue
             return None
         header = step.header
         if (
@@ -853,8 +868,9 @@ def kept_snapshot(steps: Sequence[AgentStep], *, settled: bool) -> AgentStep | N
             and not header.unstarted
         ):
             return None
-        if step.id in reaching and (step.id in jobs or (step.id not in answered and not settled)):
+        if step.id in reaching and step.id not in jobs and step.id not in answered and not settled:
             return None
+        started = step.id in starts
     return None
 
 
