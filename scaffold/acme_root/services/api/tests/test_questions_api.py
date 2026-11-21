@@ -325,6 +325,13 @@ async def test_only_the_steerer_asks_and_a_refusal_writes_nothing(case: Case) ->
     assert await case.steps(agent_session_id) == before, "no step is written"
     assert case.model.remaining == 0
 
+    case.say(reply(use("lookup", q="object 7")), reply(said("It dropped twice.")))
+    own = events_of(await case.start("What does the record say?", headers=mia))
+
+    assert (own[-1][1]["end"], own[-1][1]["outcome"]) == ("ended", "succeeded"), (
+        "a member asks a session of her own, and its loop runs on her permissions"
+    )
+
 
 class StepClock:
     """A clock that moves only when the test moves it, and the sleep that
