@@ -8,7 +8,7 @@ from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.limits import deadline_park
 from acme.om.agent_sessions.types.agent_session import AgentSession, AgentSessionStatus, Title
 from acme.om.agent_steps import AgentStepsManagerInterface
-from acme.om.agent_steps.rules import standing_step
+from acme.om.agent_steps.rules import message_step, standing_step
 from acme.om.agent_steps.types.agent_step import Actor, AgentStep, AgentStepType, Origin
 from acme.om.agent_steps.types.content import Content, TextBlock
 from acme.om.agent_steps.types.header import (
@@ -30,9 +30,9 @@ from acme.om.agents.rules import (
     tree_refusal,
 )
 from acme.om.agents.storage import AgentStorageInterface
-from acme.om.agents.types.kind import AgentKind, AgentKindCatalog
+from acme.om.agents.types.kind import AgentKind, AgentKindCatalog, RunsIn
 from acme.om.agents.types.report import Report
-from acme.om.agents.types.request import Handoff, Spawn, Start, SwitchStanding
+from acme.om.agents.types.request import Handoff, Question, Spawn, Start, SwitchStanding
 from acme.om.agents.types.result import Result, Verdict
 from acme.om.agents.types.tree import AgentTree
 from acme.om.attribution import AttributionManagerInterface
@@ -123,6 +123,28 @@ class AgentsManagerImpl(AgentsManagerInterface):
             await self._steps.append_inputs(ctx, created.id, standing)
         return created
 
+    async def ask(self, ctx: TenantContext, question: Question) -> AgentStep:
+        ctx.require(Permission.WRITE)
+        agent_session_id = question.agent_session_id
+        if question.start is None:
+            session = await self._sessions.get_agent_session(ctx, agent_session_id)
+            kind = self._kinds.latest(session.kind)
+        else:
+            kind = self._kinds.latest(question.start.kind)
+        if kind.runs_in is not RunsIn.REQUEST:
+            raise ValidationFailed(
+                f"agent kind {kind.name} runs its loop in a worker: send its session a message"
+            )
+        if question.start is not None:
+            await self.start_agent_session(ctx, question.start)
+        # A participant's message is data, and a question instructs: only the
+        # steerer asks, refused before anything lands.
+        if not await self._attribution.steers(ctx, agent_session_id):
+            raise NotAuthorized(f"only the steerer of agent session {agent_session_id} asks it")
+        said = message_step(question.id, self._clock(), agent_session_id, ctx, question.text)
+        (stored,), _ = await self._sessions.receive(ctx, agent_session_id, [said])
+        return stored
+
     async def switch_standing(
         self, ctx: TenantContext, agent_session_id: UUID, switch: SwitchStanding
     ) -> AgentStep:
@@ -152,6 +174,12 @@ class AgentsManagerImpl(AgentsManagerInterface):
             self._may_instruct(ctx, child.tools, attached)
         else:
             kind = self._kinds.latest(spawn.kind)
+            if kind.runs_in is RunsIn.REQUEST:
+                # Its loop runs only in a request that asks it, and a parent
+                # asks through its objective, which no request carries.
+                raise ValidationFailed(
+                    f"agent kind {kind.name} runs in the request that asks it, never as a sub-agent"
+                )
             if kind.result_tool is not None and kind.result_tool not in parent.tools:
                 # Its tools are cut to its parent's, so it could never submit.
                 raise ValidationFailed(f"agent session {parent_id} cannot grant {kind.result_tool}")

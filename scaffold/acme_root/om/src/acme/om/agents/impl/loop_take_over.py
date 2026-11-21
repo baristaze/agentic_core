@@ -20,6 +20,7 @@ from acme.om.agents import loop_rules as rules
 from acme.om.agents.impl.loop_core import (
     LoopCore,
 )
+from acme.om.agents.types.kind import RunsIn
 from acme.om.attribution.rules import in_person
 from acme.om.attribution.types.principal import Principal, PrincipalKind
 from acme.om.base import new_id
@@ -44,6 +45,13 @@ class LoopTakeOver(LoopCore):
     async def take_over(self, ctx: TenantContext, agent_session_id: UUID) -> AgentSession:
         _by_hand(ctx)
         session = await self._sessions.project_status(ctx, agent_session_id)
+        if self._kinds.get(session.kind, session.kind_version).runs_in is RunsIn.REQUEST:
+            # Its loop runs in the request that asks it, and holds no
+            # environment for a person to work in.
+            raise ValidationFailed(
+                f"agent session {agent_session_id} runs in the request that asks it, "
+                + "and has no environment to take over"
+            )
         if _held_by_another(session.park, ctx):
             raise Conflict(f"agent session {agent_session_id} is held by another person")
         # Only one who takes part takes the environment, its steerer or a

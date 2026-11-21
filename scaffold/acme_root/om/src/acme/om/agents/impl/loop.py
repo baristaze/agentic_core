@@ -280,8 +280,7 @@ class LoopManagerImpl(
                         )
                         await self._give_back(run, history)
                     return await self._park(run, trip.park)
-                await self._keep(run)
-                return self._result(run, RunEnd.YIELDED)
+                return await self._yield(run)
             repeated = rules.repeated_failure(history, run.loop_id, self._options.repeats_noticed)
             if repeated is not None:
                 # Written before the next request, which reads it.

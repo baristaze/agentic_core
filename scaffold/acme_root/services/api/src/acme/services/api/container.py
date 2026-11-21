@@ -26,6 +26,7 @@ from acme.om.storage.root import StorageInterface
 from acme.om.tools.tool import ToolInterface
 from acme.services.api.gateway.ratelimit import RateLimit, RateLimitOptions, RefusedAddresses
 from acme.services.api.services import ServicesInterface
+from acme.services.api.services.impl.questions import QuestionStreams
 from acme.services.api.services.impl.root import build_services
 from acme.services.api.settings import ApiSettings
 
@@ -210,6 +211,7 @@ class AppContainer:
         starts on one of the kinds, and a start or a message is checked
         against the class of every tool its registry offers, the product's
         included. A registry name the catalog cannot class is refused."""
+        streams = QuestionStreams()
         managers = build_managers(
             storage,
             infra,
@@ -221,6 +223,9 @@ class AppContainer:
                 agent_kinds=agent_kinds,
                 tool_catalog=tool_catalog,
                 domain_classes=domain_classes,
+                # A kind whose loop runs in the request that asks it runs
+                # here, and streams to that request.
+                stream_sink=streams,
             ),
         )
         services = build_services(
@@ -228,6 +233,7 @@ class AppContainer:
             infra,
             integrations,
             timedelta(seconds=settings.realtime_head_max_age_seconds),
+            streams,
         )
         return cls(
             settings,

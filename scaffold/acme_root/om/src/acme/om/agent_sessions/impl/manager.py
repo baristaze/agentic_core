@@ -96,8 +96,13 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
         *,
         purged: AgentSessionPurged,
         titles: TitleSealInterface,
+        in_request: Callable[[AgentSession], bool] | None = None,
     ) -> None:
         self._purged = purged
+        # Whether a session's loop runs in the request that asks it, as its
+        # kind says: a root binds it to the catalog. None runs every loop in
+        # a worker.
+        self._in_request = in_request or (lambda _: False)
         self._titles = titles
         self._storage = storage
         self._steps = steps
@@ -335,10 +340,14 @@ class AgentSessionsManagerImpl(AgentSessionsManagerInterface):
             rows: tuple[OutboxRow, ...] = ()
             if announces(session, after, page.items):
                 rows = (versioned_row(ctx, UPDATED, after.id, after.version),)
+            # A loop that runs in a request is run by the request that asks
+            # it, and waits for nothing: no row asks a worker to run it or
+            # to wake it.
+            worker = not self._in_request(after)
             waiting = wakes_at(session, after, page.items)
-            if waiting is not None:
+            if waiting is not None and worker:
                 rows += (wake_row(ctx, after, waiting),)
-            if asks_for_run(session, after, page.items):
+            if asks_for_run(session, after, page.items) and worker:
                 rows += (loop_row(ctx, after),)
             try:
                 await self._storage.write_agent_session(ctx.org_id, after, session.version, rows)

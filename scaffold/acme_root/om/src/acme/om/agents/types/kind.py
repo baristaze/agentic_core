@@ -5,8 +5,9 @@ session pins the version it started on.
 A kind names the tools it may call, alone or in toolsets, some of which
 it may defer until the agent loads them; the rule that says when a loop is
 done, the result tool a delivery kind submits through, the authority mode
-its calls run under, the bounds of a tree it roots, and the share one of
-its sessions may spend when it runs as a sub-agent. It also carries
+its calls run under, the bounds of a tree it roots, the share one of
+its sessions may spend when it runs as a sub-agent, and where its loop
+runs: in a worker, or in the request that asks it. It also carries
 what the loop reads of it: its prompts, the model roles it calls and
 what it asks of them, the bounds of one loop, its layer of tool policy, the workspace its sessions
 work in, and whether they hold private data. Its prompts and its tools'
@@ -34,6 +35,23 @@ NO_AGENT_WORKSPACE = IsolationSpec(
     mode=IsolationMode.NONE, egress=EgressPolicy(mode=EgressMode.NONE)
 )
 """The workspace of a kind that touches none: every transport refuses it."""
+
+
+REQUEST_STEPS = 10
+"""The most model calls a loop that runs in a request makes: its step
+guard is at most this."""
+
+REQUEST_TIME = timedelta(seconds=30)
+"""The longest a loop that runs in a request runs: its run time is at most
+this."""
+
+
+class RunsIn(StrEnum):
+    """Where a kind's loop runs: an axis of its own, apart from where its
+    tools run. Every version of a kind runs in one place."""
+
+    WORKER = "worker"  # a runner claims the session's work, and a park waits there
+    REQUEST = "request"  # the request that asks it runs it and streams it, and nothing waits
 
 
 class DoneRule(StrEnum):
@@ -103,6 +121,11 @@ class AgentKind(OmBase):
     # three. Only a kind that reads no tenant record and no person's words
     # says False.
     private_data: bool = True
+    # Where its loop runs. A request kind holds no workspace, no sub-agent,
+    # no job, and no tool behind an approval, within `REQUEST_STEPS` and
+    # `REQUEST_TIME`; publishing it refuses one that breaks any of these
+    # (`agents.rules.request_kind_breaches`).
+    runs_in: RunsIn = RunsIn.WORKER
 
     @model_validator(mode="before")
     @classmethod
@@ -170,6 +193,11 @@ class AgentKindCatalog(OmBase):
         named = {(kind.name, kind.version) for kind in self.kinds}
         if len(named) != len(self.kinds):
             raise ValueError("a catalog declares each version of a kind once")
+        # A session keeps its kind's name across versions, so where its
+        # loop runs never changes under it.
+        places = {(kind.name, kind.runs_in) for kind in self.kinds}
+        if len(places) != len({kind.name for kind in self.kinds}):
+            raise ValueError("every version of a kind runs in one place")
         toolsets: dict[tuple[str, int], Toolset] = {}
         for kind in self.kinds:
             for toolset in (*kind.toolsets, *kind.deferred):

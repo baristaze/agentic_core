@@ -16,6 +16,7 @@ from acme.integrations.root import IntegrationsInterface
 from acme.om.agent_sessions import AgentSessionsManagerInterface
 from acme.om.agent_sessions.impl.manager import AgentSessionsManagerImpl, AgentSessionsOptions
 from acme.om.agent_sessions.kinds import AGENT_SESSION_WAITER
+from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.agent_steps import AgentStepsManagerInterface
 from acme.om.agent_steps.impl.manager import AgentStepsManagerImpl, AgentStepsOptions
 from acme.om.agent_steps.storage import AgentStepStorageInterface
@@ -29,8 +30,9 @@ from acme.om.agents.impl.manager import AgentsManagerImpl, AgentsOptions
 from acme.om.agents.impl.sink import StreamSinkNullImpl
 from acme.om.agents.impl.waiter import AgentSessionWaiterImpl
 from acme.om.agents.loop import LoopManagerInterface
+from acme.om.agents.rules import request_kind_refusal
 from acme.om.agents.sink import StreamSinkInterface
-from acme.om.agents.types.kind import AgentKind, AgentKindCatalog
+from acme.om.agents.types.kind import AgentKind, AgentKindCatalog, RunsIn
 from acme.om.attribution import AttributionManagerInterface, PrincipalContext
 from acme.om.attribution.impl.manager import (
     AttributionManagerImpl,
@@ -40,7 +42,7 @@ from acme.om.attribution.impl.manager import (
 from acme.om.base import utcnow
 from acme.om.change_events import ChangeEventsManagerInterface
 from acme.om.context import TenantContext
-from acme.om.exceptions import NotFound, UnsafeConfiguration
+from acme.om.exceptions import NotFound, UnknownAgentKind, UnsafeConfiguration
 from acme.om.language_models.impl.credentials import CallCredentialsPlatformImpl
 from acme.om.language_models.impl.manager import LanguageModelsManagerImpl, LanguageModelsOptions
 from acme.om.language_models.impl.prices import ModelPricesFromPricingImpl
@@ -194,6 +196,16 @@ class AgentRootOptions:
     environment: str = LOCAL
 
 
+def runs_in_request(kinds: AgentKindCatalog, session: AgentSession) -> bool:
+    """Whether the session's loop runs in the request that asks it, as its
+    kind says at every version. A kind the catalog no longer holds ran in a
+    worker."""
+    try:
+        return kinds.latest(session.kind).runs_in is RunsIn.REQUEST
+    except UnknownAgentKind:
+        return False
+
+
 def refuse_quiet_spend(environment: str, *capabilities: object) -> None:
     """Outside `local`, a root refuses a quiet null budget gate or ledger at
     boot: every model call would pass a gate that holds nothing, and spend
@@ -269,7 +281,10 @@ def build_agent_managers(
     """The engine's managers over the guideline's `tenancy`, `change_events`,
     `outbox`, and `leases`, as `options` sets them. `integrations` None is a
     process with no model provider: every call is refused as unavailable."""
-    # The history first: a session's status is read off its steps. What a
+    # The kinds first: where a session's loop runs is its kind's, and its
+    # status asks a worker for a run only when the loop runs in one.
+    kinds = AgentKindCatalog(kinds=options.agent_kinds)
+    # The history next: a session's status is read off its steps. What a
     # step says reaches it through the sealing layer, by the session's policy.
     agent_session_keys = AgentSessionKeysImpl(storage.get_privacy_storage(), infra.get_keys())
     steps = AgentStepsManagerImpl(
@@ -301,6 +316,7 @@ def build_agent_managers(
         # A title is content: sealed on its way in, under a key of the
         # session's own that the privacy namespace keeps (ADR 1042).
         titles=TitleSealKeysImpl(agent_session_keys),
+        in_request=lambda session: runs_in_request(kinds, session),
     )
     privacy = PrivacyManagerImpl(
         storage.get_privacy_storage(),
@@ -350,7 +366,6 @@ def build_agent_managers(
         outbox,
         options.attribution_options or AttributionOptions(),
     )
-    kinds = AgentKindCatalog(kinds=options.agent_kinds)
     reader = options.attachment_reader or AttachmentReaderNullImpl()
     # What a model request reads: rendered from the history, compacted by
     # the summarizer through the model providers, behind the gate, paid for
@@ -401,6 +416,13 @@ def build_agent_managers(
     # tenant's: built once, its claim on the cache every worker shares, and
     # scanned as a snapshot is.
     tools_settings = options.tools_options or ToolsOptions()
+    # Publishing a kind whose loop runs in a request refuses one that would
+    # hold a worker's work there, or run unbounded (ADR 1044).
+    refusal = request_kind_refusal(
+        kinds.kinds, {tool.spec.name: tool.spec for tool in catalog}, tools_settings.ceilings
+    )
+    if refusal is not None:
+        raise UnsafeConfiguration(refusal)
     snapshots = SnapshotStore(
         infra.get_buckets(),
         options.snapshot_seal

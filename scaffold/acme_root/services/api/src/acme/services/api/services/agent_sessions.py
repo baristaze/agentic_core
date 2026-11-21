@@ -1,10 +1,12 @@
 """The agent sessions service: what the wire can do with a session, in
 views. A session is started, listed, joined, spoken to, steered, and read;
-its loop runs in the session runner, never here. Each one is read as the
+its loop runs in the session runner, unless its kind's loop runs in the
+request that asks it: then here, in that request. Each one is read as the
 person sees it: one not visible to them answers as one that never
 existed."""
 
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from uuid import UUID
 
 from acme.om.agent_sessions.types.agent_session import AgentSessionStatus, Among
@@ -22,7 +24,9 @@ from acme.services.api.types.agent_sessions import (
     JobCompletionRequest,
     MessageRequest,
     PrincipalRequest,
+    QuestionRequest,
     StartAgentSessionRequest,
+    StartQuestionRequest,
     ToolOutputPageView,
     VisibilityRequest,
 )
@@ -85,6 +89,28 @@ class AgentSessionsServiceInterface(ABC):
     ) -> AgentStepView:
         """The message, durable when this answers, under `agent_step_id`; the
         session's status follows it, and an idle session wakes."""
+        ...
+
+    @abstractmethod
+    async def start_question(
+        self, ctx: TenantContext, body: StartQuestionRequest
+    ) -> AsyncIterator[str]:
+        """A session on a kind whose loop runs in the request that asks it,
+        started and asked at once, under ids minted here. What is refused is
+        refused before anything is written or streams: a kind whose loop runs
+        in a worker, one the product does not run, a caller who may not start
+        it. Then the stream: the loop runs in this request (`ask`)."""
+        ...
+
+    @abstractmethod
+    async def ask(
+        self, ctx: TenantContext, agent_session_id: UUID, body: QuestionRequest
+    ) -> AsyncIterator[str]:
+        """A question to a session the caller steers, of a kind whose loop
+        runs in the request that asks it, durable before anything streams;
+        a session of another kind, or one the caller does not steer, is
+        refused with nothing written. The stream that follows runs the loop
+        here and sends it as server-sent events (`questions.py`)."""
         ...
 
     @abstractmethod

@@ -24,6 +24,7 @@ from acme.services.api.services.impl.change_events import ChangeEventsServiceImp
 from acme.services.api.services.impl.flags import FlagsServiceImpl
 from acme.services.api.services.impl.leases import LeasesServiceImpl
 from acme.services.api.services.impl.media import MediaServiceImpl
+from acme.services.api.services.impl.questions import QuestionStreams
 from acme.services.api.services.impl.realtime import RealtimeServiceImpl
 from acme.services.api.services.impl.tenancy import TenancyServiceImpl
 from acme.services.api.services.impl.webhooks import WebhooksServiceImpl
@@ -89,9 +90,12 @@ def build_services(
     infra: InfraInterface,
     integrations: IntegrationsInterface,
     head_max_age: timedelta,
+    streams: QuestionStreams,
 ) -> ServicesInterface:
     """In-process impls only: a Python caller outside the process reaches the
-    same services through the typed client under `clients/python`."""
+    same services through the typed client under `clients/python`. `streams`
+    is the process's stream sink, which the loops this process runs in a
+    request emit to."""
     return ServicesImpl(
         admin=AdminServiceImpl(managers.tenancy_operator, managers.work_operator),
         change_events=ChangeEventsServiceImpl(managers.change_events),
@@ -113,5 +117,6 @@ def build_services(
             managers.loop,
             managers.windows,
             managers.spend_budgets_operator,
+            streams,
         ),
     )

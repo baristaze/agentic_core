@@ -20,7 +20,7 @@ from uuid import UUID
 from acme.om.agent_sessions.types.agent_session import AgentSession
 from acme.om.agent_steps.types.agent_step import AgentStep
 from acme.om.agents.types.report import Report
-from acme.om.agents.types.request import Handoff, Spawn, Start, SwitchStanding
+from acme.om.agents.types.request import Handoff, Question, Spawn, Start, SwitchStanding
 from acme.om.agents.types.result import Result, Verdict
 from acme.om.agents.types.tree import AgentTree
 from acme.om.context import TenantContext, stageless
@@ -37,6 +37,17 @@ class AgentsManagerInterface(ABC):
         `NotAuthorized`, with nothing made. An id written already answers
         the session as stored. Its standing text, when `start` sends one, is
         pinned through the inbox before anything else arrives."""
+        ...
+
+    @abstractmethod
+    async def ask(self, ctx: TenantContext, question: Question) -> AgentStep:
+        """A question to a session whose kind's loop runs in the request that
+        asks it, said by its steerer, durable when this returns; the request
+        then runs the loop. With `question.start`, the session is started
+        first, as `start_agent_session` starts one. A kind whose loop runs in
+        a worker is `ValidationFailed`, and a caller who does not steer the
+        session `NotAuthorized`, with nothing written. A question asked again
+        under the same id answers the step as stored."""
         ...
 
     @abstractmethod
