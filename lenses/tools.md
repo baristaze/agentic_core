@@ -404,12 +404,12 @@ rest is judged.
 
 **Principle.** Isolation is chosen up front and never weakened. A spec
 the provider can never meet is refused before the first model call,
-whole, never met with something weaker. A workspace is made at the
-first tool call that reaches it, never before a model call.
-A refusal that cannot clear ends the loop `errored`, each call it left
-open answered with its cause; one that may clear parks it on the
-resource with the call open, which runs once when the workspace comes. Either names its cause, never a command's output or the
-host's state. A lost workspace parks the loop for a person. A released
+whole. A workspace is made at the first tool call that reaches it,
+never before a model call. A refusal that cannot clear ends the loop
+`errored`, each call left open answered; one that may clear parks it on
+the resource with the call open, which runs once when the workspace
+comes. Either names its cause, never a command's output or the host's
+state. A lost workspace parks the loop for a person. A released
 instance is prepared again by the next loop that reaches it, and an
 `environment_changed` step tells the model what changed.
 
