@@ -154,11 +154,23 @@ def test_a_catalog_holds_every_version_and_answers_the_latest() -> None:
 
 def test_a_kind_that_names_no_tree_is_three_levels_deep_and_holds_ten() -> None:
     """A root, its sub-agents, and theirs, ten sub-agents at most besides the
-    root, with no bound on how many run at once."""
+    root."""
     kind = AgentKind(
         name="plain", version=1, done_rule=DoneRule.ANSWER, authority=AuthorityMode.DELEGATED
     )
-    assert kind.tree == TreeLimits(height=3, count=10, concurrency=None)
+    assert kind.tree == TreeLimits(height=3, count=10)
+
+
+def test_a_tree_that_names_a_bound_it_does_not_hold_is_refused() -> None:
+    """A tree is bounded in height, count, and time, and nothing bounds how
+    many of its sessions run at once. A kind that names such a bound is
+    refused when it is built, never given a bound that holds nothing."""
+    with pytest.raises(ValidationError):
+        TreeLimits.model_validate({"height": 2, "count": 4, "concurrency": 2})
+    with pytest.raises(ValidationError):
+        AgentKind.model_validate(
+            {**DELIVERY.model_dump(), "tree": {"height": 3, "count": 3, "concurrency": 2}}
+        )
 
 
 @pytest.mark.parametrize(

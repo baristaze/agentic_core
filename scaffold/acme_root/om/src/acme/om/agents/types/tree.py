@@ -21,7 +21,6 @@ class AgentTree(Identifiable, Trackable):
 
     height: int = Field(ge=1)  # 1 is a single agent
     count: int = Field(ge=0)  # the most sub-agents besides the root
-    concurrency: int | None = Field(default=None, ge=1)  # the most that run at once, when set
     deadline: datetime | None = None  # one instant the whole tree shares
     size: int = Field(default=0, ge=0)  # the sub-agents spawned so far
     version: int = Field(default=1, ge=1)

@@ -105,7 +105,6 @@ def tree_for(
         updated_by=by,
         height=kind.tree.height,
         count=kind.tree.count,
-        concurrency=kind.tree.concurrency,
         deadline=deadline,
     )
 
