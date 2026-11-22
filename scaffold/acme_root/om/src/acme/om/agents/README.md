@@ -94,8 +94,9 @@ of](../../../../README.md).
   let go. It checks the session's isolation spec first, renders a
   request, passes the budget gate, writes the request, calls the model,
   and writes the response. Then it runs each tool call the model asked
-  for, through policy and the transport, writing each request before it
-  is decided and each answer before the next call. The workspace is
+  for, one after another in the order the model made them (ADR 1047),
+  through policy and the transport, writing every request before any is
+  decided and each answer before the next call. The workspace is
   prepared at the first call that reaches it, and only that call waits
   for it; a run whose calls reach none prepares none (ADR 1043).
 - **End, park, or yield.** A loop ends on the kind's done rule, a bound,
