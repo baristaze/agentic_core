@@ -46,8 +46,11 @@ calls' output, or a cancel that finds every running call.
 
 - A response's calls take the sum of their times. On the shape, that
   costs 5.2% of the session's model and tool time.
-- Two commands of one response never race in their workspace: the
-  second sees what the first left.
+- Two commands of one response never race in their workspace. The
+  second sees what the first left when no earlier call of the response
+  waits for a person. A call that waits for a person is put off: the
+  calls after it run in order, and it is answered once the person
+  decides, after them.
 - A person who watches reads one call's output, then the next, and
   decides every call that asks at one park.
 - A captured session on which the calls that cannot conflict would save

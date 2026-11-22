@@ -228,20 +228,24 @@ never granted whole; an approval that never expires.
 response pair, and every request is persisted before any call is
 decided. The calls run one after another, in the order the model made
 them, since they share one workspace, one stream, and one approval park.
-A tool's time is the least of its own timeout, the engine's limit, and
-the time left before the tree's deadline. When it runs out, the tool's
-whole process tree goes with it. Output streams while the tool runs.
+A call that waits for a person is put off: the calls after it run in
+order, the loop parks once they are answered, and the call is answered
+once the person decides. A tool's time is the least of its own timeout,
+the engine's limit, and the time left before the tree's deadline. When
+it runs out, the tool's whole process tree goes with it. Output streams
+while the tool runs.
 
 **Source.** Tools, Execution.
 
 **Look for.** How the time of a run is computed; what is stopped when it
 runs out; whether the calls of one response are separate pairs, run in
-the model's order.
+the model's order, with a call that waits for a person put off until the
+person decides.
 
 **Violation.** A timeout that ignores the tree's deadline; a timeout
 that stops the tool's process and leaves its children running; several
 calls folded into one request step; the calls of one response run at
-once, or out of the order the model made them.
+once, or allowed calls run out of the order the model made them.
 
 **Severity.** medium
 

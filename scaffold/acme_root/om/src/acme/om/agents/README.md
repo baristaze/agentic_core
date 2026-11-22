@@ -96,7 +96,9 @@ of](../../../../README.md).
   and writes the response. Then it runs each tool call the model asked
   for, one after another in the order the model made them (ADR 1047),
   through policy and the transport, writing every request before any is
-  decided and each answer before the next call. The workspace is
+  decided. A call that waits for a person is put off: the calls after it
+  run in order, the loop parks once they are answered, and the call is
+  answered once the person decides. The workspace is
   prepared at the first call that reaches it, and only that call waits
   for it; a run whose calls reach none prepares none (ADR 1043).
 - **End, park, or yield.** A loop ends on the kind's done rule, a bound,
