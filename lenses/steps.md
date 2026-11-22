@@ -352,10 +352,8 @@ the trace of a request, the cost of a loop, the replay after a crash,
 the timeline a person scrolls, the agent's current plan, and the inputs
 still pending. A projection may be cached, is always rebuildable, and is
 never a second copy. Compaction changes what a model reads, never what
-happened. A person's view names each of the engine's notices as the
-engine's, and shows a failed call's class and the tool's own text
-without the advice the model reads with it, which stays in the model's
-request.
+happened. A person's view names the engine's notices as the engine's,
+and shows a failed call without the advice the model reads with it.
 
 **Source.** History.
 
@@ -374,9 +372,8 @@ advice when a view drops it.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/agent_sessions/rules.py`,
-`scaffold/acme_root/om/src/acme/om/agent_steps/manager.py`, and, for a
-person's view, `scaffold/acme_root/services/api/src/acme/services/api/services/impl/agent_sessions.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_sessions/rules.py` and
+`scaffold/acme_root/om/src/acme/om/agent_steps/manager.py`
 
 **Check.** review
 
