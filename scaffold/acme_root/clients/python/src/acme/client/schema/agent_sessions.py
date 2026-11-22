@@ -385,8 +385,12 @@ class AgentSessionView(BaseModel):
 class AgentStepView(BaseModel):
     """
     One step of a session's history, in its order. `text` is what it
-    says: a message's words, a model's answer, a tool's result. The rest is
-    its header's, by type: the tools a model response called, why it
+    says: a message's words, a model's answer, a tool's result. A failed
+    call's `text` is the tool's own text alone: its class is `failure`, and
+    the advice the model reads with a failure is the model's, never shown.
+    A message or a change of environment whose `actor` is `engine` is the
+    engine's notice to the model, never words said to a person. The rest
+    is its header's, by type: the tools a model response called, why it
     stopped, and what it used; a tool call's tool and the class of its
     failure; a control's command; a park; a loop's outcome, and its cause
     when the engine names one, such as the setup command that failed and

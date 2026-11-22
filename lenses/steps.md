@@ -352,22 +352,31 @@ the trace of a request, the cost of a loop, the replay after a crash,
 the timeline a person scrolls, the agent's current plan, and the inputs
 still pending. A projection may be cached, is always rebuildable, and is
 never a second copy. Compaction changes what a model reads, never what
-happened.
+happened. A person's view names each of the engine's notices as the
+engine's, and shows a failed call's class and the tool's own text
+without the advice the model reads with it, which stays in the model's
+request.
 
 **Source.** History.
 
 **Look for.** Every store of derived state: the plan, the pending
 inputs, cost totals, the status, the timeline; whether each rebuilds
-from the steps; what a compaction writes and removes.
+from the steps; what a compaction writes and removes. What a step view
+and a client's line show of a message or a change of environment the
+engine wrote, and of a failed call.
 
 **Violation.** A plan or a pending input whose only record is a table
 of its own; a cost total no query over the steps reproduces; a
-compaction that deletes or rewrites the steps it summarizes.
+compaction that deletes or rewrites the steps it summarizes. A person's
+view that shows an engine's notice as bare words, as if said to the
+person, or a failure's advice to the model; a request that loses the
+advice when a view drops it.
 
 **Severity.** medium
 
-**Shape.** `scaffold/acme_root/om/src/acme/om/agent_sessions/rules.py` and
-`scaffold/acme_root/om/src/acme/om/agent_steps/manager.py`
+**Shape.** `scaffold/acme_root/om/src/acme/om/agent_sessions/rules.py`,
+`scaffold/acme_root/om/src/acme/om/agent_steps/manager.py`, and, for a
+person's view, `scaffold/acme_root/services/api/src/acme/services/api/services/impl/agent_sessions.py`
 
 **Check.** review
 

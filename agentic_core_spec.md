@@ -482,6 +482,15 @@ is a query or a projection. A projection may be cached, is always
 rebuildable, and is never a second copy. Compaction changes what a model
 reads, never what happened.
 
+The context a model reads and the timeline a person scrolls read the
+same steps, and some words in them are for the model alone. The engine's
+notices are instructions to the model ([Only a Principal
+Instructs](#only-a-principal-instructs)), so a person's view names each
+one as the engine's, never as words said to that person. A failed call
+shows its class and the tool's own text. The advice the model reads with
+it ([Failures the Model Reads](#failures-the-model-reads)) stays in the
+model's request and out of a person's view.
+
 Each part lives in one of the guideline's roles ([Database
 Roles][g-roles]): the session in `core`, its steps and their cursor in
 `activity`, its loop work in `queue`. A step append is one atomic write
