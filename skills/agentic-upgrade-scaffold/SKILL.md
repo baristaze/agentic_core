@@ -82,8 +82,11 @@ read as the guideline's skill reads them, with these differences.
 - **Migrations** (its step 6). The engine's migrations sit in the
   guideline's four role chains, after the guideline's, and they are the
   scaffold's, as the guideline's own are. A role's scaffold head is the
-  render's: the engine's last migration of that role where it has one,
-  else the guideline's.
+  head of the render's chain for that role: the one revision no other
+  revision of it names as its `down_revision`, which `head(<role>)` in
+  the render's `storage/migrate.py` returns. It is read by the parents,
+  never by the file name: a folded revision sorts below the parents it
+  follows.
 - **A layer's gates** (its step 8). A layer runs its scaffold's gates in
   a copy, as the engine's CI does, never in `<root>`. From the
   checkout's root, `python3 scaffold/new.py <dir>/<name>` copies it into
