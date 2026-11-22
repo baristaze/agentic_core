@@ -19,14 +19,15 @@ from acme.om.agent_steps.types.content import (
     TextBlock,
     ToolResultBlock,
 )
-from acme.om.agent_steps.types.header import InputHeader
+from acme.om.agent_steps.types.header import InputHeader, ToolFailure
 from acme.om.base import new_id
 from acme.om.language_models.types.fill import Fill
+from acme.om.tools import rules as tool_rules
 from acme.om.windows import rules
 from acme.om.windows.types.kind import KindPrompts
 from acme.om.windows.types.policy import CompactionPolicy
 
-from contracts.histories import MAIN_FILL, History
+from contracts.histories import AT, MAIN_FILL, History
 
 FILL = Fill(
     provider=ProviderName.ANTHROPIC,
@@ -306,6 +307,33 @@ def test_an_input_a_cut_response_carried_is_delivered_again() -> None:
     draft = render(history.steps)
     assert draft.delivers == (objective.id,)
     assert all(m.role == "user" for m in draft.call.messages), "the cut reply is never read"
+
+
+def test_a_failed_call_renders_its_class_its_text_and_the_advice_the_model_reads() -> None:
+    history, _ = an_agent_session()
+    response = history.response(history.request(), "", [("call_9", "grep", {"path": "/"})])
+    call = history.call(response, "call_9", "grep")
+    failed = tool_rules.response(
+        new_id(), AT, call, "the root is out of bounds", ToolFailure.DENIED, limit=1_000
+    )
+    history.add(
+        type=failed.type,
+        actor=failed.actor,
+        origin=failed.origin,
+        responds_to=failed.responds_to,
+        header=failed.header,
+        content=failed.content,
+    )
+    draft = render(history.steps)
+    *_, read = draft.call.messages
+    (result,) = (block for block in read.blocks if isinstance(block, ToolResultBlock))
+    assert result.is_error
+    assert result.parts == (
+        TextBlock(
+            text="denied: the root is out of bounds\n"
+            "This call is not allowed as asked. Change your plan; do not repeat it."
+        ),
+    ), "the model reads the class, the tool's text, and the advice, whatever a person reads"
 
 
 def test_a_bulky_result_read_before_the_summary_renders_as_a_stub_with_its_handle() -> None:
