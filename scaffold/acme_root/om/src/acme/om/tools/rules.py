@@ -82,6 +82,24 @@ ADVICE: dict[ToolFailure, str] = {
 """What the model reads with each failure: the contract of a failure."""
 
 
+def failed_text(failure: ToolFailure, text: str) -> str:
+    """What a failed call's response says, as the model reads it: the
+    failure's class, the tool's own text, and, on a line of its own, the
+    advice of the class."""
+    return f"{failure.value}: {text}\n{ADVICE[failure]}"
+
+
+def own_text(failure: ToolFailure, said: str) -> str:
+    """The tool's own text of what a failed call's response says
+    (`failed_text`), as a person reads it: without the class, which a view
+    shows apart, and without the advice, which is the model's. A text of
+    another shape is returned whole."""
+    prefix, advice = f"{failure.value}: ", f"\n{ADVICE[failure]}"
+    if said.startswith(prefix) and said.endswith(advice):
+        return said[len(prefix) : len(said) - len(advice)]
+    return said
+
+
 # Who may start or instruct a session.
 
 
@@ -490,7 +508,7 @@ def response(
         raise ValueError(f"step {request.id} is not a tool request")
     text = bounded(text, limit)
     if failure is not None:
-        text = f"{failure.value}: {text}\n{ADVICE[failure]}"
+        text = failed_text(failure, text)
     return AgentStep(
         id=agent_step_id,
         created_at=at,

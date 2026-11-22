@@ -10,7 +10,7 @@ from acme.client.types.agent_sessions import (
     AgentSessionView,
     AgentStepView,
 )
-from acme.client.types.agent_steps import AgentStepType, LoopOutcome
+from acme.client.types.agent_steps import Actor, AgentStepType, LoopOutcome
 from acme.client.types.tenancy import MembershipChoiceView, OrgKind
 
 
@@ -74,10 +74,17 @@ def one_line(text: str) -> str:
     return said if len(said) <= LINE_TEXT else said[: LINE_TEXT - 1] + "…"
 
 
+NOTICES = frozenset({AgentStepType.message, AgentStepType.environment_changed})
+"""The steps whose words, when the engine writes them, are its notice to
+the model: a nudge, a pause, a cut, a hand-back, a restore."""
+
+
 def step_line(step: AgentStepView) -> str:
     """One line for a step of a session's history: its seq, its type, and
     what it says or did, the text cut to one line. A park and a loop's end
-    say their cause after a colon, when the engine names one."""
+    say their cause after a colon, when the engine names one. The engine's
+    notice to the model names the engine, so no person reads it as said to
+    them, and a failed call says its class and the tool's own text."""
     said = one_line(step.text)
     detail = said
     if step.type is AgentStepType.model_response and step.tools:
@@ -96,6 +103,8 @@ def step_line(step: AgentStepView) -> str:
         detail = step.outcome.value
         if step.cause:
             detail += f": {one_line(step.cause)}"
+    elif step.actor is Actor.engine and step.type in NOTICES:
+        detail = f"from the engine: {said}"
     return f"{step.seq:>5}  {step.type.value:<15} {detail}".rstrip()
 
 

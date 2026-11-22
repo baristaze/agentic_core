@@ -34,7 +34,7 @@ from acme.om.exceptions import NotFound
 from acme.om.spend_budgets import SpendBudgetsOperatorManagerInterface
 from acme.om.spend_budgets.types.usage import AgentSessionUsage
 from acme.om.tools import ToolsManagerInterface
-from acme.om.tools.rules import named_snapshot
+from acme.om.tools.rules import named_snapshot, own_text
 from acme.om.tools.types.call import JobCompletion
 from acme.om.windows import WindowsManagerInterface
 from acme.services.api.services.agent_sessions import AgentSessionsServiceInterface
@@ -100,13 +100,18 @@ def agent_session_view(session: AgentSession) -> AgentSessionView:
 
 def text_of(step: AgentStep) -> str:
     """What a step says: a tool response's text parts, any other step's
-    text blocks. A step whose content is gone, its session's key revoked,
-    says nothing: a hole in a known place, whose shape alone stays."""
+    text blocks. A failed call's response says the tool's own text alone:
+    its class is the view's `failure`, and the advice the model reads with
+    it is the model's. A step whose content is gone, its session's key
+    revoked, says nothing: a hole in a known place, whose shape alone
+    stays."""
     if not step.content.is_plain():
         return ""
-    if step.type is AgentStepType.TOOL_RESPONSE:
+    header = step.header
+    if isinstance(header, ToolResponseHeader):
         parts = step.as_tool_response().parts
-        return "\n".join(part.text for part in parts if isinstance(part, TextBlock))
+        said = "\n".join(part.text for part in parts if isinstance(part, TextBlock))
+        return said if header.failure is None else own_text(header.failure, said)
     return step.as_text()
 
 
