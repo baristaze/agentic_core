@@ -39,7 +39,14 @@ from acme.om.base import OmBase, new_id, utcnow
 from acme.om.context import Role, TenantContext
 from acme.om.exceptions import StaleWriter, ToolFailed
 from acme.om.tools.impl.manager import SECRET_USED, ToolsOptions
-from acme.om.tools.rules import ADVICE, call_deadline, command_text, recovered_text
+from acme.om.tools.rules import (
+    ADVICE,
+    call_deadline,
+    command_text,
+    failed_text,
+    own_text,
+    recovered_text,
+)
 from acme.om.tools.tool import ToolRuntime
 from acme.om.tools.types.tool import Effect, ToolInput
 
@@ -210,6 +217,17 @@ async def test_a_failures_text_is_bounded_as_a_result_is(tmp_path: Path) -> None
     assert failure_of(response) is ToolFailure.TIMEOUT
     assert "\n[cut: " in text and text.endswith(ADVICE[ToolFailure.TIMEOUT])
     assert len(text) < 300 + 200
+
+
+@pytest.mark.parametrize("failure", list(ToolFailure))
+def test_a_person_reads_a_failures_own_text_and_the_model_its_class_and_advice(
+    failure: ToolFailure,
+) -> None:
+    said = "error: the push was refused\nhint: the branch is protected"
+    read = failed_text(failure, said)
+    assert read.startswith(f"{failure.value}: ") and read.endswith(f"\n{ADVICE[failure]}")
+    assert own_text(failure, read) == said
+    assert own_text(failure, said) == said, "a text of another shape is the tool's whole"
 
 
 def _running(pid: int) -> bool:
