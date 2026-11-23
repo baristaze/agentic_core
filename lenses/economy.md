@@ -149,7 +149,7 @@ role.
 guideline's order for fixing calls: a fan-out is the last step, never
 the first. A path that makes a call per item, or the same call twice,
 is made cheaper by making fewer calls before it is made faster by making
-them at once. How many children may run at once is AGT-05's.
+them at once. How many children a tree may hold is AGT-05's.
 
 **Source.** Economy, Fewer and Cheaper Calls (Fewer calls before
 concurrent calls).

@@ -129,17 +129,15 @@ without its parent's untrusted mark is TRU-06.)
 
 **Principle.** The tree is bounded. Height 1 is a single agent, and 2
 lets the root have children that have none. Count is the most
-sub-agents the tree may hold besides its root, and concurrency, when it
-is set, the most that run at once. Time is one absolute deadline the
-whole tree shares: one instant, never a duration per call. A child
-parked on a budget or a provider does not disturb its parent: the wait
-belongs to the tree, and the unlock happens at the root.
+sub-agents the tree may hold besides its root. Time is one absolute
+deadline the whole tree shares: one instant, never a duration per call.
+A child parked on a budget or a provider does not disturb its parent:
+the wait belongs to the tree, and the unlock happens at the root.
 
 **Source.** Agent Kinds and Sub-Agents, Sub-Agents.
 
-**Look for.** Where height, count, and concurrency are checked at spawn;
-how a child gets its deadline; where a child's budget or provider park
-is unlocked.
+**Look for.** Where height and count are checked at spawn; how a child
+gets its deadline; where a child's budget or provider park is unlocked.
 
 **Violation.** A spawn that skips the height or the count check; a child
 given a fresh duration instead of the tree's instant; a child's budget

@@ -30,9 +30,9 @@ as a server it started with its output elsewhere, runs on.
 **In the account mode, the end runs as the account.** The account's own
 view of `/proc` finds what to end, and a signal sent as the account
 reaches the account's processes alone, whichever process a pid names by
-then. It never ends every process of the account: the calls of one
-response run concurrently in one workspace, and another command's
-processes are the account's too.
+then. It never ends every process of the account: what an earlier
+command left running in the workspace, such as a server, is the
+account's too.
 
 **A file is read from an offset.** A read takes an offset and answers at
 most its bound of the bytes after it, sought rather than read through,

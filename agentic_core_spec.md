@@ -215,8 +215,8 @@ async def run_loop(ctx, session):                         # illustrative
         await steps.append(ctx, response)
         await hold.settle(response.usage)
         results = []
-        for call in response.tool_calls:                   # may run concurrently
-            await steps.append(ctx, call.request)          # persisted and audited first
+        await steps.append(ctx, *response.requests)        # all persisted and audited first
+        for call in response.tool_calls:                   # one after another, in order
             decision = policy.decide(call)                 # allow | approve | deny
             ...                                            # approve parks the loop
             results.append(await tools.execute(ctx, call)) # through the transport
@@ -901,11 +901,17 @@ An approval is a person's decision, never the model's.
 ### Execution
 
 A model may ask for several tool calls in one response. Each is its own
-request and response pair, and calls run concurrently when their tools
-allow it. A tool's time is the least of its own timeout, the engine's
-limit, and the time left before the tree's deadline. When it runs out,
-the tool's whole process tree goes with it. Output streams while the
-tool runs ([Streams](#streams)).
+request and response pair, and every request is persisted before any
+call is decided. The calls then run one after another, in the order the
+model made them, and a call that waits for a person parks the loop once
+the others are answered. They run in order because they share one
+workspace, one stream, and one approval park, and running them at once
+would save little of a session's time.
+
+A tool's time is the least of its own timeout, the engine's limit, and
+the time left before the tree's deadline. When it runs out, the tool's
+whole process tree goes with it. Output streams while the tool runs
+([Streams](#streams)).
 
 ### Long-Running Jobs
 
@@ -1525,7 +1531,6 @@ The tree is bounded:
 |---|---|
 | Height | 1 is a single agent; 2 lets the root have children that have none; and so on |
 | Count | The most sub-agents the tree may hold besides its root |
-| Concurrency | The most that run at once (optional) |
 | Money | The root's budget bounds the whole tree. A child draws on what the tree has left, never a copy of its parent's budget, and never creates budget. |
 | Time | One absolute deadline the whole tree shares: one instant, never a duration per call |
 

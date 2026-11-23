@@ -36,7 +36,6 @@ def make_tree(count: int = 3) -> AgentTree:
         updated_by=by,
         height=2,
         count=count,
-        concurrency=2,
         deadline=now + timedelta(hours=4),
     )
 

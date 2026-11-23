@@ -76,13 +76,11 @@ class DoneRule(StrEnum):
 class TreeLimits(OmBase):
     """The bounds of a tree. Height 1 is a single agent, 2 lets the root have
     children that have none, and so on. Count is the most sub-agents the
-    tree holds besides its root, and concurrency, when set, the most that
-    run at once. Out of the box a tree is three levels deep, a root, its
-    sub-agents, and theirs, and holds ten sub-agents."""
+    tree holds besides its root. Out of the box a tree is three levels deep,
+    a root, its sub-agents, and theirs, and holds ten sub-agents."""
 
     height: int = Field(default=3, ge=1)
     count: int = Field(default=10, ge=0)
-    concurrency: int | None = Field(default=None, ge=1)
 
 
 class AgentKind(OmBase):
