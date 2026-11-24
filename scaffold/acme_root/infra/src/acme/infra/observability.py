@@ -64,6 +64,11 @@ OUTCOMES = Counter(
     "Outcomes of queues, caches, rate limits, and sweeps",
     ["subsystem", "outcome"],
 )
+WORKSPACE_PREPARES_UNUSED = Counter(
+    "acme_workspace_prepares_unused_total",
+    "Workspaces a run prepared early that none of its calls reached, by kind",
+    ["kind"],
+)
 SWEEP_SECONDS = Histogram(
     "acme_sweep_seconds",
     "How long one maintenance sweep pass took",

@@ -38,7 +38,10 @@ class LoopManagerInterface(ABC):
         options' wait; and a workspace whose durable state is gone
         (`AgentWorkspaceLost`) parks it for a person, each step naming the
         refusal's cause, or what was lost. A run that makes no such call
-        prepares no workspace. It settles a lost run's open requests by
+        prepares no workspace, unless its kind prepares early: then its
+        prepare starts beside its first model call, the first call that
+        reaches the workspace takes it, and a run that makes no such call
+        lets the instance go at its end, untouched. It settles a lost run's open requests by
         their effect, then drives the loop until it ends, parks, or yields
         its run time. `stale` when a later run took the claim: nothing more
         is written, and the transport refuses this run's commands."""

@@ -102,6 +102,16 @@ class LoopOptions(OmBase):
 
 
 @dataclass
+class EarlyPrepare:
+    """A prepare a run started beside its first model call, for a kind that
+    prepares its workspace early: the step its workspace starts from, as the
+    history named it then, and the task that prepares it."""
+
+    task: asyncio.Task[AgentWorkspace]
+    start: AgentStep | None
+
+
+@dataclass
 class RunState:
     """One run of one loop: what it read when it began, and what it learns
     as it goes."""
@@ -128,6 +138,10 @@ class RunState:
     # Prepared at the first call that reaches it, and None until then: a
     # run that makes no such call holds none, and snapshots none.
     workspace: AgentWorkspace | None = None
+    # The prepare a kind that prepares early started beside the run's first
+    # model call, until the first call that reaches the workspace takes it
+    # or the run's end lets it go.
+    early: EarlyPrepare | None = None
     kept: bool = False  # a snapshot holds its workspace whole, taken at its end
     made: set[UUID] = field(default_factory=lambda: set[UUID]())  # tool requests it wrote
     failures: int = 0  # provider errors in a row
@@ -410,7 +424,8 @@ class LoopCore(ABC):
         that parks holds no runtime, but for a workspace kept by snapshots
         that no snapshot holds whole: its instance stays, so nothing in it is
         lost, and the next run that reaches it prepares it as it stands. A
-        run that reached none holds none, and lets nothing go."""
+        run that reached none holds none, and lets nothing go here: an early
+        prepare no call took is `_let_go_early`'s."""
         if run.workspace is None:
             return
         if run.workspace.spec.durability is Durability.SNAPSHOT and not run.kept:
