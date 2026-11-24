@@ -456,7 +456,9 @@ async def test_a_record_holds_the_time_to_the_first_part_and_the_fleet_reads_it(
     delay = FIRST_PART // timedelta(milliseconds=1)
     assert record.first_token_ms is not None
     assert delay <= record.first_token_ms < record.latency_ms
-    assert record.first_token_ms < delay + HOLD // timedelta(milliseconds=1), "the hold is not counted"
+    assert record.first_token_ms < delay + HOLD // timedelta(milliseconds=1), (
+        "the hold is not counted"
+    )
     assert record.latency_ms == (FIRST_PART + REST) // timedelta(milliseconds=1)
     (after_count, after_total) = first_tokens(record.provider)
     assert after_count - count == 1
