@@ -25,10 +25,14 @@ It holds the call's hold, its session, the session's tree, its loop,
 and the step that answered it; the agent kind and its version, the
 model role, the provider, and the model; input, cache-read, cache-write,
 output, and thinking tokens; the reference cost, `cost_micros`, at the
-price the hold read, or null when no price applied; and the provider's
-latency. The call gate writes it
+price the hold read, or null when no price applied; the provider's
+latency; and its time to the first token, `first_token_ms`, from the
+request sent to the first part the provider streamed back, null when no
+part came back. The call gate writes it
 when it settles a call the provider billed, once per hold: a second
-write of the same hold lands nothing.
+write of the same hold lands nothing. It also observes the time to the
+first token in `acme_model_first_token_seconds`, by provider, so the
+fleet reads it without reading records.
 
 **A call settled whole is recorded at its hold, and marked.** A stream
 that broke after it began, a call its run abandoned mid-stream, and a
@@ -37,9 +41,9 @@ record says `settled_whole`: its `cost_micros` is the hold, as the
 ledger settled it, and its tokens are what a partial reply reported,
 else none. A lost run's call was never held by the gate that settles
 it, so the loop names it from its request step and its session; its
-latency is unknown, and is 0. A rollup counts such calls apart, so a
-reading's cost matches the ledger's and says how much of it is a worst
-case.
+latency is unknown, and is 0, and its time to the first token is null.
+A rollup counts such calls apart, so a reading's cost matches the
+ledger's and says how much of it is a worst case.
 
 **A record never fails its call.** The record is written once the ledger
 has settled. A write that fails is logged, and the call, its reply, and
@@ -74,8 +78,8 @@ org, and none of the figures. The answer, `AgentSessionUsageView`:
   `created_at`, `spend_hold_id`, `agent_session_id`, `tree_id`, `loop_id`,
   `agent_step_id`, `agent_kind`, `kind_version`, `role`, `provider`, `model`,
   `input_tokens`, `cache_read_tokens`, `cache_write_tokens`,
-  `output_tokens`, `thinking_tokens`, `cost_micros`, `latency_ms`, and
-  `settled_whole`.
+  `output_tokens`, `thinking_tokens`, `cost_micros`, `latency_ms`,
+  `first_token_ms`, and `settled_whole`.
 - `next_cursor`: the next page's `cursor`, or null.
 - `loops`: one `{loop_id, rollup}` per loop, in the order each loop
   first called, up to a thousand, and `has_more_loops` past them.

@@ -22,9 +22,11 @@ export interface paths {
          *     response step), `agent_kind`, `kind_version`, `role`, `provider`, `model`, `input_tokens`,
          *     `cache_read_tokens`, `cache_write_tokens`, `output_tokens`,
          *     `thinking_tokens`, `cost_micros` (reference cost in millionths, null when
-         *     no price applied), `latency_ms`, and `settled_whole` (a call whose usage
-         *     was never reported whole, counted at its whole hold, its tokens partial
-         *     at most); `next_cursor`, the next page's `cursor`, or null; `loops`, one
+         *     no price applied), `latency_ms`, `first_token_ms` (the time to the first
+         *     part the provider streamed back, null when none came or the record
+         *     predates it), and `settled_whole` (a call whose usage was never reported
+         *     whole, counted at its whole hold, its tokens partial at most);
+         *     `next_cursor`, the next page's `cursor`, or null; `loops`, one
          *     `{loop_id, rollup}` per loop in the order it first called;
          *     `has_more_loops`; and `total`, the session's rollup. A rollup holds
          *     `calls`, the five token classes, `cost_micros`, `unpriced` (calls no
@@ -788,13 +790,15 @@ export interface components {
          * UsageRecordView
          * @description One model call a provider billed, as the ledger keeps it: ids, tokens
          *     by disjoint class, reference cost in millionths (null when no price
-         *     applied), the provider's latency, and the labels of what served it. It
-         *     holds no content, so it reads the same in every storage mode. `agent_step_id`
-         *     is the call's response step; `spend_hold_id` its hold; `tree_id` the
-         *     session's tree; `kind_version` the agent kind's version the session
-         *     ran. `settled_whole` marks a call whose usage was never reported whole
-         *     (a broken stream, a lost run): its cost is its whole hold, and its
-         *     tokens are what a partial reply reported, else 0.
+         *     applied), the provider's latency and its time to the first part it
+         *     streamed back (null when none came, or the record predates it), and the
+         *     labels of what served it. It holds no content, so it reads the same in
+         *     every storage mode. `agent_step_id` is the call's response step;
+         *     `spend_hold_id` its hold; `tree_id` the session's tree; `kind_version`
+         *     the agent kind's version the session ran. `settled_whole` marks a call
+         *     whose usage was never reported whole (a broken stream, a lost run): its
+         *     cost is its whole hold, and its tokens are what a partial reply
+         *     reported, else 0.
          */
         UsageRecordView: {
             /** Agent Kind */
@@ -820,6 +824,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** First Token Ms */
+            first_token_ms: number | null;
             /**
              * Id
              * Format: uuid
