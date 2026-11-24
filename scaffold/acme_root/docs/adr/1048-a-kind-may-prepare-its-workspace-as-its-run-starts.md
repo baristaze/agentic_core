@@ -39,10 +39,12 @@ still written on the first call's path.
 
 **The first call that reaches the workspace takes it.** The call waits
 for the prepare while it runs, and uses what it made (`_taken`). When
-the prepare failed, or started from another step than the call would,
-the call prepares as any first call does. A provider finds what the
-early prepare started, and a refusal that stands reaches the call as it
-would have. One prepare serves the run.
+the prepare failed, the call prepares as any first call does: a
+provider finds what the early prepare started, and a refusal that
+stands reaches the call as it would have. When it started from another
+step than the call would, as when a principal asked for a restore since,
+its instance goes first, and the call prepares from what the history
+names now. One prepare serves the run.
 
 **A run that reaches no workspace lets the instance go.** Its end waits
 for the prepare, so no prepare outlives its run, and lets the instance
