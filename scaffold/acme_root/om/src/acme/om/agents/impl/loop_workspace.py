@@ -165,9 +165,10 @@ class LoopWorkspace(LoopCore):
         """What the run's early prepare made, taken by the first call that
         reaches the workspace, which waits for it while it runs. None when
         the run started none, when it failed, or when it started from
-        another step than `start`: the call then prepares as any first call
-        does, and finds what the early one started. A failure reaches the
-        log, and the call's own prepare meets it again while it stands."""
+        another step than `start`, such as before a restore a principal
+        asked for since: its instance goes, and the call then prepares as
+        any first call does. A failure reaches the log, and the call's own
+        prepare finds what it started, or meets it again while it stands."""
         early = run.early
         if early is None:
             return None
@@ -178,6 +179,7 @@ class LoopWorkspace(LoopCore):
             log.warning("session %s: its early prepare failed: %s", run.agent_session_id, failed)
             return None
         if _id(early.start) != _id(start):
+            await self._let_go(run, workspace)
             return None
         return workspace
 
@@ -211,8 +213,13 @@ class LoopWorkspace(LoopCore):
         if not release:
             return
         WORKSPACE_PREPARES_UNUSED.labels(kind=run.kind.name).inc()
+        await self._let_go(run, task.result())
+
+    async def _let_go(self, run: RunState, workspace: AgentWorkspace) -> None:
+        """An instance no call reached let go, its files kept, as a run's end
+        lets one go. A release that fails is logged."""
         try:
-            await self._tools.release_agent_workspace(run.ctx, task.result())
+            await self._tools.release_agent_workspace(run.ctx, workspace)
         except Exception:
             log.exception("session %s: the workspace was not released", run.agent_session_id)
 

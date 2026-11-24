@@ -5,8 +5,9 @@ reaches the workspace takes it: one prepare in all. A run of it that
 reaches no workspace lets the instance go at its end, takes no snapshot
 of it, and counts it by kind. A kind that declares nothing prepares at
 its first call that reaches the workspace, and a run of it that reaches
-none prepares none. An early prepare that fails leaves the first call to
-prepare as it would have, and no prepare outlives its run."""
+none prepares none. An early prepare that fails, or that a restore
+replaced since, leaves the first call to prepare as it would have, and no
+prepare outlives its run."""
 
 import asyncio
 from collections.abc import AsyncIterator
@@ -29,9 +30,16 @@ from acme.infra.agent_workspaces.twin import AgentWorkspaceTwinImpl
 from acme.infra.impl.local import InfraLocalImpl
 from acme.infra.observability import WORKSPACE_PREPARES_UNUSED
 from acme.integrations.model_providers.calls import Finished, ModelCall, StreamPart
+from acme.om.agent_steps.rules import control_step
 from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
-from acme.om.agent_steps.types.header import ControlCommand, LoopEndedHeader, LoopOutcome
+from acme.om.agent_steps.types.header import (
+    ControlCommand,
+    LoopEndedHeader,
+    LoopOutcome,
+    SnapshotHeader,
+)
 from acme.om.agents.types.kind import AgentKind
+from acme.om.base import new_id
 from acme.om.context import TenantContext
 from acme.om.tools.tool import ToolRuntime
 from acme.om.tools.types.tool import ToolInput
@@ -78,8 +86,10 @@ class Timed:
     """The twin provider and the scripted model, each taking a set time, and
     what happened in order: a prepare began (`prepare`) and ended
     (`prepared`), a model call answered (`answered`), and `lookup` ran in
-    the workspace (`ran`). `prepares` counts every prepare asked; `failing`
-    refusals are raised by the first prepares, in order."""
+    the workspace (`ran`). `prepares` holds the snapshot each prepare was
+    asked to start from; `failing` refusals are raised by the next
+    prepares, in order. A model call waits for `hold` when it is set, and
+    `lookup` writes `writes` into the workspace when it is set."""
 
     def __init__(self, loop: Loop, monkeypatch: pytest.MonkeyPatch) -> None:
         twin = loop.infra.get_agent_workspaces()
@@ -92,6 +102,8 @@ class Timed:
         self.failing: list[IsolationRefused] = []
         self.live_when_ran: list[bool] = []
         self.began = asyncio.Event()  # set once a prepare began
+        self.hold: asyncio.Event | None = None
+        self.writes: bytes | None = None
         prepare, release, snapshot = twin.prepare, twin.release, twin.snapshot
         stream = loop.anthropic.stream
         lookup = loop.tools["lookup"]
@@ -131,6 +143,8 @@ class Timed:
             model_call: ModelCall, *, credential: SecretStr | None = None
         ) -> AsyncIterator[StreamPart]:
             await asyncio.sleep(MODEL)
+            if self.hold is not None:
+                await self.hold.wait()
             async for part in stream(model_call, credential=credential):
                 if isinstance(part, Finished):
                     self.events.append("answered")
@@ -139,6 +153,8 @@ class Timed:
         async def ran(ctx: TenantContext, call_input: ToolInput, runtime: ToolRuntime) -> object:
             self.events.append("ran")
             self.live_when_ran.append(runtime.agent_session_id in twin.live)
+            if self.writes is not None:
+                twin.files[runtime.agent_session_id] = self.writes
             return await run(ctx, call_input, runtime)
 
         monkeypatch.setattr(twin, "prepare", prepared)
@@ -264,6 +280,52 @@ async def test_an_early_prepare_of_a_kept_workspace_starts_from_its_snapshot_and
     assert len(of_type(history, AgentStepType.SNAPSHOTTED)) == 1
     assert agent_session_id not in timed.twin.live and timed.released == 2
     assert unused(EARLY_KEPT) == before + 1
+
+
+async def test_an_early_prepare_from_a_snapshot_a_restore_replaced_since_is_let_go(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A principal asks for a restore while the run's first model call runs.
+    The early prepare started from the latest snapshot, so its instance goes,
+    and the first call prepares from the snapshot the restore names."""
+    loop = early_loop(tmp_path)
+    timed = Timed(loop, monkeypatch)
+    agent_session_id = await loop.start(EARLY_KEPT.name)
+    for files in (b"first", b"second"):
+        await loop.say(agent_session_id, "Find the total.")
+        loop.anthropic.add(reply(use("lookup")), reply(said("It is 12.")))
+        timed.writes = files
+        assert (await loop.loops.run(loop.owner, agent_session_id)).outcome is LoopOutcome.SUCCEEDED
+    first = of_type(await loop.history(agent_session_id), AgentStepType.SNAPSHOTTED)[0]
+    assert isinstance(first.header, SnapshotHeader)
+    released = timed.released
+    timed.writes = None
+    await loop.say(agent_session_id, "Go on from the first state.")
+    loop.anthropic.add(reply(use("lookup")), reply(said("It is 12.")))
+    timed.began.clear()
+    timed.hold = asyncio.Event()
+    running = asyncio.ensure_future(loop.loops.run(loop.owner, agent_session_id))
+    await timed.began.wait()
+    snapshot = await loop.managers.tools.find_snapshot(
+        loop.owner, agent_session_id, first.header.snapshot.id
+    )
+    restore = control_step(
+        new_id(),
+        loop.clock.now,
+        agent_session_id,
+        loop.owner,
+        ControlCommand.RESTORE,
+        snapshot=snapshot,
+    )
+    await loop.managers.agent_sessions.receive(loop.owner, agent_session_id, [restore])
+    timed.hold.set()
+
+    done = await running
+
+    assert done.outcome is LoopOutcome.SUCCEEDED
+    assert timed.prepares[-2:] == [b"second", b"first"], "early from the latest, then restored"
+    assert timed.twin.files[agent_session_id] == b"first" and timed.live_when_ran[-1]
+    assert timed.released == released + 2, "the early instance went, then the run's at its end"
 
 
 async def test_a_kept_workspace_touched_since_its_latest_snapshot_is_never_prepared_early(
