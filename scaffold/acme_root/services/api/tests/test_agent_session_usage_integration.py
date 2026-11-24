@@ -83,6 +83,7 @@ def a_record(
         thinking_tokens=0,
         cost_micros=cost,
         latency_ms=800,
+        first_token_ms=None if cost is None else 300,
     )
 
 
@@ -140,11 +141,14 @@ async def test_a_read_operator_reads_a_sessions_usage_and_nobody_else_does(
         }
         assert body["has_more_loops"] is False
         item = body["items"][0]
-        assert (item["input_tokens"], item["cost_micros"], item["latency_ms"]) == (
-            1_000,
-            2_000,
-            800,
-        )
+        assert (
+            item["input_tokens"],
+            item["cost_micros"],
+            item["latency_ms"],
+            item["first_token_ms"],
+        ) == (1_000, 2_000, 800, 300)
+        items = [*body["items"], *rest.json()["items"]]
+        assert [i["first_token_ms"] for i in items] == [300, 300, None], "null when none came"
 
         as_tenant = await client.get(path, headers=owner)
         assert as_tenant.status_code == 401, as_tenant.text

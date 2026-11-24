@@ -8,11 +8,12 @@ from uuid import UUID
 
 import httpx
 import pytest
+from prometheus_client import REGISTRY
 from pydantic import SecretStr
 from sqlalchemy import BigInteger, Boolean, DateTime, Integer, Text, Uuid
 
 from acme.integrations.model_providers.anthropic import ModelProviderAnthropicImpl
-from acme.integrations.model_providers.calls import ModelCall
+from acme.integrations.model_providers.calls import Finished, ModelCall
 from acme.integrations.model_providers.scripted import ScriptedFailure
 from acme.integrations.model_providers.types import ErrorKind, ProviderName, Usage
 from acme.om.agent_sessions.impl.manager import AgentSessionsOptions
@@ -26,7 +27,7 @@ from acme.om.language_models.types.fill import MAIN, SUMMARIZER
 from acme.om.privacy.types.agent_session_privacy import StorageMode, StoragePolicy
 from acme.om.spend_budgets.rules import usage_spend
 from acme.om.spend_budgets.storage.tables.usage_records import UsageRecords
-from acme.om.spend_budgets.types.spend_hold import SpendSettlement
+from acme.om.spend_budgets.types.spend_hold import SpendHoldRequest, SpendSettlement
 from acme.om.spend_budgets.types.usage import UsageRecord
 
 from contracts.loops import ASSISTANT, Loop, loop_over, reply, said, use
@@ -175,9 +176,10 @@ COLUMNS = {
     "thinking_tokens": BigInteger,
     "cost_micros": BigInteger,
     "latency_ms": BigInteger,
+    "first_token_ms": BigInteger,
     "settled_whole": Boolean,
 }
-"""Every column a usage record has: ids, a time, counts, money, a duration,
+"""Every column a usage record has: ids, a time, counts, money, two durations,
 four labels, and a mark. A column added here is a decision that it holds
 no content."""
 
@@ -394,3 +396,99 @@ async def test_a_record_that_fails_to_land_never_fails_its_call(
     settled = [await spend_settlement_of(loop, s) for s in history if is_request(s)]
     assert [s.bill.kind for s in settled] == ["billed", "billed"]
     assert await records_of(loop, loop.owner, session) == []
+
+
+FIRST_PART = timedelta(milliseconds=700)
+REST = timedelta(milliseconds=900)
+HOLD = timedelta(milliseconds=400)
+
+
+def first_part_after(loop: Loop, monkeypatch: pytest.MonkeyPatch) -> None:
+    """On the loop's clock, the ledger takes `HOLD` to hold each call before
+    its request is sent, the provider streams its first part `FIRST_PART`
+    after the request, and its last `REST` after that."""
+    ledger = loop.managers.spend_budget_gate
+    authorize = ledger.authorize
+    stream = loop.anthropic.stream
+
+    async def slow_hold(ctx: TenantContext, request: SpendHoldRequest):
+        loop.clock.now += HOLD
+        return await authorize(ctx, request)
+
+    async def slow(call: ModelCall):
+        loop.clock.now += FIRST_PART
+        async for part in stream(call):
+            if isinstance(part, Finished):
+                loop.clock.now += REST
+            yield part
+
+    monkeypatch.setattr(ledger, "authorize", slow_hold)
+    monkeypatch.setattr(loop.anthropic, "stream", slow)
+
+
+def first_tokens(provider: str) -> tuple[float, float]:
+    """How many times to the first token the registry holds under
+    `provider`, and their sum, in seconds."""
+    labels = {"provider": provider}
+    count = REGISTRY.get_sample_value("acme_model_first_token_seconds_count", labels)
+    total = REGISTRY.get_sample_value("acme_model_first_token_seconds_sum", labels)
+    return count or 0.0, total or 0.0
+
+
+async def test_a_record_holds_the_time_to_the_first_part_and_the_fleet_reads_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One call whose provider streams its first part a set time after the
+    request: its record's time to the first token is that time, never the
+    whole call and never the hold before the request, and the registry holds
+    one observation of it under the call's provider."""
+    loop = loop_over(tmp_path)
+    first_part_after(loop, monkeypatch)
+    session = await started(loop)
+    await loop.say(session, "What is the total?")
+    loop.anthropic.add(reply(said("The total is 12.")).model_copy(update={"usage": FIRST}))
+    (count, total) = first_tokens(ProviderName.ANTHROPIC.value)
+
+    run = await loop.loops.run(loop.owner, session)
+
+    assert run.outcome is LoopOutcome.SUCCEEDED
+    (record,) = await records_of(loop, loop.owner, session)
+    delay = FIRST_PART // timedelta(milliseconds=1)
+    assert record.first_token_ms is not None
+    assert delay <= record.first_token_ms < record.latency_ms
+    assert record.first_token_ms < delay + HOLD // timedelta(milliseconds=1), (
+        "the hold is not counted"
+    )
+    assert record.latency_ms == (FIRST_PART + REST) // timedelta(milliseconds=1)
+    (after_count, after_total) = first_tokens(record.provider)
+    assert after_count - count == 1
+    assert after_total - total == pytest.approx(record.first_token_ms / 1000)
+
+
+async def test_a_call_that_broke_before_any_part_records_no_first_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stream that broke before its first part, its usage reported, is
+    billed and settled whole: its record holds no time to the first token,
+    never 0, and the registry observes none. The call again streams, and
+    its record holds one."""
+    loop = loop_over(tmp_path)
+    first_part_after(loop, monkeypatch)
+    session = await started(loop)
+    await loop.say(session, "What is the total?")
+    nothing = reply().model_copy(update={"stop_reason": None, "truncated": True, "usage": PARTIAL})
+    loop.anthropic.add(
+        ScriptedFailure(kind=ErrorKind.TRANSIENT, partial=nothing),
+        reply(said("It is 12.")).model_copy(update={"usage": FIRST}),
+    )
+    (count, _) = first_tokens(ProviderName.ANTHROPIC.value)
+
+    run = await loop.loops.run(loop.owner, session)
+
+    assert run.outcome is LoopOutcome.SUCCEEDED
+    broken, whole = await records_of(loop, loop.owner, session)
+    assert (broken.settled_whole, broken.input_tokens) == (True, PARTIAL.input)
+    assert broken.first_token_ms is None
+    assert whole.first_token_ms == FIRST_PART // timedelta(milliseconds=1)
+    (after, _) = first_tokens(ProviderName.ANTHROPIC.value)
+    assert after - count == 1, "only the call that streamed is observed"

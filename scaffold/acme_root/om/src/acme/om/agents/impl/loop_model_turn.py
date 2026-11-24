@@ -5,14 +5,13 @@ it; and a provider's error, retried, fallen back from, or parked on."""
 import contextlib
 import itertools
 import logging
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from datetime import datetime
 from uuid import UUID
 
 from acme.infra.base import SYSTEM_SCOPE
 from acme.infra.outages import Outage
-from acme.integrations.model_providers import ModelProviderInterface
-from acme.integrations.model_providers.calls import Finished, ModelCall, ModelReply
+from acme.integrations.model_providers.calls import Finished, ModelReply, StreamPart
 from acme.integrations.model_providers.failures import ModelCallFailed
 from acme.integrations.model_providers.types import ErrorAnswer, ErrorKind, StopReason
 from acme.om.agent_steps.types.agent_step import AgentStep
@@ -43,7 +42,8 @@ from acme.om.exceptions import (
 )
 from acme.om.language_models.credentials import CallClient
 from acme.om.language_models.types.fill import MAIN, SUMMARIZER, Fill
-from acme.om.spend_budgets.rules import elapsed_ms, spend_budget_park
+from acme.om.spend_budgets.rules import spend_budget_park
+from acme.om.spend_budgets.timing import CallTimer
 from acme.om.spend_budgets.types.usage import CallSite
 from acme.om.tools.native.load_toolset import loads
 from acme.om.tools.native.write_agent_plan import current_agent_plan
@@ -216,15 +216,15 @@ class LoopModelTurn(LoopCore):
             raise
         response_id = new_id()
         self._tell(run, self._sink.opened, response_id)
-        started = self._clock()
+        timer = CallTimer(self._clock)
 
         def site() -> CallSite:
-            elapsed = elapsed_ms(started, self._clock())
-            return CallSite(loop_id=run.loop_id, agent_step_id=response_id, latency_ms=elapsed)
+            return timer.site(run.loop_id, response_id)
 
         try:
             try:
-                reply = await self._stream(run, used.client, rendered.call, response_id)
+                parts = timer.parts(used.client.stream(rendered.call))
+                reply = await self._stream(run, parts, response_id)
             except ModelCallFailed as failed:
                 # Nothing streamed back: the call was refused before it was
                 # processed, and the hold is released. A stream that broke is
@@ -254,12 +254,12 @@ class LoopModelTurn(LoopCore):
             self._tell(run, self._sink.completed, response_id)
 
     async def _stream(
-        self, run: RunState, client: ModelProviderInterface, call: ModelCall, response_id: UUID
+        self, run: RunState, parts: AsyncIterator[StreamPart], response_id: UUID
     ) -> ModelReply:
         """The provider's stream, each part emitted as it arrives, never
         waited on; the reply is the one its last part carries."""
         numbers = itertools.count()
-        async for part in client.stream(call):
+        async for part in parts:
             if isinstance(part, Finished):
                 return part.reply
             emitted = rules.stream_part(run.agent_session_id, response_id, next(numbers), part)
