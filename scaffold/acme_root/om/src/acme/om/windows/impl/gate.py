@@ -3,6 +3,7 @@ from collections.abc import Callable
 from datetime import datetime
 from uuid import UUID
 
+from acme.infra.observability import MODEL_FIRST_TOKEN
 from acme.integrations.model_providers.calls import ModelCall
 from acme.integrations.model_providers.types import Usage
 from acme.om.agent_sessions import AgentSessionsManagerInterface
@@ -100,7 +101,8 @@ class CallGateSpendBudgetImpl(CallGateInterface):
     its runner reported, else whole; a job refused before any work began
     releases its hold. A billed model call leaves a usage record, in every
     storage mode: priced as its settlement is, or, settled whole, at its
-    hold and marked so (ADR 1014)."""
+    hold and marked so (ADR 1014). Its time to the first token, when a part
+    came back, is also observed by provider, for the fleet to read."""
 
     def __init__(
         self,
@@ -188,6 +190,8 @@ class CallGateSpendBudgetImpl(CallGateInterface):
             whole, reported, cost = False, usage, bill.usage.cost_micros
         else:
             whole, reported, cost = True, partial, settlement.spent.cost_micros
+        if site.first_token_ms is not None:
+            MODEL_FIRST_TOKEN.labels(provider=labels.provider).observe(site.first_token_ms / 1000)
         try:
             record = _record(spend_hold_id, labels, reported, cost, whole, site, self._clock())
             await self._budgets.record_usage(ctx, record)
@@ -241,9 +245,9 @@ def _record(
     at: datetime,
 ) -> UsageRecord:
     """A billed call's usage record: ids, its tokens by class, its cost as
-    the ledger settled it, its latency, and labels; no content. A call
-    settled whole is marked, with the tokens its partial reply reported,
-    else none."""
+    the ledger settled it, its latency and its time to the first token, and
+    labels; no content. A call settled whole is marked, with the tokens its
+    partial reply reported, else none."""
     usage = usage or Usage()
     return UsageRecord(
         id=new_id(),
@@ -265,6 +269,7 @@ def _record(
         thinking_tokens=usage.thinking,
         cost_micros=cost_micros,
         latency_ms=site.latency_ms,
+        first_token_ms=site.first_token_ms,
         settled_whole=whole,
     )
 

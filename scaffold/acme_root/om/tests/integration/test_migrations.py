@@ -1,6 +1,7 @@
 """Every role's migrated schema agrees with the ORM metadata, the latest
 revision of every role downgrades and upgrades again, a session row the
-previous release writes takes its private-data default, the logins are safe to
+previous release writes takes its private-data default, a usage record written
+before its time to the first token reads it null, the logins are safe to
 make twice and stand on every database a role lives on, a migration behind a
 held lock gives up within its bound, a stamp writes another checkout's heads
 and back, and a data migration passes the fence it runs under and fails when
@@ -9,6 +10,7 @@ it misses rows."""
 import asyncio
 import time
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 from sqlalchemy import Connection, text
@@ -73,6 +75,58 @@ async def test_a_session_row_written_without_its_private_data_mark_holds_private
     finally:
         await engine.dispose()
     assert default == "true"
+
+
+FIRST_TOKEN = "202611241949"
+"""The activity revision that adds a usage record's time to the first token."""
+
+A_RECORD = (
+    "INSERT INTO activity.usage_records (id, org_id, created_at, spend_hold_id,"
+    " agent_session_id, tree_id, loop_id, agent_step_id, agent_kind, kind_version, role,"
+    " provider, model, input_tokens, cache_read_tokens, cache_write_tokens, output_tokens,"
+    " thinking_tokens, cost_micros, latency_ms, settled_whole) VALUES (:id, :org, now(), :id,"
+    " :id, :id, :id, :id, 'assistant', 1, 'main', 'anthropic', 'claude-sonnet', 10, 0, 0, 5,"
+    " 0, 300, 1000, false)"
+)
+
+
+async def on_a_record(url: str, org: UUID, record: UUID, sql: str) -> object:
+    """One statement on a usage record under its tenant's fence, as the
+    migration login, which owns the table; the one value it reads, if any."""
+    engine = create_async_engine(url)
+    try:
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("SELECT set_config('app.org_id', :org, true)"), {"org": str(org)}
+            )
+            result = await connection.execute(text(sql), {"id": record, "org": org})
+            return result.scalar_one() if result.returns_rows else None
+    finally:
+        await engine.dispose()
+
+
+async def test_a_usage_record_written_before_the_first_token_column_reads_null(
+    migrated: dict[DatabaseRole, str],
+) -> None:
+    """A database at the activity chain's head before the column, holding a
+    record the release before wrote: the column comes in null on that row,
+    goes out, and comes in again."""
+    url = migrated[DatabaseRole.ACTIVITY]
+    org, record = new_id(), new_id()
+    read = "SELECT first_token_ms FROM activity.usage_records WHERE id = :id"
+    await downgrade(DatabaseRole.ACTIVITY, url, f"{FIRST_TOKEN}-1")
+    try:
+        await on_a_record(url, org, record, A_RECORD)
+        await upgrade(DatabaseRole.ACTIVITY, url)
+        assert await on_a_record(url, org, record, read) is None
+        await downgrade(DatabaseRole.ACTIVITY, url, f"{FIRST_TOKEN}-1")
+        await upgrade(DatabaseRole.ACTIVITY, url)
+        assert await on_a_record(url, org, record, read) is None
+        assert await check(DatabaseRole.ACTIVITY, url) == []
+    finally:
+        await upgrade(DatabaseRole.ACTIVITY, url)
+        delete = "DELETE FROM activity.usage_records WHERE id = :id"
+        await on_a_record(url, org, record, delete)
 
 
 async def test_ensure_logins_runs_again_on_a_migrated_database(

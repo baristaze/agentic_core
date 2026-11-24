@@ -95,6 +95,7 @@ def a_record(
     cost_micros: int | None = 300,
     input_tokens: int = 1_000,
     settled_whole: bool = False,
+    first_token_ms: int | None = 400,
 ) -> UsageRecord:
     return UsageRecord(
         id=new_id(),
@@ -116,6 +117,7 @@ def a_record(
         thinking_tokens=10,
         cost_micros=cost_micros,
         latency_ms=1_000,
+        first_token_ms=first_token_ms,
         settled_whole=settled_whole,
     )
 
@@ -347,7 +349,7 @@ class LedgerStorageContract:
         records = [
             a_record(session, first, input_tokens=1_000),
             a_record(session, second, input_tokens=2_000, settled_whole=True),
-            a_record(session, first, input_tokens=3_000, cost_micros=None),
+            a_record(session, first, input_tokens=3_000, cost_micros=None, first_token_ms=None),
         ]
         for record in records:
             assert await storage.append_usage_record(org, record)

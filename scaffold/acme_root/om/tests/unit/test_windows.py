@@ -735,6 +735,8 @@ async def test_a_summary_whose_stream_broke_is_billed_and_recorded_cut(engine: E
     assert site is not None and site.agent_step_id == cut.id, (
         "settled whole, its record names the cut"
     )
+    assert site.first_token_ms is not None, "a part came back before it broke"
+    assert site.first_token_ms <= site.latency_ms
     assert engine.gate.partials == [arrived.usage]
 
 

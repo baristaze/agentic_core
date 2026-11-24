@@ -37,13 +37,16 @@ class CallLabels(OmBase):
 class CallSite(OmBase):
     """Where a billed call sat and how long its provider took to answer:
     what its caller knows of it that the gate does not. `agent_step_id` is the
-    call's response step. `labels` names a call the settling gate never
-    held, a lost run's, read back from its request step and its session;
-    such a call's latency is unknown, and is 0."""
+    call's response step. `first_token_ms` is the time from the request
+    sent to the first part the provider streamed back, None when none came.
+    `labels` names a call the settling gate never held, a lost run's, read
+    back from its request step and its session; such a call's latency is
+    unknown, and is 0, and its time to the first token is None."""
 
     loop_id: UUID
     agent_step_id: UUID
     latency_ms: int = Field(ge=0)
+    first_token_ms: int | None = Field(default=None, ge=0)
     labels: CallLabels | None = None
 
 
@@ -51,9 +54,11 @@ class UsageRecord(Identifiable, Created):
     """One model call a provider billed: the call's hold, where it sat (its
     session, the session's tree, its loop, its step), the agent kind and
     version that made it, what served it, its tokens in disjoint classes,
-    its reference cost, and how long the provider took. Written once per
-    hold. `agent_step_id` is the call's response step, which a stale run may
-    never land; the provider billed the call all the same.
+    its reference cost, and how long the provider took: to its first
+    part, and to its end. Written once per hold. `agent_step_id` is the
+    call's response step, which a stale run may never land; the provider
+    billed the call all the same. `first_token_ms` is None for a call no
+    part came back from, and for a record written before it was kept.
     `settled_whole` marks a call whose usage was never reported whole: a
     broken stream, or a run lost before its reply. Its cost is its whole
     hold, as the ledger settled it, and its tokens are what a partial reply
@@ -76,6 +81,7 @@ class UsageRecord(Identifiable, Created):
     thinking_tokens: int = Field(ge=0)
     cost_micros: int | None = Field(ge=0)  # None when no price applied
     latency_ms: int = Field(ge=0)
+    first_token_ms: int | None = Field(default=None, ge=0)
     settled_whole: bool = False
 
 

@@ -35,8 +35,7 @@ from acme.om.exceptions import (
 from acme.om.language_models.credentials import CallCredentialsInterface
 from acme.om.language_models.manager import LanguageModelsManagerInterface
 from acme.om.language_models.types.fill import MAIN, SUMMARIZER, Fill, FillSet, ModelRole
-from acme.om.spend_budgets.rules import elapsed_ms
-from acme.om.spend_budgets.types.usage import CallSite
+from acme.om.spend_budgets.timing import CallTimer
 from acme.om.tenancy import TenancyManagerInterface
 from acme.om.windows import rules
 from acme.om.windows.gate import CallGateInterface
@@ -432,9 +431,9 @@ class WindowsManagerImpl(WindowsManagerInterface):
         except BaseException:
             await self._gate.settle(ctx, hold, None, billed=False, site=None)
             raise
-        started = self._clock()
+        timer = CallTimer(self._clock)
         try:
-            reply = await reply_of(used.client.stream(call))
+            reply = await reply_of(timer.parts(used.client.stream(call)))
         except ModelCallFailed as failed:
             # The failure names the key the call went out on, so whatever it
             # says of a key is said of that one, whichever is live by then.
@@ -446,11 +445,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
                 await self._gate.settle(ctx, hold, None, billed=False, site=None)
                 raise
             broken = _response(request, failed.partial, self._clock())
-            site = CallSite(
-                loop_id=loop_id,
-                agent_step_id=broken.id,
-                latency_ms=elapsed_ms(started, broken.created_at),
-            )
+            site = timer.site(loop_id, broken.id, broken.created_at)
             await self._gate.settle(
                 ctx, hold, None, billed=True, site=site, partial=failed.partial.usage
             )
@@ -458,9 +453,7 @@ class WindowsManagerImpl(WindowsManagerInterface):
             raise
         answered = self._clock()
         response = _response(request, reply, answered)
-        site = CallSite(
-            loop_id=loop_id, agent_step_id=response.id, latency_ms=elapsed_ms(started, answered)
-        )
+        site = timer.site(loop_id, response.id, answered)
         await self._gate.settle(ctx, hold, reply.usage, billed=True, site=site)
         whole = (
             not reply.truncated
