@@ -127,7 +127,7 @@ class LoopModelTurn(LoopCore):
         except OmException as refused:
             return await self._refused(run, refused)
         try:
-            replied = await self._call(run, fill, rendered, used)
+            replied = await self._call(run, fill, rendered, used, history)
         except ModelCallFailed as failed:
             return await self._failed(run, fill, rendered, failed, used.credential)
         except OmException as refused:
@@ -182,12 +182,19 @@ class LoopModelTurn(LoopCore):
                 raise refused
 
     async def _call(
-        self, run: RunState, fill: Fill, rendered: RenderedRequest, used: CallClient
+        self,
+        run: RunState,
+        fill: Fill,
+        rendered: RenderedRequest,
+        used: CallClient,
+        history: Sequence[AgentStep],
     ) -> AgentStep:
         """One model call: who spoke and who pays, the gate's hold, the request
         persisted, the stream emitted as it arrives, and the response
         persisted before anything acts on it. The call goes out on `used`,
-        and the gate holds it knowing which key that is."""
+        and the gate holds it knowing which key that is. As the run's first
+        call goes out, a kind that prepares early starts preparing its
+        workspace beside it, from what `history` names."""
         ctx, agent_session_id = run.ctx, run.agent_session_id
         said = rendered.attribution
         hold = await self._gate.authorize(
@@ -214,6 +221,10 @@ class LoopModelTurn(LoopCore):
             # Never sent: nothing was billed.
             await self._gate.settle(ctx, hold, None, billed=False, site=None)
             raise
+        # The call goes out. A turn that parked or ended before here, on an
+        # outage mark, the gate, or a key, started no prepare, so a park
+        # spends nothing (ADR 1048).
+        self._prepare_early(run, history)
         response_id = new_id()
         self._tell(run, self._sink.opened, response_id)
         timer = CallTimer(self._clock)

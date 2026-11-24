@@ -1,7 +1,8 @@
 """A kind that prepares its workspace early, over the memory storage, the
 scripted provider, and the twin workspace provider (ADR 1048). Its run
-starts the prepare beside its first model call, and the first call that
-reaches the workspace takes it: one prepare in all. A run of it that
+starts the prepare beside its first model call, as that call goes out,
+and the first call that reaches the workspace takes it: one prepare in
+all. A run that parks before its call goes out starts none. A run of it that
 reaches no workspace lets the instance go at its end, takes no snapshot
 of it, and counts it by kind. A kind that declares nothing prepares at
 its first call that reaches the workspace, and a run of it that reaches
@@ -10,12 +11,15 @@ replaced since, leaves the first call to prepare as it would have, and no
 prepare outlives its run."""
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
+from datetime import timedelta
 from pathlib import Path
 from uuid import UUID
 
 import pytest
 from pydantic import SecretStr, ValidationError
+from unit.test_loop_gates import NORM, Parking
+from unit.test_loop_keys import Keyless
 
 from acme.infra.agent_workspaces import (
     AgentWorkspace,
@@ -27,8 +31,10 @@ from acme.infra.agent_workspaces import (
     IsolationSpec,
 )
 from acme.infra.agent_workspaces.twin import AgentWorkspaceTwinImpl
+from acme.infra.base import SYSTEM_SCOPE
 from acme.infra.impl.local import InfraLocalImpl
 from acme.infra.observability import WORKSPACE_PREPARES_UNUSED
+from acme.infra.outages import Outage
 from acme.integrations.model_providers.calls import Finished, ModelCall, StreamPart
 from acme.om.agent_steps.rules import control_step
 from acme.om.agent_steps.types.agent_step import AgentStep, AgentStepType
@@ -39,14 +45,21 @@ from acme.om.agent_steps.types.header import (
     SnapshotHeader,
 )
 from acme.om.agents.types.kind import AgentKind
+from acme.om.agents.types.run import RunEnd
 from acme.om.base import new_id
 from acme.om.context import TenantContext
+from acme.om.exceptions import GateParked, OmException, SpendBudgetRefused
+from acme.om.language_models.layer import LanguageModelsLayer
+from acme.om.root import Managers
+from acme.om.spend_budgets.types.amount import AmountUnit
+from acme.om.spend_budgets.types.spend_breach import Refusal, SpendBreach, SpendBreachAction
 from acme.om.tools.tool import ToolRuntime
 from acme.om.tools.types.tool import ToolInput
 
 from contracts.loops import (
     ASSISTANT,
     DELIVERY,
+    Clock,
     Lookup,
     Loop,
     call,
@@ -164,12 +177,19 @@ class Timed:
         monkeypatch.setattr(lookup, "run", ran)
 
 
-def early_loop(tmp_path: Path) -> Loop:
+def early_loop(
+    tmp_path: Path,
+    *,
+    call_gate: Callable[[Managers, Clock], Parking] | None = None,
+    language_models_layer: LanguageModelsLayer | None = None,
+) -> Loop:
     return loop_over(
         tmp_path,
         kinds=(ASSISTANT, DELIVERY, EARLY, LATE, EARLY_KEPT),
         infra=InfraLocalImpl(tmp_path),
         extra=(Lookup("ledger", workspace=False),),
+        call_gate=call_gate,
+        language_models_layer=language_models_layer,
     )
 
 
@@ -231,6 +251,73 @@ async def test_a_kind_that_declares_nothing_prepares_at_its_first_call_and_never
         "a run that reaches no workspace prepares none"
     )
     assert unused(LATE) == 0
+
+
+def gated(raised: OmException) -> Callable[[Managers, Clock], Parking]:
+    """The budgets' gate, behind one that raises `raised` at a model call's
+    hold."""
+    return lambda managers, clock: Parking(managers, clock, turn=raised)
+
+
+def over_budget() -> SpendBudgetRefused:
+    """The budgets' refusal of a call its request's own amount cannot hold."""
+    breach = SpendBreach(
+        spend_budget_id=None,
+        scope=None,
+        unit=AmountUnit.COST,
+        amount=0,
+        committed=0,
+        held=0,
+        exposure=1,
+        action=SpendBreachAction.RAISE,
+        needed=1,
+        resets_at=None,
+    )
+    return SpendBudgetRefused(Refusal(breaches=(breach,)))
+
+
+STOPS = ["outage", "budget-refused", "gate-parked", "no-credential"]
+"""What parks a run before its model call goes out."""
+
+
+@pytest.mark.parametrize("stop", STOPS)
+async def test_a_run_that_parks_before_its_model_call_goes_out_starts_no_prepare(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stop: str
+) -> None:
+    """A provider marked failing, the gate's refusal or park, and a key the
+    tenant does not hold each park the run before its call goes out. None
+    starts a prepare, so the park, and each retry of it, spends nothing."""
+    gate = {
+        "budget-refused": gated(over_budget()),
+        "gate-parked": gated(GateParked(NORM, "far above the session's norm")),
+    }.get(stop)
+    keyless = LanguageModelsLayer(credentials=lambda providers: Keyless())
+    loop = early_loop(
+        tmp_path,
+        call_gate=gate,
+        language_models_layer=keyless if stop == "no-credential" else None,
+    )
+    if stop == "outage":
+        failing = Outage(
+            org_id=SYSTEM_SCOPE,
+            provider="anthropic",
+            credential=loop.credential,
+            retry_at=loop.clock.now + timedelta(minutes=1),
+        )
+        await loop.outages.mark(failing)
+    timed = Timed(loop, monkeypatch)
+    agent_session_id = await loop.start(EARLY.name)
+    await loop.say(agent_session_id, "Find the total.")
+    loop.anthropic.add(reply(use("lookup")))
+    before = unused(EARLY)
+
+    parked = await loop.loops.run(loop.owner, agent_session_id)
+
+    assert parked.end is RunEnd.PARKED
+    history = await loop.history(agent_session_id)
+    assert of_type(history, AgentStepType.MODEL_REQUEST) == [], "no call went out"
+    assert timed.prepares == [] and timed.released == 0, "and no prepare started"
+    assert unused(EARLY) == before and others() == []
 
 
 async def test_an_early_prepare_no_call_takes_is_let_go_unsnapshotted_and_counted(

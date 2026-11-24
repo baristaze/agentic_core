@@ -31,8 +31,13 @@ says.
 **The prepare starts beside the run's first model call.** It starts
 after the hooks have named the steps before the first model call, since
 they may refuse the workspace there, and only when the run holds no
-instance (`LoopWorkspace._prepare_early`). It starts from what the
-history names then, as a first call's prepare would. It is the
+instance (`LoopWorkspace._prepare_early`). It starts as that call goes
+out: once the outage mark is read, the key is had, the gate has held
+the call, and its request is written (`LoopModelTurn._call`). A turn
+that parks or ends before, on an outage mark, the gate, or a key,
+starts none, so such a park spends nothing (ADR 1025), and no retry of
+it boots a machine. It starts from what the history names then, as a
+first call's prepare would. It is the
 provider's prepare alone, run as a task: every step about the
 workspace, a restore's notice and the hooks' `workspace_prepared`, is
 still written on the first call's path.

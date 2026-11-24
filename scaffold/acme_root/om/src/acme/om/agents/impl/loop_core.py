@@ -138,10 +138,11 @@ class RunState:
     # Prepared at the first call that reaches it, and None until then: a
     # run that makes no such call holds none, and snapshots none.
     workspace: AgentWorkspace | None = None
-    # The prepare a kind that prepares early started beside the run's first
-    # model call, until the first call that reaches the workspace takes it
-    # or the run's end lets it go.
+    # The prepare a kind that prepares early started as the run's first
+    # model call went out, until the first call that reaches the workspace
+    # takes it or the run's end lets it go.
     early: EarlyPrepare | None = None
+    called: bool = False  # a model call of the run went out
     kept: bool = False  # a snapshot holds its workspace whole, taken at its end
     made: set[UUID] = field(default_factory=lambda: set[UUID]())  # tool requests it wrote
     failures: int = 0  # provider errors in a row
@@ -488,6 +489,9 @@ class LoopCore(ABC):
     async def _workspace(
         self, run: RunState, history: Sequence[AgentStep], request: AgentStep, *, fresh: bool
     ) -> AgentWorkspace | LoopRun: ...
+
+    @abstractmethod
+    def _prepare_early(self, run: RunState, history: Sequence[AgentStep]) -> None: ...
 
     @abstractmethod
     async def _stop_jobs(

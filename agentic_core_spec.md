@@ -1029,8 +1029,9 @@ it ([The Tool Contract](#the-tool-contract)).
 
 A kind whose runs nearly all reach the workspace may say that they
 prepare it early. A run of it that holds no instance starts the prepare
-beside its first model call, never before it. The first call
-that reaches the workspace takes what that prepare made, and waits only
+beside its first model call, as that call goes out, never before it: a
+run that parks first, on an outage, the gate, or a key, starts none.
+The first call that reaches the workspace takes what that prepare made, and waits only
 for what is left of it; when the prepare failed, the call prepares as
 any first call does. One prepare serves the run. A run of it that
 reaches no workspace lets the instance go at its end, as any run's end

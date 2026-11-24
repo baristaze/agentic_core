@@ -140,16 +140,19 @@ class LoopWorkspace(LoopCore):
         ]
 
     def _prepare_early(self, run: RunState, history: Sequence[AgentStep]) -> None:
-        """The run's prepare, started beside its first model call when its
-        kind prepares early and the run holds no workspace, from what
-        `history` names. The first call that reaches the workspace takes
-        it (`_taken`), and the run's end lets go of one no call took
-        (`_let_go_early`). Before a model call no call of the loop is open,
-        so the start is read as settled. A workspace kept by snapshots that
-        something touched since its latest may stand live, holding what no
-        snapshot holds: it is never prepared early, so no end lets that
-        instance go, and its first call finds it as it stands."""
-        if not run.kind.prepares_early or run.workspace is not None or run.early is not None:
+        """The run's prepare, started as each model call goes out, once the
+        outage mark, the gate, and the key let it: only the run's first
+        starts one, when its kind prepares early and the run holds no
+        workspace, from what `history` names. The first call that reaches
+        the workspace takes it (`_taken`), and the run's end lets go of one
+        no call took (`_let_go_early`). As a model call goes out no call of
+        the loop is open, so the start is read as settled. A workspace kept
+        by snapshots that something touched since its latest may stand live,
+        holding what no snapshot holds: it is never prepared early, so no
+        end lets that instance go, and its first call finds it as it
+        stands."""
+        first, run.called = not run.called, True
+        if not first or not run.kind.prepares_early or run.workspace is not None:
             return
         start = self._starts_from(run, history, settled=True)
         snapshots = run.kind.isolation.durability is Durability.SNAPSHOT

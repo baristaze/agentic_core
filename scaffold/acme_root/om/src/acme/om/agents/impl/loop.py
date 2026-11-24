@@ -150,7 +150,7 @@ class LoopManagerImpl(
         try:
             # The spec, held to what the provider can ever meet; the workspace
             # itself waits for the first call that reaches it, or for the
-            # run's first model call when its kind prepares early.
+            # run's first model call to go out when its kind prepares early.
             stopped = await self._check(run)
             if stopped is not None:
                 return stopped
@@ -211,7 +211,6 @@ class LoopManagerImpl(
             stopped = await self._recover_calls(run, history)
             if stopped is not None:
                 return stopped
-        first = True
         while True:
             # The run read its history whole once; each turn reads only what
             # was added since, so a long session costs a turn no more.
@@ -307,11 +306,6 @@ class LoopManagerImpl(
                 # the session ran, or since an earlier loop of it, is told
                 # before the next request, which reads it.
                 history = await self._history(run.ctx, run.agent_session_id, history, own=run.own)
-            if first:
-                # Beside the run's first model call, a kind that prepares
-                # early starts preparing its workspace.
-                first = False
-                self._prepare_early(run, history)
             stopped = await self._model_turn(run, history)
             if stopped is not None:
                 return stopped
