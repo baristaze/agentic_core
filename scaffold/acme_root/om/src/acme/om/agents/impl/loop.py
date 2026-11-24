@@ -165,6 +165,8 @@ class LoopManagerImpl(
             await self._let_go_early(run, release=False)
             raise
         finally:
+            # Its end or park let an early prepare go already; one a run that
+            # raised still holds goes here.
             await self._let_go_early(run)
             await self._release(run)
 

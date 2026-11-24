@@ -438,14 +438,15 @@ none when its kind does not prepare early; an early prepare a model call
 waits on, one started before that call goes out, so a run that parks on
 an outage, the gate, or a key starts one, one the first call prepares
 past when it made what that call needs, one that outlives its run, or
-one whose unused instance is kept, snapshotted, or not counted; an early
-prepare of a workspace kept by snapshots that may hold what no snapshot
-holds; a call that waits for a workspace lost, or run twice once it
-comes; a refusal that may clear ending the loop, or one that cannot
-clear parking it, or ending it with a call left open; a refusal's cause
-that holds a command's output, an environment, or the host's own state,
-or one the refusal names that its loop's end or park drops; a workspace
-rebuilt from something else when what it is rebuilt from is gone; a new
+one whose unused instance is kept, snapshotted, not counted, or let go
+after its run's end or park is written; an early prepare of a workspace
+kept by snapshots that may hold what no snapshot holds; a call that
+waits for a workspace lost, or run twice once it comes; a refusal that
+may clear ending the loop, or one that cannot clear parking it, or
+ending it with a call left open; a refusal's cause that holds a
+command's output, an environment, or the host's own state, or one the
+refusal names that its loop's end or park drops; a workspace rebuilt
+from something else when what it is rebuilt from is gone; a new
 environment with no `environment_changed` step.
 
 **Severity.** high

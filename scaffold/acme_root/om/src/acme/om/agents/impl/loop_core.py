@@ -140,7 +140,7 @@ class RunState:
     workspace: AgentWorkspace | None = None
     # The prepare a kind that prepares early started as the run's first
     # model call went out, until the first call that reaches the workspace
-    # takes it or the run's end lets it go.
+    # takes it or the run's end or park lets it go.
     early: EarlyPrepare | None = None
     called: bool = False  # a model call of the run went out
     kept: bool = False  # a snapshot holds its workspace whole, taken at its end
@@ -400,7 +400,11 @@ class LoopCore(ABC):
         that follows starts before the step names it. One that is refused,
         such as for a secret's value in it, a secret an attached tool may
         have injected included, or that fails keeps nothing, and the run
-        keeps its instance (`_release`)."""
+        keeps its instance (`_release`). An early prepare no call took goes
+        first, before the end or the park is written: the run that the end
+        or the park lets start may prepare the same instance, and a release
+        after it would take that instance away."""
+        await self._let_go_early(run)
         workspace = run.workspace
         if workspace is None or workspace.spec.durability is not Durability.SNAPSHOT:
             return
@@ -426,7 +430,7 @@ class LoopCore(ABC):
         that no snapshot holds whole: its instance stays, so nothing in it is
         lost, and the next run that reaches it prepares it as it stands. A
         run that reached none holds none, and lets nothing go here: an early
-        prepare no call took is `_let_go_early`'s."""
+        prepare no call took went in `_keep`."""
         if run.workspace is None:
             return
         if run.workspace.spec.durability is Durability.SNAPSHOT and not run.kept:
@@ -492,6 +496,9 @@ class LoopCore(ABC):
 
     @abstractmethod
     def _prepare_early(self, run: RunState, history: Sequence[AgentStep]) -> None: ...
+
+    @abstractmethod
+    async def _let_go_early(self, run: RunState, *, release: bool = True) -> None: ...
 
     @abstractmethod
     async def _stop_jobs(

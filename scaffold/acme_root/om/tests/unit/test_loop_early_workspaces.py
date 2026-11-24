@@ -11,7 +11,7 @@ replaced since, leaves the first call to prepare as it would have, and no
 prepare outlives its run."""
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from datetime import timedelta
 from pathlib import Path
 from uuid import UUID
@@ -338,6 +338,68 @@ async def test_an_early_prepare_no_call_takes_is_let_go_unsnapshotted_and_counte
     assert timed.snapshots == 0
     assert unused(EARLY) == before + 1, "counted, by its kind"
     assert others() == [], "no prepare outlives its run"
+
+
+async def test_an_early_prepare_no_call_took_goes_before_the_end_lets_the_next_run_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The first run's prepare still boots when its model answers with no
+    call. The run waits for it and lets the instance go before it writes
+    its end, so the session's next run, started as that end is written,
+    prepares an instance no late release of the first takes away."""
+    loop = early_loop(tmp_path)
+    timed = Timed(loop, monkeypatch)
+    booting, boot = asyncio.Event(), asyncio.Event()
+    responded, ended = asyncio.Event(), asyncio.Event()
+    prepare, release = timed.twin.prepare, timed.twin.release
+    steps = loop.managers.agent_steps
+    append = steps.append_agent_steps
+    ends: list[int] = []  # the end steps written when each release came
+
+    async def slow_first(*args: object, **kwargs: object) -> AgentWorkspace:
+        if not booting.is_set():
+            booting.set()
+            await boot.wait()
+        return await prepare(*args, **kwargs)  # type: ignore[arg-type]
+
+    async def releasing(workspace: AgentWorkspace) -> None:
+        history = await loop.history(agent_session_id)
+        ends.append(len(of_type(history, AgentStepType.LOOP_ENDED)))
+        await release(workspace)
+
+    async def appended(
+        ctx: TenantContext, session_id: UUID, epoch: int, batch: Sequence[AgentStep]
+    ) -> tuple[AgentStep, ...]:
+        stored = await append(ctx, session_id, epoch, batch)
+        types = {step.type for step in stored}
+        if AgentStepType.MODEL_RESPONSE in types:
+            responded.set()
+        if AgentStepType.LOOP_ENDED in types:
+            ended.set()
+        return stored
+
+    monkeypatch.setattr(timed.twin, "prepare", slow_first)
+    monkeypatch.setattr(timed.twin, "release", releasing)
+    monkeypatch.setattr(steps, "append_agent_steps", appended)
+    agent_session_id = await loop.start(EARLY.name)
+    await loop.say(agent_session_id, "What is 2 and 2?")
+    loop.anthropic.add(reply(said("It is 4.")))
+    first = asyncio.ensure_future(loop.loops.run(loop.owner, agent_session_id))
+    await booting.wait()
+    await responded.wait()
+    await asyncio.sleep(0.05)
+    assert not ended.is_set(), "no end is written while the prepare boots"
+
+    boot.set()
+    await ended.wait()
+    await loop.say(agent_session_id, "Now find the total.")
+    loop.anthropic.add(reply(use("lookup")), reply(said("It is 12.")))
+    second = await loop.loops.run(loop.owner, agent_session_id)
+
+    assert (await first).outcome is LoopOutcome.SUCCEEDED
+    assert second.outcome is LoopOutcome.SUCCEEDED
+    assert ends == [0, 2], "the first run let its instance go before it wrote its end"
+    assert timed.live_when_ran == [True], "the next run's call ran in a live instance"
 
 
 async def test_an_early_prepare_of_a_kept_workspace_starts_from_its_snapshot_and_takes_none(

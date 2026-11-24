@@ -187,12 +187,13 @@ class LoopWorkspace(LoopCore):
         return workspace
 
     async def _let_go_early(self, run: RunState, *, release: bool = True) -> None:
-        """An early prepare no call took, at the run's end. The run waits for
-        it, so no prepare outlives its run; a run itself cancelled cancels
-        it. The instance it made is let go as a run's end lets one go, with
-        no snapshot, since no call touched it, and is counted by kind.
-        `release` is False when the run lost its claim: what it made is the
-        claim holder's."""
+        """An early prepare no call took, at the run's end: before its end,
+        park, or yield is written (`_keep`), or once a run that raised
+        stops. The run waits for it, so no prepare outlives its run; a run
+        itself cancelled cancels it. The instance it made is let go as a
+        run's end lets one go, with no snapshot, since no call touched it,
+        and is counted by kind. `release` is False when the run lost its
+        claim: what it made is the claim holder's."""
         early = run.early
         if early is None:
             return

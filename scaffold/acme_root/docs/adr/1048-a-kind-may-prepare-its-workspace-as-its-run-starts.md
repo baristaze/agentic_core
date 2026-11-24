@@ -53,12 +53,16 @@ names now. One prepare serves the run.
 
 **A run that reaches no workspace lets the instance go.** Its end waits
 for the prepare, so no prepare outlives its run, and lets the instance
-go through the release any run's end makes (`_let_go_early`). It takes
+go through the release any run's end makes (`_let_go_early`). It does so
+before it writes its end, its park, or its yield (`_keep`). A park may
+wake the session at once, and the work queue does not hold one
+session's runs apart, so the next run's prepare may find or make the
+same instance; a release after the step would take it away. It takes
 no snapshot, since no call touched the workspace, and counts the
 instance in `acme_workspace_prepares_unused_total`, by kind. A run whose
-own task is cancelled cancels the prepare instead. A run that lost its
-claim waits for it and lets nothing go: what it made is the claim
-holder's.
+own task is cancelled cancels the prepare instead. A run that learns it
+lost its claim before then waits for it and lets nothing go: what it
+made is the claim holder's.
 
 **A workspace that may hold what no snapshot holds is never prepared
 early.** A workspace kept by snapshots is prepared early only when a
@@ -75,8 +79,8 @@ instance that a call changed.
 - A run of such a kind that reaches no workspace pays for an instance
   until its end. The counter, read against the kind's runs, says how
   often. A kind whose runs often reach no workspace declares nothing.
-- A run whose prepare is still going at its end ends when the prepare
-  does, then lets the instance go.
+- A run whose prepare is still going at its end waits for it, lets the
+  instance go, and only then writes its end or its park.
 - A provider and a layer's hooks need nothing new. The prepare is the
   provider's own, and `workspace_prepared` is still asked at the first
   call that reaches the workspace.
