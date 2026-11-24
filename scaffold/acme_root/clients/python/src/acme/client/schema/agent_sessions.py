@@ -222,13 +222,15 @@ class UsageRecordView(BaseModel):
     """
     One model call a provider billed, as the ledger keeps it: ids, tokens
     by disjoint class, reference cost in millionths (null when no price
-    applied), the provider's latency, and the labels of what served it. It
-    holds no content, so it reads the same in every storage mode. `agent_step_id`
-    is the call's response step; `spend_hold_id` its hold; `tree_id` the
-    session's tree; `kind_version` the agent kind's version the session
-    ran. `settled_whole` marks a call whose usage was never reported whole
-    (a broken stream, a lost run): its cost is its whole hold, and its
-    tokens are what a partial reply reported, else 0.
+    applied), the provider's latency and its time to the first part it
+    streamed back (null when none came, or the record predates it), and the
+    labels of what served it. It holds no content, so it reads the same in
+    every storage mode. `agent_step_id` is the call's response step;
+    `spend_hold_id` its hold; `tree_id` the session's tree; `kind_version`
+    the agent kind's version the session ran. `settled_whole` marks a call
+    whose usage was never reported whole (a broken stream, a lost run): its
+    cost is its whole hold, and its tokens are what a partial reply
+    reported, else 0.
     """
 
     agent_kind: Annotated[str, Field(title='Agent Kind')]
@@ -238,6 +240,7 @@ class UsageRecordView(BaseModel):
     cache_write_tokens: Annotated[int, Field(title='Cache Write Tokens')]
     cost_micros: Annotated[int | None, Field(title='Cost Micros')]
     created_at: Annotated[AwareDatetime, Field(title='Created At')]
+    first_token_ms: Annotated[int | None, Field(title='First Token Ms')]
     id: Annotated[UUID, Field(title='Id')]
     input_tokens: Annotated[int, Field(title='Input Tokens')]
     kind_version: Annotated[int, Field(title='Kind Version')]
