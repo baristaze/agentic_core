@@ -51,7 +51,7 @@ of](../../../../README.md).
   editing the loop: the toolsets it attaches to a session beyond its
   kind's, held or deferred, the steps it appends before a run's first
   model call, which no workspace precedes, and those it appends once
-  the run's first call that reaches the workspace has prepared it,
+  the workspace is prepared for the run's first call that reaches it,
   before that call runs. With no hooks supplied, a session holds its
   kind's tools and nothing is appended.
 
@@ -100,7 +100,11 @@ of](../../../../README.md).
   run in order, the loop parks once they are answered, and the call is
   answered once the person decides. The workspace is
   prepared at the first call that reaches it, and only that call waits
-  for it; a run whose calls reach none prepares none (ADR 1043).
+  for it; a run whose calls reach none prepares none (ADR 1043). A kind
+  that prepares early starts the prepare beside the run's first model
+  call, and that call takes it; a run of it that reaches none lets the
+  instance go at its end, with no snapshot, and counts it by kind (ADR
+  1048).
 - **End, park, or yield.** A loop ends on the kind's done rule, a bound,
   a principal's cancel, or an error no park can clear. It parks when it
   cannot go on yet, holding no workspace while it waits: on its person,

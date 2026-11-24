@@ -412,33 +412,39 @@ rest is judged.
 
 **Principle.** Isolation is chosen up front and never weakened. A spec
 the provider can never meet is refused before the first model call,
-whole. A workspace is made at the first tool call that reaches it,
-never before a model call. A refusal that cannot clear ends the loop
-`errored`, each call left open answered; one that may clear parks it on
-the resource with the call open, which runs once when the workspace
-comes. Either names its cause, never a command's output or the host's
-state. A lost workspace parks the loop for a person. A released
-instance is prepared again by the next loop that reaches it, and an
-`environment_changed` step tells the model what changed.
+whole. A workspace is made at the first call that reaches it, or, when
+its kind prepares early, beside the first model call: never before one.
+A refusal that cannot clear ends the loop `errored`, each call left open
+answered; one that may clear parks it on the resource, its call open to
+run once the workspace comes. Either names its cause, never a command's
+output or the host's state. A lost workspace parks the loop for a
+person. The next loop that reaches a released instance prepares
+another, and an `environment_changed` step tells the model what changed.
 
 **Source.** The Runtime.
 
 **Look for.** What a workspace provider does when it cannot meet a spec;
 whether a spec it never meets is refused before the first model call,
-and when the workspace is prepared; what a refusal's cause is composed
-from, and the step that carries it; how a new environment is announced.
+and when the workspace is prepared; what an early prepare's first call
+takes, and what a run that reaches no workspace does with one; what a
+refusal's cause is composed from, and the step that carries it; how a
+new environment is announced.
 
 **Violation.** A fallback from a VM to a container, or from a container
 to a directory on the host, when the stronger mode is unavailable; a
 spec the provider can never meet found after the model has been called;
 a workspace prepared before a model call, or for a run whose calls reach
-none; a call that waits for a workspace lost, or run twice once it
-comes; a refusal that may clear ending the loop, or one that cannot
-clear parking it, or ending it with a call left open; a refusal's cause
-that holds a command's output, an environment, or the host's own state,
-or one the refusal names that its loop's end or park drops; a workspace
-rebuilt from something else when what it is rebuilt from is gone; a new
-environment with no
+none when its kind does not prepare early; an early prepare a model call
+waits on, one the first call prepares past when it made what that call
+needs, one that outlives its run, or one whose unused instance is kept,
+snapshotted, or not counted; an early prepare of a workspace kept by
+snapshots that may hold what no snapshot holds; a call that waits for a
+workspace lost, or run twice once it comes; a refusal that may clear
+ending the loop, or one that cannot clear parking it, or ending it with
+a call left open; a refusal's cause that holds a command's output, an
+environment, or the host's own state, or one the refusal names that its
+loop's end or park drops; a workspace rebuilt from something else when
+what it is rebuilt from is gone; a new environment with no
 `environment_changed` step.
 
 **Severity.** high
