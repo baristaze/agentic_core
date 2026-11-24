@@ -11,7 +11,7 @@ person, an agent as its sub-agent, or both), and where its loop runs: in
 a worker, or in the request that asks it. It also carries
 what the loop reads of it: its prompts, the model roles it calls and
 what it asks of them, the bounds of one loop, its layer of tool policy, the workspace its sessions
-work in, and whether they hold private data. Its prompts and its tools'
+work in and whether its runs prepare it early, and whether they hold private data. Its prompts and its tools'
 contracts are the product's, versioned with it.
 
 A product keeps each kind in a folder of its own, `kinds/<kind>/`, beside
@@ -127,6 +127,12 @@ class AgentKind(OmBase):
     # before a loop's first model call, prepared to this spec at the first
     # call that reaches it, and never weakened.
     isolation: IsolationSpec = NO_AGENT_WORKSPACE
+    # Whether its runs reach the workspace early: a run that holds no
+    # instance starts the prepare beside its first model call, and the
+    # first call that reaches the workspace takes it. A run that reaches
+    # none lets that instance go at its end, untouched and counted. Only a
+    # kind that works in a workspace says True.
+    prepares_early: bool = False
     # Whether its sessions hold private data, one of the rule of two's
     # three. Only a kind that reads no tenant record and no person's words
     # says False.
@@ -177,6 +183,8 @@ class AgentKind(OmBase):
             raise ValueError("a kind's result tool never waits for a load")
         if MAIN not in self.roles:
             raise ValueError("a kind calls the main model role")
+        if self.prepares_early and self.isolation.mode is IsolationMode.NONE:
+            raise ValueError("a kind that prepares its workspace early works in one")
         asked = [ask.role for ask in self.asks]
         if len(set(asked)) != len(asked) or not set(asked) <= set(self.roles):
             raise ValueError("a kind asks once of a model role it calls")

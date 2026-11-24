@@ -242,10 +242,11 @@ may refuse the session's workspace there, with its cause. The run then
 stops before any model call, with nothing made, and ends or parks the
 loop as a provider's refusal does ([The Runtime](#the-runtime)), naming
 the cause. Once
-the run's first call that reaches the workspace has prepared it, and
+the workspace is prepared for the run's first call that reaches it, and
 before that call runs, they are given it and name the steps to append
 about it, such as what changed in it; a run that reaches no workspace
-never asks. With none wired, the null extends nothing ([Null Objects](#null-objects)).
+never asks, even when its kind prepared one early. With none wired, the
+null extends nothing ([Null Objects](#null-objects)).
 
 Its operations take the guideline's context first. A tenant operation
 takes `TenantContext`; a consumer that reads less declares a scope
@@ -1026,6 +1027,22 @@ a VM's boot never stands in front of the first token, and a run whose
 calls reach no workspace makes none. A tool says whether its calls reach
 it ([The Tool Contract](#the-tool-contract)).
 
+A kind whose runs nearly all reach the workspace may say that they
+prepare it early. A run of it that holds no instance starts the prepare
+beside its first model call, as that call goes out, never before it: a
+run that parks first, on an outage, the gate, or a key, starts none.
+The first call that reaches the workspace takes what that prepare
+made, and waits only for what is left of it; when the prepare failed,
+the call prepares as any first call does. One prepare serves the run. A
+run of it that reaches no workspace lets the instance go as any run's
+end does, with no snapshot, and counts it by kind, so what such runs
+cost is a reading ([Spend Is a Reading](#spend-is-a-reading)). It does
+so before it writes its end or its park, since the session's next run
+may start at once and prepare the same instance. No prepare outlives
+its run. A workspace kept by snapshots that something touched
+since its latest is never prepared early: its instance may hold what no
+snapshot holds.
+
 A refusal says whether it can clear. One that cannot, such as a spec the
 provider does not support or a base whose setup failed, ends the loop
 `errored`, and each call the loop left open is answered first, with the
@@ -1090,7 +1107,8 @@ platform's ([Next: The Platform](#next-the-platform)).
 - **When.** The run that holds a `snapshot` workspace snapshots it at
   its end, live, before its loop parks or ends, and lets the instance
   go only once a snapshot holds it. A run whose calls reach no workspace
-  holds none and takes no snapshot. The next run that reaches it starts
+  takes no snapshot, and holds none but one its kind prepared early,
+  which its end lets go untouched. The next run that reaches it starts
   from the latest snapshot, unless something touched the workspace
   after it: a person's work by hand, or a run lost before its end,
   leaves it to be prepared as it stands. A call that reaches no

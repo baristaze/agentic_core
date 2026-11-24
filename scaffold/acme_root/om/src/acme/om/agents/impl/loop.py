@@ -2,7 +2,8 @@
 end, its park, or its yield. A run reads its history once, checks its
 workspace's spec, and drives each turn, the model's or the tools', reading
 only what was added since. Its workspace is prepared at the first call
-that reaches it, never before a model call."""
+that reaches it, never before a model call: a kind that prepares early
+starts it beside the run's first model call (ADR 1048)."""
 
 import logging
 from collections.abc import Sequence
@@ -148,7 +149,8 @@ class LoopManagerImpl(
             return await self._end(run, LoopOutcome.ERRORED)
         try:
             # The spec, held to what the provider can ever meet; the workspace
-            # itself waits for the first call that reaches it.
+            # itself waits for the first call that reaches it, or for the
+            # run's first model call to go out when its kind prepares early.
             stopped = await self._check(run)
             if stopped is not None:
                 return stopped
@@ -160,8 +162,12 @@ class LoopManagerImpl(
             # The claim is another run's, or a person's who took the
             # environment over: what it holds is theirs to release.
             run.workspace = None
+            await self._let_go_early(run, release=False)
             raise
         finally:
+            # Its end or park let an early prepare go already; one a run that
+            # raised still holds goes here.
+            await self._let_go_early(run)
             await self._release(run)
 
     async def _start(self, run: RunState, *, new_loop: bool) -> LoopRun | None:

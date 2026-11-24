@@ -27,7 +27,8 @@ spent. A layer's hooks may refuse the session's workspace at the same
 point, with its cause, and the run stops as it does on a refused spec
 (ADR 1041). The instance is prepared as the first call that reaches the
 workspace is about to be gated, its preflight included, so only that
-call waits for it.
+call waits for it. A kind that prepares early starts the prepare beside
+the run's first model call instead, and that call takes it (ADR 1048).
 
 **A tool says whether its calls reach the workspace.** `ToolSpec.workspace`
 is true unless the tool says otherwise, so a tool that says nothing gets
@@ -50,7 +51,9 @@ the loop left open is answered first, with the refusal's cause, so the
 session's next input starts a loop whose history holds every answer.
 
 **A run that reaches no workspace keeps the latest snapshot whole.** It
-prepares none, takes no snapshot, and lets nothing go. The next run that
+prepares none, takes no snapshot, and lets nothing go, unless its kind
+prepares early: then it lets that instance go, with no snapshot (ADR
+1048). The next run that
 reaches the workspace starts from the latest snapshot, unless a call
 that reached the workspace may have run after it, or an
 `environment_changed` step came after it. A call that reaches no
@@ -69,8 +72,8 @@ before its workspace was prepared touches nothing either.
 
 **The hooks are told of the workspace once it is prepared.** `LoopStart`
 holds the session, the kind, the epoch, the loop, and whether the loop
-is new, and no workspace. Once the run's first call that reaches the
-workspace has prepared it, the loop asks the hooks' `workspace_prepared`,
+is new, and no workspace. Once the workspace is prepared for the run's
+first call that reaches it, the loop asks the hooks' `workspace_prepared`,
 given the run's `LoopStart` and the workspace, for the steps to append,
 and writes them before that call is gated: a layer tells the model what
 changed in the workspace there, and the model reads it with the call's
@@ -79,7 +82,8 @@ answer. A run that reaches no workspace never asks.
 ## Consequences
 
 - A run's first token waits for no boot, and a run that only reads,
-  plans, spawns, or waits makes no instance.
+  plans, spawns, or waits makes no instance, unless its kind prepares
+  early.
 - A spec the provider can never meet is refused before any call is
   spent, and so is a workspace a layer's hooks refuse. What only the moment can say, a host to run on, Docker within
   reach, a base's setup, is learned at the first call that reaches the

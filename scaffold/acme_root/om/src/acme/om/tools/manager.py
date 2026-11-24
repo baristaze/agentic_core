@@ -69,7 +69,8 @@ class ToolsManagerInterface(ABC):
         restore: AgentWorkspaceSnapshot | None = None,
     ) -> AgentWorkspace:
         """The session's workspace, prepared to its spec, as the first call
-        of a run that reaches it is about to be gated. `IsolationRefused`
+        of a run that reaches it is about to be gated, or beside the run's
+        first model call when its kind prepares early. `IsolationRefused`
         when the provider cannot meet the spec: never a weaker workspace.
         Its `cause` is what a person reads of it, when it names one. A spec
         of no workspace answers the absent one, which every transport

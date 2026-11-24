@@ -874,6 +874,20 @@ def kept_snapshot(steps: Sequence[AgentStep], *, settled: bool) -> AgentStep | N
     return None
 
 
+def untouched(steps: Sequence[AgentStep]) -> bool:
+    """Whether nothing has touched the session's workspace yet: no call that
+    reaches it, no snapshot of it, and no notice that it changed. Its next
+    prepare starts it from its base, so no instance of it holds anything a
+    release would lose."""
+    for step in steps:
+        header = step.header
+        if isinstance(header, ToolRequestHeader) and header.workspace:
+            return False
+        if step.type in (AgentStepType.SNAPSHOTTED, AgentStepType.ENVIRONMENT_CHANGED):
+            return False
+    return True
+
+
 def lost_step(
     agent_step_id: UUID, at: datetime, agent_session_id: UUID, loop_id: UUID, source: AgentStep
 ) -> AgentStep:

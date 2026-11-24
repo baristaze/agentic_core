@@ -102,6 +102,16 @@ class LoopOptions(OmBase):
 
 
 @dataclass
+class EarlyPrepare:
+    """A prepare a run started beside its first model call, for a kind that
+    prepares its workspace early: the step its workspace starts from, as the
+    history named it then, and the task that prepares it."""
+
+    task: asyncio.Task[AgentWorkspace]
+    start: AgentStep | None
+
+
+@dataclass
 class RunState:
     """One run of one loop: what it read when it began, and what it learns
     as it goes."""
@@ -128,6 +138,11 @@ class RunState:
     # Prepared at the first call that reaches it, and None until then: a
     # run that makes no such call holds none, and snapshots none.
     workspace: AgentWorkspace | None = None
+    # The prepare a kind that prepares early started as the run's first
+    # model call went out, until the first call that reaches the workspace
+    # takes it or the run's end or park lets it go.
+    early: EarlyPrepare | None = None
+    called: bool = False  # a model call of the run went out
     kept: bool = False  # a snapshot holds its workspace whole, taken at its end
     made: set[UUID] = field(default_factory=lambda: set[UUID]())  # tool requests it wrote
     failures: int = 0  # provider errors in a row
@@ -385,7 +400,11 @@ class LoopCore(ABC):
         that follows starts before the step names it. One that is refused,
         such as for a secret's value in it, a secret an attached tool may
         have injected included, or that fails keeps nothing, and the run
-        keeps its instance (`_release`)."""
+        keeps its instance (`_release`). An early prepare no call took goes
+        first, before the end or the park is written: the run that the end
+        or the park lets start may prepare the same instance, and a release
+        after it would take that instance away."""
+        await self._let_go_early(run)
         workspace = run.workspace
         if workspace is None or workspace.spec.durability is not Durability.SNAPSHOT:
             return
@@ -410,7 +429,8 @@ class LoopCore(ABC):
         that parks holds no runtime, but for a workspace kept by snapshots
         that no snapshot holds whole: its instance stays, so nothing in it is
         lost, and the next run that reaches it prepares it as it stands. A
-        run that reached none holds none, and lets nothing go."""
+        run that reached none holds none, and lets nothing go here: an early
+        prepare no call took went in `_keep`."""
         if run.workspace is None:
             return
         if run.workspace.spec.durability is Durability.SNAPSHOT and not run.kept:
@@ -473,6 +493,12 @@ class LoopCore(ABC):
     async def _workspace(
         self, run: RunState, history: Sequence[AgentStep], request: AgentStep, *, fresh: bool
     ) -> AgentWorkspace | LoopRun: ...
+
+    @abstractmethod
+    def _prepare_early(self, run: RunState, history: Sequence[AgentStep]) -> None: ...
+
+    @abstractmethod
+    async def _let_go_early(self, run: RunState, *, release: bool = True) -> None: ...
 
     @abstractmethod
     async def _stop_jobs(

@@ -37,7 +37,8 @@ the step names it. Its instance goes only once a snapshot holds it. A
 snapshot that is refused, as for a secret's value in the workspace, or
 that fails is logged, and the instance stays, so nothing in it is lost.
 A run whose calls reach no workspace prepares none and takes no
-snapshot (ADR 1043). The next run that reaches it starts from the latest
+snapshot (ADR 1043); one whose kind prepares early lets the instance it
+prepared go, with no snapshot (ADR 1048). The next run that reaches it starts from the latest
 snapshot when nothing touched the workspace after it. A call that
 reached the workspace after it and may have run, as a run lost before
 its end leaves, or a change an `environment_changed` step records, a

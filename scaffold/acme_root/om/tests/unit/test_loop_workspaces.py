@@ -3,9 +3,10 @@ and the twin workspace provider (ADR 1009, ADR 1043). Before a loop's
 first model call the provider checks the session's spec alone, and makes
 nothing: a spec it can never meet ends the loop `errored`, its cause
 named, before any call, and its end report wakes a parent waiting on it.
-The workspace is prepared at the first call that reaches it, after the
-model call that asked for it, and a loop whose calls reach none prepares
-none. A prepare that waits for a workspace that may come parks the loop
+The workspace of a kind that declares nothing is prepared at the first
+call that reaches it, after the model call that asked for it, and a
+loop whose calls reach none prepares none; a kind that prepares early is
+`test_loop_early_workspaces`'s. A prepare that waits for a workspace that may come parks the loop
 on `leasable_resource` with the call open, and the run that takes it up
 again runs the call once; a workspace whose durable state is gone parks
 it for a person. A park at a call its own run wrote is settled; one
